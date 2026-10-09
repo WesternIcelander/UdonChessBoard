@@ -4,8 +4,11 @@ UdonSharp port of the Java ChessBoard library, for VRChat worlds. `PLAN.md` hold
 
 ## Rules
 
-- **Do not modify anything inside `JavaChessBoard/`.** It is the reference implementation; read it, but never edit, add, or delete files there. Its known bugs are fixed only in the port (see [docs/java-bugs.md](docs/java-bugs.md)).
+- **Do not change the code inside `JavaChessBoard/`.** It is the reference implementation; read it, but never edit, add, or delete its source or project files. Its known bugs are fixed only in the port (see [docs/java-bugs.md](docs/java-bugs.md)). Building and running it there with Maven is fine; build artifacts (`target/`) don't count as changes.
 - **Before working on an implementation step, read the docs listed on that step's "Read:" line in `PLAN.md`.**
+- **`PLAN.md`'s implementation steps are a checklist.** Work through the items in order. After completing an item and passing its **Verify**, tick it (`- [x]`) in `PLAN.md` before moving on. Never tick an item whose verification hasn't actually been seen to pass.
+- **If the work deviates from the plan, update `PLAN.md` (and the affected `docs/` files) to match** in the same change.
+- Play Mode and multi-client checks need the user to run Unity; test results are read from the Unity Editor log (`%LOCALAPPDATA%\Unity\Editor\Editor.log`).
 
 ## UdonSharp limits
 
