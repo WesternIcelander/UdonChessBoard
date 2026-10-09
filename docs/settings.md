@@ -2,7 +2,7 @@
 
 An arbiter is the official who enforces the rules at a chess event, which matches what this object does.
 
-- Holds the rules settings: whether takebacks are allowed, each draw rule (agreement, threefold, fifty-move, fivefold, seventy-five-move, dead position; "No draws" is all draw rules off), the inactivity times, and an optional forced time control.
+- Holds the rules settings: whether takebacks are allowed, each draw rule (agreement, threefold, fifty-move, fivefold, seventy-five-move, dead position; "No draws" is all draw rules off), the inactivity times, and the forced lobby settings (an optional forced mode and an optional forced time control; see [Starting](board-lifecycle.md#starting)).
 - Defaults come from the world's configuration in the editor. Only organizers can change settings in-world.
 
 ## Per-board overrides
@@ -12,8 +12,12 @@ An arbiter is the official who enforces the rules at a chess event, which matche
   - the instance defaults (`int`),
   - per board: an override mask and override values (`int[]` each, indexed by board number).
   - A board's effective settings are `(defaults & ~mask) | (values & mask)`: overridden bits come from the board, the rest from the defaults.
-  - The two inactivity times are numbers, not on/off, so they're stored as separate values: instance defaults plus per-board `int[]` overrides (in seconds), with a bit in the override mask saying whether the board overrides each one.
+  - On/off settings include "mode forced" and "clock forced".
+  - **Numeric settings** aren't on/off, so they're stored as separate values: instance defaults plus per-board `int[]` overrides, with a bit in the override mask saying whether the board overrides each one. There are five:
+    - reset-available time and auto-reset time (seconds, `-1` = never; see [Inactivity](inactivity.md)),
+    - forced mode (used only while "mode forced" is on),
+    - forced base time and forced increment (seconds, base `-1` = no clock; used only while "clock forced" is on).
 - **Stored on the arbiter, not the board.** Overrides must survive a board reset, which clears all of the board's state, and changing them only needs ownership of the arbiter. Boards are given their board number in the editor.
 - The settings menu (a view of the arbiter) lets an organizer pick "all boards" or a specific board, and set each setting to on, off, or "use default" for a board.
-- **Snapshot:** a board copies its effective settings into its own synced state when it leaves the reset state (someone joins a seat, or a game is loaded or imported), and uses that copy until it's reset. Changing settings doesn't alter the rules of a board already in use.
+- **Snapshot:** a board copies its effective settings (the bits and all five numeric settings) into its own synced state when it leaves the reset state (someone joins a seat, or a game is loaded or imported), and uses that copy until it's reset. Changing settings doesn't alter the rules of a board already in use.
 - **Re-snapshot on request:** if a mistake was made, an organizer can tell a board, or all boards, to take a new snapshot. The organizer takes ownership of the board (see [Ownership](ownership.md)), the board re-copies its effective settings, and serializes.

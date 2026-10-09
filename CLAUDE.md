@@ -19,6 +19,7 @@ UdonSharp compiles only part of C#. Details and reasons: [docs/udon-constraints.
 - No file or stream I/O: FEN and PGN are string in, string out.
 - Minimum VRChat SDK is 3.7.1 (needed for `System.Text.StringBuilder`).
 - Calls into another behaviour are expensive; keep hot paths on local arrays.
+- A synced `string[]` must never contain `null`: one `null` element makes the whole serialization fail. Initialise every element to `""`.
 
 ## Code conventions
 

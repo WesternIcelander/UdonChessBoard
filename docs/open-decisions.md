@@ -8,4 +8,4 @@ None for the first version.
   - With no check, a player can't be checkmated, and is almost never left without a move; if they are, is that stalemate (draw) or a loss? Do draw rules apply?
   - Can Chess960 and Fog of War be combined?
 
-Items marked "to check" in the other docs (e.g. whether `VRCObjectSync` fights pieces being snapped into place) are verification work for implementation, not design decisions.
+Items marked "to check" in the other docs (e.g. benchmarking the PGN import's time budget) are verification work for implementation, not design decisions.

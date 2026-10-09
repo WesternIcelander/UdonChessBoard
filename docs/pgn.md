@@ -5,7 +5,7 @@
 - Started with a "Load PGN" button on a board, which opens the text box to paste into.
 - Runs only on the importing player. **The player doesn't take ownership of the board until the import has finished**; only then are the results written to the board's synced fields.
 - Starts from the standard position, or from the PGN's `FEN` tag if present (e.g. an imported Chess960 game), then plays through every move in the PGN.
-- Tags read: `FEN` (starting position), `White`, `Black`, `Result` for display in replay, and `GameID` so a continued game can reference it. All others are ignored. Comments in the move text are skipped too.
+- Tags read: `FEN` (starting position), `Variant` (the mode: `Chess960`, otherwise Standard), `White`, `Black`, `Result` for display in replay, and `GameID` so a continued game can reference it. All others are ignored. Comments in the move text are skipped too.
 - Written as a state machine with its state in fields (text position, working board, moves so far). Each frame it processes moves until a time budget runs out, then pauses until the next frame, and stops once the PGN is done.
 - Starting budget is 10 ms, but that may cost frames: at 90 Hz in VR a whole frame is ~11 ms. Benchmark it; the budget may need to be smaller, or the whole import may be fast enough to run in one go.
 - Reports a failure state ("failed at move N") instead of throwing.

@@ -44,16 +44,17 @@ No FEN or PGN goes over the network, so no client parses anything to stay in syn
 | white / black player | `string` ×2 | display names, so a rejoining player keeps their seat; see [Ownership](ownership.md) |
 | last activity | `double` | server time of the last piece touch, see [Inactivity](inactivity.md) |
 | result | `byte` | in progress, or ending + winner; see [Game endings](game-endings.md) |
-| lifecycle state | `byte` | reset, lobby, in game, ended; see [Board lifecycle](board-lifecycle.md) |
+| lifecycle state | `byte` | reset, loaded, lobby, in game, ended; see [Board lifecycle](board-lifecycle.md) |
 | mode | `byte` | Standard, Chess960 (Fog of War later) |
 | time control | `int` ×2 | base and increment in seconds; base `-1` = no clock |
 | clocks | `int` ×2 + `double` | each side's remaining ms, and server time the current turn began |
 | clock history | `int[]` | mover's remaining ms after each move |
-| game settings | `int` + `int` ×2 | settings snapshot (rule bits, and the two inactivity times) taken when the board left the reset state; see [Per-board overrides](settings.md#per-board-overrides) |
+| game settings | `int` + `int` ×5 | settings snapshot (setting bits, plus the five numeric settings: two inactivity times, forced mode, forced base time and increment) taken when the board left the reset state; see [Per-board overrides](settings.md#per-board-overrides) |
 
 - The move history is the full packed ints, not a 2-byte compact form. A long game is a couple of KB, well within manual sync limits, and receivers get the undo info with no reconstruction. This replaces the earlier 2-byte format, which was designed for receivers rebuilding moves themselves.
 - Because every packed move carries its own undo info, a client can walk back from the current position to any earlier one by undoing moves. Replay and filling in notation therefore don't need the starting FEN to be parsed.
-- Notation is a single space-separated string rather than a `string[]`; SAN never contains spaces, and a single string is the simplest synced type. Check that synced `string[]` works if a per-move array turns out more convenient.
+- Notation is a single space-separated string rather than a `string[]`; SAN never contains spaces, and a single string is the simplest synced type. A per-move synced `string[]` would also work if it turns out more convenient.
+- **Synced `string[]` must never contain `null`.** A single `null` element makes the whole serialization fail, so every element is initialised to an empty string (this applies to any synced `string[]`, not just notation).
 
 ## Filling in missing notation
 
