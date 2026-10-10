@@ -52,8 +52,8 @@ Ordered so that each step can be tested before the next builds on it: rules firs
   - Verify: `Packages/vpm-manifest.json` lists `com.vrchat.worlds` at 3.7.1 or later. (Done: 3.10.5.)
 - [x] **1.2** Make the Java library available as `JavaChessBoard/`; move this plan to the project root.
   - Verify: `JavaChessBoard/pom.xml` and `JavaChessBoard/src/main/java/io/siggi/chessboard/` exist; `PLAN.md` is at the project root.
-- [ ] **1.3** Copy `JavaChessBoard/Siggi-vs-Nuka.pgn` into `Assets/` (leaving the original in place), so test behaviours can read it through a `TextAsset` field, since Udon has no file I/O.
-  - Verify: the copy is byte-identical to the original (`cmp`), Unity has imported it (a `.meta` file exists), and a behaviour with a `TextAsset` field set to it logs its first line in Play Mode.
+- [ ] **1.3** Add the PGN test set in `Assets/Tests/PGN/` (see [PGN test set](docs/testing.md#pgn-test-set)), so test behaviours can read the files through `TextAsset` fields, since Udon has no file I/O. It includes a copy of `JavaChessBoard/Siggi-vs-Nuka.pgn` (original left in place), a long Lichess game, hand-written PGNs for the features Siggi-vs-Nuka doesn't cover, and malformed PGNs. Files are named `*.pgn.txt`, since Unity doesn't import `.pgn` as a `TextAsset`. (Files written and checked against the Java; the Unity part of the Verify is still to do.)
+  - Verify: the Siggi-vs-Nuka copy is byte-identical to the original (`cmp`); every file except `formatting.pgn.txt` and the malformed ones imports in the Java on `port-reference` with the ply count and final FEN listed in the test set, and the malformed ones fail where listed (done); Unity has imported every file (a `.meta` file exists), and a behaviour with a `TextAsset` field set to `Siggi-vs-Nuka.pgn` logs its first line in Play Mode.
 - [x] **1.4** Add `SimpleAuth` (`SiggiUSTools`).
   - Verify: `Assets/Siggi/USTools/SimpleAuth.cs` declares the class as in [Organizers](docs/organizers.md), and the Editor log shows it imported with no compile errors.
 - [x] **1.5** **Early check: Udon speed.** A throwaway behaviour that generates moves in a loop, to get a feel for real costs before the design relies on them.
@@ -136,14 +136,14 @@ Already settled, so no early check is needed:
   - Verify: for hand-built game data, the tag section matches hand-written expected text, including a standard game, a Chess960 game, a game with no clock, and a continued game.
 - [ ] **5.1b** Export: move text with `[%clk]` comments and line wrapping.
   - Verify: the move text matches hand-written expected text; no line exceeds the wrap width, and lines only break at spaces.
-- [ ] **5.2a** Import: regex tokenizer (adapted for .NET), reading `FEN`/`Variant`/`White`/`Black`/`Result`/`GameID`.
-  - Verify: `Siggi-vs-Nuka.pgn` tokenizes into the expected tags and the right number of move tokens; comments are skipped; other tags are ignored.
+- [ ] **5.2a** Import: regex tokenizer (adapted for .NET), reading `FEN`/`Variant`/`White`/`Black`/`Result`/`GameID`/`TimeControl`, and `[%clk]` comments into the clock history.
+  - Verify: `Siggi-vs-Nuka.pgn` and `lichess-long-draw.pgn` tokenize into the expected tags and the right number of move tokens; their clock histories match the [PGN test set](docs/testing.md#pgn-test-set); other comments are skipped; other tags are ignored; `formatting.pgn` gives only its 24 main-line moves (see [Import syntax](docs/pgn.md#import-syntax)) and its listed clock history; escaped names in `repetition-names.pgn` and `checkmate.pgn` come out unescaped.
 - [ ] **5.2b** Import: matching each SAN against legal moves; failure reporting.
-  - Verify: `Siggi-vs-Nuka.pgn` imports to the expected final position (FEN); PGNs with an illegal move, an ambiguous move and garbage text fail with the right move number.
+  - Verify: every file in the [PGN test set](docs/testing.md#pgn-test-set) imports to its listed ply count and final FEN, and each file in `malformed/` fails at its listed move.
 - [ ] **5.3** Time-budgeted state machine for import.
-  - Verify: importing `Siggi-vs-Nuka.pgn` with a small budget takes several frames and gives the same result as importing in one go; log the frames used and the longest frame's import time.
-- [ ] **5.4** **Test:** round-trip `Siggi-vs-Nuka.pgn` and compare with the Java's export; malformed PGNs fail with the right move number.
-  - Verify: the whole step 5 test behaviour logs only `PASS`; the move text matches the Java's export, and any tag differences are ones the port adds on purpose.
+  - Verify: importing `lichess-long-draw.pgn` (142 plies) with the normal budget, and `Siggi-vs-Nuka.pgn` with a small one, each takes several frames and gives the same result as importing in one go; log the frames used and the longest frame's import time.
+- [ ] **5.4** **Test:** round-trip the [PGN test set](docs/testing.md#pgn-test-set) and compare with the Java's export; malformed PGNs fail with the right move number.
+  - Verify: the whole step 5 test behaviour logs only `PASS`; for every file the Java can read, the moves in the port's export match the Java's, and the tag and comment differences are the ones listed in the test set; re-importing the port's own export gives the same game, including names with `"` and `\` and the clock history (tenths kept, `-1` entries staying `-1`).
 
 ### 6. Settings (`ChessArbiter`)
 
@@ -195,7 +195,7 @@ Taking a board's snapshot of these settings depends on the board's lifecycle, so
 - [ ] **7.8b** Takeback request/accept (if the snapshot allows takebacks) and truncation (restoring clocks), logging an unfinished game first and giving the continued game a new ID.
   - Verify: an accepted takeback truncates the history and restores the clocks at that ply; a request is cancelled when the replay position changes; it's refused from a custom position or when takebacks are off; an unfinished game is logged once with `*`; the continued game has a new ID and `ContinuedFrom`.
 - [ ] **7.9a** Loading a game: take a loaded game's data (a finished PGN import from step 5 now; the archive reuses this in step 10) and enter the loaded state in replay mode, with the mode from the game and its `White`/`Black`/`Result` shown; refused unless the board is in its reset state.
-  - Verify: importing `Siggi-vs-Nuka.pgn` puts the board in the loaded state showing the game, with the PGN's names and result; loading onto a board that isn't reset is refused.
+  - Verify: importing `Siggi-vs-Nuka.pgn` puts the board in the loaded state showing the game, with the PGN's names and result, its time control and clock history kept, and the board's export giving the same `[%clk]` values; loading onto a board that isn't reset is refused.
 - [ ] **7.9b** Joining seats while loaded, choosing the clock, and "Continue from here": truncate at the shown ply, new Game ID with `ContinuedFrom`, fresh clocks, in game.
   - Verify: after joining both seats and continuing from a mid-game ply, the board is in game at that position with the right side to move, fresh clocks, the seated players' names, and `ContinuedFrom` set (or empty when the loaded game had no Game ID).
 - [ ] **7.10** Reset: clears the board and both seats, logging an unfinished game that had moves. Allowed for seated players and organizers here; the idle-time rule for everyone else comes with inactivity in step 8.
