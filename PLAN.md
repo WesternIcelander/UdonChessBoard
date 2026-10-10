@@ -56,8 +56,18 @@ Ordered so that each step can be tested before the next builds on it: rules firs
   - Verify: the copy is byte-identical to the original (`cmp`), Unity has imported it (a `.meta` file exists), and a behaviour with a `TextAsset` field set to it logs its first line in Play Mode.
 - [x] **1.4** Add `SimpleAuth` (`SiggiUSTools`).
   - Verify: `Assets/Siggi/USTools/SimpleAuth.cs` declares the class as in [Organizers](docs/organizers.md), and the Editor log shows it imported with no compile errors.
-- [ ] **1.5** **Early check: Udon speed.** A throwaway behaviour that generates moves in a loop, to get a feel for real costs before the design relies on them.
+- [x] **1.5** **Early check: Udon speed.** A throwaway behaviour that generates moves in a loop, to get a feel for real costs before the design relies on them.
   - Verify: in Play Mode it logs moves generated per second (and ms per position); record the numbers next to this item.
+  - Done (2026-10-10, `Assets/Scratch/UdonSpeedCheck.cs`): a stand-in generator in the planned style (`byte[64]`, packed moves, static methods, legality by make → attack check → unmake); its sanity check passed (20 legal moves from the start, 48 in Kiwipete). Results in ms per position (moves/s):
+
+    | Phase | Editor (ClientSim) | VRChat client |
+    |---|---|---|
+    | Start, pseudo-legal (20 moves) | 0.083–0.088 (227k–240k) | 0.127 (158k) |
+    | Kiwipete, pseudo-legal (48 moves) | 0.105 (457k) | 0.161 (298k) |
+    | Start, legal (20 moves) | 0.49 (41k) | 0.74 (27k) |
+    | Kiwipete, legal (48 moves) | 1.29 (37k) | 1.93 (25k) |
+
+    The client is about 1.5× slower than the Editor. A legal move list costs roughly 0.7–2 ms in the client, almost all of it in the legality check (each pseudo-legal move costs one attack check). For a single move in live play that's fine. Anything that needs a legal list for every ply (PGN import, notation fill-in) gets through about 5–10 plies per 10 ms budget, so a long game takes tens of frames. The perft checks in 3.3a need to be spread across frames as well: start depth 4 is about 9,300 legal lists (≈5 s in the Editor), and Kiwipete depth 3 is about 2,100 (≈3 s).
 - [x] **1.6** In `JavaChessBoard/`, create a `port-reference` branch from `main` and check it out in place; fix the two castling bugs there (see [Bugs found in the Java](docs/java-bugs.md)) and commit them to that branch only. (Done. Three more bugs turned up and were fixed on the branch too: castling paths accepting any king or rook, castling not removing the rights, and pawns capturing their own pieces. The branch now matches published perft counts.)
   - Verify: `mvn package` succeeds on the branch; in the Java, after a rook is captured on its starting square that side has lost the castling right, and after `Bxh8` capturing the rook Black can't `O-O`; `main` still points at `726e76d`, the commit it was on when this item was written.
 
