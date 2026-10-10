@@ -42,7 +42,7 @@ Ordered so that each step can be tested before the next builds on it: rules firs
 
 - Unless an item says otherwise, verification runs in Unity Play Mode (ClientSim): the step's test behaviour logs `PASS`/`FAIL` per check, and the results are read from the Unity Editor log (`%LOCALAPPDATA%\Unity\Editor\Editor.log`). Each item adds its checks to that test behaviour, so the step's final **Test** item reruns everything.
 - "Several clients" means VRChat's Build & Test with multiple client instances (see [Testing](docs/testing.md)).
-- Comparing against the Java means building and running it in `JavaChessBoard/` with Maven, without changing its code (see CLAUDE.md).
+- Comparing against the Java means building and running it in `JavaChessBoard/` with Maven, on its `port-reference` branch, which has the castling bugs fixed (item 1.6; see CLAUDE.md).
 
 ### 1. Project setup and early check
 
@@ -58,8 +58,10 @@ Ordered so that each step can be tested before the next builds on it: rules firs
   - Verify: `Assets/Siggi/USTools/SimpleAuth.cs` declares the class as in [Organizers](docs/organizers.md), and the Editor log shows it imported with no compile errors.
 - [ ] **1.5** **Early check: Udon speed.** A throwaway behaviour that generates moves in a loop, to get a feel for real costs before the design relies on them.
   - Verify: in Play Mode it logs moves generated per second (and ms per position); record the numbers next to this item.
+- [ ] **1.6** In `JavaChessBoard/`, create a `port-reference` branch from `main` and check it out in place; fix the two castling bugs there (see [Bugs found in the Java](docs/java-bugs.md)) and commit them to that branch only.
+  - Verify: `mvn package` succeeds on the branch; in the Java, after a rook is captured on its starting square that side has lost the castling right, and after `Bxh8` capturing the rook Black can't `O-O`; `main` still points at `726e76d`, the commit it was on when this item was written.
 
-Leave the Java unchanged. Its two castling bugs are fixed only in the port, so later comparisons against the Java must avoid or allow for them (see [Bugs found in the Java](docs/java-bugs.md)).
+The Java's `main` branch is never committed to. Its two castling bugs are fixed on the `port-reference` branch (1.6), so comparisons against the Java need no exceptions (see [Bugs found in the Java](docs/java-bugs.md)).
 
 Already settled, so no early check is needed:
 - `VRCObjectSync` is assumed not to fight a non-owner snapping a piece into place. If step 9 shows it does, pieces stop using `VRCObjectSync` (see [Physical pieces](docs/physical-pieces.md)).
@@ -83,7 +85,7 @@ Already settled, so no early check is needed:
   - Verify: for hand-built positions, attacked / not attacked is right for squares hit by each attacker type (pawn of each colour, knight, bishop, rook, queen, king), including blocked sliders.
 - [ ] **2.5** Legal move list (play, attack check, undo), with the `prohibitSelfCheck` option; setting it to `false` skips the check filtering (for Fog of War later).
   - Verify: 20 legal moves from the standard start; pinned pieces and moves into check are excluded; castling out of, through or into check is excluded; with `prohibitSelfCheck = false` those moves are included.
-- [ ] **2.6** **Test:** a test behaviour that builds a few positions by hand with the constants (the standard start, plus positions with castling, en passant and promotion available). It checks that make followed by unmake restores every array exactly, and that the legal move counts match counts worked out by hand or with the Java. Include the two Java bug cases: capturing a rook on its starting square removes that side's castling right, and castling is refused when the rook is gone (the Java gets both wrong, so don't compare these with it). Full perft from published positions needs FEN, so it comes in step 3.
+- [ ] **2.6** **Test:** a test behaviour that builds a few positions by hand with the constants (the standard start, plus positions with castling, en passant and promotion available). It checks that make followed by unmake restores every array exactly, and that the legal move counts match counts worked out by hand or with the Java. Include the two Java bug cases: capturing a rook on its starting square removes that side's castling right, and castling is refused when the rook is gone. Full perft from published positions needs FEN, so it comes in step 3.
   - Verify: the whole step 2 test behaviour logs only `PASS`.
 
 ### 3. FEN
@@ -93,11 +95,11 @@ Already settled, so no early check is needed:
 - [ ] **3.1** FEN parsing and writing, including Chess960 castling letters and the king/rook starting files.
   - Verify: parsing then writing returns the same string for the standard start, Kiwipete, a position with en passant, and Chess960 positions; the king and rook starting files are set; malformed FENs are rejected with a `false` result rather than a broken board.
 - [ ] **3.2** **Test:** round-trip a set of FENs; compare against the Java's output for the same positions.
-  - Verify: every FEN in the set round-trips, and matches the Java's output except where [Bugs found in the Java](docs/java-bugs.md) explains the difference.
+  - Verify: every FEN in the set round-trips, and matches the Java's output.
 - [ ] **3.3a** **Test:** a test behaviour running perft from published positions (standard start, Kiwipete, the other standard perft positions, some Chess960 positions), loaded from their FENs, and checking the counts. Record the timings.
   - Verify: every count matches the published values, to the depth the Udon speed allows; record the depths and timings next to this item.
 - [ ] **3.3b** Published counts only cover normal rules, so also run some positions with `prohibitSelfCheck = false` and compare with the Java's counts for the same setting.
-  - Verify: the counts match the Java's, except where [Bugs found in the Java](docs/java-bugs.md) explains the difference.
+  - Verify: the counts match the Java's.
 
 ### 4. Notation, endings and draw detection
 
