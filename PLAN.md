@@ -28,7 +28,7 @@ This file holds the implementation steps. The design is split into topic files u
 | [inactivity.md](docs/inactivity.md) | Reset-available and auto-reset timers, activity timestamp |
 | [pgn.md](docs/pgn.md) | Import, export, text box, logging |
 | [game-endings.md](docs/game-endings.md) | Endings, results, `Termination` values, draw rules |
-| [java-bugs.md](docs/java-bugs.md) | Castling bugs in the Java reference |
+| [java-bugs.md](docs/java-bugs.md) | Bugs in the Java reference (castling, pawn captures) |
 | [testing.md](docs/testing.md) | Test approach: Play Mode tests, perft, multi-client |
 | [open-decisions.md](docs/open-decisions.md) | Open questions (Fog of War only) |
 
@@ -42,7 +42,7 @@ Ordered so that each step can be tested before the next builds on it: rules firs
 
 - Unless an item says otherwise, verification runs in Unity Play Mode (ClientSim): the step's test behaviour logs `PASS`/`FAIL` per check, and the results are read from the Unity Editor log (`%LOCALAPPDATA%\Unity\Editor\Editor.log`). Each item adds its checks to that test behaviour, so the step's final **Test** item reruns everything.
 - "Several clients" means VRChat's Build & Test with multiple client instances (see [Testing](docs/testing.md)).
-- Comparing against the Java means building and running it in `JavaChessBoard/` with Maven, on its `port-reference` branch, which has the castling bugs fixed (item 1.6; see CLAUDE.md).
+- Comparing against the Java means building and running it in `JavaChessBoard/` with Maven, on its `port-reference` branch, which has its known bugs fixed (item 1.6; see CLAUDE.md).
 
 ### 1. Project setup and early check
 
@@ -58,10 +58,10 @@ Ordered so that each step can be tested before the next builds on it: rules firs
   - Verify: `Assets/Siggi/USTools/SimpleAuth.cs` declares the class as in [Organizers](docs/organizers.md), and the Editor log shows it imported with no compile errors.
 - [ ] **1.5** **Early check: Udon speed.** A throwaway behaviour that generates moves in a loop, to get a feel for real costs before the design relies on them.
   - Verify: in Play Mode it logs moves generated per second (and ms per position); record the numbers next to this item.
-- [ ] **1.6** In `JavaChessBoard/`, create a `port-reference` branch from `main` and check it out in place; fix the two castling bugs there (see [Bugs found in the Java](docs/java-bugs.md)) and commit them to that branch only.
+- [x] **1.6** In `JavaChessBoard/`, create a `port-reference` branch from `main` and check it out in place; fix the two castling bugs there (see [Bugs found in the Java](docs/java-bugs.md)) and commit them to that branch only. (Done. Three more bugs turned up and were fixed on the branch too: castling paths accepting any king or rook, castling not removing the rights, and pawns capturing their own pieces. The branch now matches published perft counts.)
   - Verify: `mvn package` succeeds on the branch; in the Java, after a rook is captured on its starting square that side has lost the castling right, and after `Bxh8` capturing the rook Black can't `O-O`; `main` still points at `726e76d`, the commit it was on when this item was written.
 
-The Java's `main` branch is never committed to. Its two castling bugs are fixed on the `port-reference` branch (1.6), so comparisons against the Java need no exceptions (see [Bugs found in the Java](docs/java-bugs.md)).
+The Java's `main` branch is never committed to. Its known bugs are fixed on the `port-reference` branch (1.6), so comparisons against the Java need no exceptions (see [Bugs found in the Java](docs/java-bugs.md)).
 
 Already settled, so no early check is needed:
 - `VRCObjectSync` is assumed not to fight a non-owner snapping a piece into place. If step 9 shows it does, pieces stop using `VRCObjectSync` (see [Physical pieces](docs/physical-pieces.md)).
@@ -85,7 +85,7 @@ Already settled, so no early check is needed:
   - Verify: for hand-built positions, attacked / not attacked is right for squares hit by each attacker type (pawn of each colour, knight, bishop, rook, queen, king), including blocked sliders.
 - [ ] **2.5** Legal move list (play, attack check, undo), with the `prohibitSelfCheck` option; setting it to `false` skips the check filtering (for Fog of War later).
   - Verify: 20 legal moves from the standard start; pinned pieces and moves into check are excluded; castling out of, through or into check is excluded; with `prohibitSelfCheck = false` those moves are included.
-- [ ] **2.6** **Test:** a test behaviour that builds a few positions by hand with the constants (the standard start, plus positions with castling, en passant and promotion available). It checks that make followed by unmake restores every array exactly, and that the legal move counts match counts worked out by hand or with the Java. Include the two Java bug cases: capturing a rook on its starting square removes that side's castling right, and castling is refused when the rook is gone. Full perft from published positions needs FEN, so it comes in step 3.
+- [ ] **2.6** **Test:** a test behaviour that builds a few positions by hand with the constants (the standard start, plus positions with castling, en passant and promotion available). It checks that make followed by unmake restores every array exactly, and that the legal move counts match counts worked out by hand or with the Java. Include the Java bug cases (see [Bugs found in the Java](docs/java-bugs.md)): capturing a rook on its starting square removes that side's castling right, castling is refused when the rook is gone or another piece is in the way, castling removes both of that side's rights, and pawns can't capture their own pieces. Full perft from published positions needs FEN, so it comes in step 3.
   - Verify: the whole step 2 test behaviour logs only `PASS`.
 
 ### 3. FEN
