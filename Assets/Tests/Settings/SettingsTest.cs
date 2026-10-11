@@ -47,6 +47,7 @@ public class SettingsTest : UdonSharpBehaviour {
         TestBoardOverrides();
         TestAuth();
         TestAuthFallback();
+        TestCombinations();
         Debug.Log("[SettingsTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
@@ -412,5 +413,134 @@ public class SettingsTest : UdonSharpBehaviour {
         Check(!noneWhileEmpty, "auth fallback: field emptied, no player isn't an organizer", "");
         Check(arbiter.simpleAuth == auth && arbiter.IsOrganizer(local),
             "auth fallback: field restored, the local player is an organizer again", "");
+    }
+
+    // ---- 6.3 ----
+
+    // Effective settings for combinations of instance defaults and overrides. The test swaps in each set of defaults
+    // below for a moment (the arbiter's own ones last), and for each gives board 1 every override pattern, board 0 the
+    // next pattern and board 2 none. The expected values are worked out bit by bit and number by number here, not with
+    // CombineSettings, then corrected with FixNumbers (checked on its own in 6.1a). Defaults and boards 0 to 2 are put
+    // back at the end.
+    void TestCombinations() {
+        if (!Utilities.IsValid(arbiter)) {
+            Check(false, "combinations", "arbiter not assigned");
+            return;
+        }
+        if (arbiter.BoardCount() < 3) {
+            Check(false, "combinations", "the arbiter's boardCount is " + arbiter.BoardCount() + ", needs at least 3");
+            return;
+        }
+        int savedSettings = arbiter.defaultSettings;
+        int[] savedNumbers = arbiter.defaultNumbers;
+        int n = ChessArbiter.NumberCount;
+        int t = ChessArbiter.SettingTakebacks;
+        int r = ChessArbiter.SettingThreefoldRepetition;
+        int m = ChessArbiter.SettingModeForced;
+        int c = ChessArbiter.SettingClockForced;
+        int all = ChessArbiter.OverrideSettingsMask;
+
+        // Defaults: the editor's starting values, everything on with every number at its "off" value, a mix (valid,
+        // as defaults always are after correction), and the arbiter's own.
+        int[] defaultSets = { t, all, t | r | c, savedSettings };
+        int[] defaultNumberSets = {
+            120, 600, ChessGame.ModeStandard, 600, 0,
+            ChessArbiter.Never, ChessArbiter.Never, ChessGame.ModeChess960, ChessArbiter.NoClock, 0,
+            30, 60, ChessGame.ModeChess960, 180, 2,
+            savedNumbers[0], savedNumbers[1], savedNumbers[2], savedNumbers[3], savedNumbers[4]
+        };
+
+        // Override patterns: setting mask and values (value bits outside the mask must not count), then which numbers
+        // are overridden (bit per number) and with what. The numbers include ones that conflict with some defaults
+        // (auto-reset 10 below a default reset-available time, reset-available 900 above one) and invalid ones.
+        int[] maskSets = { 0, all, all, ChessArbiter.SettingsDrawRules, t | m | c, 0x155 };
+        int[] valueSets = { all, 0, all, 0, m | r, 0x0AA | c };
+        int[] numberMaskSets = { 0, 0x1F, 1 << 1, (1 << 0) | (1 << 3), 0x1F, (1 << 2) | (1 << 4) };
+        int[] numberValueSets = {
+            5, 5, 5, 5, 5,
+            900, 300, ChessGame.ModeChess960, 5, 0,
+            0, 10, 0, 0, 0,
+            ChessArbiter.Never, 0, 0, 0, 0,
+            -4, -1, 7, -9, -2,
+            0, 0, ChessGame.ModeStandard, 0, 30
+        };
+        int patterns = maskSets.Length;
+
+        for (int d = 0; d < defaultSets.Length; d++) {
+            arbiter.defaultSettings = defaultSets[d];
+            int[] defaults = new int[n];
+            for (int i = 0; i < n; i++) defaults[i] = defaultNumberSets[d * n + i];
+            arbiter.defaultNumbers = defaults;
+            for (int p = 0; p < patterns; p++) {
+                int q = (p + 1) % patterns;
+                for (int b = 0; b < 3; b++) arbiter.ClearOverrides(b);
+                ApplyPattern(1, maskSets[p], valueSets[p], numberMaskSets[p], numberValueSets, p);
+                ApplyPattern(0, maskSets[q], valueSets[q], numberMaskSets[q], numberValueSets, q);
+                string problems = BoardProblems(1, defaultSets[d], defaults, maskSets[p], valueSets[p],
+                        numberMaskSets[p], numberValueSets, p)
+                    + BoardProblems(0, defaultSets[d], defaults, maskSets[q], valueSets[q], numberMaskSets[q],
+                        numberValueSets, q)
+                    + BoardProblems(2, defaultSets[d], defaults, 0, 0, 0, numberValueSets, 0);
+                Check(problems.Length == 0, "combinations: defaults " + d + ", board 1 pattern " + p
+                    + ", board 0 pattern " + q, problems);
+            }
+        }
+
+        // Back to the arbiter's own defaults, nothing overridden.
+        for (int b = 0; b < 3; b++) arbiter.ClearOverrides(b);
+        arbiter.defaultSettings = savedSettings;
+        arbiter.defaultNumbers = savedNumbers;
+        Check(arbiter.defaultSettings == savedSettings && arbiter.defaultNumbers == savedNumbers
+                && arbiter.EffectiveSettings(1) == savedSettings && arbiter.overrideMask[0] == 0
+                && arbiter.overrideMask[1] == 0,
+            "combinations: defaults restored, boards cleared", "");
+    }
+
+    // Gives a board one override pattern through the arbiter's setters.
+    void ApplyPattern(int board, int mask, int values, int numberMask, int[] numberValueSets, int pattern) {
+        arbiter.SetSettingOverride(board, mask & values, true);
+        arbiter.SetSettingOverride(board, mask & ~values, false);
+        for (int i = 0; i < ChessArbiter.NumberCount; i++) {
+            if ((numberMask & (1 << i)) != 0) {
+                arbiter.SetNumberOverride(board, i, numberValueSets[pattern * ChessArbiter.NumberCount + i]);
+            }
+        }
+    }
+
+    // What's wrong with a board's effective settings for the given defaults and override pattern, or "" if nothing.
+    string BoardProblems(int board, int defaults, int[] defaultNumbers, int mask, int values, int numberMask,
+            int[] numberValueSets, int pattern) {
+        int expected = 0;
+        for (int i = 0; i < ChessArbiter.SettingCount; i++) {
+            int bit = 1 << i;
+            int from = (mask & bit) != 0 ? values : defaults;
+            if ((from & bit) != 0) expected |= bit;
+        }
+        int[] expectedNumbers = new int[ChessArbiter.NumberCount];
+        for (int i = 0; i < ChessArbiter.NumberCount; i++) {
+            expectedNumbers[i] = (numberMask & (1 << i)) != 0
+                ? numberValueSets[pattern * ChessArbiter.NumberCount + i] : defaultNumbers[i];
+        }
+        ChessArbiter.FixNumbers(expectedNumbers);
+        int[] numbers = new int[ChessArbiter.NumberCount];
+        arbiter.EffectiveNumbers(board, numbers);
+        int settings = arbiter.EffectiveSettings(board);
+        string expectedText = ChessArbiter.NumbersToString(expectedNumbers);
+        string numberText = ChessArbiter.NumbersToString(numbers);
+        string problems = "";
+        if (settings != expected) {
+            problems += " board " + board + " settings: expected " + ChessArbiter.SettingsToString(expected)
+                + ", got " + ChessArbiter.SettingsToString(settings) + ";";
+        }
+        if (numberText != expectedText) {
+            problems += " board " + board + " numbers: expected " + expectedText + ", got " + numberText + ";";
+        }
+        for (int i = 0; i < ChessArbiter.SettingCount; i++) {
+            int bit = 1 << i;
+            if (arbiter.IsEffectiveOn(board, bit) != ((expected & bit) != 0)) {
+                problems += " board " + board + " IsEffectiveOn " + ChessArbiter.SettingsToString(bit) + ";";
+            }
+        }
+        return problems;
     }
 }

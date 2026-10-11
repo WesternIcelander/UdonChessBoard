@@ -11,8 +11,7 @@ namespace SiggiChessBoard {
         public int callbackOrder => 0;
 
         public bool OnBuildRequested(VRCSDKRequestedBuildType requestedBuildType) {
-            if (requestedBuildType != VRCSDKRequestedBuildType.Scene) return true;
-            List<ChessArbiter> empty = FindEmpty();
+            List<ChessArbiter> empty = Blocking(requestedBuildType);
             if (empty.Count == 0) return true;
 
             // The SDK's own popup only names this callback, so explain in a dialog too: the person building may not
@@ -40,19 +39,33 @@ namespace SiggiChessBoard {
             return false;
         }
 
+        // The arbiters that stop a build of this type: none unless it's a world build, then the ones with an empty
+        // field. What OnBuildRequested decides on, without its dialog (ChessArbiterBuildCheckTest calls it).
+        public static List<ChessArbiter> Blocking(VRCSDKRequestedBuildType requestedBuildType) {
+            if (requestedBuildType != VRCSDKRequestedBuildType.Scene) return new List<ChessArbiter>();
+            return FindEmpty();
+        }
+
         // Every arbiter (inactive ones included) in the loaded scenes whose field is empty.
         public static List<ChessArbiter> FindEmpty() {
             List<ChessArbiter> empty = new List<ChessArbiter>();
+            foreach (ChessArbiter arbiter in FindAll()) {
+                if (arbiter.simpleAuth == null) empty.Add(arbiter);
+            }
+            return empty;
+        }
+
+        // Every arbiter (inactive ones included) in the loaded scenes.
+        public static List<ChessArbiter> FindAll() {
+            List<ChessArbiter> all = new List<ChessArbiter>();
             for (int i = 0; i < SceneManager.sceneCount; i++) {
                 Scene scene = SceneManager.GetSceneAt(i);
                 if (!scene.isLoaded) continue;
                 foreach (GameObject root in scene.GetRootGameObjects()) {
-                    foreach (ChessArbiter arbiter in root.GetComponentsInChildren<ChessArbiter>(true)) {
-                        if (arbiter.simpleAuth == null) empty.Add(arbiter);
-                    }
+                    all.AddRange(root.GetComponentsInChildren<ChessArbiter>(true));
                 }
             }
-            return empty;
+            return all;
         }
 
         static string PathOf(Transform t) {
