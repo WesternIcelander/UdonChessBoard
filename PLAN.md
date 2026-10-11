@@ -52,13 +52,13 @@ Ordered so that each step can be tested before the next builds on it: rules firs
   - Verify: `Packages/vpm-manifest.json` lists `com.vrchat.worlds` at 3.7.1 or later. (Done: 3.10.5.)
 - [x] **1.2** Make the Java library available as `JavaChessBoard/`; move this plan to the project root.
   - Verify: `JavaChessBoard/pom.xml` and `JavaChessBoard/src/main/java/io/siggi/chessboard/` exist; `PLAN.md` is at the project root.
-- [ ] **1.3** Add the PGN test set in `Assets/Tests/PGN/` (see [PGN test set](docs/testing.md#pgn-test-set)), so test behaviours can read the files through `TextAsset` fields, since Udon has no file I/O. It includes a copy of `JavaChessBoard/Siggi-vs-Nuka.pgn` (original left in place), a long Lichess game, hand-written PGNs for the features Siggi-vs-Nuka doesn't cover, and malformed PGNs. Files are named `*.pgn.txt`, since Unity doesn't import `.pgn` as a `TextAsset`. (Files written and checked against the Java; the Unity part of the Verify is still to do.)
+- [x] **1.3** Add the PGN test set in `Assets/Tests/PGN/` (see [PGN test set](docs/testing.md#pgn-test-set)), so test behaviours can read the files through `TextAsset` fields, since Udon has no file I/O. It includes a copy of `JavaChessBoard/Siggi-vs-Nuka.pgn` (original left in place), a long Lichess game, hand-written PGNs for the features Siggi-vs-Nuka doesn't cover, and malformed PGNs. Files are named `*.pgn.txt`, since Unity doesn't import `.pgn` as a `TextAsset`. (Done: Play Mode check with `Assets/Tests/Checks/TextAssetCheck.cs`.)
   - Verify: the Siggi-vs-Nuka copy is byte-identical to the original (`cmp`); every file except `formatting.pgn.txt` and the malformed ones imports in the Java on `port-reference` with the ply count and final FEN listed in the test set, and the malformed ones fail where listed (done); Unity has imported every file (a `.meta` file exists), and a behaviour with a `TextAsset` field set to `Siggi-vs-Nuka.pgn` logs its first line in Play Mode.
 - [x] **1.4** Add `SimpleAuth` (`SiggiUSTools`).
   - Verify: `Assets/Siggi/USTools/SimpleAuth.cs` declares the class as in [Organizers](docs/organizers.md), and the Editor log shows it imported with no compile errors.
 - [x] **1.5** **Early check: Udon speed.** A throwaway behaviour that generates moves in a loop, to get a feel for real costs before the design relies on them.
   - Verify: in Play Mode it logs moves generated per second (and ms per position); record the numbers next to this item.
-  - Done (2026-10-10, `Assets/Scratch/UdonSpeedCheck.cs`): a stand-in generator in the planned style (`byte[64]`, packed moves, static methods, legality by make → attack check → unmake); its sanity check passed (20 legal moves from the start, 48 in Kiwipete). Results in ms per position (moves/s):
+  - Done (2026-10-10, `Assets/Tests/Checks/UdonSpeedCheck.cs`): a stand-in generator in the planned style (`byte[64]`, packed moves, static methods, legality by make → attack check → unmake); its sanity check passed (20 legal moves from the start, 48 in Kiwipete). Results in ms per position (moves/s):
 
     | Phase | Editor (ClientSim) | VRChat client |
     |---|---|---|
@@ -119,8 +119,8 @@ Already settled, so no early check is needed:
   - Verify: the expected SAN for hand-built positions with two knights or two rooks (disambiguated by file, by rank, and by both), pawn captures, promotions (with and without capture), castling on both sides, check and checkmate.
 - [ ] **4.2** Checkmate and stalemate detection.
   - Verify: fool's mate is checkmate; known stalemate positions are stalemate; a position in check with an escape is neither.
-- [ ] **4.3a** Halfmove clock (derived from history), and the fifty/seventy-five-move rules.
-  - Verify: the halfmove clock resets on captures and pawn moves, includes the starting position's halfmove clock, and the fifty- and seventy-five-move conditions trigger at exactly 100 and 150 plies.
+- [ ] **4.3a** Halfmove clock (a local per-ply array computed from the move history, not synced), and the fifty/seventy-five-move rules.
+  - Verify: the halfmove clock resets on captures and pawn moves, includes the starting position's halfmove clock, undo restores the previous value, rebuilding the array from a move history matches the values recorded while playing it, and the fifty- and seventy-five-move conditions trigger at exactly 100 and 150 plies.
 - [ ] **4.3b** Repetition detection.
   - Verify: threefold and fivefold are detected for a knight shuffle; positions that differ only in castling rights or en passant don't count as repeats.
 - [ ] **4.3c** Insufficient material.

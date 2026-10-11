@@ -1,0 +1,5 @@
+[White "White"]
+[Black "Black"]
+[Result "*"]
+
+1.e4 a6 2.e5 d5 3.exd6 b5 4.a3 b4 5.c4 bxc3 *

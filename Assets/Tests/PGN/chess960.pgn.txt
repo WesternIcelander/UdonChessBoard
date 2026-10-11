@@ -1,0 +1,8 @@
+[White "White"]
+[Black "Black"]
+[Result "*"]
+[Variant "Chess960"]
+[SetUp "1"]
+[FEN "qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w GBgb - 0 1"]
+
+1.e4 e5 2.Bf3 Bf6 3.O-O-O O-O-O *

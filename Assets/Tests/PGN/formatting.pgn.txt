@@ -1,0 +1,11 @@
+[Event "Formatting test"]
+[White "White"]
+[Black "Black"]
+[Result "*"]
+
+% an escape line, ignored
+{Before the first move [%clk 0:09:00]} 1. d4 { [%clk 0:05:00] } 1... d5 {[%eval 0.17] [%clk 0:04:59.5]} 2. Nc3 $1 Nc6 3. Bf4!? Bf5?! {A comment
+that spans two lines} 4. Qd2 (4. e3 {[%clk 0:04:00]} e6 (4... Nf6 5. Bd3) 5. Bd3) 4... Qd7 ; a rest-of-line comment
+5. O-O-O
+5... O-O-O 6.e4 dxe4 7.d5 Nb4 8.a3 Nxd5
+9.Nxd5 Qxd5 10.Qxd5 Rxd5 11.Rxd5 e6 12.Rd8+ Kxd8 *

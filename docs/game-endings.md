@@ -45,7 +45,7 @@ Each FIDE draw rule can be switched on or off in the instance settings menu (on 
 | Seventy-five-move rule | drawn automatically | halfmove clock |
 | Dead position | drawn automatically when neither side can checkmate (e.g. king vs king, king and bishop vs king) | insufficient-material check |
 
-- **Halfmove clock:** the Java's `halfMoves` just counts every move, which is not the fifty-move clock. The port resets it on captures and pawn moves; earlier values are derived from the move history (see [Undo](move-encoding.md#undo)).
+- **Halfmove clock:** the Java's `halfMoves` just counts every move, which is not the fifty-move clock. The port resets it on captures and pawn moves, and keeps each ply's value in a local, unsynced array that every client computes from the move history (see [Undo](move-encoding.md#undo)).
 - **Repetition detection without hashing:** a repeat can only occur since the last capture, pawn move or castling-rights change, so at most the last halfmove-clock's worth of plies. Walk back through those by undoing moves on a scratch array and compare the 64 squares, side to move, castling rights and en passant. That's at most ~100 comparisons of 64 bytes, once per move, and needs no precomputed hash tables (which would need static fields).
 - **Dead position:** check only the standard insufficient-material cases (K v K, K+B v K, K+N v K, K+B v K+B with same-coloured bishops). Detecting every dead position is impractical.
 - **Claims:** for threefold and fifty-move, show a "Claim draw" button to the player to move when the condition holds. FIDE also lets a player claim with a move they're about to make; leave that out.

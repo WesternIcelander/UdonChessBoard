@@ -26,7 +26,7 @@ No FEN or PGN goes over the network, so no client parses anything to stay in syn
 | side to move | `byte` | |
 | castling rights | `byte` | 4 bits |
 | en passant | `sbyte` | square, or -1 |
-| halfmove clock, move number | `int` | current values |
+| move number | `int` | current value |
 | starting halfmove clock, move number | `int` | from the starting position; see [Undo](move-encoding.md#undo) |
 | king / rook starting files | `byte` ×3 | for castling and undo (Chess960) |
 | move history | `int[]` | full packed moves, 4 bytes each |

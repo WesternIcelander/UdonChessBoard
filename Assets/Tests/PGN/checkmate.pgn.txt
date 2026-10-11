@@ -1,0 +1,6 @@
+[White "Nukaǃ"]
+[Black "Ana \"The Rook\" \\ Ñandú 🐴"]
+[Result "0-1"]
+[Termination "Ana \"The Rook\" \\ Ñandú 🐴 won by checkmate"]
+
+1.f3 e5 2.g4 Qh4# 0-1
