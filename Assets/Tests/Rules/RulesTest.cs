@@ -33,6 +33,7 @@ public class RulesTest : UdonSharpBehaviour {
         TestHalfmoveClock();
         TestRepetition();
         TestInsufficientMaterial();
+        TestGames();
         if (deepPerft) StartDeepPerft();
         else LogSummary();
     }
@@ -2714,5 +2715,151 @@ public class RulesTest : UdonSharpBehaviour {
         CheckInsufficient("K+N v K+B", "4kb2/8/8/8/8/8/8/1N2K3 w - - 0 1", false);
         CheckInsufficient("K+B+N v K", "4k3/8/8/8/8/8/8/1NB1K3 w - - 0 1", false);
         CheckInsufficient("start", ChessFen.StartFen, false);
+    }
+
+    // ---- 4.4 ----
+
+    // The legal move (of legalMoves[0..legalCount)) whose SAN matches text, ignoring "+"/"#" and reading "0" as "O" as
+    // the VRChess PGNs write castling; -1 if there is none. Not the PGN import (step 5), only enough to play the test
+    // games below.
+    int FindSan(byte[] board, int[] state, int[] legalMoves, int legalCount, string text, int[] scratch) {
+        string wanted = text.Replace("+", "").Replace("#", "").Replace("0", "O");
+        for (int i = 0; i < legalCount; i++) {
+            string san = ChessNotation.MoveToSan(board, state, legalMoves[i], legalMoves, legalCount, scratch, true);
+            if (san.Replace("+", "").Replace("#", "") == wanted) return legalMoves[i];
+        }
+        return -1;
+    }
+
+    // Plays sans (SAN separated by spaces) from fen as the board will, and after each ply runs every ending check:
+    // checkmate and stalemate (PositionStatus), threefold and fivefold repetition (CountRepetitions), the fifty- and
+    // seventy-five-move rules (the halfmove clock) and insufficient material. Checks the SAN of each move played
+    // against expectedSans, the final FEN against expectedFen, and the first ply after which each ending holds against
+    // expectedEndings: "<ending>@<ply>" for each ending that ever holds, in the order above, separated by spaces.
+    void CheckGame(string name, string fen, string sans, string expectedSans, string expectedFen,
+        string expectedEndings) {
+        byte[] board = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        int clock;
+        int fullmove;
+        if (!ChessFen.ParseFen(fen, board, state, out clock, out fullmove)) {
+            Check(false, "game: " + name, "FEN rejected");
+            return;
+        }
+        string[] texts = sans.Split(new char[] { ' ' });
+        int[] history = new int[texts.Length];
+        int[] legalMoves = new int[ChessMoves.MaxMoves];
+        int[] scratch = new int[ChessMoves.MaxMoves];
+        byte[] scratchBoard = new byte[64];
+        int[] scratchState = new int[ChessPosition.StateLength];
+        string[] endingNames = new string[] {
+            "checkmate", "stalemate", "threefold", "fivefold", "fifty", "seventy-five", "insufficient"
+        };
+        int[] firstPly = new int[] { -1, -1, -1, -1, -1, -1, -1 };
+        bool[] holds = new bool[endingNames.Length];
+        string played = "";
+        int legalCount = ChessMoves.GenerateLegalMoves(board, state, legalMoves, true);
+        for (int i = 0; i < texts.Length; i++) {
+            int move = FindSan(board, state, legalMoves, legalCount, texts[i], scratch);
+            if (move == -1) {
+                Check(false, "game: " + name, texts[i] + " not legal at ply " + i + " (after: " + played + ")");
+                return;
+            }
+            played += (i == 0 ? "" : " ")
+                + ChessNotation.MoveToSan(board, state, move, legalMoves, legalCount, scratch, true);
+            history[i] = move;
+            clock = ChessDraws.HalfmoveClockAfter(clock, move);
+            if (state[ChessPosition.StateSideToMove] == ChessRules.Black) fullmove++;
+            ChessPosition.MakeMove(board, state, move);
+
+            legalCount = ChessMoves.GenerateLegalMoves(board, state, legalMoves, true);
+            int status = ChessMoves.PositionStatus(board, state, legalCount, true);
+            int repetitions = ChessDraws.CountRepetitions(board, state, history, i + 1, clock, scratchBoard,
+                scratchState, scratch, true);
+            holds[0] = status == ChessMoves.StatusCheckmate;
+            holds[1] = status == ChessMoves.StatusStalemate;
+            holds[2] = ChessDraws.IsThreefoldRepetition(repetitions);
+            holds[3] = ChessDraws.IsFivefoldRepetition(repetitions);
+            holds[4] = ChessDraws.IsFiftyMoveRule(clock);
+            holds[5] = ChessDraws.IsSeventyFiveMoveRule(clock);
+            holds[6] = ChessDraws.IsInsufficientMaterial(board);
+            for (int e = 0; e < endingNames.Length; e++) {
+                if (holds[e] && firstPly[e] == -1) firstPly[e] = i + 1;
+            }
+        }
+        string endings = "";
+        for (int e = 0; e < endingNames.Length; e++) {
+            if (firstPly[e] != -1) endings += (endings == "" ? "" : " ") + endingNames[e] + "@" + firstPly[e];
+        }
+        string finalFen = ChessFen.WriteFen(board, state, clock, fullmove);
+        string errors = "";
+        if (played != expectedSans) errors += " SAN \"" + played + "\" (expected \"" + expectedSans + "\")";
+        if (finalFen != expectedFen) errors += " final FEN " + finalFen + " (expected " + expectedFen + ")";
+        if (endings != expectedEndings) errors += " endings \"" + endings + "\" (expected \"" + expectedEndings + "\")";
+        Check(errors == "", "game: " + name + ": " + texts.Length + (texts.Length == 1 ? " ply, " : " plies, ")
+            + (expectedEndings == "" ? "no ending" : expectedEndings), errors);
+    }
+
+    void TestGames() {
+        // The PGN test set's games (docs/testing.md) with its final FENs. The SANs are the files' own, except that
+        // Siggi-vs-Nuka's (VRChess: 0-0, no +/#) are expected as the Java exports them.
+        string checkmate = "f3 e5 g4 Qh4#";
+        CheckGame("checkmate.pgn (fool's mate)", ChessFen.StartFen, checkmate, checkmate,
+            "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3", "checkmate@4");
+        CheckGame("Siggi-vs-Nuka.pgn", ChessFen.StartFen,
+            "e4 c5 Nf3 Nc6 d3 e6 Bf4 a6 c3 b5 c4 Bb7 Nc3 bxc4 dxc4 Qb6 b3 Nd4 Nd2 Bd6 e5 Be7 Na4 Qc6 h3 f6 f3 fxe5 Bxe5"
+            + " Nf6 f4 d6 b4 dxe5 fxe5 Ne4 Nb1 0-0 Bd3 Nf2 Rf1 Nxd1 Kxd1 Rxf1 Kd2 Rf2 Ke3 Bg5 Kxf2 Qxg2 Ke1 Rf8 Bf1"
+            + " Rxf1",
+            "e4 c5 Nf3 Nc6 d3 e6 Bf4 a6 c3 b5 c4 Bb7 Nc3 bxc4 dxc4 Qb6 b3 Nd4 Nd2 Bd6 e5 Be7 Na4 Qc6 h3 f6 f3 fxe5 Bxe5"
+            + " Nf6 f4 d6 b4 dxe5 fxe5 Ne4 Nb1 O-O Bd3 Nf2 Rf1 Nxd1 Kxd1 Rxf1+ Kd2 Rf2+ Ke3 Bg5+ Kxf2 Qxg2+ Ke1 Rf8"
+            + " Bf1 Rxf1#",
+            "6k1/1b4pp/p3p3/2p1P1b1/NPPn4/7P/P5q1/RN2Kr2 w - - 0 28", "checkmate@54");
+        string stalemate = "e3 a5 Qh5 Ra6 Qxa5 h5 h4 Rah6 Qxc7 f6 Qxd7+ Kf7 Qxb7 Qd3 Qxb8 Qh7 Qxc8 Kg6 Qe6";
+        CheckGame("stalemate.pgn (Sam Loyd)", ChessFen.StartFen, stalemate, stalemate,
+            "5bnr/4p1pq/4Qpkr/7p/7P/4P3/PPPP1PP1/RNB1KBNR b KQ - 2 10", "stalemate@19");
+        string repetition = "Nf3 Nf6 Ng1 Ng8 Nf3 Nf6 Ng1 Ng8";
+        CheckGame("repetition-names.pgn", ChessFen.StartFen, repetition, repetition,
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 8 5", "threefold@8");
+        string longDraw = "e4 g6 d4 c6 Nc3 d5 f3 dxe4 fxe4 Bg7 Nf3 Bg4 Be3 Nd7 Bc4 e5 O-O Ngf6 h3 Bxf3 Qxf3 exd4 Bxd4"
+            + " O-O Rad1 Qe7 e5 Nxe5 Bxe5 Qxe5 Bb3 Rae8 Kh1 Re7 Nb1 Nh5 Rf2 Ng3+ Kg1 Ne2+ Kh1 Nd4 Qd3 Nf5 Nd2 Qxb2 Ne4"
+            + " Qe5 Re1 Kh8 Rfe2 Qc7 Kg1 h6 Nf2 Rxe2 Rxe2 Kg8 Ng4 h5 Nf2 Bd4 c3 Bxf2+ Rxf2 Kg7 g4 hxg4 hxg4 Qg3+ Qxg3"
+            + " Nxg3 c4 Ne4 Re2 Nc5 Bc2 Rd8 Kf2 Rd6 Kf3 Rd4 Re7 Rxc4 Bb3 Nxb3 axb3 Rc3+ Re3 Rxb3 Rxb3 b5 Ra3 b4 Rxa7"
+            + " c5 Rc7 b3 Rxc5 f5 Rb5 fxg4+ Kxg4 Kf6 Rxb3 g5 Rb6+ Ke5 Rb5+ Kd4 Rxg5 Kc4 Rf5 Kd3 Rf4 Kc3 Rf5 Kd3 Rf4"
+            + " Kc3 Kf3 Kd2 Re4 Kc3 Kf4 Kd3 Re3+ Kd2 Re4 Kc2 Re5 Kd2 Re6 Kc2 Rd6 Kc3 Ke4 Kc4 Ke3 Kc5 Rd5+ Kxd5";
+        CheckGame("lichess-long-draw.pgn", ChessFen.StartFen, longDraw, longDraw, "8/8/8/3k4/8/4K3/8/8 w - - 0 72",
+            "insufficient@142");
+        string enPassant = "e4 a6 e5 d5 exd6 b5 a3 b4 c4 bxc3";
+        CheckGame("en-passant.pgn", ChessFen.StartFen, enPassant, enPassant,
+            "rnbqkbnr/2p1pppp/p2P4/8/8/P1p5/1P1P1PPP/RNBQKBNR w KQkq - 0 6", "");
+        string promotions = "gxh1=Q+ Kd2 bxa1=N bxa8=Q+ Kf7 g8=Q+ Kf6 Qgf8+ Ke5";
+        CheckGame("promotions.pgn", "r3k3/1P4P1/8/8/8/8/1p4p1/R3K2R b KQq - 3 40", promotions, promotions,
+            "Q4Q2/8/8/4k3/8/8/3K4/n6q w - - 3 45", "");
+        string disambiguation = "Nb5d4 Kh7 R1a3 Kh8 Nbd2 Kh7";
+        CheckGame("disambiguation.pgn", "7k/8/8/RN3N2/8/1N3N2/8/R5RK w - - 0 1", disambiguation, disambiguation,
+            "8/7k/8/R4N2/3N4/R4N2/3N4/6RK w - - 6 4", "");
+        string chess960 = "e4 e5 Bf3 Bf6 O-O-O O-O-O";
+        CheckGame("chess960.pgn", "qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w GBgb - 0 1", chess960, chess960,
+            "q1krbnrn/pppp1ppp/5b2/4p3/4P3/5B2/PPPP1PPP/Q1KRBNRN w - - 4 4", "");
+
+        // Fivefold: the shuffle twice more (threefold first holding after ply 8 and still holding).
+        string shuffles = repetition + " " + repetition;
+        CheckGame("knight shuffle", ChessFen.StartFen, shuffles, shuffles,
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 16 9", "threefold@8 fivefold@16");
+
+        // The move rules from a FEN's halfmove clock: 100 after four quiet plies from 96 (the rook moves on, so
+        // nothing repeats), 150 from 146 (the fifty-move rule holding from the first ply), and a capture starting the
+        // count again.
+        string rookMoves = "Ra2 Kd5 Ra3 Ke5";
+        CheckGame("fifty-move rule", "8/8/8/4k3/8/8/8/R3K3 w - - 96 70", rookMoves, rookMoves,
+            "8/8/8/4k3/8/R7/8/4K3 w - - 100 72", "fifty@4");
+        CheckGame("seventy-five-move rule", "8/8/8/4k3/8/8/8/R3K3 w - - 146 70", rookMoves, rookMoves,
+            "8/8/8/4k3/8/R7/8/4K3 w - - 150 72", "fifty@1 seventy-five@4");
+        string capture = "Rxa2 Kd5 Ra3 Ke5";
+        CheckGame("fifty-move rule restarted by a capture", "8/8/8/4k3/8/8/p7/R3K3 w - - 97 70", capture, capture,
+            "8/8/8/4k3/8/R7/8/4K3 w - - 3 72", "");
+
+        // A capture leaving K+N v K is dead at once.
+        CheckGame("capture leaving K+N v K", "4k3/8/8/8/8/5r2/8/4K1N1 w - - 30 50", "Nxf3", "Nxf3",
+            "4k3/8/8/8/8/5N2/8/4K3 b - - 0 50", "insufficient@1");
     }
 }
