@@ -30,6 +30,26 @@ The Java's tokenizer uses `find()`, so it silently skips anything it doesn't rec
   - the result token (`1-0`, `0-1`, `1/2-1/2`, `*`), which ends the move text.
 - **Failure, reported as "failed at move N"** (the move where it happened, e.g. `2...` for Black's second move): any other token, an unclosed `{` or `(`, and an illegal or ambiguous move.
 
+Details settled while writing the reader (5.2a):
+
+- The move text ends at the result token, at the end of the text (VRChess writes no result token), or at a tag after the move text has started (the next game's tags). Nothing after that is read, so a second game is ignored.
+- A move is only read as one when whitespace, a comment, a variation, a NAG or the end follows it, so `e4x` or `hello` fail instead of being read in part. Promotions need the `=` (`e8=Q`; `e8Q` fails). The SAN keeps any `+`/`#` (matching ignores them, 5.2b); castling written with zeros comes back as `O-O`/`O-O-O`.
+- A `%` line must start in the first column; ` %` fails.
+- Tag names are case-sensitive, as in the PGN standard: Lichess's `[GameId "h0rrawli"]` is not a `GameID` and is ignored. A tag given twice keeps its last value. A tag value must close on its line with an unescaped `"`, or the import fails.
+- Move numbers aren't checked against the moves.
+- `[%clk]`: hours `H…` (up to 9 digits), minutes and seconds one or two digits, a fraction of any length (digits after the thousandths dropped). The first `[%clk]` in a comment counts; a second clock comment after the same move replaces the first. A clock inside a variation is ignored; one after a variation's `)` belongs to the main-line move before the variation. A value over the `int` milliseconds range (596:31:23.647) counts as no clock.
+- `TimeControl`: `-` is no clock (base 0); `base` or `base+increment` with a base above 0 is read; anything else, or no tag, is unknown (base and increment -1).
+- A leading byte order mark and `\r\n` line ends are accepted.
+
+### Import reader
+
+`ChessPgn` holds the reader as static methods. The two regexes are created by the behaviour that imports (`new Regex(ChessPgn.TokenPattern)`, `new Regex(ChessPgn.ClockPattern)`, kept in its fields, see [Udon constraints](udon-constraints.md)) and passed in.
+
+- `TokenPattern` matches one token at a position (`\G`), with named groups for each kind (`tag`/`name`/`value`, `result`, `number`, `move`, `comment`, `nag`, `open`, `close`, `end`). Adapted from the Java's `TOKEN_PATTERN` and `TAG_PATTERN`: atomic groups `(?>…)` replace the possessive quantifiers, and since the port fails on unknown text rather than skipping it, each accepted token is an alternative and a position none matches is an error.
+- `ReadNext(tokenRegex, clockRegex, pgn, cursor, tags, out san, out clock)` reads up to the next thing the import needs and returns `ReadMove` (a main-line move's SAN), `ReadClock` (a `[%clk]` for the move read last, in milliseconds), `ReadEnd` or `ReadError`. Its state is a small `int[]` cursor (text position, variation depth, main-line moves read, whether the move text has started), set up by `StartReading`, so the import can stop after any move and go on in the next frame (5.3). On `ReadError` the cursor's move count is the failing ply.
+- Tags are stored into a `string[TagCount]` (`TagFen`, `TagVariant`, `TagWhite`, `TagBlack`, `TagResult`, `TagGameId`, `TagTimeControl`; `""` when absent), unescaped. They all come before the first move, so the starting FEN is known before the first `ReadMove`.
+- Helpers: `ClockFromComment`, `UnescapeTagValue`, `ParseTimeControl`, `ModeFromVariant`.
+
 ## Export
 
 - In the Java, `PGN.write` uses no regex itself, but it replays the whole game from the start and calls `move.notation(board)` for every move. That runs `MovePredicates.parse` (regex) on candidate spellings, and also regenerates legal moves and tests for check and checkmate. Export therefore costs about as much as import.

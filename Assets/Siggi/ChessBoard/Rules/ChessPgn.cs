@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using UdonSharp;
 
 namespace SiggiChessBoard {
@@ -182,6 +183,221 @@ namespace SiggiChessBoard {
 
         static string OrUnknown(string value, string unknown) {
             return string.IsNullOrEmpty(value) ? unknown : value;
+        }
+
+        // ---- Import (docs/pgn.md, Import syntax) ----
+
+        // One token of a PGN, after any whitespace, matched at a given position (\G). Adapted from the Java's
+        // TOKEN_PATTERN and TAG_PATTERN: atomic groups in place of possessive quantifiers, and every token the port
+        // accepts is listed, since a position no alternative matches is a failure rather than skipped text. Groups:
+        // - tag: a tag pair, with name and its still escaped value (one line, up to the closing unescaped quote);
+        // - result: a result token, which ends the move text;
+        // - number: a move number, "12." or "12...";
+        // - move: a move's SAN with any +/#, without its annotation (!, ?, !!, ??, !?, ?!), and only when followed
+        //   by whitespace, a comment, a variation, a NAG or the end, so "hello" and "e4x" aren't read as moves;
+        // - comment: the text of a {} comment, which may span lines (an unclosed { matches nothing);
+        // - nag: a NAG ($1) or an annotation standing alone;
+        // - open, close: a variation's ( and );
+        // - end: the end of the text.
+        // A ; comment (to the end of the line) and a line starting with % match with no named group.
+        public const string TokenPattern = @"\G[\s﻿]*(?:"
+            + @"(?<tag>\[[ \t]*(?<name>\w+)[ \t]*""(?<value>(?>[^""\\\r\n]|\\[^\r\n])*)""[ \t]*\])"
+            + @"|(?<result>1-0|0-1|1/2-1/2|\*)"
+            + @"|(?<number>[0-9]+\.(?:\.\.)?)"
+            + @"|(?<move>(?:[PNBRQK]?[a-h]?[1-8]?x?[a-h][1-8](?:=[NBRQ])?|O-O(?:-O)?|0-0(?:-0)?)[+#]?)"
+            + @"(?:[!?]{1,2})?(?=[\s{}();$]|\z)"
+            + @"|\{(?<comment>(?>[^}]*))\}"
+            + @"|;(?>[^\n]*)"
+            + @"|(?m:^%(?>[^\n]*))"
+            + @"|(?<nag>\$[0-9]+|[!?]{1,2})"
+            + @"|(?<open>\()"
+            + @"|(?<close>\))"
+            + @"|(?<end>\z))";
+
+        // A [%clk H:MM:SS] command in a comment, seconds with an optional fraction (docs/clocks.md).
+        public const string ClockPattern =
+            @"\[%clk\s+(?<h>[0-9]{1,9}):(?<m>[0-9]{1,2}):(?<s>[0-9]{1,2})(?:\.(?<f>[0-9]+))?\s*\]";
+
+        // The tags import reads, as indices into the tags array ReadNext fills. All other tags are ignored.
+        public const int TagFen = 0;
+        public const int TagVariant = 1;
+        public const int TagWhite = 2;
+        public const int TagBlack = 3;
+        public const int TagResult = 4;
+        public const int TagGameId = 5;
+        public const int TagTimeControl = 6;
+        public const int TagCount = 7;
+
+        // The reading state ReadNext keeps between calls (an int[CursorLength]), so an import can stop after any move
+        // and go on in a later frame: where in the text it is, how deep in variations, how many main-line moves it
+        // has read, and whether the move text has started (1) or it is still in the tag section (0).
+        public const int CursorPosition = 0;
+        public const int CursorDepth = 1;
+        public const int CursorMoves = 2;
+        public const int CursorInMoveText = 3;
+        public const int CursorLength = 4;
+
+        // What ReadNext found.
+        public const int ReadMove = 0;
+        public const int ReadClock = 1;
+        public const int ReadEnd = 2;
+        public const int ReadError = 3;
+
+        // The name of a tag import reads (TagFen...), as written in a PGN.
+        public static string TagName(int tag) {
+            switch (tag) {
+                case TagFen: return "FEN";
+                case TagVariant: return "Variant";
+                case TagWhite: return "White";
+                case TagBlack: return "Black";
+                case TagResult: return "Result";
+                case TagGameId: return "GameID";
+                case TagTimeControl: return "TimeControl";
+            }
+            return "";
+        }
+
+        // Which tag import reads a tag name is (case-sensitive, as in the PGN standard), -1 for any other.
+        public static int TagIndex(string name) {
+            for (int tag = 0; tag < TagCount; tag++) {
+                if (TagName(tag) == name) return tag;
+            }
+            return -1;
+        }
+
+        // Prepares cursor (int[CursorLength]) and tags (string[TagCount]) for reading a PGN from its start. Tags the
+        // PGN doesn't have stay "".
+        public static void StartReading(int[] cursor, string[] tags) {
+            for (int i = 0; i < CursorLength; i++) cursor[i] = 0;
+            for (int i = 0; i < TagCount; i++) tags[i] = "";
+        }
+
+        // Reads a PGN (a single game) up to the next thing an import needs, using tokenRegex (TokenPattern) and
+        // clockRegex (ClockPattern), and the state in cursor (see StartReading). Returns:
+        // - ReadMove: the next main-line move, its SAN in san, as written (with any +/#) except that castling is
+        //   always O-O/O-O-O and annotations are left out. cursor[CursorMoves] counts it.
+        // - ReadClock: a [%clk] in a comment after a main-line move, in milliseconds in clock; it is the clock of
+        //   the move read last (a later one after the same move replaces it). Clocks before the first move and
+        //   inside variations are ignored, as is a comment's other text.
+        // - ReadEnd: the result token, the end of the text, or (with no result token) a tag after the move text has
+        //   started, i.e. the next game's tags. Whatever follows is not read.
+        // - ReadError: text that is no PGN token, an unclosed { or (, a ) with no (, or the end of the move text
+        //   inside a variation. cursor[CursorPosition] is where the bad token starts (before its whitespace), and
+        //   cursor[CursorMoves] the number of main-line moves read before it, i.e. the failing ply.
+        // Tag pairs (FEN, Variant, White, Black, Result, GameID, TimeControl) are stored in tags as they are read,
+        // unescaped; all come before the first move, so a FEN tag is known before the first ReadMove. A tag read
+        // twice keeps its last value. Move numbers, NAGs, annotations, ; comments and % lines are skipped, and so
+        // are variations with everything in them. Move numbers aren't checked against the moves.
+        public static int ReadNext(Regex tokenRegex, Regex clockRegex, string pgn, int[] cursor, string[] tags,
+            out string san, out int clock) {
+            san = "";
+            clock = -1;
+            while (true) {
+                Match match = tokenRegex.Match(pgn, cursor[CursorPosition]);
+                if (!match.Success) return ReadError;
+                if (match.Groups["end"].Success) {
+                    return cursor[CursorDepth] > 0 ? ReadError : ReadEnd;
+                }
+                if (match.Groups["tag"].Success) {
+                    if (cursor[CursorInMoveText] != 0) {
+                        return cursor[CursorDepth] > 0 ? ReadError : ReadEnd;
+                    }
+                    int tag = TagIndex(match.Groups["name"].Value);
+                    if (tag >= 0) tags[tag] = UnescapeTagValue(match.Groups["value"].Value);
+                    cursor[CursorPosition] = match.Index + match.Length;
+                    continue;
+                }
+                if (match.Groups["comment"].Success) {
+                    cursor[CursorPosition] = match.Index + match.Length;
+                    if (cursor[CursorDepth] == 0 && cursor[CursorMoves] > 0) {
+                        clock = ClockFromComment(clockRegex, match.Groups["comment"].Value);
+                        if (clock >= 0) return ReadClock;
+                    }
+                    continue;
+                }
+                if (match.Groups["result"].Success) {
+                    if (cursor[CursorDepth] > 0) return ReadError;
+                    cursor[CursorPosition] = match.Index + match.Length;
+                    cursor[CursorInMoveText] = 1;
+                    return ReadEnd;
+                }
+                if (match.Groups["close"].Success) {
+                    if (cursor[CursorDepth] == 0) return ReadError;
+                    cursor[CursorDepth]--;
+                } else if (match.Groups["open"].Success) {
+                    cursor[CursorDepth]++;
+                }
+                cursor[CursorPosition] = match.Index + match.Length;
+                if (match.Groups["move"].Success) {
+                    cursor[CursorInMoveText] = 1;
+                    if (cursor[CursorDepth] == 0) {
+                        cursor[CursorMoves]++;
+                        san = match.Groups["move"].Value.Replace("0", "O");
+                        return ReadMove;
+                    }
+                } else if (match.Groups["number"].Success || match.Groups["nag"].Success
+                    || match.Groups["open"].Success || match.Groups["close"].Success) {
+                    cursor[CursorInMoveText] = 1;
+                }
+            }
+        }
+
+        // The first [%clk] in a comment's text, using clockRegex (ClockPattern), in milliseconds. Digits after the
+        // thousandths are dropped. -1 when there is none, or it doesn't fit in an int (over 596:31:23.647).
+        public static int ClockFromComment(Regex clockRegex, string comment) {
+            Match match = clockRegex.Match(comment);
+            if (!match.Success) return -1;
+            long seconds = (long)ChessFen.ParseCount(match.Groups["h"].Value) * 3600
+                + ChessFen.ParseCount(match.Groups["m"].Value) * 60 + ChessFen.ParseCount(match.Groups["s"].Value);
+            string fraction = match.Groups["f"].Value;
+            int milliseconds = 0;
+            for (int i = 0; i < 3; i++) {
+                milliseconds *= 10;
+                if (i < fraction.Length) milliseconds += fraction[i] - '0';
+            }
+            long total = seconds * 1000 + milliseconds;
+            if (total > int.MaxValue) return -1;
+            return (int)total;
+        }
+
+        // Undoes EscapeTagValue's escapes: a backslash and the character after it become that character.
+        public static string UnescapeTagValue(string value) {
+            if (value.IndexOf('\\') < 0) return value;
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < value.Length; i++) {
+                char c = value[i];
+                if (c == '\\' && i + 1 < value.Length) {
+                    i++;
+                    c = value[i];
+                }
+                sb.Append(c);
+            }
+            return sb.ToString();
+        }
+
+        // Reads a TimeControl tag's value (docs/clocks.md): "-" is no clock (0, 0), "base" or "base+increment" in
+        // seconds with a base above 0. Anything else (including an empty value) is unknown: returns false with
+        // both -1.
+        public static bool ParseTimeControl(string text, out int baseSeconds, out int incrementSeconds) {
+            baseSeconds = -1;
+            incrementSeconds = -1;
+            if (text == "-") {
+                baseSeconds = 0;
+                incrementSeconds = 0;
+                return true;
+            }
+            int plus = text.IndexOf('+');
+            int parsedBase = ChessFen.ParseCount(plus < 0 ? text : text.Substring(0, plus));
+            int parsedIncrement = plus < 0 ? 0 : ChessFen.ParseCount(text.Substring(plus + 1));
+            if (parsedBase <= 0 || parsedIncrement < 0) return false;
+            baseSeconds = parsedBase;
+            incrementSeconds = parsedIncrement;
+            return true;
+        }
+
+        // The mode a Variant tag gives (docs/modes.md): ChessGame.ModeChess960 for "Chess960", otherwise Standard.
+        public static int ModeFromVariant(string variant) {
+            return variant == "Chess960" ? ChessGame.ModeChess960 : ChessGame.ModeStandard;
         }
     }
 }

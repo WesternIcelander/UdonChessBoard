@@ -254,7 +254,7 @@ namespace SiggiChessBoard {
         }
 
         // A non-negative decimal number of at most 9 digits; -1 for anything else.
-        static int ParseCount(string text) {
+        public static int ParseCount(string text) {
             if (text.Length == 0 || text.Length > 9) return -1;
             int value = 0;
             for (int i = 0; i < text.Length; i++) {

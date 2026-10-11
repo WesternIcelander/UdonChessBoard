@@ -15,7 +15,7 @@ Clock history is in milliseconds per ply, `-1` = no `[%clk]` for that move. File
 
 | File | Covers | Plies | Final position |
 |---|---|---|---|
-| `Siggi-vs-Nuka.pgn.txt` | A real game (copied byte for byte from `JavaChessBoard/`): VRChess quirks `0-0` and no `+`/`#`, lookalike names (`Siggі` with Cyrillic `і`, `Nukaǃ` with U+01C3), `TimeControl "600"`. Clocks with tenths on every ply: first two `600000`, `597600`; last `480500` | 54 | `6k1/1b4pp/p3p3/2p1P1b1/NPPn4/7P/P5q1/RN2Kr2 w - - 0 28`, checkmate |
+| `Siggi-vs-Nuka.pgn.txt` | A real game (copied byte for byte from `JavaChessBoard/`): VRChess quirks `0-0`, no `+`/`#` and no result token at the end of the move text, lookalike names (`Siggі` with Cyrillic `і`, `Nukaǃ` with U+01C3), `TimeControl "600"`. Clocks with tenths on every ply: first two `600000`, `597600`; last `480500` | 54 | `6k1/1b4pp/p3p3/2p1P1b1/NPPn4/7P/P5q1/RN2Kr2 w - - 0 28`, checkmate |
 | `lichess-long-draw.pgn.txt` | A long real game (Lichess `h0rrawli`, CC0): Lichess formatting (`1. e4`, `1... g6`, `{ [%clk …] }`), many extra tags, `TimeControl "60+0"`, ends in K v K. Clocks without tenths on every ply: first two `60000`, `60000`; last `8000` | 142 | `8/8/8/3k4/8/4K3/8/8 w - - 0 72`, insufficient material |
 | `en-passant.pgn.txt` | En passant by both colours | 10 | `rnbqkbnr/2p1pppp/p2P4/8/8/P1p5/1P1P1PPP/RNBQKBNR w KQkq - 0 6` |
 | `promotions.pgn.txt` | Starting `FEN` with Black to move and non-zero counters (move text starts `40...`); promotion with capture and check, underpromotion to a knight, promotion with check; disambiguation by file (`Qgf8+`) | 9 | `Q4Q2/8/8/4k3/8/8/3K4/n6q w - - 3 45` |
