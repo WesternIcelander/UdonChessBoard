@@ -4,8 +4,14 @@ using UnityEngine;
 
 // Step 2 and 3 test behaviour (PLAN.md sections 2 and 3): checks the static rules and FEN with no world objects.
 // Logs "[RulesTest] PASS: <check>" or "[RulesTest] FAIL: <check>: <details>" per check, then a summary line.
+// The deep perft runs (3.3a) are spread across frames in Update, so the summary line comes after them.
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
 public class RulesTest : UdonSharpBehaviour {
+    [Tooltip("Run the deep perft checks (3.3a), which take a minute or two in the Editor.")]
+    public bool deepPerft = true;
+    [Tooltip("Deep perft work done per frame, in milliseconds. Keeps each Update well under Udon's time limit.")]
+    public float perftMsPerFrame = 20f;
+
     int passed;
     int failed;
 
@@ -22,6 +28,11 @@ public class RulesTest : UdonSharpBehaviour {
         TestPositions();
         TestFen();
         TestFenJava();
+        if (deepPerft) StartDeepPerft();
+        else LogSummary();
+    }
+
+    void LogSummary() {
         Debug.Log("[RulesTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
@@ -1894,5 +1905,195 @@ public class RulesTest : UdonSharpBehaviour {
             25, 1992653046);
         // Rooks on a and h are written KQkq even when given as letters.
         CheckFenJava("rk5r/8/8/8/8/8/8/RK5R b HAha - 0 1", "rk5r/8/8/8/8/8/8/RK5R b KQkq - 0 1", 24, -1385981945);
+    }
+
+    // ---- 3.3a ----
+
+    // Deep perft from published positions, loaded from their FENs. Too slow for one frame, so it runs as a state
+    // machine in Update with an explicit stack instead of recursion: perftMoves[p] holds the legal moves at ply p and
+    // perftNext[p] the next one to try. One walk to the deepest depth gives every shallower count too, since the moves
+    // generated at ply p, summed over the tree, are perft(p + 1).
+    const int PerftMaxDepth = 5;
+    string[] perftNames;
+    string[] perftFens;
+    int[][] perftExpected;
+    int perftPositionCount;
+    int perftPosition = -1; // index of the position being searched, -1 when not running
+    byte[] perftBoard;
+    int[] perftState;
+    byte[] perftBoardStart;
+    int[] perftStateStart;
+    int[][] perftMoves;
+    int[] perftCount;
+    int[] perftNext;
+    int[] perftTotals;
+    int perftPly;
+    int perftDepth;
+    int perftLists;
+    int perftFrames;
+    string perftErrors;
+    System.Diagnostics.Stopwatch perftFrameWatch;
+    System.Diagnostics.Stopwatch perftWorkWatch;
+
+    void AddPerft(string name, string fen, int[] expected) {
+        perftNames[perftPositionCount] = name;
+        perftFens[perftPositionCount] = fen;
+        perftExpected[perftPositionCount] = expected;
+        perftPositionCount++;
+    }
+
+    // Published counts (chessprogramming.org Perft Results and Chess960 Perft Results). The Java on port-reference
+    // gives the same counts for every position here, to these depths.
+    void StartDeepPerft() {
+        perftNames = new string[32];
+        perftFens = new string[32];
+        perftExpected = new int[32][];
+        perftPositionCount = 0;
+        AddPerft("standard start", ChessFen.StartFen, new int[] { 20, 400, 8902, 197281 });
+        AddPerft("Kiwipete", "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+            new int[] { 48, 2039, 97862 });
+        AddPerft("perft position 3", "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+            new int[] { 14, 191, 2812, 43238, 674624 });
+        AddPerft("perft position 4", "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
+            new int[] { 6, 264, 9467, 422333 });
+        AddPerft("perft position 4 mirrored", "r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1",
+            new int[] { 6, 264, 9467, 422333 });
+        AddPerft("perft position 5", "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",
+            new int[] { 44, 1486, 62379 });
+        AddPerft("perft position 6", "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
+            new int[] { 46, 2079, 89890 });
+        // The first ten positions of the published Chess960 list. In 3 (GE) and 7 (ge) O-O swaps the king and rook.
+        AddPerft("chess960 1", "bqnb1rkr/pp3ppp/3ppn2/2p5/5P2/P2P4/NPP1P1PP/BQ1BNRKR w HFhf - 2 9",
+            new int[] { 21, 528, 12189, 326672 });
+        AddPerft("chess960 2", "2nnrbkr/p1qppppp/8/1ppb4/6PP/3PP3/PPP2P2/BQNNRBKR w HEhe - 1 9",
+            new int[] { 21, 807, 18002 });
+        AddPerft("chess960 3", "b1q1rrkb/pppppppp/3nn3/8/P7/1PPP4/4PPPP/BQNNRKRB w GE - 1 9",
+            new int[] { 20, 479, 10471 });
+        AddPerft("chess960 4", "qbbnnrkr/2pp2pp/p7/1p2pp2/8/P3PP2/1PPP1KPP/QBBNNR1R w hf - 0 9",
+            new int[] { 22, 593, 13440 });
+        AddPerft("chess960 5", "1nbbnrkr/p1p1ppp1/3p4/1p3P1p/3Pq2P/8/PPP1P1P1/QNBBNRKR w HFhf - 0 9",
+            new int[] { 28, 1120, 31058 });
+        AddPerft("chess960 6", "qnbnr1kr/ppp1b1pp/4p3/3p1p2/8/2NPP3/PPP1BPPP/QNB1R1KR w HEhe - 1 9",
+            new int[] { 29, 899, 26578 });
+        AddPerft("chess960 7", "q1bnrkr1/ppppp2p/2n2p2/4b1p1/2NP4/8/PPP1PPPP/QNB1RRKB w ge - 1 9",
+            new int[] { 30, 860, 24566 });
+        AddPerft("chess960 8", "qbn1brkr/ppp1p1p1/2n4p/3p1p2/P7/6PP/QPPPPP2/1BNNBRKR w HFhf - 0 9",
+            new int[] { 25, 635, 17054 });
+        AddPerft("chess960 9", "qnnbbrkr/1p2ppp1/2pp3p/p7/1P5P/2NP4/P1P1PPP1/Q1NBBRKR w HFhf - 0 9",
+            new int[] { 24, 572, 15243 });
+        AddPerft("chess960 10", "qn1rbbkr/ppp2p1p/1n1pp1p1/8/3P4/P6P/1PP1PPPK/QNNRBB1R w hd - 2 9",
+            new int[] { 28, 811, 23175 });
+
+        perftBoard = new byte[64];
+        perftState = new int[ChessPosition.StateLength];
+        perftMoves = new int[PerftMaxDepth][];
+        for (int p = 0; p < PerftMaxDepth; p++) perftMoves[p] = new int[ChessMoves.MaxMoves];
+        perftCount = new int[PerftMaxDepth];
+        perftNext = new int[PerftMaxDepth];
+        perftTotals = new int[PerftMaxDepth];
+        perftFrameWatch = new System.Diagnostics.Stopwatch();
+        perftWorkWatch = new System.Diagnostics.Stopwatch();
+        Debug.Log("[RulesTest] deep perft: " + perftPositionCount + " positions, " + perftMsPerFrame
+            + " ms per frame...");
+        StartPerftPosition(0);
+    }
+
+    // Loads position index (failing and skipping any whose FEN is rejected) and generates its root moves. Logs the
+    // summary once every position is done.
+    void StartPerftPosition(int index) {
+        while (index < perftPositionCount) {
+            int h;
+            int f;
+            if (ChessFen.ParseFen(perftFens[index], perftBoard, perftState, out h, out f)) break;
+            Check(false, "deep perft: " + perftNames[index], "FEN rejected");
+            index++;
+        }
+        if (index >= perftPositionCount) {
+            perftPosition = -1;
+            LogSummary();
+            return;
+        }
+        perftPosition = index;
+        perftDepth = perftExpected[index].Length;
+        perftBoardStart = CopyBoard(perftBoard);
+        perftStateStart = CopyState(perftState);
+        for (int p = 0; p < PerftMaxDepth; p++) perftTotals[p] = 0;
+        perftLists = 0;
+        perftFrames = 0;
+        perftErrors = "";
+        perftWorkWatch.Reset();
+        perftWorkWatch.Start();
+        perftPly = 0;
+        PerftEnter();
+        perftWorkWatch.Stop();
+    }
+
+    // Generates the legal moves of the position at perftPly.
+    void PerftEnter() {
+        int count = ChessMoves.GenerateLegalMoves(perftBoard, perftState, perftMoves[perftPly], true);
+        perftCount[perftPly] = count;
+        perftNext[perftPly] = 0;
+        perftTotals[perftPly] += count;
+        perftLists++;
+    }
+
+    // One step of the walk: into the next move at this ply, or back out once the ply is done (or is the deepest,
+    // whose moves are only counted). Returns false when the root is done.
+    bool PerftStep() {
+        int ply = perftPly;
+        if (ply < perftDepth - 1 && perftNext[ply] < perftCount[ply]) {
+            ChessPosition.MakeMove(perftBoard, perftState, perftMoves[ply][perftNext[ply]]);
+            perftPly = ply + 1;
+            PerftEnter();
+            return true;
+        }
+        if (ply == 0) return false;
+        ply--;
+        int move = perftMoves[ply][perftNext[ply]];
+        ChessPosition.UnmakeMove(perftBoard, perftState, move);
+        perftNext[ply]++;
+        perftPly = ply;
+        if (ply == 0) {
+            // Back at the root: the subtree's makes and unmakes must have restored the position exactly.
+            string diff = BoardDiff(perftBoard, perftBoardStart) + StateDiff(perftState, perftStateStart);
+            if (diff != "") {
+                perftErrors += " " + MoveText(move) + " make/unmake:" + diff;
+                perftBoard = CopyBoard(perftBoardStart);
+                perftState = CopyState(perftStateStart);
+            }
+        }
+        return true;
+    }
+
+    void FinishPerftPosition() {
+        int[] expected = perftExpected[perftPosition];
+        string counts = "";
+        string errors = perftErrors;
+        for (int d = 1; d <= perftDepth; d++) {
+            int nodes = perftTotals[d - 1];
+            counts += " " + nodes;
+            if (nodes != expected[d - 1]) errors += " depth " + d + ": " + nodes + " (expected " + expected[d - 1] + ")";
+        }
+        double ms = perftWorkWatch.Elapsed.TotalMilliseconds;
+        Check(errors == "", "deep perft: " + perftNames[perftPosition] + " (" + counts.Trim() + " in "
+            + ms.ToString("F0") + " ms over " + perftFrames + " frames, " + perftLists + " legal lists, "
+            + (ms / perftLists).ToString("F3") + " ms each)", errors);
+        StartPerftPosition(perftPosition + 1);
+    }
+
+    void Update() {
+        if (perftPosition < 0) return;
+        perftFrames++;
+        perftFrameWatch.Reset();
+        perftFrameWatch.Start();
+        perftWorkWatch.Start();
+        bool running = true;
+        while (running && perftFrameWatch.Elapsed.TotalMilliseconds < perftMsPerFrame) {
+            // Batches of 8 keep the stopwatch reads down.
+            for (int i = 0; i < 8 && running; i++) running = PerftStep();
+        }
+        perftWorkWatch.Stop();
+        perftFrameWatch.Stop();
+        if (!running) FinishPerftPosition();
     }
 }

@@ -116,8 +116,23 @@ The rules live in `Assets/Siggi/ChessBoard/Rules/` (namespace `SiggiChessBoard`)
 - [x] **3.2** **Test:** round-trip a set of FENs; compare against the Java's output for the same positions.
   - Verify: every FEN in the set round-trips, and matches the Java's output.
   - `TestFenJava` in `RulesTest.cs`: 29 FENs (perft positions 1–6 and position 4 mirrored, en passant including one the pawn can't take, promotion, high counters, the PGN test set's final positions including mate and stalemate, Chess960 in Shredder letters). Each must write back as the Java's `FEN.serialize(FEN.deserialize(fen))`, which is the FEN itself for all but `HAha` with the rooks on a and h (written `KQkq` by both). It also compares the FEN after every legal move with the Java's, as a move count and the int sum of the FENs' Java `String.hashCode` (order-independent, so no move matching is needed); the test works out the halfmove clock and move number after each move as the board will. The expected values come from a throwaway Java class run against `port-reference`'s classes (not kept).
-- [ ] **3.3a** **Test:** a test behaviour running perft from published positions (standard start, Kiwipete, the other standard perft positions, some Chess960 positions), loaded from their FENs, and checking the counts. Record the timings.
+- [x] **3.3a** **Test:** a test behaviour running perft from published positions (standard start, Kiwipete, the other standard perft positions, some Chess960 positions), loaded from their FENs, and checking the counts. Record the timings.
   - Verify: every count matches the published values, to the depth the Udon speed allows; record the depths and timings next to this item.
+  - Done (2026-10-11): the deep perft section of `RulesTest.cs` (`StartDeepPerft`), run after the other checks and spread across frames in `Update` (`perftMsPerFrame`, default 20 ms; `deepPerft` off skips it). It walks the tree with an explicit stack instead of recursion, and one walk gives every shallower depth's count too. After each root move the position must be restored exactly. The counts are the published ones (chessprogramming.org Perft Results and Chess960 Perft Results), and the Java on `port-reference` gives the same. All 17 pass; Editor (ClientSim) work time, about 103 s in all:
+
+    | Position | Depth | Final count | Legal lists | Time | ms per list |
+    |---|---|---|---|---|---|
+    | Standard start | 4 | 197,281 | 9,323 | 8.1 s | 0.87 |
+    | Kiwipete | 3 | 97,862 | 2,088 | 4.0 s | 1.90 |
+    | Position 3 | 5 | 674,624 | 46,256 | 29.4 s | 0.64 |
+    | Position 4 | 4 | 422,333 | 9,738 | 18.4 s | 1.89 |
+    | Position 4 mirrored | 4 | 422,333 | 9,738 | 18.2 s | 1.87 |
+    | Position 5 | 3 | 62,379 | 1,531 | 2.7 s | 1.73 |
+    | Position 6 | 3 | 89,890 | 2,126 | 3.1 s | 1.45 |
+    | Chess960 1 | 4 | 326,672 | 12,739 | 12.5 s | 0.98 |
+    | Chess960 2–10 (the published list's next nine) | 3 | 10,471–31,058 | 500–1,149 | 0.4–1.3 s each | 0.88–1.11 |
+
+    A legal list costs about 0.9–1.9 ms in the Editor, so about 1.3–2.9 ms in the client at 1.5× slower. That's roughly 1.8× the 1.5 stand-in for the same positions (start 0.87 vs 0.49 ms, Kiwipete 1.90 vs 1.29 ms). The PGN import and notation estimates in 1.5 should be read with that in mind: about 3–7 plies per 10 ms budget rather than 5–10.
 - [ ] **3.3b** Published counts only cover normal rules, so also run some positions with `prohibitSelfCheck = false` and compare with the Java's counts for the same setting.
   - Verify: the counts match the Java's.
 
