@@ -20,6 +20,8 @@ namespace SiggiChessBoard {
         // What an input method returns (docs/architecture.md, Physical → logical).
         public const int InputAccepted = 0;
         public const int InputRejected = 1;
+        // A drop matches a promotion: nothing is played until the view asks which piece and calls PromotionChosen.
+        public const int InputPromotionNeeded = 2;
 
         // Room for this many plies in the history arrays at first; they grow as needed.
         public const int InitialHistoryCapacity = 128;
@@ -489,6 +491,85 @@ namespace SiggiChessBoard {
             turnStart = now;
             moveCount++;
             return InputAccepted;
+        }
+
+        // ---- Piece input (docs/player-input.md) ----
+        // The view forwards pickups and drops as squares; the board decides. A drop is matched against the legal
+        // moves by from and to square. One match is played; the four promotions of one pawn move answer
+        // InputPromotionNeeded, and the view calls PromotionChosen with the same squares and the chosen piece. Nothing
+        // is remembered in between, so there's nothing to sync or clear. Castling by drop is step 7.4b, free moves in
+        // replay 7.8a, activity timestamps 8.5. The *As methods take any name, for tests and the debug view.
+
+        public int PiecePickedUp(int square) {
+            return PiecePickedUpAs(LocalName(), square);
+        }
+
+        // Whether name may pick up the piece on square: a game is in progress and not in replay, the side to move
+        // has time left, name holds that side's seat and the piece is that side's. Rejected, the view puts it back.
+        public int PiecePickedUpAs(string name, int square) {
+            if (!MayMove(name)) return InputRejected;
+            if (square < 0 || square >= 64) return InputRejected;
+            int piece = board[square];
+            if (piece == ChessRules.Empty
+                || ChessRules.PieceColorOf(piece) != state[ChessPosition.StateSideToMove]) {
+                return InputRejected;
+            }
+            return InputAccepted;
+        }
+
+        public int PieceDropped(int from, int to) {
+            return PieceDroppedAs(LocalName(), from, to);
+        }
+
+        // name dropped the piece from from on to. Plays the legal move it matches, answers InputPromotionNeeded for a
+        // promotion (nothing played), and rejects anything else, including a drop back on its own square.
+        public int PieceDroppedAs(string name, int from, int to) {
+            return DropAs(name, from, to, ChessRules.NoPieceType);
+        }
+
+        public int PromotionChosen(int from, int to, int pieceType) {
+            return PromotionChosenAs(LocalName(), from, to, pieceType);
+        }
+
+        // The follow-up to InputPromotionNeeded: plays the promotion from-to to pieceType (ChessRules.Queen, Rook,
+        // Bishop or Knight). Rejected for any other type and for a move that isn't a promotion.
+        public int PromotionChosenAs(string name, int from, int to, int pieceType) {
+            if (pieceType != ChessRules.Queen && pieceType != ChessRules.Rook && pieceType != ChessRules.Bishop
+                && pieceType != ChessRules.Knight) {
+                return InputRejected;
+            }
+            return DropAs(name, from, to, pieceType);
+        }
+
+        // Whether name may move now: a game in progress, not in replay, the side to move's flag not fallen, and name
+        // seated as the side to move.
+        bool MayMove(string name) {
+            if (lifecycle != LifecycleInGame || replayMode) return false;
+            if (FlaggedColor() != ChessRules.NoColor) return false;
+            return IsSeated(state[ChessPosition.StateSideToMove], name);
+        }
+
+        // Matches from-to (and the promotion, NoPieceType for a plain drop) against the legal moves, leaving castles
+        // out, and plays a single match. A plain drop matching promotions answers InputPromotionNeeded.
+        int DropAs(string name, int from, int to, int promotion) {
+            if (!MayMove(name)) return InputRejected;
+            if (from < 0 || from >= 64 || to < 0 || to >= 64 || from == to) return InputRejected;
+            int legalCount = ChessMoves.GenerateLegalMoves(board, state, legalMoves, true);
+            int found = 0;
+            int matches = 0;
+            for (int i = 0; i < legalCount; i++) {
+                int move = legalMoves[i];
+                if (((move >> ChessRules.MoveFromShift) & ChessRules.MoveSquareMask) != from) continue;
+                if (((move >> ChessRules.MoveToShift) & ChessRules.MoveSquareMask) != to) continue;
+                if (((move >> ChessRules.MoveCastleShift) & 1) != 0) continue;
+                int movePromotion = (move >> ChessRules.MovePromotionShift) & ChessRules.MoveTypeMask;
+                if (promotion != ChessRules.NoPieceType && movePromotion != promotion) continue;
+                found = move;
+                matches++;
+            }
+            if (matches == 0) return InputRejected;
+            if (matches > 1) return InputPromotionNeeded;
+            return PlayMove(found);
         }
 
         // Doubles the room in the history arrays, keeping the moves; new notation entries are "" (a synced string[]

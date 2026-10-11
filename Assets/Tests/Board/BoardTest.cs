@@ -52,6 +52,8 @@ public class BoardTest : UdonSharpBehaviour {
             TestChess960Random();
             TestChess960Start();
             TestClocks();
+            TestPieceInput();
+            TestPromotion();
             TestSnapshot();
             if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
             board.ClearState();
@@ -1036,6 +1038,198 @@ public class BoardTest : UdonSharpBehaviour {
         Check(restEmpty, "history: entries past the game are \"\" and -1", "an entry is null or set");
         CheckInt(board.halfmoveClock, plies, "history: halfmove clock");
         CheckInt(board.moveNumber, 1 + plies / 2, "history: move number");
+
+        board.ClearState();
+    }
+
+    // ---- 7.4a piece input ----
+
+    string Fen() {
+        return ChessFen.WriteFen(board.board, board.state, board.halfmoveClock, board.moveNumber);
+    }
+
+    // Puts a position on the board of a game in progress (as if reached by play; the history stays empty).
+    void SetPosition(string fen) {
+        int clock;
+        int number;
+        ChessFen.ParseFen(fen, board.board, board.state, out clock, out number);
+        board.halfmoveClock = clock;
+        board.moveNumber = number;
+    }
+
+    void TestPieceInput() {
+        NothingForced();
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+
+        // Pickups: the side to move's own pieces, by that side's player.
+        CheckInt(board.PiecePickedUpAs("Ana", ChessRules.E2), ChessBoard.InputAccepted, "pickup: white pawn by white");
+        CheckInt(board.PiecePickedUpAs("Ana", ChessRules.G1), ChessBoard.InputAccepted,
+            "pickup: white knight by white");
+        CheckInt(board.PiecePickedUpAs("Ana", ChessRules.E7), ChessBoard.InputRejected, "pickup: black pawn by white");
+        CheckInt(board.PiecePickedUpAs("Bob", ChessRules.E7), ChessBoard.InputRejected,
+            "pickup: black pawn while white is to move");
+        CheckInt(board.PiecePickedUpAs("Bob", ChessRules.E2), ChessBoard.InputRejected, "pickup: white pawn by black");
+        CheckInt(board.PiecePickedUpAs("Ana", ChessRules.E4), ChessBoard.InputRejected, "pickup: empty square");
+        CheckInt(board.PiecePickedUpAs("Cleo", ChessRules.E2), ChessBoard.InputRejected, "pickup: non-player");
+        CheckInt(board.PiecePickedUpAs("", ChessRules.E2), ChessBoard.InputRejected, "pickup: empty name");
+        CheckInt(board.PiecePickedUpAs("Ana", -1), ChessBoard.InputRejected, "pickup: square -1");
+        CheckInt(board.PiecePickedUpAs("Ana", 64), ChessBoard.InputRejected, "pickup: square 64");
+
+        // Drops that aren't moves, then legal ones.
+        string start = Fen();
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E5), ChessBoard.InputRejected,
+            "drop: e2-e5 not legal");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E2), ChessBoard.InputRejected,
+            "drop: back on its own square");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E7, ChessRules.E5), ChessBoard.InputRejected,
+            "drop: white moving a black pawn");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.E7, ChessRules.E5), ChessBoard.InputRejected,
+            "drop: black out of turn");
+        CheckInt(board.PieceDroppedAs("Cleo", ChessRules.E2, ChessRules.E4), ChessBoard.InputRejected,
+            "drop: non-player");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E4, ChessRules.E5), ChessBoard.InputRejected,
+            "drop: from an empty square");
+        CheckInt(board.PieceDroppedAs("Ana", -1, ChessRules.E4), ChessBoard.InputRejected, "drop: from square -1");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E2, 64), ChessBoard.InputRejected, "drop: to square 64");
+        CheckInt(board.PromotionChosenAs("Ana", ChessRules.E2, ChessRules.E4, ChessRules.Queen),
+            ChessBoard.InputRejected, "drop: promotion choice on a move that isn't a promotion");
+        CheckInt(board.moveCount, 0, "drop: rejected drops play nothing");
+        CheckText(Fen(), start, "drop: rejected drops leave the position");
+
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4), ChessBoard.InputAccepted, "drop: 1. e4");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.D2, ChessRules.D4), ChessBoard.InputRejected,
+            "drop: white again out of turn");
+        CheckInt(board.PiecePickedUpAs("Bob", ChessRules.E7), ChessBoard.InputAccepted, "pickup: now black's turn");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.E7, ChessRules.E5), ChessBoard.InputAccepted, "drop: 1... e5");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.G1, ChessRules.F3), ChessBoard.InputAccepted, "drop: 2. Nf3");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.B8, ChessRules.C6), ChessBoard.InputAccepted, "drop: 2... Nc6");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.F3, ChessRules.E5), ChessBoard.InputAccepted, "drop: 3. Nxe5");
+        CheckInt(board.moveCount, 5, "drop: five moves recorded");
+        CheckText(board.notation[4], "Nxe5", "drop: SAN of the capture");
+        CheckText(Fen(), "r1bqkbnr/pppp1ppp/2n5/4N3/4P3/8/PPPP1PPP/RNBQKB1R b KQkq - 0 3", "drop: position");
+
+        // Not while in replay, or out of game.
+        board.replayMode = true;
+        CheckInt(board.PiecePickedUpAs("Bob", ChessRules.C6), ChessBoard.InputRejected, "pickup: not in replay");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.C6, ChessRules.E5), ChessBoard.InputRejected,
+            "drop: not in replay");
+        board.replayMode = false;
+        board.lifecycle = ChessBoard.LifecycleEnded;
+        CheckInt(board.PiecePickedUpAs("Bob", ChessRules.C6), ChessBoard.InputRejected, "pickup: not once ended");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.C6, ChessRules.E5), ChessBoard.InputRejected,
+            "drop: not once ended");
+        LobbyWithTwoPlayers();
+        CheckInt(board.PiecePickedUpAs("Ana", ChessRules.E2), ChessBoard.InputRejected, "pickup: not in the lobby");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4), ChessBoard.InputRejected,
+            "drop: not in the lobby");
+        board.lifecycle = ChessBoard.LifecycleLoaded;
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4), ChessBoard.InputRejected,
+            "drop: not on a loaded board");
+
+        // Not once the side to move's flag has fallen.
+        StartedGame(60, 0, 0);
+        board.turnStart = board.ServerTime() - 61;
+        CheckInt(board.PiecePickedUpAs("Ana", ChessRules.E2), ChessBoard.InputRejected, "pickup: not after the flag");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4), ChessBoard.InputRejected,
+            "drop: not after the flag");
+        board.turnStart = board.ServerTime();
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4), ChessBoard.InputAccepted,
+            "drop: with time left");
+
+        // The local player in both seats plays both sides.
+        board.ClearState();
+        board.JoinWhite();
+        board.JoinBlack();
+        board.StartGame();
+        CheckInt(board.PiecePickedUp(ChessRules.D2), ChessBoard.InputAccepted, "local: pickup as white");
+        CheckInt(board.PieceDropped(ChessRules.D2, ChessRules.D4), ChessBoard.InputAccepted, "local: 1. d4");
+        CheckInt(board.PiecePickedUp(ChessRules.D7), ChessBoard.InputAccepted, "local: pickup as black");
+        CheckInt(board.PieceDropped(ChessRules.D7, ChessRules.D5), ChessBoard.InputAccepted, "local: 1... d5");
+        CheckInt(board.PieceDropped(ChessRules.D4, ChessRules.D5), ChessBoard.InputRejected, "local: 2. d4-d5 blocked");
+        CheckInt(board.moveCount, 2, "local: two moves");
+
+        board.ClearState();
+    }
+
+    // White pawn b7 can promote on b8 or by capturing the rook on a8 or c8; black pawn g2 on g1 or by capturing h1.
+    const string PromotionFen = "r1r1k3/1P6/8/8/8/8/6p1/4K2R w - - 0 1";
+
+    void TestPromotion() {
+        NothingForced();
+        int[] types = new int[] { ChessRules.Queen, ChessRules.Rook, ChessRules.Bishop, ChessRules.Knight };
+        for (int t = 0; t < types.Length; t++) {
+            int type = types[t];
+            string letter = ChessRules.PieceTypeLetter(type);
+            StartedGame(ChessArbiter.NoClock, 0, 0);
+            SetPosition(PromotionFen);
+            CheckInt(board.PieceDroppedAs("Ana", ChessRules.B7, ChessRules.B8), ChessBoard.InputPromotionNeeded,
+                "promotion " + letter + ": b8 needs a choice");
+            CheckInt(board.moveCount, 0, "promotion " + letter + ": nothing played yet");
+            CheckText(Fen(), PromotionFen, "promotion " + letter + ": position unchanged");
+            CheckInt(board.PromotionChosenAs("Ana", ChessRules.B7, ChessRules.B8, type), ChessBoard.InputAccepted,
+                "promotion " + letter + ": chosen");
+            CheckInt(board.board[ChessRules.B8], ChessRules.PieceOf(ChessRules.White, type),
+                "promotion " + letter + ": piece on b8");
+            CheckInt(board.board[ChessRules.B7], ChessRules.Empty, "promotion " + letter + ": b7 empty");
+            CheckInt(board.moveCount, 1, "promotion " + letter + ": one move");
+            CheckInt(ChessRules.MovePromotion(board.moveHistory[0]), type, "promotion " + letter + ": move's type");
+            CheckText(board.notation[0], "b8=" + letter, "promotion " + letter + ": SAN");
+        }
+
+        // Promotion by capture, and Black's promotions.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        SetPosition(PromotionFen);
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.B7, ChessRules.A8), ChessBoard.InputPromotionNeeded,
+            "promotion: bxa8 needs a choice");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.B7, ChessRules.C8), ChessBoard.InputPromotionNeeded,
+            "promotion: bxc8 needs a choice");
+
+        // Choices that are refused.
+        CheckInt(board.PromotionChosenAs("Ana", ChessRules.B7, ChessRules.B8, ChessRules.Pawn),
+            ChessBoard.InputRejected, "promotion: to a pawn refused");
+        CheckInt(board.PromotionChosenAs("Ana", ChessRules.B7, ChessRules.B8, ChessRules.King),
+            ChessBoard.InputRejected, "promotion: to a king refused");
+        CheckInt(board.PromotionChosenAs("Ana", ChessRules.B7, ChessRules.B8, ChessRules.NoPieceType),
+            ChessBoard.InputRejected, "promotion: to no piece refused");
+        CheckInt(board.PromotionChosenAs("Ana", ChessRules.B7, ChessRules.B8, 7), ChessBoard.InputRejected,
+            "promotion: to type 7 refused");
+        CheckInt(board.PromotionChosenAs("Bob", ChessRules.B7, ChessRules.B8, ChessRules.Queen),
+            ChessBoard.InputRejected, "promotion: by the other player refused");
+        CheckInt(board.PromotionChosenAs("Cleo", ChessRules.B7, ChessRules.B8, ChessRules.Queen),
+            ChessBoard.InputRejected, "promotion: by a non-player refused");
+        CheckInt(board.PromotionChosenAs("Ana", ChessRules.B7, ChessRules.C7, ChessRules.Queen),
+            ChessBoard.InputRejected, "promotion: on an illegal square refused");
+        CheckInt(board.PromotionChosenAs("Ana", ChessRules.E1, ChessRules.D1, ChessRules.Queen),
+            ChessBoard.InputRejected, "promotion: on a king move refused");
+        CheckInt(board.moveCount, 0, "promotion: refused choices play nothing");
+        CheckText(Fen(), PromotionFen, "promotion: refused choices leave the position");
+
+        CheckInt(board.PromotionChosenAs("Ana", ChessRules.B7, ChessRules.A8, ChessRules.Knight),
+            ChessBoard.InputAccepted, "promotion: bxa8=N");
+        CheckInt(board.board[ChessRules.A8], ChessRules.WhiteKnight, "promotion: knight on a8");
+        CheckText(board.notation[0], "bxa8=N", "promotion: SAN of the capture");
+
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.G2, ChessRules.G1), ChessBoard.InputPromotionNeeded,
+            "promotion: g1 needs a choice");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.G2, ChessRules.H1), ChessBoard.InputPromotionNeeded,
+            "promotion: gxh1 needs a choice");
+        CheckInt(board.PromotionChosenAs("Bob", ChessRules.G2, ChessRules.H1, ChessRules.Bishop),
+            ChessBoard.InputAccepted, "promotion: gxh1=B");
+        CheckInt(board.board[ChessRules.H1], ChessRules.BlackBishop, "promotion: black bishop on h1");
+        CheckInt(board.board[ChessRules.G2], ChessRules.Empty, "promotion: g2 empty");
+        CheckInt(board.moveCount, 2, "promotion: two moves");
+
+        // The local player's methods.
+        board.ClearState();
+        board.JoinWhite();
+        board.JoinBlack();
+        board.StartGame();
+        SetPosition(PromotionFen);
+        CheckInt(board.PieceDropped(ChessRules.B7, ChessRules.B8), ChessBoard.InputPromotionNeeded,
+            "local: promotion needs a choice");
+        CheckInt(board.PromotionChosen(ChessRules.B7, ChessRules.B8, ChessRules.Rook), ChessBoard.InputAccepted,
+            "local: b8=R");
+        CheckInt(board.board[ChessRules.B8], ChessRules.WhiteRook, "local: rook on b8");
 
         board.ClearState();
     }
