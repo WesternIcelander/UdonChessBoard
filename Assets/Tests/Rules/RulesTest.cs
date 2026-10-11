@@ -21,6 +21,7 @@ public class RulesTest : UdonSharpBehaviour {
         TestLegalMoves();
         TestPositions();
         TestFen();
+        TestFenJava();
         Debug.Log("[RulesTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
@@ -1781,5 +1782,117 @@ public class RulesTest : UdonSharpBehaviour {
         int h;
         int f;
         Check(!ChessFen.ParseFen(null, board, state, out h, out f), "FEN rejected: null", "accepted");
+    }
+
+    // ---- 3.2 ----
+
+    // Java String.hashCode.
+    int JavaHash(string text) {
+        int hash = 0;
+        for (int i = 0; i < text.Length; i++) hash = 31 * hash + text[i];
+        return hash;
+    }
+
+    // Parses fen and checks that writing it gives expected, the Java's FEN.serialize(FEN.deserialize(fen)). Then
+    // compares the FENs after each legal move with the Java's: there must be childCount of them, and the int sum of
+    // their JavaHash must be childHashSum (a sum, so the move order doesn't matter). The halfmove clock and move
+    // number after each move are worked out here, as the board will (docs/move-encoding.md#undo).
+    void CheckFenJava(string fen, string expected, int childCount, int childHashSum) {
+        byte[] board = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        int h;
+        int f;
+        if (!ChessFen.ParseFen(fen, board, state, out h, out f)) {
+            Check(false, "FEN vs Java: " + fen, "rejected");
+            return;
+        }
+        string errors = "";
+        string written = ChessFen.WriteFen(board, state, h, f);
+        if (written != expected) errors += " wrote \"" + written + "\"";
+
+        byte[] boardBefore = CopyBoard(board);
+        int[] stateBefore = CopyState(state);
+        int[] moves = new int[ChessMoves.MaxMoves];
+        int count = ChessMoves.GenerateLegalMoves(board, state, moves, true);
+        int mover = state[ChessPosition.StateSideToMove];
+        int sum = 0;
+        for (int i = 0; i < count; i++) {
+            int move = moves[i];
+            bool resets = ChessRules.MovePieceType(move) == ChessRules.Pawn
+                || (!ChessRules.MoveIsCastle(move) && ChessRules.MoveCaptured(move) != ChessRules.NoPieceType);
+            ChessPosition.MakeMove(board, state, move);
+            sum += JavaHash(ChessFen.WriteFen(board, state, resets ? 0 : h + 1, mover == ChessRules.Black ? f + 1 : f));
+            ChessPosition.UnmakeMove(board, state, move);
+        }
+        if (count != childCount) errors += " " + count + " moves (expected " + childCount + ")";
+        else if (sum != childHashSum) errors += " FENs after each move differ (hash sum " + sum + ", expected " + childHashSum + ")";
+        string diff = BoardDiff(board, boardBefore) + StateDiff(state, stateBefore);
+        if (diff != "") errors += " position changed:" + diff;
+        Check(errors == "", "FEN vs Java: " + fen, errors);
+    }
+
+    // Expected values from the Java on port-reference: FEN.serialize(FEN.deserialize(fen)), the legal move count and
+    // the hash sum of FEN.serialize after Board.applyMove of each legal move.
+    void TestFenJava() {
+        // Perft positions 1-6 and position 4 mirrored.
+        CheckFenJava(ChessFen.StartFen, ChessFen.StartFen, 20, 545717386);
+        CheckFenJava("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", 48, -1010862401);
+        CheckFenJava("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1", "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+            14, -1533082628);
+        CheckFenJava("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
+            "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1", 6, -1641085952);
+        CheckFenJava("r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1",
+            "r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1", 6, 146272587);
+        CheckFenJava("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",
+            "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8", 44, 1658840615);
+        CheckFenJava("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P3/2NP1N2/PPP1QPPP/R4RK1 w - - 0 10",
+            "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P3/2NP1N2/PPP1QPPP/R4RK1 w - - 0 10", 45, -1996914367);
+
+        // En passant (including one the pawn can't take, as it would expose its king), promotion and counters.
+        CheckFenJava("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1", 20, -547635986);
+        CheckFenJava("rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3",
+            "rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3", 31, -463227876);
+        CheckFenJava("8/8/8/KPp4r/8/8/8/6k1 w - c6 0 2", "8/8/8/KPp4r/8/8/8/6k1 w - c6 0 2", 4, -2081026259);
+        CheckFenJava("r3k2r/1P6/8/3pP3/8/8/8/R3K2R w KQkq d6 0 1", "r3k2r/1P6/8/3pP3/8/8/8/R3K2R w KQkq d6 0 1",
+            36, -1509275220);
+        CheckFenJava("r3k2r/8/8/8/3Pp3/8/1p6/R3K2R b KQkq d3 0 1", "r3k2r/8/8/8/3Pp3/8/1p6/R3K2R b KQkq d3 0 1",
+            36, 27238066);
+        CheckFenJava("r3k3/1P4P1/8/8/8/8/1p4p1/R3K2R b KQq - 3 40", "r3k3/1P4P1/8/8/8/8/1p4p1/R3K2R b KQq - 3 40",
+            30, -1687643730);
+        CheckFenJava("4k3/8/8/8/8/8/8/4K2R b K - 99 150", "4k3/8/8/8/8/8/8/4K2R b K - 99 150", 5, -845690011);
+
+        // Final positions of the PGN test set (docs/testing.md), including checkmate and stalemate.
+        CheckFenJava("6k1/1b4pp/p3p3/2p1P1b1/NPPn4/7P/P5q1/RN2Kr2 w - - 0 28",
+            "6k1/1b4pp/p3p3/2p1P1b1/NPPn4/7P/P5q1/RN2Kr2 w - - 0 28", 0, 0);
+        CheckFenJava("8/8/8/3k4/8/4K3/8/8 w - - 0 72", "8/8/8/3k4/8/4K3/8/8 w - - 0 72", 6, 416118426);
+        CheckFenJava("rnbqkbnr/2p1pppp/p2P4/8/8/P1p5/1P1P1PPP/RNBQKBNR w KQkq - 0 6",
+            "rnbqkbnr/2p1pppp/p2P4/8/8/P1p5/1P1P1PPP/RNBQKBNR w KQkq - 0 6", 34, -1653416672);
+        CheckFenJava("Q4Q2/8/8/4k3/8/8/3K4/n6q w - - 3 45", "Q4Q2/8/8/4k3/8/8/3K4/n6q w - - 3 45", 42, -2057849559);
+        CheckFenJava("8/7k/8/R4N2/3N4/R4N2/3N4/6RK w - - 6 4", "8/7k/8/R4N2/3N4/R4N2/3N4/6RK w - - 6 4",
+            53, -1866485019);
+        CheckFenJava("5bnr/4p1pq/4Qpkr/7p/7P/4P3/PPPP1PP1/RNB1KBNR b KQ - 2 10",
+            "5bnr/4p1pq/4Qpkr/7p/7P/4P3/PPPP1PP1/RNB1KBNR b KQ - 2 10", 0, 0);
+        CheckFenJava("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3",
+            "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3", 0, 0);
+        CheckFenJava("q1krbnrn/pppp1ppp/5b2/4p3/4P3/5B2/PPPP1PPP/Q1KRBNRN w - - 4 4",
+            "q1krbnrn/pppp1ppp/5b2/4p3/4P3/5B2/PPPP1PPP/Q1KRBNRN w - - 4 4", 20, 1794219579);
+
+        // Chess960, in Shredder letters (the Java reads KQkq as the a and h files).
+        CheckFenJava("qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w GBgb - 0 1",
+            "qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w GBgb - 0 1", 19, -1139615148);
+        CheckFenJava("bqnb1rkr/pp3ppp/3ppn2/2p5/5P2/P2P4/NPP1P1PP/BQ1BNRKR w HFhf - 2 9",
+            "bqnb1rkr/pp3ppp/3ppn2/2p5/5P2/P2P4/NPP1P1PP/BQ1BNRKR w HFhf - 2 9", 21, 245048630);
+        CheckFenJava("qbbnnrkr/2pp2pp/p7/1p2pp2/8/P3PP2/1PPP1KPP/QBBNNR1R w hf - 0 9",
+            "qbbnnrkr/2pp2pp/p7/1p2pp2/8/P3PP2/1PPP1KPP/QBBNNR1R w hf - 0 9", 22, -1065395103);
+        CheckFenJava("2nnrbkr/p1qppppp/8/1ppb4/6PP/3PP3/PPP2P2/BQNNRBKR w HEhe - 1 9",
+            "2nnrbkr/p1qppppp/8/1ppb4/6PP/3PP3/PPP2P2/BQNNRBKR w HEhe - 1 9", 21, 622355788);
+        CheckFenJava("1rqbkrbn/1ppppp1p/1n6/p1N3p1/8/2P4P/PP1PPPP1/1RQBKRBN w FBfb - 0 9",
+            "1rqbkrbn/1ppppp1p/1n6/p1N3p1/8/2P4P/PP1PPPP1/1RQBKRBN w FBfb - 0 9", 29, -511976285);
+        CheckFenJava("1r2k1r1/8/8/8/8/8/8/1R2K1R1 w GBgb - 0 1", "1r2k1r1/8/8/8/8/8/8/1R2K1R1 w GBgb - 0 1",
+            25, 1992653046);
+        // Rooks on a and h are written KQkq even when given as letters.
+        CheckFenJava("rk5r/8/8/8/8/8/8/RK5R b HAha - 0 1", "rk5r/8/8/8/8/8/8/RK5R b KQkq - 0 1", 24, -1385981945);
     }
 }
