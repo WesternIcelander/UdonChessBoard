@@ -64,6 +64,9 @@ public class BoardTest : UdonSharpBehaviour {
             TestMateAndStalemate();
             TestResign();
             TestTimeForfeit();
+            TestDrawAgreement();
+            TestDrawClaims();
+            TestAutomaticDraws();
             TestSnapshot();
             if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
             board.ClearState();
@@ -1992,7 +1995,6 @@ public class BoardTest : UdonSharpBehaviour {
         // Scholar's mate by drops with every draw rule on: White wins. A check that isn't mate goes on.
         StartedGame(ChessArbiter.NoClock, 0, 0);
         board.gameSettings = ChessArbiter.SettingsDrawRules;
-        board.drawOfferColor = ChessRules.Black;
         board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4);
         board.PieceDroppedAs("Bob", ChessRules.E7, ChessRules.E5);
         board.PieceDroppedAs("Ana", ChessRules.F1, ChessRules.C4);
@@ -2000,6 +2002,8 @@ public class BoardTest : UdonSharpBehaviour {
         board.PieceDroppedAs("Ana", ChessRules.D1, ChessRules.H5);
         board.PieceDroppedAs("Bob", ChessRules.G8, ChessRules.F6);
         CheckInGame("mate: scholar's, before the mate");
+        // White's own offer would survive White's move; the mate lets it lapse.
+        board.drawOfferColor = ChessRules.White;
         CheckInt(board.PieceDroppedAs("Ana", ChessRules.H5, ChessRules.F7), ChessBoard.InputAccepted,
             "mate: 4. Qxf7# accepted");
         CheckText(board.notation[6], "Qxf7#", "mate: SAN Qxf7#");
@@ -2195,6 +2199,325 @@ public class BoardTest : UdonSharpBehaviour {
         FlagFallen();
         Check(board.CheckFlagFall(), "forfeit: server time, flag fallen", "not ended");
         CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.Black, "0-1", "forfeit: server time");
+
+        board.ClearState();
+    }
+
+    // ---- 7.5b draws ----
+
+    // name drops from-to, which must be accepted.
+    void Drop(string name, int from, int to, string label) {
+        CheckInt(board.PieceDroppedAs(name, from, to), ChessBoard.InputAccepted,
+            label + ": " + ChessRules.SquareName(from) + ChessRules.SquareName(to) + " accepted");
+    }
+
+    // Plays Nf3 Nf6 Ng1 Ng8 times times, each time bringing back the starting position.
+    void KnightShuffle(int times, string label) {
+        for (int i = 0; i < times; i++) {
+            Drop("Ana", ChessRules.G1, ChessRules.F3, label);
+            Drop("Bob", ChessRules.G8, ChessRules.F6, label);
+            Drop("Ana", ChessRules.F3, ChessRules.G1, label);
+            Drop("Bob", ChessRules.F6, ChessRules.G8, label);
+        }
+    }
+
+    void TestDrawAgreement() {
+        NothingForced();
+        int agreement = ChessArbiter.SettingDrawAgreement;
+
+        // White offers, Black declines; Black offers, White accepts.
+        StartedGame(60, 0, board.ServerTime() - 2);
+        board.gameSettings = agreement;
+        CheckInt(board.OfferDrawAs(ChessRules.Black, "Ana"), ChessBoard.InputRejected, "draw offer: not white for black");
+        CheckInt(board.OfferDrawAs(ChessRules.White, "Cleo"), ChessBoard.InputRejected, "draw offer: not a non-player");
+        CheckInt(board.OfferDrawAs(2, "Ana"), ChessBoard.InputRejected, "draw offer: not colour 2");
+        CheckInt(board.drawOfferColor, ChessRules.NoColor, "draw offer: refused offers leave none");
+        CheckInt(board.OfferDrawAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "draw offer: white offers");
+        CheckInt(board.drawOfferColor, ChessRules.White, "draw offer: white's offer pending");
+        CheckInt(board.OfferDrawAs(ChessRules.White, "Ana"), ChessBoard.InputRejected, "draw offer: not twice");
+        CheckInt(board.OfferDrawAs(ChessRules.Black, "Bob"), ChessBoard.InputRejected,
+            "draw offer: not with one pending");
+        CheckInt(board.AcceptDrawAs(ChessRules.White, "Ana"), ChessBoard.InputRejected, "draw offer: not one's own");
+        CheckInt(board.DeclineDrawAs(ChessRules.White, "Ana"), ChessBoard.InputRejected,
+            "draw offer: no declining one's own");
+        CheckInt(board.AcceptDrawAs(ChessRules.Black, "Cleo"), ChessBoard.InputRejected,
+            "draw offer: no accepting by a non-player");
+        CheckInt(board.AcceptDrawAs(ChessRules.Black, "Ana"), ChessBoard.InputRejected,
+            "draw offer: no accepting by white for black");
+        CheckInGame("draw offer: pending");
+        CheckInt(board.DeclineDrawAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "draw offer: black declines");
+        CheckInt(board.drawOfferColor, ChessRules.NoColor, "draw offer: declined, none pending");
+        CheckInGame("draw offer: declined");
+        CheckInt(board.AcceptDrawAs(ChessRules.Black, "Bob"), ChessBoard.InputRejected,
+            "draw offer: no accepting a declined offer");
+        CheckInt(board.OfferDrawAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "draw offer: black offers");
+        CheckInt(board.AcceptDrawAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "draw offer: white accepts");
+        CheckEnded(ChessGame.EndingDrawAgreement, ChessRules.NoColor, "1/2-1/2", "draw offer: agreed");
+        CheckInt(board.drawOfferColor, ChessRules.NoColor, "draw offer: none pending once agreed");
+        Check(!board.IsClockRunning(), "draw offer: clock stopped", "running");
+        Check(board.whiteTime > 57000 && board.whiteTime <= 58000, "draw offer: white's time stopped after 2 s",
+            "time " + board.whiteTime);
+        CheckInt(board.blackTime, 60000, "draw offer: black's time untouched");
+        CheckInt(board.OfferDrawAs(ChessRules.White, "Ana"), ChessBoard.InputRejected, "draw offer: not once ended");
+        CheckInt(board.AcceptDrawAs(ChessRules.White, "Ana"), ChessBoard.InputRejected,
+            "draw offer: no accepting once ended");
+
+        // A move by the side offered the draw declines it; the offerer's own move keeps it.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = agreement;
+        board.OfferDrawAs(ChessRules.White, "Ana");
+        Drop("Ana", ChessRules.E2, ChessRules.E4, "draw offer: 1. e4");
+        CheckInt(board.drawOfferColor, ChessRules.White, "draw offer: kept after the offerer's move");
+        Drop("Bob", ChessRules.E7, ChessRules.E5, "draw offer: 1... e5");
+        CheckInt(board.drawOfferColor, ChessRules.NoColor, "draw offer: lapses on the other side's move");
+        CheckInt(board.OfferDrawAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted,
+            "draw offer: black offers, not to move");
+        Drop("Ana", ChessRules.G1, ChessRules.F3, "draw offer: 2. Nf3");
+        CheckInt(board.drawOfferColor, ChessRules.NoColor, "draw offer: lapses on white's move");
+        CheckInt(board.AcceptDrawAs(ChessRules.White, "Ana"), ChessBoard.InputRejected,
+            "draw offer: no accepting a lapsed offer");
+        CheckInGame("draw offer: lapsed");
+
+        // In replay: offering and accepting aren't moves.
+        ButtonGame(agreement);
+        board.replayMode = true;
+        board.replayIndex = 2;
+        CheckInt(board.OfferDrawAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "draw offer: in replay");
+        CheckInt(board.AcceptDrawAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted,
+            "draw offer: accepted in replay");
+        CheckEnded(ChessGame.EndingDrawAgreement, ChessRules.NoColor, "1/2-1/2", "draw offer: agreed in replay");
+        Check(board.replayMode && board.replayIndex == 2, "draw offer: replay kept", "replay changed");
+
+        // Only with draws by agreement on: not under "No draws" or with only the other draw rules.
+        ButtonGame(0);
+        CheckInt(board.OfferDrawAs(ChessRules.White, "Ana"), ChessBoard.InputRejected, "draw offer: not under No draws");
+        board.gameSettings = ChessArbiter.SettingsDrawRules & ~agreement;
+        CheckInt(board.OfferDrawAs(ChessRules.White, "Ana"), ChessBoard.InputRejected,
+            "draw offer: not with only the other draw rules");
+        CheckInt(board.drawOfferColor, ChessRules.NoColor, "draw offer: none made with agreement off");
+        // A re-snapshot that turns agreement off leaves a pending offer unanswerable.
+        board.gameSettings = agreement;
+        board.OfferDrawAs(ChessRules.White, "Ana");
+        board.gameSettings = 0;
+        CheckInt(board.AcceptDrawAs(ChessRules.Black, "Bob"), ChessBoard.InputRejected,
+            "draw offer: no accepting once agreement is off");
+        CheckInt(board.DeclineDrawAs(ChessRules.Black, "Bob"), ChessBoard.InputRejected,
+            "draw offer: no declining once agreement is off");
+        CheckInGame("draw offer: agreement off");
+
+        // Not after the flag (that's a time forfeit), and not before a game.
+        ButtonGame(agreement);
+        board.OfferDrawAs(ChessRules.Black, "Bob");
+        FlagFallen();
+        CheckInt(board.AcceptDrawAs(ChessRules.White, "Ana"), ChessBoard.InputRejected,
+            "draw offer: no accepting after the flag");
+        CheckInt(board.ending, ChessGame.EndingNone, "draw offer: refused after the flag, no ending");
+        LobbyWithTwoPlayers();
+        board.gameSettings = agreement;
+        CheckInt(board.OfferDrawAs(ChessRules.White, "Ana"), ChessBoard.InputRejected, "draw offer: not in the lobby");
+
+        // The local player in both seats offers for one side and accepts for the other.
+        board.ClearState();
+        board.JoinWhite();
+        board.JoinBlack();
+        board.StartGame();
+        board.gameSettings = agreement;
+        CheckInt(board.OfferDraw(ChessRules.White), ChessBoard.InputAccepted, "draw offer: local player offers");
+        CheckInt(board.DeclineDraw(ChessRules.Black), ChessBoard.InputAccepted, "draw offer: local player declines");
+        CheckInt(board.OfferDraw(ChessRules.Black), ChessBoard.InputAccepted, "draw offer: local player offers again");
+        CheckInt(board.AcceptDraw(ChessRules.Black), ChessBoard.InputRejected,
+            "draw offer: local player, not for the offering side");
+        CheckInt(board.AcceptDraw(ChessRules.White), ChessBoard.InputAccepted, "draw offer: local player accepts");
+        CheckEnded(ChessGame.EndingDrawAgreement, ChessRules.NoColor, "1/2-1/2", "draw offer: local player");
+
+        board.ClearState();
+    }
+
+    void TestDrawClaims() {
+        NothingForced();
+        int threefold = ChessArbiter.SettingThreefoldRepetition;
+        int fifty = ChessArbiter.SettingFiftyMoveRule;
+
+        // Threefold: the starting position for the third time after 8 plies, claimed by White (to move).
+        ButtonGame(threefold);
+        Drop("Ana", ChessRules.G1, ChessRules.F3, "claim threefold");
+        Drop("Bob", ChessRules.G8, ChessRules.F6, "claim threefold");
+        Drop("Ana", ChessRules.F3, ChessRules.G1, "claim threefold");
+        CheckInt(board.ClaimDrawAs("Bob"), ChessBoard.InputRejected, "claim threefold: nothing after 7 plies");
+        Drop("Bob", ChessRules.F6, ChessRules.G8, "claim threefold");
+        CheckInGame("claim threefold: not automatic");
+        CheckInt(board.ClaimDrawAs("Bob"), ChessBoard.InputRejected, "claim threefold: not the side not to move");
+        CheckInt(board.ClaimDrawAs("Cleo"), ChessBoard.InputRejected, "claim threefold: not a non-player");
+        CheckInt(board.ClaimDrawAs(""), ChessBoard.InputRejected, "claim threefold: not an empty name");
+        CheckInGame("claim threefold: refused claims");
+        CheckInt(board.ClaimDrawAs("Ana"), ChessBoard.InputAccepted, "claim threefold: white claims");
+        CheckEnded(ChessGame.EndingThreefoldRepetition, ChessRules.NoColor, "1/2-1/2", "claim threefold");
+        CheckInt(board.ClaimDrawAs("Ana"), ChessBoard.InputRejected, "claim threefold: not once ended");
+
+        // The same repetition with threefold off, or under "No draws": no claim, play goes on.
+        ButtonGame(0);
+        KnightShuffle(1, "no claim");
+        board.gameSettings = ChessArbiter.SettingsDrawRules & ~threefold & ~ChessArbiter.SettingFivefoldRepetition;
+        CheckInt(board.ClaimDrawAs("Ana"), ChessBoard.InputRejected, "claim threefold: not with the rule off");
+        board.gameSettings = 0;
+        CheckInt(board.ClaimDrawAs("Ana"), ChessBoard.InputRejected, "claim threefold: not under No draws");
+        CheckInGame("claim threefold: no claim");
+        Drop("Ana", ChessRules.G1, ChessRules.F3, "no claim: play goes on");
+
+        // Both claims available: threefold is the one claimed.
+        ButtonGame(threefold | fifty);
+        KnightShuffle(1, "both claims");
+        board.halfmoveClock = 100;
+        CheckInt(board.ClaimDrawAs("Ana"), ChessBoard.InputAccepted, "claim: threefold and fifty-move");
+        CheckEnded(ChessGame.EndingThreefoldRepetition, ChessRules.NoColor, "1/2-1/2", "claim: threefold first");
+
+        // Fifty-move: claimable by Black once White's move makes the halfmove clock 100.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = fifty;
+        SetPosition("8/8/4k3/8/8/4K3/8/R7 w - - 99 80");
+        CheckInt(board.ClaimDrawAs("Ana"), ChessBoard.InputRejected, "claim fifty-move: not at 99");
+        Drop("Ana", ChessRules.A1, ChessRules.A2, "claim fifty-move: Ra2");
+        CheckInt(board.halfmoveClock, 100, "claim fifty-move: halfmove clock 100");
+        CheckInGame("claim fifty-move: not automatic");
+        CheckInt(board.ClaimDrawAs("Ana"), ChessBoard.InputRejected, "claim fifty-move: not the side not to move");
+        board.gameSettings = ChessArbiter.SettingsDrawRules & ~fifty;
+        CheckInt(board.ClaimDrawAs("Bob"), ChessBoard.InputRejected, "claim fifty-move: not with the rule off");
+        board.gameSettings = fifty;
+        board.replayMode = true;
+        CheckInt(board.ClaimDrawAs("Bob"), ChessBoard.InputAccepted, "claim fifty-move: black claims, in replay");
+        CheckEnded(ChessGame.EndingFiftyMoveRule, ChessRules.NoColor, "1/2-1/2", "claim fifty-move");
+        Check(board.replayMode, "claim fifty-move: replay kept", "left replay");
+
+        // A pawn move resets the count: nothing to claim.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = fifty;
+        SetPosition("8/8/4k3/8/8/4K3/P7/8 w - - 99 80");
+        Drop("Ana", ChessRules.A2, ChessRules.A3, "claim fifty-move: a3");
+        CheckInt(board.ClaimDrawAs("Bob"), ChessBoard.InputRejected, "claim fifty-move: not after a pawn move");
+
+        // Not after the flag, and the local player in both seats.
+        ButtonGame(threefold);
+        KnightShuffle(1, "claim after the flag");
+        FlagFallen();
+        CheckInt(board.ClaimDrawAs("Ana"), ChessBoard.InputRejected, "claim: not after the flag");
+        CheckInt(board.ending, ChessGame.EndingNone, "claim: refused after the flag, no ending");
+
+        board.ClearState();
+        board.JoinWhite();
+        board.JoinBlack();
+        board.StartGame();
+        board.gameSettings = fifty;
+        SetPosition("8/8/4k3/8/8/4K3/8/R7 b - - 100 80");
+        CheckInt(board.ClaimDraw(), ChessBoard.InputAccepted, "claim: local player");
+        CheckEnded(ChessGame.EndingFiftyMoveRule, ChessRules.NoColor, "1/2-1/2", "claim: local player");
+
+        board.ClearState();
+    }
+
+    void TestAutomaticDraws() {
+        NothingForced();
+        int fivefold = ChessArbiter.SettingFivefoldRepetition;
+        int seventyFive = ChessArbiter.SettingSeventyFiveMoveRule;
+        int dead = ChessArbiter.SettingDeadPosition;
+        int allDraws = ChessArbiter.SettingsDrawRules;
+
+        // Fivefold: the starting position for the fifth time after 16 plies ends the game.
+        StartedGame(60, 0, board.ServerTime());
+        board.gameSettings = fivefold;
+        KnightShuffle(3, "fivefold");
+        Drop("Ana", ChessRules.G1, ChessRules.F3, "fivefold");
+        Drop("Bob", ChessRules.G8, ChessRules.F6, "fivefold");
+        Drop("Ana", ChessRules.F3, ChessRules.G1, "fivefold");
+        CheckInGame("fivefold: not after 15 plies");
+        Drop("Bob", ChessRules.F6, ChessRules.G8, "fivefold");
+        CheckEnded(ChessGame.EndingFivefoldRepetition, ChessRules.NoColor, "1/2-1/2", "fivefold");
+        CheckInt(board.moveCount, 16, "fivefold: the last move recorded");
+        Check(!board.IsClockRunning(), "fivefold: clock stopped", "running");
+
+        // With only the claim rules, or under "No draws", play goes on.
+        ButtonGame(allDraws & ~fivefold);
+        KnightShuffle(3, "no fivefold");
+        CheckInGame("fivefold: not with the rule off");
+        CheckInt(board.ClaimableDraw(), ChessGame.EndingThreefoldRepetition, "fivefold off: threefold claimable");
+        ButtonGame(0);
+        KnightShuffle(4, "no draws");
+        CheckInGame("fivefold: not under No draws");
+        CheckInt(board.moveCount, 20, "no draws: 20 plies played");
+
+        // Seventy-five-move rule: the game ends when the halfmove clock reaches 150.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = seventyFive;
+        SetPosition("8/8/4k3/8/8/4K3/8/R7 w - - 148 80");
+        Drop("Ana", ChessRules.A1, ChessRules.A2, "seventy-five: Ra2");
+        CheckInGame("seventy-five: not at 149");
+        Drop("Bob", ChessRules.E6, ChessRules.D6, "seventy-five: Kd6");
+        CheckEnded(ChessGame.EndingSeventyFiveMoveRule, ChessRules.NoColor, "1/2-1/2", "seventy-five");
+
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = allDraws & ~seventyFive;
+        SetPosition("8/8/4k3/8/8/4K3/8/R7 w - - 149 80");
+        Drop("Ana", ChessRules.A1, ChessRules.A2, "seventy-five off: Ra2");
+        CheckInGame("seventy-five: not with the rule off");
+        board.gameSettings = 0;
+        Drop("Bob", ChessRules.E6, ChessRules.D6, "seventy-five off: Kd6");
+        CheckInGame("seventy-five: not under No draws");
+
+        // Checkmate on the 150th ply is still checkmate.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = allDraws;
+        SetPosition("7k/8/6K1/8/8/8/8/R7 w - - 149 80");
+        Drop("Ana", ChessRules.A1, ChessRules.A8, "seventy-five: Ra8#");
+        CheckEnded(ChessGame.EndingCheckmate, ChessRules.White, "1-0", "seventy-five: mate first");
+
+        // Dead position: a capture leaving K v K or K+B v K ends the game; K+R v K and opposite bishops don't.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = dead;
+        SetPosition("8/8/4k3/8/8/4K3/3r4/8 w - - 0 1");
+        Drop("Ana", ChessRules.E3, ChessRules.D2, "dead: Kxd2");
+        CheckEnded(ChessGame.EndingInsufficientMaterial, ChessRules.NoColor, "1/2-1/2", "dead: K v K");
+
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = dead;
+        SetPosition("8/8/4k3/8/8/4K3/3r4/2B5 w - - 0 1");
+        Drop("Ana", ChessRules.C1, ChessRules.D2, "dead: Bxd2");
+        CheckEnded(ChessGame.EndingInsufficientMaterial, ChessRules.NoColor, "1/2-1/2", "dead: K+B v K");
+
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = dead;
+        SetPosition("8/8/4k3/8/8/4K3/3n4/R7 w - - 0 1");
+        Drop("Ana", ChessRules.E3, ChessRules.D2, "dead: Kxd2 with a rook");
+        CheckInGame("dead: K+R v K");
+
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = dead;
+        SetPosition("4b3/8/4k3/8/8/4K3/3n4/2B5 w - - 0 1");
+        Drop("Ana", ChessRules.C1, ChessRules.D2, "dead: Bxd2, bishops on both colours");
+        CheckInGame("dead: opposite bishops");
+
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = allDraws & ~dead;
+        SetPosition("8/8/4k3/8/8/4K3/3r4/8 w - - 0 1");
+        Drop("Ana", ChessRules.E3, ChessRules.D2, "dead off: Kxd2");
+        CheckInGame("dead: not with the rule off");
+        board.gameSettings = 0;
+        Drop("Bob", ChessRules.E6, ChessRules.D6, "dead off: Kd6");
+        CheckInGame("dead: not under No draws");
+
+        // Stalemate with insufficient material is still stalemate.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = allDraws;
+        SetPosition("k7/8/1K6/8/3N4/8/8/8 w - - 0 1");
+        Drop("Ana", ChessRules.D4, ChessRules.C6, "dead: Nc6 stalemate");
+        CheckEnded(ChessGame.EndingStalemate, ChessRules.NoColor, "1/2-1/2", "dead: stalemate first");
+
+        // A pending draw offer lapses when an automatic draw ends the game.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = dead | ChessArbiter.SettingDrawAgreement;
+        SetPosition("8/8/4k3/8/8/4K3/3r4/8 w - - 0 1");
+        board.OfferDrawAs(ChessRules.White, "Ana");
+        Drop("Ana", ChessRules.E3, ChessRules.D2, "dead with an offer: Kxd2");
+        CheckEnded(ChessGame.EndingInsufficientMaterial, ChessRules.NoColor, "1/2-1/2", "dead with an offer");
+        CheckInt(board.drawOfferColor, ChessRules.NoColor, "dead with an offer: the offer lapses");
 
         board.ClearState();
     }

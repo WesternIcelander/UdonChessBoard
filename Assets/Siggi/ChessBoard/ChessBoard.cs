@@ -532,15 +532,42 @@ namespace SiggiChessBoard {
             }
             turnStart = now;
             moveCount++;
+            // A move by the side a draw was offered to declines it (FIDE 9.1.2.3); the offerer's own move keeps it.
+            if (drawOfferColor != mover) drawOfferColor = ChessRules.NoColor;
 
-            // Checkmate and stalemate end the game whatever the draw settings; the automatic draws are step 7.5b.
+            // Checkmate and stalemate end the game whatever the draw settings, and take precedence over the
+            // automatic draws, which end it only while their rule is on.
             int status = ChessMoves.PositionStatus(board, state,
                 ChessMoves.GenerateLegalMoves(board, state, legalMoves, true), true);
             if (status == ChessMoves.StatusCheckmate) EndGameAt(ChessGame.EndingCheckmate, mover, now);
             else if (status == ChessMoves.StatusStalemate) {
                 EndGameAt(ChessGame.EndingStalemate, ChessRules.NoColor, now);
+            } else {
+                int automatic = AutomaticDraw();
+                if (automatic != ChessGame.EndingNone) EndGameAt(automatic, ChessRules.NoColor, now);
             }
             return InputAccepted;
+        }
+
+        // The draw the current position ends the game with by itself (docs/game-endings.md, Draw rules), checked
+        // after each move that doesn't checkmate or stalemate: ChessGame.EndingFivefoldRepetition when the position has
+        // occurred five times, EndingSeventyFiveMoveRule when seventy-five moves each have passed without a capture or
+        // pawn move, EndingInsufficientMaterial when neither side can checkmate, each only while the snapshot has that
+        // rule on; otherwise EndingNone (always under "No draws").
+        public int AutomaticDraw() {
+            if (IsGameSettingOn(ChessArbiter.SettingFivefoldRepetition)) {
+                int count = ChessDraws.CountRepetitions(board, state, moveHistory, moveCount, halfmoveClock,
+                    repetitionBoard, repetitionState, legalMoves, true);
+                if (ChessDraws.IsFivefoldRepetition(count)) return ChessGame.EndingFivefoldRepetition;
+            }
+            if (IsGameSettingOn(ChessArbiter.SettingSeventyFiveMoveRule)
+                && ChessDraws.IsSeventyFiveMoveRule(halfmoveClock)) {
+                return ChessGame.EndingSeventyFiveMoveRule;
+            }
+            if (IsGameSettingOn(ChessArbiter.SettingDeadPosition) && ChessDraws.IsInsufficientMaterial(board)) {
+                return ChessGame.EndingInsufficientMaterial;
+            }
+            return ChessGame.EndingNone;
         }
 
         // ---- Game endings (docs/game-endings.md) ----
@@ -750,12 +777,12 @@ namespace SiggiChessBoard {
 
         // ---- Buttons (docs/player-input.md, Buttons) ----
         // Whether each board button applies, for the view (which shows only those that do) and for the button's own
-        // method, which refuses when its check does. The methods themselves come with their steps: resign (with the
-        // game endings), draws 7.5b, replay 7.8a, takebacks 7.8b, loading 7.9a, continuing 7.9b, reset 7.10. The plain
+        // method, which refuses when its check doesn't. The methods themselves come with their steps: resign (with the
+        // game endings), draws (below), replay 7.8a, takebacks 7.8b, loading 7.9a, continuing 7.9b, reset 7.10. The plain
         // checks are for the local player; the *As ones take any name, and an organizer flag where organizers count,
         // for tests and the debug view. Taking ownership, and the idle-reset exception for everyone else, come with step 8.
 
-        // Scratch for ClaimableDraw's repetition count.
+        // Scratch for the repetition counts of ClaimableDraw and AutomaticDraw.
         byte[] repetitionBoard = new byte[64];
         int[] repetitionState = new int[ChessPosition.StateLength];
 
@@ -842,6 +869,58 @@ namespace SiggiChessBoard {
         public bool CanClaimDrawAs(string name) {
             if (!GameRunning() || !IsSeated(state[ChessPosition.StateSideToMove], name)) return false;
             return ClaimableDraw() != ChessGame.EndingNone;
+        }
+
+        // ---- Draws (docs/game-endings.md, Draw rules) ----
+        // Offers and claims aren't moves, so like resigning they work in replay too. The automatic draws are checked
+        // after each move (AutomaticDraw).
+
+        public int OfferDraw(int color) {
+            return OfferDrawAs(color, LocalName());
+        }
+
+        // The offer draw button: name offers a draw for color (CanOfferDrawAs). The offer stands until the other side
+        // accepts or declines it, or declines it by making a move; the game ending lets it lapse.
+        public int OfferDrawAs(int color, string name) {
+            if (!CanOfferDrawAs(color, name)) return InputRejected;
+            drawOfferColor = color;
+            return InputAccepted;
+        }
+
+        public int AcceptDraw(int color) {
+            return AcceptDrawAs(color, LocalName());
+        }
+
+        // The accept draw button: name accepts, for color, the other side's offer (CanAcceptDrawAs), and the game is
+        // drawn by agreement.
+        public int AcceptDrawAs(int color, string name) {
+            if (!CanAcceptDrawAs(color, name)) return InputRejected;
+            EndGameAt(ChessGame.EndingDrawAgreement, ChessRules.NoColor, ServerTime());
+            return InputAccepted;
+        }
+
+        public int DeclineDraw(int color) {
+            return DeclineDrawAs(color, LocalName());
+        }
+
+        // The decline draw button: name declines, for color, the other side's offer (CanDeclineDrawAs), and the game
+        // goes on with no offer pending.
+        public int DeclineDrawAs(int color, string name) {
+            if (!CanDeclineDrawAs(color, name)) return InputRejected;
+            drawOfferColor = ChessRules.NoColor;
+            return InputAccepted;
+        }
+
+        public int ClaimDraw() {
+            return ClaimDrawAs(LocalName());
+        }
+
+        // The claim draw button: name, seated as the side to move, claims the draw ClaimableDraw has
+        // (CanClaimDrawAs), threefold repetition before the fifty-move rule, and the game is drawn.
+        public int ClaimDrawAs(string name) {
+            if (!CanClaimDrawAs(name)) return InputRejected;
+            EndGameAt(ClaimableDraw(), ChessRules.NoColor, ServerTime());
+            return InputAccepted;
         }
 
         // Whether name may work the replay controls: an organizer, a seated player, or anyone on a board nobody has
