@@ -141,8 +141,9 @@ The rules live in `Assets/Siggi/ChessBoard/Rules/` (namespace `SiggiChessBoard`)
 
 **Read:** [legality-checking](docs/legality-checking.md), [move-encoding](docs/move-encoding.md) (undo, halfmove clock), [game-endings](docs/game-endings.md), [pgn](docs/pgn.md) (Export: castling notation), [testing](docs/testing.md)
 
-- [ ] **4.1** SAN generation with direct disambiguation and `+`/`#` suffix; `O-O`/`O-O-O`.
+- [x] **4.1** SAN generation with direct disambiguation and `+`/`#` suffix; `O-O`/`O-O-O`.
   - Verify: the expected SAN for hand-built positions with two knights or two rooks (disambiguated by file, by rank, and by both), pawn captures, promotions (with and without capture), castling on both sides, check and checkmate.
+  - `ChessNotation.MoveToSan(board, state, move, legalMoves, legalCount, scratch, prohibitSelfCheck)` in `Assets/Siggi/ChessBoard/Rules/ChessNotation.cs`, taking the position's legal list from the caller (see [Legality checking](docs/legality-checking.md)). The `+`/`#` suffix makes and unmakes the move; only a check pays for the opponent's legal list (in `scratch`). With `prohibitSelfCheck` off there is no suffix (Fog of War, see [Modes](docs/modes.md)). The step 4 checks go in `RulesTest.cs` (`TestSan`), which keeps one test behaviour for the rules: 42 hand-picked moves (two and three knights, two rooks, a pinned knight that doesn't count unless `prohibitSelfCheck` is off, pawn captures, en passant, promotions and underpromotions with and without capture or check, castling both sides for both colours, with check and in Chess960, fool's mate, a back-rank mate, check with an escape), then every legal move's SAN in 22 positions (those plus perft positions 1–5) against the Java on `port-reference` (a throwaway class printing `notation` for each legal move, not kept). All 64 pass in Play Mode (2026-10-11).
 - [ ] **4.2** Checkmate and stalemate detection.
   - Verify: fool's mate is checkmate; known stalemate positions are stalemate; a position in check with an escape is neither.
 - [ ] **4.3a** Halfmove clock (a local per-ply array computed from the move history, not synced), and the fifty/seventy-five-move rules.

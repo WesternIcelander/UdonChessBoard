@@ -2,7 +2,7 @@ using SiggiChessBoard;
 using UdonSharp;
 using UnityEngine;
 
-// Step 2 and 3 test behaviour (PLAN.md sections 2 and 3): checks the static rules and FEN with no world objects.
+// Step 2-4 test behaviour (PLAN.md sections 2-4): checks the static rules, FEN and notation with no world objects.
 // Logs "[RulesTest] PASS: <check>" or "[RulesTest] FAIL: <check>: <details>" per check, then a summary line.
 // The deep perft runs (3.3a, 3.3b) are spread across frames in Update, so the summary line comes after them.
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
@@ -28,6 +28,7 @@ public class RulesTest : UdonSharpBehaviour {
         TestPositions();
         TestFen();
         TestFenJava();
+        TestSan();
         if (deepPerft) StartDeepPerft();
         else LogSummary();
     }
@@ -2127,5 +2128,187 @@ public class RulesTest : UdonSharpBehaviour {
         perftWorkWatch.Stop();
         perftFrameWatch.Stop();
         if (!running) FinishPerftPosition();
+    }
+
+    // ---- 4.1 ----
+
+    // Parses fen and checks the SAN of the legal move (with prohibitSelfCheck as given) whose MoveText is moveText,
+    // and that working it out leaves the position as it was.
+    void CheckSan(string name, string fen, string moveText, bool prohibitSelfCheck, string expected) {
+        byte[] board = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        int h;
+        int f;
+        if (!ChessFen.ParseFen(fen, board, state, out h, out f)) {
+            Check(false, "SAN: " + name, "FEN rejected");
+            return;
+        }
+        int[] moves = new int[ChessMoves.MaxMoves];
+        int count = ChessMoves.GenerateLegalMoves(board, state, moves, prohibitSelfCheck);
+        int move = -1;
+        for (int i = 0; i < count; i++) {
+            if (MoveText(moves[i]) == moveText) move = moves[i];
+        }
+        if (move == -1) {
+            Check(false, "SAN: " + name, moveText + " not legal");
+            return;
+        }
+        byte[] boardBefore = CopyBoard(board);
+        int[] stateBefore = CopyState(state);
+        string san = ChessNotation.MoveToSan(board, state, move, moves, count, new int[ChessMoves.MaxMoves],
+            prohibitSelfCheck);
+        string errors = san == expected ? "" : " got \"" + san + "\" (expected \"" + expected + "\")";
+        string diff = BoardDiff(board, boardBefore) + StateDiff(state, stateBefore);
+        if (diff != "") errors += " position changed:" + diff;
+        Check(errors == "", "SAN: " + name + ": " + expected, errors);
+    }
+
+    // Parses fen and checks the SANs of all its legal moves against expected, the Java's notation (with 0 swapped for
+    // O) of each of Board.getAllLegalMoves, space-separated in any order. SANs are unique within a position, so each
+    // expected one must be produced exactly once.
+    void CheckSanJava(string fen, string expected) {
+        byte[] board = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        int h;
+        int f;
+        if (!ChessFen.ParseFen(fen, board, state, out h, out f)) {
+            Check(false, "SAN vs Java: " + fen, "FEN rejected");
+            return;
+        }
+        string[] names = expected.Split(new char[] { ' ' });
+        bool[] used = new bool[names.Length];
+        int[] moves = new int[ChessMoves.MaxMoves];
+        int[] scratch = new int[ChessMoves.MaxMoves];
+        int count = ChessMoves.GenerateLegalMoves(board, state, moves, true);
+        string errors = "";
+        for (int i = 0; i < count; i++) {
+            string san = ChessNotation.MoveToSan(board, state, moves[i], moves, count, scratch, true);
+            int found = -1;
+            for (int j = 0; j < names.Length; j++) {
+                if (!used[j] && names[j] == san) {
+                    found = j;
+                    break;
+                }
+            }
+            if (found == -1) errors += " unexpected " + MoveText(moves[i]) + ":" + san;
+            else used[found] = true;
+        }
+        for (int j = 0; j < names.Length; j++) {
+            if (!used[j]) errors += " missing " + names[j];
+        }
+        Check(errors == "", "SAN vs Java: " + fen, errors);
+    }
+
+    void TestSan() {
+        string start = ChessFen.StartFen;
+        CheckSan("pawn push", start, "e2e4", true, "e4");
+        CheckSan("knight move", start, "g1f3", true, "Nf3");
+
+        // Disambiguation by file, by rank and by both.
+        string knightsByFile = "4k3/8/8/8/8/5N2/8/1N2K3 w - - 0 1";
+        CheckSan("two knights, by file", knightsByFile, "b1d2", true, "Nbd2");
+        CheckSan("two knights, by file", knightsByFile, "f3d2", true, "Nfd2");
+        CheckSan("two knights, only one reaches", knightsByFile, "b1c3", true, "Nc3");
+        string knightsByRank = "4k3/8/8/6N1/8/8/8/4K1N1 w - - 0 1";
+        CheckSan("two knights, by rank", knightsByRank, "g1f3", true, "N1f3");
+        CheckSan("two knights, by rank", knightsByRank, "g5f3", true, "N5f3");
+        string threeKnights = "4k3/8/8/1N3N2/8/1N6/8/4K3 w - - 0 1";
+        CheckSan("three knights, by file and rank", threeKnights, "b5d4", true, "Nb5d4");
+        CheckSan("three knights, by rank", threeKnights, "b3d4", true, "N3d4");
+        CheckSan("three knights, by file", threeKnights, "f5d4", true, "Nfd4");
+        CheckSan("three knights, by file with check", threeKnights, "b5d6", true, "Nbd6+");
+        string rooksByFile = "4k3/8/8/8/8/R2b3R/8/4K3 w - - 0 1";
+        CheckSan("two rooks, by file, capture", rooksByFile, "a3d3xB", true, "Raxd3");
+        CheckSan("two rooks, by file, capture", rooksByFile, "h3d3xB", true, "Rhxd3");
+        CheckSan("two rooks, only one reaches", rooksByFile, "h3e3", true, "Re3+");
+        string rooksByRank = "4k3/8/8/R7/8/8/8/R3K3 w - - 0 1";
+        CheckSan("two rooks, by rank", rooksByRank, "a1a3", true, "R1a3");
+        CheckSan("two rooks, by rank", rooksByRank, "a5a3", true, "R5a3");
+        CheckSan("two rooks, only one reaches", rooksByRank, "a5a6", true, "Ra6");
+        // A pinned knight's move isn't legal, so it doesn't count; with prohibitSelfCheck off it does.
+        string pinnedKnight = "4r1k1/8/8/8/8/8/4N3/1N2K3 w - - 0 1";
+        CheckSan("other knight pinned", pinnedKnight, "b1c3", true, "Nc3");
+        CheckSan("other knight pinned, prohibitSelfCheck off", pinnedKnight, "b1c3", false, "Nbc3");
+
+        // Pawn captures always name the file.
+        string pawnCaptures = "4k3/8/8/3p4/2P1P3/8/8/4K3 w - - 0 1";
+        CheckSan("pawn capture", pawnCaptures, "c4d5xP", true, "cxd5");
+        CheckSan("pawn capture", pawnCaptures, "e4d5xP", true, "exd5");
+        CheckSan("pawn push beside a capture", pawnCaptures, "e4e5", true, "e5");
+        string enPassant = "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1";
+        CheckSan("en passant", enPassant, "e5d6xP", true, "exd6");
+
+        // Promotions, with and without capture.
+        string promotions = "3r3k/2P1P3/8/8/8/8/8/4K3 w - - 0 1";
+        CheckSan("promotion", promotions, "c7c8=Q", true, "c8=Q");
+        CheckSan("promotion with check", promotions, "e7e8=Q", true, "e8=Q+");
+        CheckSan("underpromotion", promotions, "e7e8=N", true, "e8=N");
+        CheckSan("promotion capture", promotions, "c7d8xR=N", true, "cxd8=N");
+        CheckSan("promotion capture with check", promotions, "e7d8xR=Q", true, "exd8=Q+");
+        CheckSan("promotion capture to a rook with check", promotions, "e7d8xR=R", true, "exd8=R+");
+
+        // Castling on both sides, for both colours, with check, and in Chess960.
+        string castling = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
+        CheckSan("White castles king side", castling, "e1h1c", true, "O-O");
+        CheckSan("White castles queen side", castling, "e1a1c", true, "O-O-O");
+        string castlingBlack = "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1";
+        CheckSan("Black castles king side", castlingBlack, "e8h8c", true, "O-O");
+        CheckSan("Black castles queen side", castlingBlack, "e8a8c", true, "O-O-O");
+        string castlingCheck = "5k2/8/8/8/8/8/8/4K2R w K - 0 1";
+        CheckSan("castling with check", castlingCheck, "e1h1c", true, "O-O+");
+        string castlingQueenSideCheck = "3k4/8/8/8/8/8/8/R3K3 w Q - 0 1";
+        CheckSan("castling queen side with check", castlingQueenSideCheck, "e1a1c", true, "O-O-O+");
+        string castling960 = "2k5/8/8/8/8/8/8/R1K4R w HA - 0 1";
+        CheckSan("Chess960 king side", castling960, "c1h1c", true, "O-O");
+        CheckSan("Chess960 queen side, king doesn't move", castling960, "c1a1c", true, "O-O-O");
+
+        // Check and checkmate. With prohibitSelfCheck off (Fog of War) there is no suffix.
+        string foolsMate = "rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR b KQkq - 0 2";
+        CheckSan("fool's mate", foolsMate, "d8h4", true, "Qh4#");
+        CheckSan("fool's mate, prohibitSelfCheck off", foolsMate, "d8h4", false, "Qh4");
+        string backRankMate = "6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1";
+        CheckSan("back rank mate", backRankMate, "a1a8", true, "Ra8#");
+        string checkWithEscape = "4k3/8/8/8/8/8/8/R3K3 w - - 0 1";
+        CheckSan("check with an escape", checkWithEscape, "a1a8", true, "Ra8+");
+        string position3 = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1";
+        CheckSan("pawn check", position3, "g2g3", true, "g3+");
+
+        // Every legal move against the Java on port-reference: m.notation(board) for each of board.getAllLegalMoves
+        // (from a throwaway class, not kept).
+        CheckSanJava(knightsByFile, "Kd1 Kd2 Ke2 Kf1 Kf2 Na3 Nbd2 Nc3 Nd4 Ne5 Nfd2 Ng1 Ng5 Nh2 Nh4");
+        CheckSanJava(knightsByRank, "Kd1 Kd2 Ke2 Kf1 Kf2 N1f3 N1h3 N5f3 N5h3 Ne2 Ne4 Ne6 Nf7 Nh7");
+        CheckSanJava(threeKnights, "Kd1 Kd2 Ke2 Kf1 Kf2 N3d4 Na1 Na3 Na5 Na7 Nb5d4 Nbd6+ Nc1 Nc3 Nc5 Nc7+ Nd2 Ne3 Ne7"
+            + " Nfd4 Nfd6+ Ng3 Ng7+ Nh4 Nh6");
+        CheckSanJava(rooksByFile, "Kd1 Kd2 Kf2 Ra1 Ra2 Ra4 Ra5 Ra6 Ra7 Ra8+ Raxd3 Rb3 Rc3 Re3+ Rf3 Rg3 Rh1 Rh2 Rh4 Rh5"
+            + " Rh6 Rh7 Rh8+ Rhxd3");
+        CheckSanJava(rooksByRank, "Kd1 Kd2 Ke2 Kf1 Kf2 R1a2 R1a3 R1a4 R5a2 R5a3 R5a4 Ra6 Ra7 Ra8+ Rb1 Rb5 Rc1 Rc5 Rd1"
+            + " Rd5 Re5+ Rf5 Rg5 Rh5");
+        CheckSanJava(pinnedKnight, "Kd1 Kd2 Kf1 Kf2 Na3 Nc3 Nd2");
+        CheckSanJava(pawnCaptures, "Kd1 Kd2 Ke2 Kf1 Kf2 c5 cxd5 e5 exd5");
+        CheckSanJava(enPassant, "Kd1 Kd2 Ke2 Kf1 Kf2 e6 exd6");
+        CheckSanJava(promotions, "Ke2 Kf1 Kf2 c8=B c8=N c8=Q c8=R cxd8=B cxd8=N cxd8=Q+ cxd8=R+ e8=B e8=N e8=Q+ e8=R+"
+            + " exd8=B exd8=N exd8=Q+ exd8=R+");
+        CheckSanJava(castling, "Kd1 Kd2 Ke2 Kf1 Kf2 O-O O-O-O Ra2 Ra3 Ra4 Ra5 Ra6 Ra7 Rb1 Rc1 Rd1 Rf1 Rg1 Rh2 Rh3 Rh4"
+            + " Rh5 Rh6 Rh7 Rxa8+ Rxh8+");
+        CheckSanJava(castlingBlack, "Kd7 Kd8 Ke7 Kf7 Kf8 O-O O-O-O Ra2 Ra3 Ra4 Ra5 Ra6 Ra7 Rb8 Rc8 Rd8 Rf8 Rg8 Rh2 Rh3"
+            + " Rh4 Rh5 Rh6 Rh7 Rxa1+ Rxh1+");
+        CheckSanJava(castlingCheck, "Kd1 Kd2 Ke2 Kf1 Kf2 O-O+ Rf1+ Rg1 Rh2 Rh3 Rh4 Rh5 Rh6 Rh7 Rh8+");
+        CheckSanJava(castlingQueenSideCheck, "Kd1 Kd2 Ke2 Kf1 Kf2 O-O-O+ Ra2 Ra3 Ra4 Ra5 Ra6 Ra7 Ra8+ Rb1 Rc1 Rd1+");
+        CheckSanJava(castling960, "Kb1 Kb2 Kc2 Kd1 Kd2 O-O O-O-O Ra2 Ra3 Ra4 Ra5 Ra6 Ra7 Ra8+ Rb1 Rd1 Re1 Rf1 Rg1 Rh2"
+            + " Rh3 Rh4 Rh5 Rh6 Rh7 Rh8+");
+        CheckSanJava(foolsMate, "Ba3 Bb4 Bc5 Bd6 Be7 Ke7 Na6 Nc6 Ne7 Nf6 Nh6 Qe7 Qf6 Qg5 Qh4# a5 a6 b5 b6 c5 c6 d5 d6"
+            + " e4 f5 f6 g5 g6 h5 h6");
+        CheckSanJava(backRankMate, "Kf1 Kf2 Kg2 Kh1 Kh2 Ra2 Ra3 Ra4 Ra5 Ra6 Ra7 Ra8# Rb1 Rc1 Rd1 Re1 Rf1");
+        CheckSanJava(checkWithEscape, "Kd1 Kd2 Ke2 Kf1 Kf2 Ra2 Ra3 Ra4 Ra5 Ra6 Ra7 Ra8+ Rb1 Rc1 Rd1");
+        // Perft positions 1-5 (3 is the pawn check position above).
+        CheckSanJava(start, "Na3 Nc3 Nf3 Nh3 a3 a4 b3 b4 c3 c4 d3 d4 e3 e4 f3 f4 g3 g4 h3 h4");
+        CheckSanJava("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+            "Bb5 Bc1 Bc4 Bd1 Bd3 Be3 Bf1 Bf4 Bg5 Bh6 Bxa6 Kd1 Kf1 Na4 Nb1 Nb5 Nc4 Nc6 Nd1 Nd3 Ng4 Nxd7 Nxf7 Nxg6 O-O"
+            + " O-O-O Qd3 Qe3 Qf4 Qf5 Qg3 Qg4 Qh5 Qxf6 Qxh3 Rb1 Rc1 Rd1 Rf1 Rg1 a3 a4 b3 d6 dxe6 g3 g4 gxh3");
+        CheckSanJava(position3, "Ka4 Ka6 Ra4 Rb1 Rb2 Rb3 Rc4 Rd4 Re4 Rxf4+ e3 e4 g3+ g4");
+        CheckSanJava("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1", "Bc5 Kh1 Nd4 Rf2 c5 d4");
+        CheckSanJava("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",
+            "Ba6 Bb3 Bb5 Bd2 Bd3 Bd5 Be3 Be6 Bf4 Bg5 Bh6 Bxf7 Kd2 Kf1 Kxf2 Na3 Nbc3 Nd2 Nd4 Nec3 Nf4 Ng1 Ng3 O-O Qd2"
+            + " Qd3 Qd4 Qd5 Qd6 Rf1 Rg1 a3 a4 b3 b4 c3 dxc8=B dxc8=N dxc8=Q dxc8=R g3 g4 h3 h4");
     }
 }
