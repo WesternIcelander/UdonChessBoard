@@ -1,5 +1,6 @@
 using System;
 using UdonSharp;
+using UnityEngine;
 using VRC.SDKBase;
 
 namespace SiggiChessBoard {
@@ -22,6 +23,14 @@ namespace SiggiChessBoard {
 
         // Room for this many plies in the history arrays at first; they grow as needed.
         public const int InitialHistoryCapacity = 128;
+
+        // The arbiter whose settings this board snapshots, and this board's number for its per-board overrides
+        // (docs/settings.md).
+        [Tooltip("The ChessArbiter holding the rules settings this board uses.")]
+        public ChessArbiter arbiter;
+        [Tooltip("This board's number for per-board setting overrides: 0 to the arbiter's Board Count - 1. A number "
+            + "outside that range always gets the instance defaults.")]
+        public int boardNumber;
 
         // ---- Board state (docs/networking.md, Synced fields) ----
 
@@ -98,6 +107,11 @@ namespace SiggiChessBoard {
         [NonSerialized] public int[] gameNumbers = new int[ChessArbiter.NumberCount];
 
         void Start() {
+            if (!Utilities.IsValid(arbiter)) {
+                Debug.LogError("[ChessBoard] " + gameObject.name + ": the Arbiter field is empty. Set it to "
+                    + "the world's ChessArbiter. Until then the board plays with every setting off: no takebacks, no "
+                    + "draws, nothing forced, never reset for inactivity.");
+            }
             ClearState();
         }
 
@@ -200,7 +214,10 @@ namespace SiggiChessBoard {
 
             if (color == ChessRules.White) whitePlayer = name;
             else blackPlayer = name;
-            if (lifecycle == LifecycleReset) lifecycle = LifecycleLobby;
+            if (lifecycle == LifecycleReset) {
+                lifecycle = LifecycleLobby;
+                TakeSnapshot();
+            }
             return InputAccepted;
         }
 
@@ -214,6 +231,60 @@ namespace SiggiChessBoard {
         // Whether this display name has either seat.
         public bool IsPlayer(string name) {
             return IsSeated(ChessRules.White, name) || IsSeated(ChessRules.Black, name);
+        }
+
+        // ---- Settings snapshot (docs/settings.md, Snapshot) ----
+        // The board copies its effective settings from the arbiter when it leaves the reset state (the first join, or
+        // loading a game in step 7.9a) and plays by that copy until it's reset, so changing the arbiter doesn't alter
+        // a board already in use. An organizer can make it take a new one.
+
+        // Copies the arbiter's effective settings for this board into gameSettings and gameNumbers, then applies the
+        // forced lobby settings so the lobby shows them: the mode and clock in the lobby, the clock on a loaded board
+        // (its mode is the loaded game's). A game already started keeps its mode and clock. With no arbiter, every
+        // setting is off and the numbers are Never, Standard and NoClock.
+        public void TakeSnapshot() {
+            int[] numbers = new int[ChessArbiter.NumberCount];
+            if (Utilities.IsValid(arbiter)) {
+                gameSettings = arbiter.EffectiveSettings(boardNumber);
+                arbiter.EffectiveNumbers(boardNumber, numbers);
+            } else {
+                gameSettings = 0;
+                numbers[ChessArbiter.NumberResetAvailableTime] = ChessArbiter.Never;
+                numbers[ChessArbiter.NumberAutoResetTime] = ChessArbiter.Never;
+                numbers[ChessArbiter.NumberForcedMode] = ChessGame.ModeStandard;
+                numbers[ChessArbiter.NumberForcedBaseTime] = ChessArbiter.NoClock;
+                numbers[ChessArbiter.NumberForcedIncrement] = 0;
+            }
+            gameNumbers = numbers;
+            if (lifecycle == LifecycleLobby) ApplyForcedSettings();
+            else if (lifecycle == LifecycleLoaded) ApplyForcedClock();
+        }
+
+        // Whether a setting bit is on in the snapshot.
+        public bool IsGameSettingOn(int setting) {
+            return (gameSettings & setting) != 0;
+        }
+
+        // A numeric setting from the snapshot.
+        public int GameNumber(int number) {
+            return gameNumbers[number];
+        }
+
+        // Re-snapshot on request, for the local player.
+        public int Resnapshot() {
+            return ResnapshotAs(Networking.LocalPlayer);
+        }
+
+        // Re-snapshot on request (docs/settings.md): an organizer makes a board in use take a new snapshot, e.g. after
+        // fixing a mistake in the settings. Refused for anyone else and on a reset board, which has no snapshot (it
+        // takes one when it leaves the reset state). Taking ownership of the board and serializing come with step 8.
+        public int ResnapshotAs(VRCPlayerApi who) {
+            if (lifecycle == LifecycleReset) return InputRejected;
+            if (!Utilities.IsValid(who) || !Utilities.IsValid(arbiter) || !arbiter.IsOrganizer(who)) {
+                return InputRejected;
+            }
+            TakeSnapshot();
+            return InputAccepted;
         }
 
         // ---- Lobby settings and Start (docs/board-lifecycle.md, Starting) ----
@@ -302,6 +373,10 @@ namespace SiggiChessBoard {
         // Copies the forced mode and clock from the snapshot over the players' choices.
         void ApplyForcedSettings() {
             if (IsModeForced()) mode = gameNumbers[ChessArbiter.NumberForcedMode];
+            ApplyForcedClock();
+        }
+
+        void ApplyForcedClock() {
             if (IsClockForced()) {
                 baseTime = gameNumbers[ChessArbiter.NumberForcedBaseTime];
                 increment = baseTime == ChessArbiter.NoClock ? 0 : gameNumbers[ChessArbiter.NumberForcedIncrement];

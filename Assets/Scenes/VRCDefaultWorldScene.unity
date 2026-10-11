@@ -579,6 +579,8 @@ MonoBehaviour:
     PrefabModifications: []
     SerializationNodes: []
   _udonSharpBackingUdonBehaviour: {fileID: 862814459}
+  arbiter: {fileID: 1280104624}
+  boardNumber: 0
 --- !u!114 &862814459
 MonoBehaviour:
   m_ObjectHideFlags: 2

@@ -37,6 +37,7 @@ public class BoardTest : UdonSharpBehaviour {
             Check(false, "board assigned", "the board field is empty");
         } else {
             localName = Networking.LocalPlayer.displayName;
+            NothingForced();
             TestResetState();
             TestJoin();
             TestJoinBothSeats();
@@ -50,6 +51,8 @@ public class BoardTest : UdonSharpBehaviour {
             TestChess960Positions();
             TestChess960Random();
             TestChess960Start();
+            TestSnapshot();
+            if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
             board.ClearState();
         }
         Debug.Log("[BoardTest] done: " + passed + " passed, " + failed + " failed"
@@ -77,6 +80,13 @@ public class BoardTest : UdonSharpBehaviour {
     void CheckSeats(string white, string black, string name) {
         CheckText(board.whitePlayer, white, name + ": white seat");
         CheckText(board.blackPlayer, black, name + ": black seat");
+    }
+
+    // The 7.1 checks expect snapshots with nothing forced, whatever the arbiter's defaults: every setting bit of the
+    // board's number is overridden off (the overrides are cleared after the checks).
+    void NothingForced() {
+        if (!Utilities.IsValid(board.arbiter)) return;
+        board.arbiter.SetSettingOverride(board.boardNumber, ChessArbiter.OverrideSettingsMask, false);
     }
 
     // ---- 7.1a ----
@@ -281,9 +291,9 @@ public class BoardTest : UdonSharpBehaviour {
     }
 
     void TestForcedSettings() {
-        // The snapshot is taken in 7.2; here its fields are set directly.
+        // The joins take a snapshot with nothing forced (NothingForced); here its fields are then set directly.
         LobbyWithTwoPlayers();
-        Check(!board.IsModeForced() && !board.IsClockForced(), "forced: nothing forced without a snapshot",
+        Check(!board.IsModeForced() && !board.IsClockForced(), "forced: nothing forced in the snapshot",
             "a forced bit is on");
         board.gameSettings = ChessArbiter.SettingModeForced;
         board.gameNumbers[ChessArbiter.NumberForcedMode] = ChessGame.ModeChess960;
@@ -622,5 +632,206 @@ public class BoardTest : UdonSharpBehaviour {
         CheckInt(bad, 0, "960 start: 20 games start from valid Chess960 positions"
             + (firstProblem == "" ? "" : " (first: " + firstProblem + ")"));
         Check(distinct >= 2, "960 start: different positions across starts (" + distinct + ")", "always the same");
+    }
+
+    // ---- 7.2 ----
+
+    // Overrides every setting of the board's number on its arbiter: the bits in settings on, the rest off, and the
+    // five numbers.
+    void OverrideAll(int settings, int resetAvailable, int autoReset, int forcedMode, int forcedBase, int forcedInc) {
+        ChessArbiter arbiter = board.arbiter;
+        int n = board.boardNumber;
+        arbiter.SetSettingOverride(n, ChessArbiter.OverrideSettingsMask, false);
+        arbiter.SetSettingOverride(n, settings, true);
+        arbiter.SetNumberOverride(n, ChessArbiter.NumberResetAvailableTime, resetAvailable);
+        arbiter.SetNumberOverride(n, ChessArbiter.NumberAutoResetTime, autoReset);
+        arbiter.SetNumberOverride(n, ChessArbiter.NumberForcedMode, forcedMode);
+        arbiter.SetNumberOverride(n, ChessArbiter.NumberForcedBaseTime, forcedBase);
+        arbiter.SetNumberOverride(n, ChessArbiter.NumberForcedIncrement, forcedInc);
+    }
+
+    // Checks the board's snapshot against expected bits and numbers.
+    void CheckSnapshot(int settings, int resetAvailable, int autoReset, int forcedMode, int forcedBase, int forcedInc,
+            string name) {
+        CheckText(ChessArbiter.SettingsToString(board.gameSettings), ChessArbiter.SettingsToString(settings),
+            name + ": setting bits");
+        int[] expected = new int[ChessArbiter.NumberCount];
+        expected[ChessArbiter.NumberResetAvailableTime] = resetAvailable;
+        expected[ChessArbiter.NumberAutoResetTime] = autoReset;
+        expected[ChessArbiter.NumberForcedMode] = forcedMode;
+        expected[ChessArbiter.NumberForcedBaseTime] = forcedBase;
+        expected[ChessArbiter.NumberForcedIncrement] = forcedInc;
+        CheckText(ChessArbiter.NumbersToString(board.gameNumbers), ChessArbiter.NumbersToString(expected),
+            name + ": numbers");
+    }
+
+    // The snapshot is taken when the board leaves the reset state and kept until it's reset; changing the arbiter
+    // doesn't affect it, and a re-snapshot by an organizer picks the change up. Works on the overrides of the board's
+    // number (cleared at the end), so the arbiter's defaults don't matter except where they're the point.
+    void TestSnapshot() {
+        Check(Utilities.IsValid(board.arbiter), "snapshot: the board's arbiter is assigned", "the Arbiter field is empty");
+        if (!Utilities.IsValid(board.arbiter)) return;
+        ChessArbiter arbiter = board.arbiter;
+        int n = board.boardNumber;
+        Check(arbiter.HasBoard(n), "snapshot: the board's number has overrides",
+            "board number " + n + " is outside 0 to " + (arbiter.BoardCount() - 1));
+        if (!arbiter.HasBoard(n)) return;
+        Check(arbiter.IsOrganizer(Networking.LocalPlayer), "snapshot: the local player is an organizer",
+            "the arbiter's simpleAuth doesn't authorize the local player; the re-snapshot checks need it to");
+
+        int s1 = ChessArbiter.SettingTakebacks | ChessArbiter.SettingDrawAgreement | ChessArbiter.SettingFiftyMoveRule;
+        int s2 = ChessArbiter.SettingsDrawRules | ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced;
+
+        // A reset board has no snapshot, even with settings to copy.
+        OverrideAll(s1, 30, 300, ChessGame.ModeChess960, 180, 2);
+        board.ClearState();
+        CheckSnapshot(0, 0, 0, 0, 0, 0, "snapshot: none on a reset board");
+
+        // The first join takes it.
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckSnapshot(s1, 30, 300, ChessGame.ModeChess960, 180, 2, "snapshot: taken on the first join");
+        Check(board.IsGameSettingOn(ChessArbiter.SettingTakebacks)
+            && !board.IsGameSettingOn(ChessArbiter.SettingThreefoldRepetition), "snapshot: IsGameSettingOn",
+            "wrong answer");
+        CheckInt(board.GameNumber(ChessArbiter.NumberAutoResetTime), 300, "snapshot: GameNumber");
+        CheckInt(board.mode, ChessGame.ModeStandard, "snapshot: forced mode value unused while not forced");
+        CheckInt(board.baseTime, ChessArbiter.NoClock, "snapshot: forced clock value unused while not forced");
+
+        // Changing the arbiter afterwards doesn't affect the board: not on the second join, not on Start.
+        OverrideAll(s2, 60, 900, ChessGame.ModeChess960, 300, 0);
+        CheckSnapshot(s1, 30, 300, ChessGame.ModeChess960, 180, 2, "snapshot: arbiter changed, board unchanged");
+        board.JoinAs(ChessRules.Black, "Bob");
+        CheckSnapshot(s1, 30, 300, ChessGame.ModeChess960, 180, 2, "snapshot: second join keeps it");
+        Check(!board.IsModeForced() && !board.IsClockForced(), "snapshot: the arbiter's new forcing not applied",
+            "a forced bit is on");
+        CheckInt(board.SetClockAs("Ana", 60, 1), ChessBoard.InputAccepted, "snapshot: clock still free");
+        board.StartGameAs("Ana");
+        CheckSnapshot(s1, 30, 300, ChessGame.ModeChess960, 180, 2, "snapshot: Start keeps it");
+        CheckInt(board.mode, ChessGame.ModeStandard, "snapshot: Start uses the players' mode");
+        CheckInt(board.baseTime * 1000 + board.increment, 60001, "snapshot: Start uses the players' clock");
+
+        // A re-snapshot by an organizer picks the change up; a game in progress keeps its mode and clock.
+        CheckInt(board.Resnapshot(), ChessBoard.InputAccepted, "re-snapshot: in game, accepted");
+        CheckSnapshot(s2, 60, 900, ChessGame.ModeChess960, 300, 0, "re-snapshot: in game");
+        CheckInt(board.mode, ChessGame.ModeStandard, "re-snapshot: in game, mode kept");
+        CheckInt(board.baseTime * 1000 + board.increment, 60001, "re-snapshot: in game, clock kept");
+        CheckInt(board.whiteTime, 60000, "re-snapshot: in game, time kept");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "re-snapshot: in game, still in game");
+        CheckSeats("Ana", "Bob", "re-snapshot: in game");
+
+        // Refused for a non-organizer (the arbiter's simpleAuth emptied for a moment), for no player, and on a reset
+        // board.
+        OverrideAll(s1, 30, 300, ChessGame.ModeChess960, 180, 2);
+        SiggiUSTools.SimpleAuth auth = arbiter.simpleAuth;
+        arbiter.simpleAuth = null;
+        CheckInt(board.Resnapshot(), ChessBoard.InputRejected, "re-snapshot: non-organizer rejected");
+        arbiter.simpleAuth = auth;
+        CheckInt(board.ResnapshotAs(null), ChessBoard.InputRejected, "re-snapshot: no player rejected");
+        CheckSnapshot(s2, 60, 900, ChessGame.ModeChess960, 300, 0, "re-snapshot: rejected ones change nothing");
+        board.ClearState();
+        CheckInt(board.Resnapshot(), ChessBoard.InputRejected, "re-snapshot: reset board rejected");
+        CheckSnapshot(0, 0, 0, 0, 0, 0, "re-snapshot: reset board still has none");
+
+        // On an ended board it's accepted.
+        LobbyWithTwoPlayers();
+        board.StartGameAs("Ana");
+        board.lifecycle = ChessBoard.LifecycleEnded;
+        OverrideAll(ChessArbiter.SettingDeadPosition, 10, 20, ChessGame.ModeStandard, ChessArbiter.NoClock, 0);
+        CheckInt(board.Resnapshot(), ChessBoard.InputAccepted, "re-snapshot: ended, accepted");
+        CheckSnapshot(ChessArbiter.SettingDeadPosition, 10, 20, ChessGame.ModeStandard, ChessArbiter.NoClock, 0,
+            "re-snapshot: ended");
+
+        // Forced settings are applied when the snapshot is taken, so the lobby shows them.
+        OverrideAll(ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced, 30, 300, ChessGame.ModeChess960,
+            300, 5);
+        board.ClearState();
+        board.JoinAs(ChessRules.Black, "Bob");
+        CheckInt(board.mode, ChessGame.ModeChess960, "snapshot: forced mode shown in the lobby");
+        CheckInt(board.baseTime * 1000 + board.increment, 300005, "snapshot: forced clock shown in the lobby");
+        Check(board.IsModeForced() && board.IsClockForced(), "snapshot: forced bits from the arbiter",
+            "a forced bit is off");
+
+        // A re-snapshot in the lobby applies new forcing and lifts old forcing (the shown values stay as choices).
+        board.JoinAs(ChessRules.White, "Ana");
+        OverrideAll(ChessArbiter.SettingClockForced, 30, 300, ChessGame.ModeStandard, 900, 10);
+        CheckInt(board.Resnapshot(), ChessBoard.InputAccepted, "re-snapshot: lobby, accepted");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "re-snapshot: lobby, still lobby");
+        CheckInt(board.baseTime * 1000 + board.increment, 900010, "re-snapshot: lobby, new forced clock");
+        CheckInt(board.mode, ChessGame.ModeChess960, "re-snapshot: lobby, mode left as it was");
+        CheckInt(board.SetModeAs("Ana", ChessGame.ModeStandard), ChessBoard.InputAccepted,
+            "re-snapshot: lobby, mode no longer forced");
+        CheckInt(board.SetClockAs("Ana", 60, 0), ChessBoard.InputRejected, "re-snapshot: lobby, clock now forced");
+        board.StartGameAs("Bob");
+        CheckInt(board.baseTime * 1000 + board.increment, 900010, "re-snapshot: lobby, the game has the forced clock");
+
+        // On a loaded board (loading, step 7.9a, calls TakeSnapshot) the forced clock is applied but not the forced
+        // mode: the mode is the loaded game's. Joining it doesn't take another.
+        board.ClearState();
+        board.lifecycle = ChessBoard.LifecycleLoaded;
+        board.mode = ChessGame.ModeChess960;
+        int forcedBoth = ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced;
+        OverrideAll(forcedBoth, 30, 300, ChessGame.ModeStandard, 120, 1);
+        board.TakeSnapshot();
+        CheckSnapshot(forcedBoth, 30, 300, ChessGame.ModeStandard, 120, 1, "snapshot: loaded board");
+        CheckInt(board.mode, ChessGame.ModeChess960, "snapshot: loaded board keeps the game's mode");
+        CheckInt(board.baseTime * 1000 + board.increment, 120001, "snapshot: loaded board shows the forced clock");
+        OverrideAll(s1, 30, 300, ChessGame.ModeChess960, 180, 2);
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckSnapshot(forcedBoth, 30, 300, ChessGame.ModeStandard, 120, 1, "snapshot: joining a loaded board keeps it");
+
+        // A conflicting override is corrected in the snapshot, as in EffectiveNumbers: auto-reset 60 clamps the
+        // reset-available time 120 to 60.
+        OverrideAll(0, 120, 60, ChessGame.ModeStandard, ChessArbiter.NoClock, 0);
+        board.ClearState();
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckSnapshot(0, 60, 60, ChessGame.ModeStandard, ChessArbiter.NoClock, 0, "snapshot: numbers corrected");
+
+        // With no overrides the snapshot is the arbiter's defaults, and changing the defaults afterwards doesn't
+        // affect it either (they're swapped for a moment and restored).
+        arbiter.ClearOverrides(n);
+        int defaults = arbiter.defaultSettings;
+        int[] defaultNumbers = arbiter.defaultNumbers;
+        int[] effective = new int[ChessArbiter.NumberCount];
+        arbiter.EffectiveNumbers(n, effective);
+        board.ClearState();
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckSnapshot(defaults, effective[0], effective[1], effective[2], effective[3], effective[4],
+            "snapshot: the defaults without overrides");
+        int[] changed = new int[ChessArbiter.NumberCount];
+        changed[ChessArbiter.NumberResetAvailableTime] = 5;
+        changed[ChessArbiter.NumberAutoResetTime] = 7;
+        changed[ChessArbiter.NumberForcedMode] = ChessGame.ModeChess960;
+        changed[ChessArbiter.NumberForcedBaseTime] = 42;
+        changed[ChessArbiter.NumberForcedIncrement] = 3;
+        int flipped = ~defaults & ChessArbiter.OverrideSettingsMask;
+        arbiter.defaultSettings = flipped;
+        arbiter.defaultNumbers = changed;
+        CheckSnapshot(defaults, effective[0], effective[1], effective[2], effective[3], effective[4],
+            "snapshot: defaults changed, board unchanged");
+        CheckInt(board.Resnapshot(), ChessBoard.InputAccepted, "re-snapshot: defaults, accepted");
+        CheckSnapshot(flipped, 5, 7, ChessGame.ModeChess960, 42, 3, "re-snapshot: picks up the changed defaults");
+        arbiter.defaultSettings = defaults;
+        arbiter.defaultNumbers = defaultNumbers;
+
+        // A board number without overrides gets the defaults, whatever the board's own number has.
+        OverrideAll(s1, 30, 300, ChessGame.ModeChess960, 180, 2);
+        board.boardNumber = arbiter.BoardCount();
+        board.ClearState();
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckSnapshot(defaults, effective[0], effective[1], effective[2], effective[3], effective[4],
+            "snapshot: board number out of range gets the defaults");
+        board.boardNumber = n;
+
+        // With no arbiter, everything off, and no re-snapshot.
+        board.arbiter = null;
+        board.ClearState();
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckSnapshot(0, ChessArbiter.Never, ChessArbiter.Never, ChessGame.ModeStandard, ChessArbiter.NoClock, 0,
+            "snapshot: no arbiter, everything off");
+        CheckInt(board.Resnapshot(), ChessBoard.InputRejected, "re-snapshot: no arbiter rejected");
+        board.arbiter = arbiter;
+
+        arbiter.ClearOverrides(n);
+        board.ClearState();
     }
 }
