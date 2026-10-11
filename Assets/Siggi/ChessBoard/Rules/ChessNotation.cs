@@ -75,6 +75,103 @@ namespace SiggiChessBoard {
             return ChessRules.SquareName(from);
         }
 
+        // What MoveFromSan returns when no legal move matches, or more than one does. Packed moves are never negative.
+        public const int SanNoMove = -1;
+        public const int SanAmbiguous = -2;
+
+        // The legal move (of legalMoves[0..legalCount)) that san names (Java Board.parseMove with MovePredicates, for
+        // PGN import): SanNoMove if none does or san isn't SAN, SanAmbiguous if more than one does. Any "+"/"#" at the
+        // end is ignored, and castling may be written with zeros. Otherwise san is [piece][from file][from rank][x]
+        // square[=promotion], as the Java reads it, with these rules:
+        // - no piece letter is a pawn ("P" is allowed); the from file and rank, when given, must match, so an
+        //   over-disambiguated move ("Ng1f3") is accepted and a move missing its disambiguation is ambiguous;
+        // - a pawn's "x" must match whether it captures (en passant included); a piece's "x" needs a capture, but a
+        //   piece capture without "x" is accepted, as in the Java;
+        // - the promotion must be given exactly when the move promotes ("e8" alone matches no move; the Java reads it
+        //   as all four promotions, which fails as well);
+        // - O-O is the castling with the rook right of the king, O-O-O left (Chess960 too); "Kg1" never matches a
+        //   castling.
+        public static int MoveFromSan(string san, int[] legalMoves, int legalCount) {
+            int end = san.Length;
+            while (end > 0 && (san[end - 1] == '+' || san[end - 1] == '#')) end--;
+            string text = san.Substring(0, end);
+            bool castle = false;
+            bool kingSide = false;
+            if (text == "O-O" || text == "0-0") {
+                castle = true;
+                kingSide = true;
+            } else if (text == "O-O-O" || text == "0-0-0") {
+                castle = true;
+            }
+            int type = ChessRules.Pawn;
+            int fromFile = -1;
+            int fromRank = -1;
+            int to = ChessRules.NoSquare;
+            int promotion = ChessRules.NoPieceType;
+            bool capture = false;
+            if (!castle) {
+                int start = 0;
+                if (end > 0) {
+                    int letterType = ChessRules.PieceTypeFromLetter(text[0]);
+                    if (letterType != ChessRules.NoPieceType) {
+                        type = letterType;
+                        start = 1;
+                    }
+                }
+                if (end - start >= 2 && text[end - 2] == '=') {
+                    promotion = ChessRules.PieceTypeFromLetter(text[end - 1]);
+                    if (promotion == ChessRules.NoPieceType || promotion == ChessRules.Pawn
+                        || promotion == ChessRules.King) {
+                        return SanNoMove;
+                    }
+                    end -= 2;
+                }
+                if (end - start < 2) return SanNoMove;
+                to = ChessRules.ParseSquare(text.Substring(end - 2, 2));
+                if (to == ChessRules.NoSquare) return SanNoMove;
+                end -= 2;
+                if (end > start && text[end - 1] == 'x') {
+                    capture = true;
+                    end--;
+                }
+                if (end > start && text[end - 1] >= '1' && text[end - 1] <= '8') {
+                    fromRank = text[end - 1] - '1';
+                    end--;
+                }
+                if (end > start && text[end - 1] >= 'a' && text[end - 1] <= 'h') {
+                    fromFile = text[end - 1] - 'a';
+                    end--;
+                }
+                if (end != start) return SanNoMove;
+            }
+
+            int found = SanNoMove;
+            for (int i = 0; i < legalCount; i++) {
+                int move = legalMoves[i];
+                bool isCastle = ((move >> ChessRules.MoveCastleShift) & 1) != 0;
+                if (castle) {
+                    if (!isCastle) continue;
+                    int kingFile = (move >> ChessRules.MoveFromShift) & 7;
+                    int rookFile = (move >> ChessRules.MoveToShift) & 7;
+                    if ((rookFile > kingFile) != kingSide) continue;
+                } else {
+                    if (isCastle) continue;
+                    if (((move >> ChessRules.MovePieceTypeShift) & ChessRules.MoveTypeMask) != type) continue;
+                    if (((move >> ChessRules.MoveToShift) & ChessRules.MoveSquareMask) != to) continue;
+                    int from = (move >> ChessRules.MoveFromShift) & ChessRules.MoveSquareMask;
+                    if (fromFile >= 0 && (from & 7) != fromFile) continue;
+                    if (fromRank >= 0 && (from >> 3) != fromRank) continue;
+                    bool takes = ((move >> ChessRules.MoveCapturedShift) & ChessRules.MoveTypeMask)
+                        != ChessRules.NoPieceType;
+                    if (type == ChessRules.Pawn ? takes != capture : capture && !takes) continue;
+                    if (((move >> ChessRules.MovePromotionShift) & ChessRules.MoveTypeMask) != promotion) continue;
+                }
+                if (found != SanNoMove) return SanAmbiguous;
+                found = move;
+            }
+            return found;
+        }
+
         static string FileLetter(int file) {
             return "" + (char)('a' + file);
         }

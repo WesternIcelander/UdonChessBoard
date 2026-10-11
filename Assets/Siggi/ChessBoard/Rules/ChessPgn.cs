@@ -235,7 +235,13 @@ namespace SiggiChessBoard {
         public const int CursorDepth = 1;
         public const int CursorMoves = 2;
         public const int CursorInMoveText = 3;
-        public const int CursorLength = 4;
+        // Kept by ImportNext only: whether the starting position is set up (1) yet, and that position's fullmove
+        // number, side to move and halfmove clock (1, White and 0 until it is).
+        public const int CursorSetUp = 4;
+        public const int CursorFirstMoveNumber = 5;
+        public const int CursorFirstSideToMove = 6;
+        public const int CursorFirstHalfmoveClock = 7;
+        public const int CursorLength = 8;
 
         // What ReadNext found.
         public const int ReadMove = 0;
@@ -269,6 +275,8 @@ namespace SiggiChessBoard {
         // PGN doesn't have stay "".
         public static void StartReading(int[] cursor, string[] tags) {
             for (int i = 0; i < CursorLength; i++) cursor[i] = 0;
+            cursor[CursorFirstMoveNumber] = 1;
+            cursor[CursorFirstSideToMove] = ChessRules.White;
             for (int i = 0; i < TagCount; i++) tags[i] = "";
         }
 
@@ -340,6 +348,105 @@ namespace SiggiChessBoard {
                     cursor[CursorInMoveText] = 1;
                 }
             }
+        }
+
+        // What ImportNext did. ImportMore: it played a move or read a clock, call again. ImportDone: the PGN is
+        // read. The rest are failures, at the ply ImportFailedAt names:
+        // - ImportBadSyntax: text that is no PGN token, an unclosed { or ( and the like (ReadNext's ReadError);
+        // - ImportIllegalMove, ImportAmbiguousMove: a move no legal move matches, or more than one does
+        //   (ChessNotation.MoveFromSan);
+        // - ImportBadFen: the FEN tag isn't a valid position (ChessFen.ParseFen), failing before the first move;
+        // - ImportTooLong: more moves than the history arrays hold.
+        public const int ImportMore = 0;
+        public const int ImportDone = 1;
+        public const int ImportBadSyntax = 2;
+        public const int ImportIllegalMove = 3;
+        public const int ImportAmbiguousMove = 4;
+        public const int ImportBadFen = 5;
+        public const int ImportTooLong = 6;
+
+        // Imports a PGN one step at a time: reads it with ReadNext (cursor and tags set up by StartReading) and plays
+        // each main-line move on board and state (byte[64], int[ChessPosition.StateLength]), so the caller can stop
+        // after any step and go on later (5.3). Returns an Import* value.
+        // Before the first move (or the end, for a game with no moves) the position is set up from the FEN tag, or
+        // the standard start without one, and its fullmove number, side to move and halfmove clock are kept in
+        // cursor (CursorFirst*). Each move is matched against the legal moves (generated into legalMoves, an
+        // int[ChessMoves.MaxMoves]) with ChessNotation.MoveFromSan and played. History entry i (ply i + 1) gets the
+        // packed move in moves, its SAN as the board records it (ChessNotation.MoveToSan, using scratch, an
+        // int[ChessMoves.MaxMoves], so "+"/"#" are added where VRChess leaves them out and castling is O-O) in sans,
+        // and its [%clk] in clocks (-1 for none). moves, sans and clocks must be the same length, which limits the
+        // game's length. cursor[CursorMoves] is always the number of moves played, also after a failure.
+        // prohibitSelfCheck is the mode's (docs/modes.md), for the legal moves and the SAN.
+        public static int ImportNext(Regex tokenRegex, Regex clockRegex, string pgn, int[] cursor, string[] tags,
+            byte[] board, int[] state, int[] moves, string[] sans, int[] clocks, int[] legalMoves, int[] scratch,
+            bool prohibitSelfCheck) {
+            string san;
+            int clock;
+            int read = ReadNext(tokenRegex, clockRegex, pgn, cursor, tags, out san, out clock);
+            if (read == ReadClock) {
+                clocks[cursor[CursorMoves] - 1] = clock;
+                return ImportMore;
+            }
+            if (cursor[CursorSetUp] == 0) {
+                string fen = tags[TagFen] == "" ? ChessFen.StartFen : tags[TagFen];
+                int halfmoveClock;
+                int fullmoveNumber;
+                if (!ChessFen.ParseFen(fen, board, state, out halfmoveClock, out fullmoveNumber)) {
+                    // A syntax error may have cut the tag section short, so it is reported first.
+                    if (read == ReadError) return ImportBadSyntax;
+                    if (read == ReadMove) cursor[CursorMoves]--;
+                    return ImportBadFen;
+                }
+                cursor[CursorSetUp] = 1;
+                cursor[CursorFirstMoveNumber] = fullmoveNumber;
+                cursor[CursorFirstSideToMove] = state[ChessPosition.StateSideToMove];
+                cursor[CursorFirstHalfmoveClock] = halfmoveClock;
+            }
+            if (read == ReadError) return ImportBadSyntax;
+            if (read == ReadEnd) return ImportDone;
+
+            int ply = cursor[CursorMoves] - 1;
+            if (ply >= moves.Length) {
+                cursor[CursorMoves]--;
+                return ImportTooLong;
+            }
+            int legalCount = ChessMoves.GenerateLegalMoves(board, state, legalMoves, prohibitSelfCheck);
+            int move = ChessNotation.MoveFromSan(san, legalMoves, legalCount);
+            if (move < 0) {
+                cursor[CursorMoves]--;
+                return move == ChessNotation.SanAmbiguous ? ImportAmbiguousMove : ImportIllegalMove;
+            }
+            sans[ply] = ChessNotation.MoveToSan(board, state, move, legalMoves, legalCount, scratch, prohibitSelfCheck);
+            ChessPosition.MakeMove(board, state, move);
+            moves[ply] = move;
+            clocks[ply] = -1;
+            return ImportMore;
+        }
+
+        // The move an import failed at, for "failed at move N": the next ply after the moves played, numbered from
+        // the starting position (MoveLabel).
+        public static string ImportFailedAt(int[] cursor) {
+            return MoveLabel(cursor[CursorFirstMoveNumber], cursor[CursorFirstSideToMove], cursor[CursorMoves]);
+        }
+
+        // The number of ply index ply (0 for the first move) of a game starting at fullmove number firstMoveNumber
+        // with firstSideToMove (ChessRules.White or Black) to move: "12." for a White move, "12..." for Black's.
+        public static string MoveLabel(int firstMoveNumber, int firstSideToMove, int ply) {
+            int halfmoves = firstSideToMove + ply;
+            return (firstMoveNumber + halfmoves / 2).ToString() + (halfmoves % 2 == 0 ? "." : "...");
+        }
+
+        // A short English description of an ImportNext failure, for logs and messages; "" for ImportMore and
+        // ImportDone.
+        public static string ImportErrorText(int result) {
+            switch (result) {
+                case ImportBadSyntax: return "not a PGN";
+                case ImportIllegalMove: return "illegal move";
+                case ImportAmbiguousMove: return "ambiguous move";
+                case ImportBadFen: return "invalid FEN";
+                case ImportTooLong: return "game too long";
+            }
+            return "";
         }
 
         // The first [%clk] in a comment's text, using clockRegex (ClockPattern), in milliseconds. Digits after the

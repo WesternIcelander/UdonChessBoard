@@ -23,6 +23,9 @@ public class PgnTest : UdonSharpBehaviour {
         TestImportValues();
         TestImportFiles();
         TestImportSyntax();
+        TestSanMatching();
+        TestImportGames();
+        TestImportFailures();
         LogSummary();
     }
 
@@ -627,5 +630,285 @@ public class PgnTest : UdonSharpBehaviour {
             "{[%clk 0:09:00]} 1. e4 {[%clk 0:05:00]} {[%clk 0:04:59]} e5 (1... c5 {[%clk 0:01:00]}) {[%clk 0:04:58]} "
             + "2. Nf3 {no clock} Nc6 {[%eval 0.3]} *", end, null, "e4 e5 Nf3 Nc6",
             new int[] { 299000, 298000, -1, -1 });
+    }
+
+    // ---- 5.2b ----
+
+    // The SAN of the legal move MoveFromSan finds for san in fen's position (ChessNotation.MoveToSan), or "none" and
+    // "ambiguous" for SanNoMove and SanAmbiguous.
+    string SanMatch(string fen, string san) {
+        byte[] board = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        int halfmoveClock;
+        int fullmoveNumber;
+        if (!ChessFen.ParseFen(fen, board, state, out halfmoveClock, out fullmoveNumber)) return "bad FEN";
+        int[] legalMoves = new int[ChessMoves.MaxMoves];
+        int legalCount = ChessMoves.GenerateLegalMoves(board, state, legalMoves, true);
+        int move = ChessNotation.MoveFromSan(san, legalMoves, legalCount);
+        if (move == ChessNotation.SanNoMove) return "none";
+        if (move == ChessNotation.SanAmbiguous) return "ambiguous";
+        return ChessNotation.MoveToSan(board, state, move, legalMoves, legalCount, new int[ChessMoves.MaxMoves], true);
+    }
+
+    // Checks SanMatch for each "san>expected" pair (separated by spaces) in fen's position.
+    void CheckSanMatches(string name, string fen, string pairs) {
+        string errors = "";
+        string[] items = pairs.Split(new char[] { ' ' });
+        for (int i = 0; i < items.Length; i++) {
+            int separator = items[i].IndexOf('>');
+            string san = items[i].Substring(0, separator);
+            string expected = items[i].Substring(separator + 1);
+            string actual = SanMatch(fen, san);
+            if (actual != expected) errors += " " + san + "=" + actual + " (expected " + expected + ")";
+        }
+        Check(errors == "", "SAN matching: " + name + " (" + items.Length + " SANs)", errors);
+    }
+
+    // For every legal move in fen's position, MoveFromSan finds it again from its own SAN, with and without "+"/"#",
+    // from its SAN with the from-square in full (and, for a piece capture, without the "x"), and castling with zeros.
+    void CheckSanRoundTrip(string name, string fen) {
+        byte[] board = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        int halfmoveClock;
+        int fullmoveNumber;
+        if (!ChessFen.ParseFen(fen, board, state, out halfmoveClock, out fullmoveNumber)) {
+            Check(false, "SAN round trip: " + name, "FEN rejected");
+            return;
+        }
+        int[] legalMoves = new int[ChessMoves.MaxMoves];
+        int[] scratch = new int[ChessMoves.MaxMoves];
+        int legalCount = ChessMoves.GenerateLegalMoves(board, state, legalMoves, true);
+        string errors = "";
+        int spellings = 0;
+        string[] texts = new string[4];
+        for (int i = 0; i < legalCount; i++) {
+            int move = legalMoves[i];
+            string san = ChessNotation.MoveToSan(board, state, move, legalMoves, legalCount, scratch, true);
+            string bare = san.Replace("+", "").Replace("#", "");
+            int count = 0;
+            texts[count++] = san;
+            texts[count++] = bare;
+            int type = ChessRules.MovePieceType(move);
+            bool capture = ChessRules.MoveCaptured(move) != ChessRules.NoPieceType;
+            if (ChessRules.MoveIsCastle(move)) {
+                texts[count++] = bare.Replace("O", "0");
+            } else {
+                string promotion = ChessRules.MovePromotion(move) == ChessRules.NoPieceType ? ""
+                    : "=" + ChessRules.PieceTypeLetter(ChessRules.MovePromotion(move));
+                string letter = type == ChessRules.Pawn ? "" : ChessRules.PieceTypeLetter(type);
+                texts[count++] = letter + ChessRules.SquareName(ChessRules.MoveFrom(move)) + (capture ? "x" : "")
+                    + ChessRules.SquareName(ChessRules.MoveTo(move)) + promotion;
+                if (type != ChessRules.Pawn && capture) texts[count++] = bare.Replace("x", "");
+            }
+            for (int t = 0; t < count; t++) {
+                spellings++;
+                int found = ChessNotation.MoveFromSan(texts[t], legalMoves, legalCount);
+                if (found != move) errors += " " + texts[t] + " (" + san + ") gave " + found;
+            }
+        }
+        if (legalCount == 0) errors += " no legal moves";
+        Check(errors == "", "SAN round trip: " + name + " (" + legalCount + " moves, " + spellings + " spellings)",
+            errors);
+    }
+
+    void TestSanMatching() {
+        CheckSanRoundTrip("start", ChessFen.StartFen);
+        CheckSanRoundTrip("Kiwipete", "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+        CheckSanRoundTrip("Kiwipete, Black", "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R b KQkq - 0 1");
+        CheckSanRoundTrip("perft 3", "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
+        CheckSanRoundTrip("perft 4", "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
+        CheckSanRoundTrip("perft 4 mirrored", "r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1");
+        CheckSanRoundTrip("perft 5", "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8");
+        CheckSanRoundTrip("promotions", "r3k3/1P4P1/8/8/8/8/1p4p1/R3K2R b KQq - 3 40");
+        CheckSanRoundTrip("disambiguation", "7k/8/8/RN3N2/8/1N3N2/8/R5RK w - - 0 1");
+        CheckSanRoundTrip("three queens", "8/7k/8/2Q1Q3/8/2Q5/8/K7 w - - 0 1");
+        CheckSanRoundTrip("en passant", "rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3");
+        CheckSanRoundTrip("Chess960 castling", "1r4kr/8/8/8/8/8/8/1R4KR w HBhb - 0 1");
+
+        CheckSanMatches("start", ChessFen.StartFen,
+            "Nf3>Nf3 Ng1f3>Nf3 Ngf3>Nf3 N1f3>Nf3 Nf3+>Nf3 Nf3#>Nf3 Nxf3>none Nhf3>none N2f3>none Nf4>none e4>e4 Pe4>e4 "
+            + "e2e4>e4 e5>none exd3>none ed3>none dxe3>none Ke2>none O-O>none 0-0-0>none Nf>none Nf9>none nf3>none "
+            + "e4x>none e>none f3>f3 f3=Q>none Kf3>none Bb5>none");
+        CheckSanMatches("disambiguation", "7k/8/8/RN3N2/8/1N3N2/8/R5RK w - - 0 1",
+            "Nd4>ambiguous Nbd4>ambiguous N5d4>ambiguous Nb5d4>Nb5d4 Nf3d4>Nf3d4 Nd6>ambiguous Nbd6>Nbd6 Nfd6>Nfd6 "
+            + "Ra3>ambiguous R1a3>R1a3 R5a3>R5a3 Raa3>ambiguous Rb1>ambiguous Rab1>Rab1 Rgb1>Rgb1 Rg8>Rg8+ "
+            + "Rxg8>none Nd2>ambiguous Nbd2>Nbd2 Nb3d2>Nbd2");
+        CheckSanMatches("promotions", "r3k3/1P4P1/8/8/8/8/1p4p1/R3K2R b KQq - 3 40",
+            "gxh1=Q>gxh1=Q+ gxh1=Q+>gxh1=Q+ gxh1>none gxh1=K>none gxh1=P>none g1=N>g1=N g1>none g1Q>none "
+            + "bxa1=R>bxa1=R+ b1=Q>b1=Q+ bxa1=N>bxa1=N hxg1=Q>none Kd7>Kd7 O-O-O>none Rd8>Rd8 Rxa1>Rxa1+ Ra1>Rxa1+");
+        CheckSanMatches("en passant", "rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3",
+            "exf6>exf6 ef6>none exd6>none e6>e6 f6>none xf6>exf6 Pexf6>exf6 e5f6>none e5xf6>exf6");
+        CheckSanMatches("Chess960 castling, king already on g1", "1r4kr/8/8/8/8/8/8/1R4KR w HBhb - 0 1",
+            "O-O>O-O 0-0>O-O O-O+>O-O O-O-O>O-O-O 0-0-0>O-O-O Kg1>none Kh1>none Kb1>none Kf1>Kf1 Rf1>Rf1 O-O-O-O>none");
+        CheckSanMatches("standard castling", "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1",
+            "O-O>O-O O-O-O>O-O-O Kg8>none Kc8>none Kxh8>none Ke7>Ke7");
+        CheckSanMatches("three queens", "8/7k/8/2Q1Q3/8/2Q5/8/K7 w - - 0 1",
+            "Qd4>ambiguous Qcd4>ambiguous Q5d4>ambiguous Qc5d4>Qc5d4 Qed4>Qed4 Q3d4>Q3d4 Qe3>ambiguous Qc5e3>Qc5e3");
+    }
+
+    // Imports pgn with ChessPgn.ImportNext into the given history arrays, as the importing behaviour will (one step
+    // at a time, all in one go here). Returns the last ImportNext result; cursor, tags and the arrays are the
+    // import's. fen is the position reached (halfmove clock and move number worked out from the history), "" if the
+    // position was never set up.
+    int ImportAll(string pgn, int[] cursor, string[] tags, int[] moves, string[] sans, int[] clocks, out string fen) {
+        byte[] board = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        int[] legalMoves = new int[ChessMoves.MaxMoves];
+        int[] scratch = new int[ChessMoves.MaxMoves];
+        ChessPgn.StartReading(cursor, tags);
+        int result = ChessPgn.ImportMore;
+        int steps = 0;
+        while (result == ChessPgn.ImportMore && steps < 10000) {
+            result = ChessPgn.ImportNext(tokenRegex, clockRegex, pgn, cursor, tags, board, state, moves, sans, clocks,
+                legalMoves, scratch, true);
+            steps++;
+        }
+        int moveCount = cursor[ChessPgn.CursorMoves];
+        int halfmoveClock = ChessDraws.BuildHalfmoveClocks(moves, moveCount,
+            cursor[ChessPgn.CursorFirstHalfmoveClock], new int[moveCount]);
+        int fullmoveNumber = cursor[ChessPgn.CursorFirstMoveNumber]
+            + (cursor[ChessPgn.CursorFirstSideToMove] + moveCount) / 2;
+        fen = cursor[ChessPgn.CursorSetUp] == 0 ? "" : ChessFen.WriteFen(board, state, halfmoveClock, fullmoveNumber);
+        return result;
+    }
+
+    // Imports pgn into a history of capacity moves and checks the result (expectedResult, and for a failure the
+    // move it failed at), the number of plies played and the position reached. The SAN, clock and tags must be
+    // what ReadNext reads from the text, except that expectedSans (space-separated, null for none) replaces the SAN
+    // where the board records it differently (+/# added, no extra disambiguation).
+    void CheckImport(string name, string pgn, int expectedResult, string expectedFailedAt, int expectedPlies,
+        string expectedFen, string expectedSans, int capacity) {
+        if (pgn == null) {
+            Check(false, name, "PGN file not assigned in PgnTest's pgnFiles");
+            return;
+        }
+        int[] cursor = new int[ChessPgn.CursorLength];
+        string[] tags = new string[ChessPgn.TagCount];
+        int[] moves = new int[capacity];
+        string[] sans = new string[capacity];
+        int[] clocks = new int[capacity];
+        string fen;
+        int result = ImportAll(pgn, cursor, tags, moves, sans, clocks, out fen);
+        int plies = cursor[ChessPgn.CursorMoves];
+        string failedAt = ChessPgn.ImportFailedAt(cursor);
+        string errors = "";
+        if (result != expectedResult) {
+            errors += " result " + result + " (" + ChessPgn.ImportErrorText(result) + ") at " + failedAt;
+        }
+        if (expectedResult != ChessPgn.ImportDone && failedAt != expectedFailedAt) {
+            errors += " failed at " + failedAt + " (expected " + expectedFailedAt + ")";
+        }
+        if (plies != expectedPlies) errors += " " + plies + " plies (expected " + expectedPlies + ")";
+        if (fen != expectedFen) errors += " FEN " + fen + " (expected " + expectedFen + ")";
+
+        string[] readTags = new string[ChessPgn.TagCount];
+        string[] readSans = new string[600];
+        int[] readClocks = new int[600];
+        int readCount;
+        ReadAll(pgn, readTags, readSans, readClocks, out readCount);
+        string[] expected = expectedSans == null ? readSans : expectedSans.Split(new char[] { ' ' });
+        for (int i = 0; i < plies; i++) {
+            if (i >= expected.Length || sans[i] != expected[i]) errors += " ply " + (i + 1) + " SAN " + sans[i];
+            if (i >= readCount || clocks[i] != readClocks[i]) errors += " ply " + (i + 1) + " clock " + clocks[i];
+        }
+        for (int tag = 0; tag < ChessPgn.TagCount; tag++) {
+            if (tags[tag] != readTags[tag]) errors += " tag " + ChessPgn.TagName(tag) + " \"" + tags[tag] + "\"";
+        }
+        Check(errors == "", name + " (" + plies + " plies"
+            + (expectedResult == ChessPgn.ImportDone ? "" : ", failed at " + expectedFailedAt) + ")", errors);
+    }
+
+    void TestImportGames() {
+        int done = ChessPgn.ImportDone;
+        string siggiSan = "e4 c5 Nf3 Nc6 d3 e6 Bf4 a6 c3 b5 c4 Bb7 Nc3 bxc4 dxc4 Qb6 b3 Nd4 Nd2 Bd6 e5 Be7 Na4 Qc6 h3 f6 "
+            + "f3 fxe5 Bxe5 Nf6 f4 d6 b4 dxe5 fxe5 Ne4 Nb1 O-O Bd3 Nf2 Rf1 Nxd1 Kxd1 Rxf1+ Kd2 Rf2+ Ke3 Bg5+ Kxf2 "
+            + "Qxg2+ Ke1 Rf8 Bf1 Rxf1#";
+        CheckImport("import game: Siggi-vs-Nuka (SAN as the Java exports it)", PgnText("Siggi-vs-Nuka.pgn"), done, "",
+            54, "6k1/1b4pp/p3p3/2p1P1b1/NPPn4/7P/P5q1/RN2Kr2 w - - 0 28", siggiSan, 600);
+        CheckImport("import game: lichess-long-draw", PgnText("lichess-long-draw.pgn"), done, "", 142,
+            "8/8/8/3k4/8/4K3/8/8 w - - 0 72", null, 600);
+        CheckImport("import game: en-passant", PgnText("en-passant.pgn"), done, "", 10,
+            "rnbqkbnr/2p1pppp/p2P4/8/8/P1p5/1P1P1PPP/RNBQKBNR w KQkq - 0 6", null, 600);
+        CheckImport("import game: promotions", PgnText("promotions.pgn"), done, "", 9,
+            "Q4Q2/8/8/4k3/8/8/3K4/n6q w - - 3 45", null, 600);
+        CheckImport("import game: disambiguation", PgnText("disambiguation.pgn"), done, "", 6,
+            "8/7k/8/R4N2/3N4/R4N2/3N4/6RK w - - 6 4", null, 600);
+        CheckImport("import game: chess960", PgnText("chess960.pgn"), done, "", 6,
+            "q1krbnrn/pppp1ppp/5b2/4p3/4P3/5B2/PPPP1PPP/Q1KRBNRN w - - 4 4", null, 600);
+        CheckImport("import game: stalemate", PgnText("stalemate.pgn"), done, "", 19,
+            "5bnr/4p1pq/4Qpkr/7p/7P/4P3/PPPP1PP1/RNB1KBNR b KQ - 2 10", null, 600);
+        CheckImport("import game: repetition-names", PgnText("repetition-names.pgn"), done, "", 8,
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 8 5", null, 600);
+        CheckImport("import game: checkmate", PgnText("checkmate.pgn"), done, "", 4,
+            "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3", null, 600);
+        CheckImport("import game: formatting", PgnText("formatting.pgn"), done, "", 24,
+            "3k1bnr/ppp2ppp/4p3/5b2/4pB2/P7/1PP2PPP/2K2BNR w - - 0 13", null, 600);
+
+        // A history with room for exactly the game, and for one move less.
+        CheckImport("import game: checkmate with room for 4 moves", PgnText("checkmate.pgn"), done, "", 4,
+            "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3", null, 4);
+        CheckImport("import game: checkmate with room for 3 moves fails", PgnText("checkmate.pgn"),
+            ChessPgn.ImportTooLong, "2...", 3, "rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR b KQkq g3 0 2", null,
+            3);
+    }
+
+    void TestImportFailures() {
+        int done = ChessPgn.ImportDone;
+        string afterNf3 = "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2";
+
+        // The malformed test set files, each having played the moves before its failure.
+        CheckImport("import failure: malformed/illegal-move", PgnText("illegal-move.pgn"), ChessPgn.ImportIllegalMove,
+            "2...", 3, "rnbqkbnr/ppppp1pp/8/5p1Q/4P3/8/PPPP1PPP/RNB1KBNR b KQkq - 1 2", null, 600);
+        CheckImport("import failure: malformed/ambiguous-move", PgnText("ambiguous-move.pgn"),
+            ChessPgn.ImportAmbiguousMove, "5.", 8, "1nbqkbn1/1pppppp1/r6r/p6p/P6P/R6R/1PPPPPP1/1NBQKBN1 w - - 4 5",
+            null, 600);
+        CheckImport("import failure: malformed/garbage", PgnText("garbage.pgn"), ChessPgn.ImportBadSyntax, "2...", 3,
+            afterNf3, null, 600);
+        CheckImport("import failure: malformed/unterminated-comment", PgnText("unterminated-comment.pgn"),
+            ChessPgn.ImportBadSyntax, "2...", 3, afterNf3, null, 600);
+
+        // Games with no moves still set up their position.
+        CheckImport("import: no moves", "[White \"A\"]\n\n*", done, "", 0, ChessFen.StartFen, null, 600);
+        CheckImport("import: empty text", "", done, "", 0, ChessFen.StartFen, null, 600);
+        CheckImport("import: no moves from a FEN", "[FEN \"4k3/8/8/8/8/8/8/4K3 b - - 7 31\"]\n\n*", done, "", 0,
+            "4k3/8/8/8/8/8/8/4K3 b - - 7 31", null, 600);
+
+        // Failures are numbered from the starting position.
+        CheckImport("import failure: illegal first move", "1. e5 *", ChessPgn.ImportIllegalMove, "1.", 0,
+            ChessFen.StartFen, null, 600);
+        CheckImport("import failure: illegal first move, Black to move at 40",
+            "[FEN \"4k3/8/8/8/8/8/8/4K3 b - - 7 40\"]\n\n40... Ke2 *", ChessPgn.ImportIllegalMove, "40...", 0,
+            "4k3/8/8/8/8/8/8/4K3 b - - 7 40", null, 600);
+        CheckImport("import failure: Black to move at 40, fails at 41.",
+            "[FEN \"4k3/8/8/8/8/8/8/4K3 b - - 7 40\"]\n\n40... Kd7 41. Ke9 *", ChessPgn.ImportBadSyntax, "41.", 1,
+            "8/3k4/8/8/8/8/8/4K3 w - - 8 41", null, 600);
+        CheckImport("import failure: syntax error before the first move, from a FEN",
+            "[FEN \"4k3/8/8/8/8/8/8/4K3 b - - 7 40\"]\n\nhello *", ChessPgn.ImportBadSyntax, "40...", 0,
+            "4k3/8/8/8/8/8/8/4K3 b - - 7 40", null, 600);
+
+        // An invalid FEN fails before the first move, unless the text fails first.
+        CheckImport("import failure: invalid FEN", "[FEN \"4k3/8/8/8/8/8/8/8 w - - 0 1\"]\n\n1. Kd2 *",
+            ChessPgn.ImportBadFen, "1.", 0, "", null, 600);
+        CheckImport("import failure: invalid FEN, no moves", "[FEN \"x\"]\n\n*", ChessPgn.ImportBadFen, "1.", 0, "",
+            null, 600);
+        CheckImport("import failure: syntax error in the tags after an invalid FEN",
+            "[FEN \"x\"]\n[White \"A]\n\n1. e4 *", ChessPgn.ImportBadSyntax, "1.", 0, "", null, 600);
+
+        // Moves that read but don't match.
+        CheckImport("import failure: missing promotion", "[FEN \"4k3/P7/8/8/8/8/8/4K3 w - - 0 1\"]\n\n1. a8 *",
+            ChessPgn.ImportIllegalMove, "1.", 0, "4k3/P7/8/8/8/8/8/4K3 w - - 0 1", null, 600);
+        CheckImport("import failure: castling through check",
+            "[FEN \"4k3/8/8/8/8/8/5r2/4K2R w K - 0 1\"]\n\n1. O-O *", ChessPgn.ImportIllegalMove, "1.", 0,
+            "4k3/8/8/8/8/8/5r2/4K2R w K - 0 1", null, 600);
+        CheckImport("import failure: pawn capture without x", "1. e4 d5 2. ed5 *", ChessPgn.ImportIllegalMove, "2.",
+            2, "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2", null, 600);
+
+        // The SAN is recorded as the board writes it.
+        CheckImport("import: SAN recorded with + and #, piece capture without x",
+            "1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qf7 *", done, "", 7,
+            "r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4", "e4 e5 Bc4 Nc6 Qh5 Nf6 Qxf7#", 600);
+        CheckImport("import: over-disambiguated SAN recorded as the board writes it",
+            "1. Ng1f3 Nb8c6 2. e2e4 e7xe5 *", ChessPgn.ImportIllegalMove, "2...", 3,
+            "r1bqkbnr/pppppppp/2n5/8/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq e3 0 2", "Nf3 Nc6 e4", 600);
     }
 }
