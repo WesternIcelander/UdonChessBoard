@@ -17,6 +17,7 @@ public class RulesTest : UdonSharpBehaviour {
         TestMakeUnmake();
         TestCastling();
         TestMoveGeneration();
+        TestAttacks();
         Debug.Log("[RulesTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
@@ -1143,5 +1144,108 @@ public class RulesTest : UdonSharpBehaviour {
         CheckMoveCount("perft position 3", "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8", white, 0, -1, 16);
         CheckMoveCount("perft position 4", "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1", white, bk | bq, -1, 38);
         CheckMoveCount("perft position 5", "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R", white, wk | wq, -1, 44);
+    }
+
+    // ---- 2.4b ----
+
+    // Compares the squares byColor attacks, over all 64, with expected: square names separated by spaces, "" for
+    // none.
+    void CheckAttacked(string name, byte[] board, int byColor, string expected) {
+        bool[] wanted = new bool[64];
+        if (expected != "") {
+            string[] names = expected.Split(new char[] { ' ' });
+            for (int i = 0; i < names.Length; i++) wanted[ChessRules.ParseSquare(names[i])] = true;
+        }
+        byte[] b = CopyBoard(board);
+        string extra = "";
+        string missing = "";
+        for (int sq = 0; sq < 64; sq++) {
+            bool attacked = ChessMoves.IsSquareAttacked(b, sq, byColor);
+            if (attacked && !wanted[sq]) extra += " " + ChessRules.SquareName(sq);
+            if (!attacked && wanted[sq]) missing += " " + ChessRules.SquareName(sq);
+        }
+        string errors = BoardDiff(b, board);
+        if (errors != "") errors = " changed the board:" + errors;
+        if (extra != "") errors += " unexpected:" + extra;
+        if (missing != "") errors += " missing:" + missing;
+        Check(errors == "", "attack check: " + name, errors);
+    }
+
+    void TestAttacks() {
+        int white = ChessRules.White;
+        int black = ChessRules.Black;
+
+        // Pawns attack diagonally forward only, never straight ahead, and not round the board's edges.
+        byte[] b = EmptyBoard();
+        b[ChessRules.E4] = ChessRules.WhitePawn;
+        b[ChessRules.A2] = ChessRules.WhitePawn;
+        b[ChessRules.H7] = ChessRules.WhitePawn;
+        CheckAttacked("white pawns", b, white, "d5 f5 b3 g8");
+        CheckAttacked("white pawns don't attack for black", b, black, "");
+
+        b = EmptyBoard();
+        b[ChessRules.E5] = ChessRules.BlackPawn;
+        b[ChessRules.H7] = ChessRules.BlackPawn;
+        b[ChessRules.A2] = ChessRules.BlackPawn;
+        CheckAttacked("black pawns", b, black, "d4 f4 g6 b1");
+        CheckAttacked("black pawns don't attack for white", b, white, "");
+
+        // Knights jump over pieces in the way, and don't wrap round the board's edges.
+        b = EmptyBoard();
+        b[ChessRules.D4] = ChessRules.WhiteKnight;
+        b[ChessRules.D5] = ChessRules.BlackPawn;
+        b[ChessRules.E4] = ChessRules.BlackPawn;
+        b[ChessRules.C4] = ChessRules.BlackPawn;
+        b[ChessRules.D3] = ChessRules.BlackPawn;
+        b[ChessRules.H1] = ChessRules.WhiteKnight;
+        CheckAttacked("white knights", b, white, "c6 e6 b5 f5 b3 f3 c2 e2 g3 f2");
+        b = EmptyBoard();
+        b[ChessRules.A8] = ChessRules.BlackKnight;
+        CheckAttacked("black knight in the corner", b, black, "b6 c7");
+
+        // Sliders: each line stops at the first piece of either colour, which is itself attacked.
+        b = EmptyBoard();
+        b[ChessRules.D4] = ChessRules.WhiteBishop;
+        b[ChessRules.F6] = ChessRules.WhitePawn;
+        b[ChessRules.B2] = ChessRules.BlackKnight;
+        CheckAttacked("bishop blocked by both colours", b, white, "e5 f6 c5 b6 a7 e3 f2 g1 c3 b2 e7 g7");
+
+        b = EmptyBoard();
+        b[ChessRules.E5] = ChessRules.BlackRook;
+        b[ChessRules.E7] = ChessRules.BlackPawn;
+        b[ChessRules.E2] = ChessRules.WhitePawn;
+        CheckAttacked("black rook blocked by both colours", b, black,
+            "e6 e7 e4 e3 e2 a5 b5 c5 d5 f5 g5 h5 d6 f6");
+
+        b = EmptyBoard();
+        b[ChessRules.A1] = ChessRules.WhiteQueen;
+        b[ChessRules.A5] = ChessRules.BlackPawn;
+        b[ChessRules.D4] = ChessRules.BlackBishop;
+        CheckAttacked("queen in the corner, blocked", b, white, "a2 a3 a4 a5 b1 c1 d1 e1 f1 g1 h1 b2 c3 d4");
+
+        b = EmptyBoard();
+        b[ChessRules.D4] = ChessRules.BlackQueen;
+        b[ChessRules.D6] = ChessRules.WhiteKing;
+        b[ChessRules.F2] = ChessRules.WhiteKnight;
+        CheckAttacked("black queen in the middle, blocked", b, black,
+            "d5 d6 d3 d2 d1 a4 b4 c4 e4 f4 g4 h4 e5 f6 g7 h8 c5 b6 a7 e3 f2 c3 b2 a1");
+
+        // Kings: one step each way.
+        b = EmptyBoard();
+        b[ChessRules.E4] = ChessRules.WhiteKing;
+        CheckAttacked("white king", b, white, "d3 e3 f3 d4 f4 d5 e5 f5");
+        b = EmptyBoard();
+        b[ChessRules.H8] = ChessRules.BlackKing;
+        CheckAttacked("black king in the corner", b, black, "g8 g7 h7");
+
+        // A piece of the attacking colour standing in the way blocks its own slider too: rook a1, own knight a3
+        // (whose own attacks are b5 c4 c2 b1), and bishop b1 behind its own pawn c2 (which attacks b3 d3), so e4
+        // and beyond aren't attacked.
+        b = EmptyBoard();
+        b[ChessRules.A1] = ChessRules.WhiteRook;
+        b[ChessRules.A3] = ChessRules.WhiteKnight;
+        b[ChessRules.B1] = ChessRules.WhiteBishop;
+        b[ChessRules.C2] = ChessRules.WhitePawn;
+        CheckAttacked("sliders blocked by their own pieces", b, white, "a2 a3 b1 b5 c4 c2 b3 d3");
     }
 }

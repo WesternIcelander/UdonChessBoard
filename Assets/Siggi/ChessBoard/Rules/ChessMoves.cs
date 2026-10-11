@@ -214,6 +214,59 @@ namespace SiggiChessBoard {
             return count;
         }
 
+        // Whether a piece of byColor attacks square (docs/legality-checking.md): looks outward from the square for
+        // pawns, knights and the king of that colour, and along each line for the first piece, a rook or queen on
+        // the orthogonals and a bishop or queen on the diagonals. What stands on the square itself doesn't matter.
+        // En passant isn't an attack on a square, so it isn't counted; it never attacks a king.
+        public static bool IsSquareAttacked(byte[] board, int square, int byColor) {
+            int file = square & 7;
+            int rank = square >> 3;
+            int colorBits = byColor << 3;
+
+            // A pawn attacks diagonally forward, so it stands one rank behind the square from its own side.
+            int pawnRank = byColor == ChessRules.White ? rank - 1 : rank + 1;
+            if (pawnRank >= 0 && pawnRank <= 7) {
+                int pawn = ChessRules.Pawn | colorBits;
+                if (file > 0 && board[(pawnRank << 3) | (file - 1)] == pawn) return true;
+                if (file < 7 && board[(pawnRank << 3) | (file + 1)] == pawn) return true;
+            }
+
+            int knight = ChessRules.Knight | colorBits;
+            int king = ChessRules.King | colorBits;
+            for (int d = 0; d < 8; d++) {
+                int toFile = file + ((KnightFileSteps >> (d * 3)) & 7) - 2;
+                int toRank = rank + ((KnightRankSteps >> (d * 3)) & 7) - 2;
+                if (toFile >= 0 && toFile <= 7 && toRank >= 0 && toRank <= 7
+                    && board[(toRank << 3) | toFile] == knight) return true;
+                toFile = file + ((LineFileSteps >> (d * 2)) & 3) - 1;
+                toRank = rank + ((LineRankSteps >> (d * 2)) & 3) - 1;
+                if (toFile >= 0 && toFile <= 7 && toRank >= 0 && toRank <= 7
+                    && board[(toRank << 3) | toFile] == king) return true;
+            }
+
+            // Directions 0-3 are orthogonal, 4-7 diagonal (see the line tables).
+            int queen = ChessRules.Queen | colorBits;
+            int rook = ChessRules.Rook | colorBits;
+            int bishop = ChessRules.Bishop | colorBits;
+            for (int d = 0; d < 8; d++) {
+                int slider = d < 4 ? rook : bishop;
+                int fileStep = ((LineFileSteps >> (d * 2)) & 3) - 1;
+                int rankStep = ((LineRankSteps >> (d * 2)) & 3) - 1;
+                int toFile = file + fileStep;
+                int toRank = rank + rankStep;
+                while (toFile >= 0 && toFile <= 7 && toRank >= 0 && toRank <= 7) {
+                    int target = board[(toRank << 3) | toFile];
+                    if (target != ChessRules.Empty) {
+                        if (target == slider || target == queen) return true;
+                        break;
+                    }
+                    toFile += fileStep;
+                    toRank += rankStep;
+                }
+            }
+            return false;
+        }
+
         // Whether the king on kingSquare may castle with the rook on rookSquare as far as the pieces go: the rook must
         // be there (the Java didn't check), and every square the king or rook passes through or lands on must be
         // empty apart from the king and this rook themselves (the Java let any king or rook stand in the way). Doesn't
