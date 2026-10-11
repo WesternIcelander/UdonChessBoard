@@ -17,7 +17,8 @@ namespace SiggiChessBoard {
         //   an empty Date "????.??.??", as the PGN standard writes unknown values;
         // - Variant "Chess960" for a Chess960 game (nothing for Standard);
         // - SetUp "1" and FEN when startFen is given and either isn't the standard start or the game is Chess960;
-        // - TimeControl: "base" or "base+increment" in seconds, "-" for no clock (baseSeconds <= 0);
+        // - TimeControl: "base" or "base+increment" in seconds, "-" for no clock (baseSeconds 0), "?" when unknown
+        //   (baseSeconds below 0, e.g. a game imported without a TimeControl tag);
         // - GameID and ContinuedFrom ("<GameID>/<ply>"), each only when not empty;
         // - Termination (docs/game-endings.md), except for a game still in progress (EndingNone).
         // ending is a ChessGame.Ending* value, winner ChessRules.White, Black or NoColor (a draw). Every value is
@@ -146,9 +147,11 @@ namespace SiggiChessBoard {
             return "";
         }
 
-        // The TimeControl tag's value (docs/clocks.md): "-" for no clock, "base" for no increment, else "base+inc".
+        // The TimeControl tag's value (docs/clocks.md): "?" for unknown (baseSeconds below 0, as ParseTimeControl gives
+        // it), "-" for no clock (0), "base" for no increment, else "base+inc".
         public static string TimeControlText(int baseSeconds, int incrementSeconds) {
-            if (baseSeconds <= 0) return "-";
+            if (baseSeconds < 0) return "?";
+            if (baseSeconds == 0) return "-";
             if (incrementSeconds <= 0) return baseSeconds.ToString();
             return baseSeconds.ToString() + "+" + incrementSeconds.ToString();
         }

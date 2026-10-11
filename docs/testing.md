@@ -37,3 +37,23 @@ Malformed, in `malformed/`. Each must fail at the stated move, having played the
 
 - **Java comparison:** for every file except `formatting.pgn.txt` and the malformed ones, the port's import must reach the same final FEN as the Java, and the moves (SAN) in the port's export must match the moves in the Java's export, with each move's `[%clk]` value the same. Other tags and comments differ: an import keeps only what [Replay](replay.md#continuing-a-loaded-game) lists, the port adds some tags on purpose, and the port writes clocks in its own format (`0:10:00` where the source has `0:10:00.0`). The Java's export adds the `+`/`#` that VRChess leaves out, and always writes `O-O`.
 - The checker used to produce these values (a small Java class that prints each file's tags, ply count, final FEN and the Java's export) isn't kept in either repository. It's easy to rewrite against `PGN.deserialize`/`PGN.serialize` and `FEN.serialize`.
+
+### Java exports and round trip
+
+`java-export/<name>.java.pgn.txt` holds the Java's export (`PGN.serialize(PGN.deserialize(text))` on `port-reference`, written as UTF-8) of each file the Java can read. `PgnTest.TestRoundTrip` (5.4) imports each file, exports it as the board will export a loaded game (the tags the import keeps, Event/Site/Date unknown, the ending given by the test), and compares:
+
+- **Moves:** read back with the port's reader, the SAN in the port's export and in the Java's are identical, `+`/`#` included. The Java's export also imports to the same moves and final position.
+- **Comments:** the port writes only `{ [%clk …] }`, one per known clock, and the clocks read back are the file's. The Java's export keeps every comment (the test set's files have only clock comments) in the source's format, except that it **drops the comment after the last move** (its writer only writes comments before the next move), so its last ply has no clock.
+- **Tags:** the tag lines differ by exactly the following (lines in both, in any order, aren't listed). Every file gets the port's `Event "?"`, `Site "?"`, `Date "????.??.??"` and `Round "-"` unless the Java has the same line (only Lichess's `Round "-"`). The port writes `TimeControl "?"` (unknown) for a file without the tag, and its own `Termination` values ([Game endings](game-endings.md)).
+
+| File | Only in the Java's export | Only in the port's export (besides the roster lines above) |
+|---|---|---|
+| `Siggi-vs-Nuka` | `Site "VRChess"`, `Date "2025.7.10"`, `Termination "Nukaǃ won by checkmate"` | `Termination "checkmate"` |
+| `lichess-long-draw` | `Event`, `Site`, `Date`, `GameId`, `UTCDate`, `UTCTime`, `WhiteElo`, `BlackElo`, `WhiteRatingDiff`, `BlackRatingDiff`, `WhiteTitle`, `ECO`, `Opening` (none kept), `Variant "Standard"`, `TimeControl "60+0"`, `Termination "Normal"` | `TimeControl "60"`, `Termination "insufficient material"` |
+| `en-passant`, `promotions`, `disambiguation`, `chess960` | nothing | `TimeControl "?"` |
+| `stalemate` | `Termination "Draw by stalemate"` | `TimeControl "?"`, `Termination "stalemate"` |
+| `repetition-names` | `Termination "Draw by threefold repetition"` | `TimeControl "?"`, `Termination "threefold repetition"` |
+| `checkmate` | `Termination "Ana \"The Rook\" \\ Ñandú 🐴 won by checkmate"` | `TimeControl "?"`, `Termination "checkmate"` |
+
+  The names (`"` and `\` escaped), `Result`, `GameID`, `Variant "Chess960"`, `SetUp` and `FEN` lines are identical.
+- **Re-import:** importing the port's own export gives the same game: moves, recorded SAN, clocks (tenths kept, `-1` staying `-1`), starting position and numbering, final position, `White`, `Black`, `Result`, `FEN`, `GameID`, the mode and the time control (`60+0` and `60` both read as 60 s with no increment). This also runs for `formatting.pgn.txt` (whose clock history has `-1` entries) and a hand-written Chess960 game with escaped names, a `ContinuedFrom` and clocks with hours, tenths and unknown entries.

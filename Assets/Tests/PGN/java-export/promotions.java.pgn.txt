@@ -1,0 +1,7 @@
+[White "White"]
+[Black "Black"]
+[Result "*"]
+[SetUp "1"]
+[FEN "r3k3/1P4P1/8/8/8/8/1p4p1/R3K2R b KQq - 3 40"]
+
+40...gxh1=Q+ 41.Kd2 bxa1=N 42.bxa8=Q+ Kf7 43.g8=Q+ Kf6 44.Qgf8+ Ke5 *

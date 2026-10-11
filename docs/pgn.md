@@ -91,7 +91,7 @@ Details settled while writing the reader (5.2a):
 | `Result` | `1-0`, `0-1`, `1/2-1/2`, or `*` for a game in progress or unterminated (from the ending and winner, `ChessGame.Ending*`) |
 | `Variant` | `Chess960`, only for Chess960 games |
 | `SetUp`, `FEN` | `1` and the starting FEN, when the game didn't start from the standard position, and always for Chess960 (even position 518, the standard one, since Chess960 readers need the FEN) |
-| `TimeControl` | `base` or `base+increment` in seconds (`600`, `300+3`), `-` for no clock |
+| `TimeControl` | `base` or `base+increment` in seconds (`600`, `300+3`), `-` for no clock, `?` when unknown (a game imported without a readable `TimeControl`, so the unknown time control survives a round trip) |
 | `GameID`, `ContinuedFrom` | see [Game IDs](game-ids.md); each left out when empty |
 | `Termination` | see [Game endings](game-endings.md); left out for a game still in progress |
 

@@ -28,6 +28,7 @@ public class PgnTest : UdonSharpBehaviour {
         TestSanMatching();
         TestImportGames();
         TestImportFailures();
+        TestRoundTrip();
         // The importer checks take frames; the summary is logged once they finish.
         StartFrameImports();
     }
@@ -174,7 +175,7 @@ public class PgnTest : UdonSharpBehaviour {
             + "[White \"Ana \\\"The Rook\\\" \\\\ Ñandú 🐴\"]\n"
             + "[Black \"Siggі] [x   y z \"]\n"
             + "[Result \"1/2-1/2\"]\n"
-            + "[TimeControl \"-\"]\n"
+            + "[TimeControl \"?\"]\n"
             + "[Termination \"threefold repetition\"]\n",
             "tags: escaped names, unknown values");
 
@@ -219,11 +220,12 @@ public class PgnTest : UdonSharpBehaviour {
         Check(errors == "", "Termination and Result for every ending", errors);
 
         Check(ChessPgn.TimeControlText(0, 0) == "-" && ChessPgn.TimeControlText(0, 5) == "-"
-            && ChessPgn.TimeControlText(-1, 0) == "-" && ChessPgn.TimeControlText(600, 0) == "600"
-            && ChessPgn.TimeControlText(300, 3) == "300+3" && ChessPgn.TimeControlText(5400, 30) == "5400+30",
+            && ChessPgn.TimeControlText(-1, 0) == "?" && ChessPgn.TimeControlText(-1, -1) == "?"
+            && ChessPgn.TimeControlText(600, 0) == "600" && ChessPgn.TimeControlText(300, 3) == "300+3"
+            && ChessPgn.TimeControlText(5400, 30) == "5400+30",
             "TimeControl values",
             ChessPgn.TimeControlText(0, 5) + " " + ChessPgn.TimeControlText(600, 0) + " "
-            + ChessPgn.TimeControlText(300, 3));
+            + ChessPgn.TimeControlText(300, 3) + " " + ChessPgn.TimeControlText(-1, -1));
 
         Check(ChessPgn.EscapeTagValue(null) == "" && ChessPgn.EscapeTagValue("") == ""
             && ChessPgn.EscapeTagValue("\\\"") == "\\\\\\\"" && ChessPgn.EscapeTagValue("a\u0000b\u007f\u009f ")
@@ -913,6 +915,257 @@ public class PgnTest : UdonSharpBehaviour {
         CheckImport("import: over-disambiguated SAN recorded as the board writes it",
             "1. Ng1f3 Nb8c6 2. e2e4 e7xe5 *", ChessPgn.ImportIllegalMove, "2...", 3,
             "r1bqkbnr/pppppppp/2n5/8/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq e3 0 2", "Nf3 Nc6 e4", 600);
+    }
+
+    // ---- 5.4 ----
+
+    // The tag lines the port writes for every imported game, which the import doesn't keep (docs/testing.md).
+    const string PortRosterLines = "+[Event \"?\"]\n+[Site \"?\"]\n+[Date \"????.??.??\"]\n+[Round \"-\"]\n";
+
+    void TestRoundTrip() {
+        string standardOnly = PortRosterLines + "+[TimeControl \"?\"]\n";
+        string ana = "-[Termination \"Ana \\\"The Rook\\\" \\\\ Ñandú 🐴 won by checkmate\"]\n";
+        CheckRoundTrip("Siggi-vs-Nuka", ChessGame.EndingCheckmate, ChessRules.Black,
+            "-[Site \"VRChess\"]\n-[Date \"2025.7.10\"]\n-[Termination \"Nukaǃ won by checkmate\"]\n"
+            + PortRosterLines + "+[Termination \"checkmate\"]\n");
+        CheckRoundTrip("lichess-long-draw", ChessGame.EndingInsufficientMaterial, ChessRules.NoColor,
+            "-[Event \"rated bullet game\"]\n-[Site \"https://lichess.org/h0rrawli\"]\n-[Date \"2026.10.10\"]\n"
+            + "-[GameId \"h0rrawli\"]\n-[UTCDate \"2026.10.10\"]\n-[UTCTime \"18:22:10\"]\n-[WhiteElo \"3043\"]\n"
+            + "-[BlackElo \"2988\"]\n-[WhiteRatingDiff \"-1\"]\n-[BlackRatingDiff \"+1\"]\n-[WhiteTitle \"FM\"]\n"
+            + "-[Variant \"Standard\"]\n-[TimeControl \"60+0\"]\n-[ECO \"B15\"]\n"
+            + "-[Opening \"Caro-Kann Defense: Gurgenidze System\"]\n-[Termination \"Normal\"]\n"
+            + "+[Event \"?\"]\n+[Site \"?\"]\n+[Date \"????.??.??\"]\n+[TimeControl \"60\"]\n"
+            + "+[Termination \"insufficient material\"]\n");
+        CheckRoundTrip("en-passant", ChessGame.EndingNone, ChessRules.NoColor, standardOnly);
+        CheckRoundTrip("promotions", ChessGame.EndingNone, ChessRules.NoColor, standardOnly);
+        CheckRoundTrip("disambiguation", ChessGame.EndingNone, ChessRules.NoColor, standardOnly);
+        CheckRoundTrip("chess960", ChessGame.EndingNone, ChessRules.NoColor, standardOnly);
+        CheckRoundTrip("stalemate", ChessGame.EndingStalemate, ChessRules.NoColor,
+            "-[Termination \"Draw by stalemate\"]\n" + standardOnly + "+[Termination \"stalemate\"]\n");
+        CheckRoundTrip("repetition-names", ChessGame.EndingThreefoldRepetition, ChessRules.NoColor,
+            "-[Termination \"Draw by threefold repetition\"]\n" + standardOnly
+            + "+[Termination \"threefold repetition\"]\n");
+        CheckRoundTrip("checkmate", ChessGame.EndingCheckmate, ChessRules.Black,
+            ana + standardOnly + "+[Termination \"checkmate\"]\n");
+        // The Java can't read formatting.pgn.txt; its export is only re-imported. Its clock history has -1 entries.
+        CheckRoundTrip("formatting", ChessGame.EndingNone, ChessRules.NoColor, null);
+
+        // A hand-written game exported and re-imported: names with " and \ and an emoji, a Chess960 start, a clock
+        // history with tenths, hours and unknown entries, a Game ID and a continued game's ContinuedFrom (which the
+        // import doesn't read).
+        string pgn = ChessPgn.WriteTags("Casual game", "VRChat", "2026.10.11", "Ana \"The Rook\" \\ Ñandú 🐴",
+                "\\\"\\", ChessGame.EndingResignation, ChessRules.White, ChessGame.ModeChess960,
+                "qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w GBgb - 0 1", 5400, 30, "20261011120000-000001",
+                "20261010120000-000002/4")
+            + "\n" + ChessPgn.WriteMoveText(new string[] { "e4", "e5", "Bf3", "Bf6", "O-O-O", "O-O-O" },
+                new int[] { 5400000, -1, 5399900, 3723400, -1, 0 }, 6, 1, ChessRules.White, ChessGame.EndingResignation,
+                ChessRules.White, ChessPgn.LineWidth);
+        int[] cursor = new int[ChessPgn.CursorLength];
+        string[] tags = new string[ChessPgn.TagCount];
+        int[] moves = new int[600];
+        string[] sans = new string[600];
+        int[] clocks = new int[600];
+        string fen;
+        int result = ImportAll(pgn, cursor, tags, moves, sans, clocks, out fen);
+        string errors = "";
+        if (result != ChessPgn.ImportDone || cursor[ChessPgn.CursorMoves] != 6) {
+            errors += " result " + result + ", " + cursor[ChessPgn.CursorMoves] + " plies";
+        }
+        if (fen != "q1krbnrn/pppp1ppp/5b2/4p3/4P3/5B2/PPPP1PPP/Q1KRBNRN w - - 4 4") errors += " FEN " + fen;
+        string[] expectedSans = new string[] { "e4", "e5", "Bf3", "Bf6", "O-O-O", "O-O-O" };
+        int[] expectedClocks = new int[] { 5400000, -1, 5399900, 3723400, -1, 0 };
+        for (int i = 0; i < 6; i++) {
+            if (sans[i] != expectedSans[i] || clocks[i] != expectedClocks[i]) {
+                errors += " ply " + (i + 1) + ": " + sans[i] + " " + clocks[i];
+            }
+        }
+        string[] expectedTags = Tags("qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w GBgb - 0 1", "Chess960",
+            "Ana \"The Rook\" \\ Ñandú 🐴", "\\\"\\", "1-0", "20261011120000-000001", "5400+30");
+        for (int tag = 0; tag < ChessPgn.TagCount; tag++) {
+            if (tags[tag] != expectedTags[tag]) errors += " " + ChessPgn.TagName(tag) + " \"" + tags[tag] + "\"";
+        }
+        Check(errors == "", "round trip: hand-written Chess960 game with clocks and escaped names", errors + "\n" + pgn);
+    }
+
+    // The port's export of an imported game, as the board will write it for a loaded game: the tags the import kept
+    // (Event, Site and Date aren't kept, so they're unknown), with ending and winner given by the caller, and the
+    // recorded SAN and clocks.
+    string ExportImported(int[] cursor, string[] tags, string[] sans, int[] clocks, int ending, int winner) {
+        int baseSeconds;
+        int incrementSeconds;
+        ChessPgn.ParseTimeControl(tags[ChessPgn.TagTimeControl], out baseSeconds, out incrementSeconds);
+        return ChessPgn.WriteTags("", "", "", tags[ChessPgn.TagWhite], tags[ChessPgn.TagBlack], ending, winner,
+                ChessPgn.ModeFromVariant(tags[ChessPgn.TagVariant]), tags[ChessPgn.TagFen], baseSeconds,
+                incrementSeconds, tags[ChessPgn.TagGameId], "")
+            + "\n" + ChessPgn.WriteMoveText(sans, clocks, cursor[ChessPgn.CursorMoves],
+                cursor[ChessPgn.CursorFirstMoveNumber], cursor[ChessPgn.CursorFirstSideToMove], ending, winner,
+                ChessPgn.LineWidth);
+    }
+
+    // The lines of a PGN's tag section (up to the first empty line), without line ends.
+    string[] TagLines(string pgn) {
+        string[] lines = pgn.Replace("\r", "").Split(new char[] { '\n' });
+        int count = 0;
+        while (count < lines.Length && lines[count] != "") count++;
+        string[] tagLines = new string[count];
+        for (int i = 0; i < count; i++) tagLines[i] = lines[i];
+        return tagLines;
+    }
+
+    bool HasLine(string[] lines, string line) {
+        for (int i = 0; i < lines.Length; i++) {
+            if (lines[i] == line) return true;
+        }
+        return false;
+    }
+
+    // The tag lines only the Java's export has ("-" and the line), in its order, then those only the port's has
+    // ("+"), in its order; one per line. Lines both have, in any order, aren't listed.
+    string TagDiff(string javaPgn, string portPgn) {
+        string[] java = TagLines(javaPgn);
+        string[] port = TagLines(portPgn);
+        string diff = "";
+        for (int i = 0; i < java.Length; i++) {
+            if (!HasLine(port, java[i])) diff += "-" + java[i] + "\n";
+        }
+        for (int i = 0; i < port.Length; i++) {
+            if (!HasLine(java, port[i])) diff += "+" + port[i] + "\n";
+        }
+        return diff;
+    }
+
+    int CountChar(string text, char c) {
+        int count = 0;
+        for (int i = 0; i < text.Length; i++) {
+            if (text[i] == c) count++;
+        }
+        return count;
+    }
+
+    // Imports test set file name, exports it as the board will (ExportImported, with the game's ending and winner),
+    // and checks:
+    // - against the Java's export of the same file (java-export/<name>.java.pgn.txt; javaTagDiff null for a file
+    //   the Java can't read): the moves read from both exports are the same SAN, +/# included; the clocks read
+    //   from the port's export are the file's, and from the Java's the file's except the last ply, whose comment
+    //   the Java drops; the Java's export has one comment per clock but that one (the test set's files have no
+    //   other comments); the tag lines differ by exactly javaTagDiff (TagDiff); and the Java's export imports to
+    //   the same game;
+    // - that re-importing the port's export gives the same game: result, moves, recorded SAN, clocks (tenths kept,
+    //   -1 staying -1), starting position and its numbering, final position, and the White, Black, Result, FEN,
+    //   GameID tags, the mode and the time control.
+    void CheckRoundTrip(string name, int ending, int winner, string javaTagDiff) {
+        string source = PgnText(name + ".pgn");
+        string javaExport = javaTagDiff == null ? "" : PgnText(name + ".java.pgn");
+        if (source == null || javaExport == null) {
+            Check(false, "round trip: " + name, "PGN file not assigned in PgnTest's pgnFiles");
+            return;
+        }
+        int[] cursor = new int[ChessPgn.CursorLength];
+        string[] tags = new string[ChessPgn.TagCount];
+        int[] moves = new int[600];
+        string[] sans = new string[600];
+        int[] clocks = new int[600];
+        string fen;
+        int result = ImportAll(source, cursor, tags, moves, sans, clocks, out fen);
+        int plies = cursor[ChessPgn.CursorMoves];
+        string export = ExportImported(cursor, tags, sans, clocks, ending, winner);
+        string errors = "";
+        if (result != ChessPgn.ImportDone) errors += " source import " + ChessPgn.ImportErrorText(result);
+        if (ChessPgn.ResultText(ending, winner) != tags[ChessPgn.TagResult]) {
+            errors += " Result " + tags[ChessPgn.TagResult];
+        }
+
+        string[] readTags = new string[ChessPgn.TagCount];
+        string[] portSans = new string[600];
+        int[] portClocks = new int[600];
+        int portCount;
+        if (ReadAll(export, readTags, portSans, portClocks, out portCount) != ChessPgn.ReadEnd || portCount != plies) {
+            errors += " port export reads " + portCount + " moves";
+        }
+        int knownClocks = 0;
+        for (int i = 0; i < plies; i++) {
+            if (clocks[i] >= 0) knownClocks++;
+            if (portClocks[i] != clocks[i]) errors += " port export ply " + (i + 1) + " clock " + portClocks[i];
+        }
+        if (CountChar(export, '{') != knownClocks) errors += " port export has other comments";
+
+        if (javaTagDiff != null) {
+            string[] javaSans = new string[600];
+            int[] javaClocks = new int[600];
+            int javaCount;
+            if (ReadAll(javaExport, readTags, javaSans, javaClocks, out javaCount) != ChessPgn.ReadEnd
+                || javaCount != plies) {
+                errors += " Java export reads " + javaCount + " moves";
+            }
+            for (int i = 0; i < plies && i < javaCount; i++) {
+                if (javaSans[i] != portSans[i]) {
+                    errors += " ply " + (i + 1) + " Java " + javaSans[i] + " port " + portSans[i];
+                }
+                int expectedClock = i == plies - 1 ? -1 : clocks[i];
+                if (javaClocks[i] != expectedClock) errors += " Java export ply " + (i + 1) + " clock " + javaClocks[i];
+            }
+            int javaComments = plies > 0 && clocks[plies - 1] >= 0 ? knownClocks - 1 : knownClocks;
+            if (CountChar(javaExport, '{') != javaComments) {
+                errors += " Java export has " + CountChar(javaExport, '{') + " comments, expected " + javaComments;
+            }
+            string diff = TagDiff(javaExport, export);
+            if (diff != javaTagDiff) errors += " tag differences:\n" + diff + "expected:\n" + javaTagDiff;
+
+            int[] javaCursor = new int[ChessPgn.CursorLength];
+            string[] javaTags = new string[ChessPgn.TagCount];
+            int[] javaMoves = new int[600];
+            string javaFen;
+            int javaResult = ImportAll(javaExport, javaCursor, javaTags, javaMoves, new string[600], new int[600],
+                out javaFen);
+            if (javaResult != ChessPgn.ImportDone || javaCursor[ChessPgn.CursorMoves] != plies || javaFen != fen) {
+                errors += " Java export imports to " + javaCursor[ChessPgn.CursorMoves] + " plies, " + javaFen;
+            }
+            for (int i = 0; i < plies; i++) {
+                if (javaMoves[i] != moves[i]) errors += " Java export ply " + (i + 1) + " move " + javaMoves[i];
+            }
+        }
+
+        int[] cursor2 = new int[ChessPgn.CursorLength];
+        string[] tags2 = new string[ChessPgn.TagCount];
+        int[] moves2 = new int[600];
+        string[] sans2 = new string[600];
+        int[] clocks2 = new int[600];
+        string fen2;
+        int result2 = ImportAll(export, cursor2, tags2, moves2, sans2, clocks2, out fen2);
+        if (result2 != ChessPgn.ImportDone) errors += " re-import " + ChessPgn.ImportErrorText(result2);
+        for (int i = ChessPgn.CursorMoves; i < ChessPgn.CursorLength; i++) {
+            if (i != ChessPgn.CursorInMoveText && cursor2[i] != cursor[i]) errors += " re-import cursor " + i;
+        }
+        if (fen2 != fen) errors += " re-import FEN " + fen2;
+        for (int i = 0; i < plies; i++) {
+            if (moves2[i] != moves[i] || sans2[i] != sans[i] || clocks2[i] != clocks[i]) {
+                errors += " re-import ply " + (i + 1) + ": " + sans2[i] + " " + clocks2[i];
+            }
+        }
+        int[] sameTags = new int[] {
+            ChessPgn.TagFen, ChessPgn.TagWhite, ChessPgn.TagBlack, ChessPgn.TagResult, ChessPgn.TagGameId
+        };
+        for (int i = 0; i < sameTags.Length; i++) {
+            if (tags2[sameTags[i]] != tags[sameTags[i]]) {
+                errors += " re-import " + ChessPgn.TagName(sameTags[i]) + " \"" + tags2[sameTags[i]] + "\"";
+            }
+        }
+        if (ChessPgn.ModeFromVariant(tags2[ChessPgn.TagVariant])
+            != ChessPgn.ModeFromVariant(tags[ChessPgn.TagVariant])) {
+            errors += " re-import mode";
+        }
+        int base1;
+        int increment1;
+        int base2;
+        int increment2;
+        ChessPgn.ParseTimeControl(tags[ChessPgn.TagTimeControl], out base1, out increment1);
+        ChessPgn.ParseTimeControl(tags2[ChessPgn.TagTimeControl], out base2, out increment2);
+        if (base1 != base2 || increment1 != increment2) {
+            errors += " re-import TimeControl " + tags2[ChessPgn.TagTimeControl];
+        }
+
+        Check(errors == "", "round trip: " + name + " (" + plies + " plies" + (javaTagDiff == null ? ", port only" : "")
+            + ")", errors + "\n" + export);
     }
 
     // ---- 5.3 ----
