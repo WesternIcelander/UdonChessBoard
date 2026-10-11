@@ -7,6 +7,9 @@ namespace SiggiChessBoard {
     // Holds no state; everything comes in through parameters (see docs/architecture.md).
     // Abstract because it is never placed as a component, only used for its constants and static methods.
     public abstract class ChessPgn : UdonSharpBehaviour {
+        // The move text's line width, as in the Java's PGN.write (LineWriter(writer, 80)).
+        public const int LineWidth = 80;
+
         // The tag section of a game's PGN, one "[Name "value"]\n" line per tag, in this order:
         // - the seven-tag roster: Event, Site, Date (PGN form yyyy.MM.dd), Round (always "-"), White, Black and the
         //   Result worked out from ending and winner. An empty or null Event, Site, White or Black is written "?",
@@ -41,6 +44,77 @@ namespace SiggiChessBoard {
             string termination = TerminationText(ending);
             if (termination != "") AppendTag(sb, "Termination", termination);
             return sb.ToString();
+        }
+
+        // The move text of a game's PGN (docs/pgn.md, Export move text): moveCount moves from sans (their recorded
+        // SAN), each followed by "{ [%clk H:MM:SS] }" when clocks (null for none) holds a known time for it, then the
+        // result worked out from ending and winner. Moves are numbered from the starting position's fullmove number
+        // and side to move (ChessRules.White or Black): "12. e4" for White, "12... e5" for Black's first move and for
+        // a Black move after a clock comment, otherwise Black's move alone.
+        // Lines are wrapped to at most lineWidth characters, breaking only at the space between two units: a
+        // numbered or unnumbered move, a clock comment, the result. Units are never split (a unit longer than
+        // lineWidth gets a line of its own). Every line, the last included, ends with "\n".
+        public static string WriteMoveText(string[] sans, int[] clocks, int moveCount, int firstMoveNumber,
+            int firstSideToMove, int ending, int winner, int lineWidth) {
+            StringBuilder sb = new StringBuilder();
+            int lineStart = 0;
+            int moveNumber = firstMoveNumber;
+            int side = firstSideToMove;
+            bool numberBlack = true;
+            for (int i = 0; i < moveCount; i++) {
+                string unit;
+                if (side == ChessRules.White) {
+                    unit = moveNumber.ToString() + ". " + sans[i];
+                } else if (numberBlack) {
+                    unit = moveNumber.ToString() + "... " + sans[i];
+                } else {
+                    unit = sans[i];
+                }
+                lineStart = AppendUnit(sb, lineStart, unit, lineWidth);
+                int clock = clocks == null ? -1 : clocks[i];
+                numberBlack = clock >= 0;
+                if (numberBlack) {
+                    lineStart = AppendUnit(sb, lineStart, "{ [%clk " + ClockText(clock) + "] }", lineWidth);
+                }
+                if (side == ChessRules.Black) moveNumber++;
+                side = side == ChessRules.White ? ChessRules.Black : ChessRules.White;
+            }
+            AppendUnit(sb, lineStart, ResultText(ending, winner), lineWidth);
+            sb.Append('\n');
+            return sb.ToString();
+        }
+
+        // A [%clk] value (docs/clocks.md): milliseconds as H:MM:SS, with tenths (H:MM:SS.t) when they aren't zero.
+        // Hundredths and below are dropped, as a clock display drops them. Hours are not limited to one digit.
+        // milliseconds must not be negative (-1, unknown, gets no [%clk] at all).
+        public static string ClockText(int milliseconds) {
+            int tenths = milliseconds / 100;
+            int seconds = tenths / 10;
+            int minutes = seconds / 60;
+            string text = (minutes / 60).ToString() + ":" + TwoDigits(minutes % 60) + ":"
+                + TwoDigits(seconds % 60);
+            if (tenths % 10 != 0) text += "." + (tenths % 10).ToString();
+            return text;
+        }
+
+        static string TwoDigits(int value) {
+            return value < 10 ? "0" + value.ToString() : value.ToString();
+        }
+
+        // Appends a unit of move text, after a space or, if that would make the line longer than lineWidth, on a
+        // new line. lineStart is where the current line starts in sb; returns where it starts after the unit.
+        static int AppendUnit(StringBuilder sb, int lineStart, string unit, int lineWidth) {
+            int lineLength = sb.Length - lineStart;
+            if (lineLength > 0) {
+                if (lineLength + 1 + unit.Length > lineWidth) {
+                    sb.Append('\n');
+                    lineStart = sb.Length;
+                } else {
+                    sb.Append(' ');
+                }
+            }
+            sb.Append(unit);
+            return lineStart;
         }
 
         // The Result tag (and the move text's last token): "*" for a game in progress or unterminated, otherwise by

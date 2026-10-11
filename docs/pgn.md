@@ -36,7 +36,7 @@ The Java's tokenizer uses `find()`, so it silently skips anything it doesn't rec
 - The port instead records each move's notation (SAN) when the move is played, using the direct disambiguation described under [Legality checking](legality-checking.md), and syncs it with the board state (see [Networking](networking.md)). Export and logging are then plain string building with `StringBuilder`, with no replay.
 - Computing notation needs legal-move generation (to disambiguate, and for the `+`/`#` suffix). Since it is synced, only the player making the move (or the importer) pays that cost; other clients compute it only to fill in missing entries.
 - Castling is written as `O-O`/`O-O-O` directly. The Java produces `0-0` and has `PGN.write` swap the zeros for letters afterwards.
-- Line wrapping (the Java's `LineWriter`) only splits on spaces; `string.Split(' ')` in C# is not regex-based.
+- Line wrapping (the Java's `LineWriter`) only breaks at spaces. The port wraps as it builds the text, so it needs no splitting (see [Export move text](#export-move-text)).
 
 ### Export tags
 
@@ -54,6 +54,19 @@ The Java's tokenizer uses `find()`, so it silently skips anything it doesn't rec
 | `TimeControl` | `base` or `base+increment` in seconds (`600`, `300+3`), `-` for no clock |
 | `GameID`, `ContinuedFrom` | see [Game IDs](game-ids.md); each left out when empty |
 | `Termination` | see [Game endings](game-endings.md); left out for a game still in progress |
+
+### Export move text
+
+`ChessPgn.WriteMoveText` writes the moves' recorded SAN with their clocks, in the PGN standard's export format (as Lichess writes it), e.g.:
+
+```
+1. e4 { [%clk 0:10:00] } 1... c5 { [%clk 0:09:57.6] } 2. Nf3
+```
+
+- **Numbering** starts from the starting position's fullmove number and side to move. White's moves are written `12. e4`. Black's are numbered `12... e5` when they come first in the game or follow a clock comment, and written alone otherwise (`7. O-O O-O-O`). The Java writes `1.e4` with no space and never repeats the number after a comment.
+- **Clocks:** each move with a known clock (`≥ 0`; `-1` is unknown) is followed by `{ [%clk H:MM:SS] }`, with tenths (`H:MM:SS.t`) when they aren't zero (`ChessPgn.ClockText`, see [Clocks](clocks.md)). Hundredths and below are dropped, hours have as many digits as they need. No other comments are written.
+- **Result:** the move text ends with the same result as the `Result` tag.
+- **Wrapping:** lines are at most `ChessPgn.LineWidth` (80, as in the Java) characters, filled greedily. Lines only break at the space between two units: a move with its number, a clock comment, or the result. A clock comment is therefore never split across lines, and a number never ends a line. A unit wider than the line (only possible with a tiny width) gets a line of its own. Every line ends with `\n`.
 
 ## Player names in tags
 
