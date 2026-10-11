@@ -313,6 +313,23 @@ namespace SiggiChessBoard {
             return king != ChessRules.NoSquare && IsSquareAttacked(board, king, color ^ 1);
         }
 
+        // Whether the side to move is in check, checkmated or stalemated (PositionStatus).
+        public const int StatusNormal = 0;
+        public const int StatusCheck = 1;
+        public const int StatusCheckmate = 2;
+        public const int StatusStalemate = 3;
+
+        // Java Board.getCheckType for the side to move, plus stalemate (which the Java doesn't detect): checkmate if
+        // in check with no legal move, stalemate if not in check with no legal move, else check or normal. legalCount
+        // is the number of legal moves in this position (GenerateLegalMoves with the same prohibitSelfCheck), which
+        // the caller usually has already. With prohibitSelfCheck off (Fog of War) there is no check or checkmate
+        // (docs/modes.md), so having no move at all reports stalemate (docs/open-decisions.md).
+        public static int PositionStatus(byte[] board, int[] state, int legalCount, bool prohibitSelfCheck) {
+            bool inCheck = prohibitSelfCheck && IsInCheck(board, state, state[ChessPosition.StateSideToMove]);
+            if (legalCount == 0) return inCheck ? StatusCheckmate : StatusStalemate;
+            return inCheck ? StatusCheck : StatusNormal;
+        }
+
         // Java MoveFinderKing.findCastleMove's check conditions: no square from the king's square to its destination,
         // both included, is attacked by opponent. As in the Java, each square is checked with the king lifted off its
         // starting square and the rook still on its own. The position after castling is checked like any other move.

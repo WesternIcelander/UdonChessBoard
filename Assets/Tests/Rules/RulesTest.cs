@@ -29,6 +29,7 @@ public class RulesTest : UdonSharpBehaviour {
         TestFen();
         TestFenJava();
         TestSan();
+        TestStatus();
         if (deepPerft) StartDeepPerft();
         else LogSummary();
     }
@@ -2310,5 +2311,78 @@ public class RulesTest : UdonSharpBehaviour {
         CheckSanJava("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",
             "Ba6 Bb3 Bb5 Bd2 Bd3 Bd5 Be3 Be6 Bf4 Bg5 Bh6 Bxf7 Kd2 Kf1 Kxf2 Na3 Nbc3 Nd2 Nd4 Nec3 Nf4 Ng1 Ng3 O-O Qd2"
             + " Qd3 Qd4 Qd5 Qd6 Rf1 Rg1 a3 a4 b3 b4 c3 dxc8=B dxc8=N dxc8=Q dxc8=R g3 g4 h3 h4");
+    }
+
+    // ---- 4.2 ----
+
+    // Parses fen and checks ChessMoves.PositionStatus for its legal move count (with prohibitSelfCheck as given), and
+    // that working it out leaves the position as it was. legalCount -1 means the real count.
+    void CheckStatus(string name, string fen, bool prohibitSelfCheck, int legalCount, int expected) {
+        byte[] board = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        int h;
+        int f;
+        if (!ChessFen.ParseFen(fen, board, state, out h, out f)) {
+            Check(false, "status: " + name, "FEN rejected");
+            return;
+        }
+        if (legalCount == -1) {
+            legalCount = ChessMoves.GenerateLegalMoves(board, state, new int[ChessMoves.MaxMoves], prohibitSelfCheck);
+        }
+        byte[] boardBefore = CopyBoard(board);
+        int[] stateBefore = CopyState(state);
+        int status = ChessMoves.PositionStatus(board, state, legalCount, prohibitSelfCheck);
+        string errors = status == expected ? "" : " got " + StatusName(status) + " (expected " + StatusName(expected) + ")";
+        string diff = BoardDiff(board, boardBefore) + StateDiff(state, stateBefore);
+        if (diff != "") errors += " position changed:" + diff;
+        Check(errors == "", "status: " + name + ": " + StatusName(expected), errors);
+    }
+
+    string StatusName(int status) {
+        if (status == ChessMoves.StatusNormal) return "normal";
+        if (status == ChessMoves.StatusCheck) return "check";
+        if (status == ChessMoves.StatusCheckmate) return "checkmate";
+        if (status == ChessMoves.StatusStalemate) return "stalemate";
+        return "unknown " + status;
+    }
+
+    void TestStatus() {
+        int normal = ChessMoves.StatusNormal;
+        int check = ChessMoves.StatusCheck;
+        int checkmate = ChessMoves.StatusCheckmate;
+        int stalemate = ChessMoves.StatusStalemate;
+        CheckStatus("start", ChessFen.StartFen, true, -1, normal);
+        CheckStatus("start, Black to move", "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1", true, -1,
+            normal);
+
+        // Checkmates, for both colours.
+        string foolsMate = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3";
+        CheckStatus("fool's mate", foolsMate, true, -1, checkmate);
+        CheckStatus("back rank mate", "R5k1/5ppp/8/8/8/8/8/6K1 b - - 1 1", true, -1, checkmate);
+        CheckStatus("scholar's mate", "r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4", true, -1,
+            checkmate);
+        CheckStatus("smothered mate", "6rk/5Npp/8/8/8/8/8/6K1 b - - 0 1", true, -1, checkmate);
+        CheckStatus("Siggi-vs-Nuka final position", "6k1/1b4pp/p3p3/2p1P1b1/NPPn4/7P/P5q1/RN2Kr2 w - - 0 28", true,
+            -1, checkmate);
+
+        // Stalemates, for both colours, including one with a pinned piece and Sam Loyd's ten-move stalemate.
+        CheckStatus("king and queen stalemate", "7k/5Q2/6K1/8/8/8/8/8 b - - 0 1", true, -1, stalemate);
+        CheckStatus("king and pawn stalemate", "k7/P7/K7/8/8/8/8/8 b - - 0 1", true, -1, stalemate);
+        CheckStatus("stalemate with a pinned knight", "kn5R/8/1K6/8/8/8/8/8 b - - 0 1", true, -1, stalemate);
+        CheckStatus("White stalemated", "8/8/8/8/8/1q6/8/K6k w - - 0 1", true, -1, stalemate);
+        CheckStatus("Sam Loyd's stalemate", "5bnr/4p1pq/4Qpkr/7p/7P/4P3/PPPP1PP1/RNB1KBNR b KQ - 2 10", true, -1,
+            stalemate);
+
+        // In check with an escape: by moving the king, by blocking, by capturing the checker.
+        CheckStatus("check, king escapes", "R3k3/8/8/8/8/8/8/4K3 b - - 1 1", true, -1, check);
+        CheckStatus("check, block", "R5k1/5ppp/8/8/8/8/2r5/6K1 b - - 0 1", true, -1, check);
+        CheckStatus("check, capture", "R5k1/5ppp/8/8/8/8/r7/6K1 b - - 0 1", true, -1, check);
+        CheckStatus("check by a pawn that can be taken en passant", "8/8/8/2k5/3Pp3/8/8/4K3 b - d3 0 1", true, -1, check);
+        CheckStatus("pawn check", "8/2p5/3p4/KP5r/1R3p1k/6P1/4P3/8 b - - 0 1", true, -1, check);
+
+        // prohibitSelfCheck off (Fog of War): no check or checkmate; no move at all is stalemate.
+        CheckStatus("fool's mate, prohibitSelfCheck off", foolsMate, false, -1, normal);
+        CheckStatus("check, prohibitSelfCheck off", "R3k3/8/8/8/8/8/8/4K3 b - - 1 1", false, -1, normal);
+        CheckStatus("no moves, prohibitSelfCheck off", foolsMate, false, 0, stalemate);
     }
 }
