@@ -16,6 +16,7 @@ public class RulesTest : UdonSharpBehaviour {
         TestMoveDerived();
         TestMakeUnmake();
         TestCastling();
+        TestMoveGeneration();
         Debug.Log("[RulesTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
@@ -795,5 +796,352 @@ public class RulesTest : UdonSharpBehaviour {
             if (diff != "") errors += " undo ply " + (i + 1) + ":" + diff;
         }
         Check(errors == "", "castling: 1.O-O Rxa1 2.Rxa1, rights per ply, then undo all", errors);
+    }
+
+    // ---- 2.4 ----
+
+    // A move as text for comparing with hand-written lists: from and to squares, then "x" and the captured type,
+    // "=" and the promotion type, "c" for castling. E.g. "e2e4", "b7a8xR=Q", "e1h1c".
+    string MoveText(int move) {
+        string text = ChessRules.SquareName(ChessRules.MoveFrom(move)) + ChessRules.SquareName(ChessRules.MoveTo(move));
+        int captured = ChessRules.MoveCaptured(move);
+        if (captured != ChessRules.NoPieceType) text += "x" + ChessRules.PieceTypeLetter(captured);
+        int promotion = ChessRules.MovePromotion(move);
+        if (promotion != ChessRules.NoPieceType) text += "=" + ChessRules.PieceTypeLetter(promotion);
+        if (ChessRules.MoveIsCastle(move)) text += "c";
+        return text;
+    }
+
+    // Errors in the fields every generated move should share: the piece-type field is the piece on from, and the
+    // castling rights and en passant before the move are the state's.
+    string MoveFieldErrors(byte[] board, int[] state, int move) {
+        string errors = "";
+        if (ChessRules.MovePieceType(move) != ChessRules.PieceTypeOf(board[ChessRules.MoveFrom(move)])) {
+            errors += " " + MoveText(move) + ":type " + ChessRules.MovePieceType(move);
+        }
+        if (ChessRules.MovePrevCastlingRights(move) != state[ChessPosition.StateCastlingRights]) {
+            errors += " " + MoveText(move) + ":rights " + ChessRules.MovePrevCastlingRights(move);
+        }
+        if (ChessRules.MovePrevEnPassantFile(move) != state[ChessPosition.StateEnPassantFile]) {
+            errors += " " + MoveText(move) + ":en passant " + ChessRules.MovePrevEnPassantFile(move);
+        }
+        return errors;
+    }
+
+    // Generates the moves of the piece on from and compares them, in any order, with expected: MoveText strings
+    // separated by spaces, "" for none.
+    void CheckMoves(string name, byte[] board, int[] state, int from, string expected) {
+        int[] moves = new int[ChessMoves.MaxMoves];
+        byte[] b = CopyBoard(board);
+        int[] s = CopyState(state);
+        int count = ChessMoves.GeneratePieceMoves(b, s, from, moves, 0);
+        string errors = BoardDiff(b, board) + StateDiff(s, state);
+        if (errors != "") errors = " changed the position:" + errors;
+
+        string[] wanted = expected == "" ? new string[0] : expected.Split(new char[] { ' ' });
+        bool[] found = new bool[wanted.Length];
+        string extra = "";
+        for (int i = 0; i < count; i++) {
+            string text = MoveText(moves[i]);
+            bool match = false;
+            for (int j = 0; j < wanted.Length; j++) {
+                if (!found[j] && wanted[j] == text) {
+                    found[j] = true;
+                    match = true;
+                    break;
+                }
+            }
+            if (!match) extra += " " + text;
+            errors += MoveFieldErrors(board, state, moves[i]);
+        }
+        string missing = "";
+        for (int j = 0; j < wanted.Length; j++) {
+            if (!found[j]) missing += " " + wanted[j];
+        }
+        if (extra != "") errors += " unexpected:" + extra;
+        if (missing != "") errors += " missing:" + missing;
+        Check(errors == "", "move generation: " + name, errors);
+    }
+
+    // A board from the piece placement part of a FEN (test helper only; FEN parsing proper is step 3).
+    byte[] Placement(string placement) {
+        byte[] board = new byte[64];
+        int rank = 7;
+        int file = 0;
+        for (int i = 0; i < placement.Length; i++) {
+            char c = placement[i];
+            if (c == '/') {
+                rank--;
+                file = 0;
+            } else if (c >= '1' && c <= '8') {
+                file += c - '0';
+            } else {
+                int color = char.IsUpper(c) ? ChessRules.White : ChessRules.Black;
+                board[ChessRules.SquareOf(file, rank)] = ChessRules.PieceOf(color, ChessRules.PieceTypeFromLetter(char.ToUpper(c)));
+                file++;
+            }
+        }
+        return board;
+    }
+
+    int FindPiece(byte[] board, byte piece) {
+        for (int sq = 0; sq < 64; sq++) {
+            if (board[sq] == piece) return sq;
+        }
+        return ChessRules.NoSquare;
+    }
+
+    // Generates all moves for the side to move and compares the count with the Java's (prohibitSelfCheck = false,
+    // on port-reference). Also checks each move's shared fields, and that make followed by unmake restores the
+    // position for every move.
+    void CheckMoveCount(string name, string placement, int sideToMove, int castlingRights, int enPassantFile,
+        int expected) {
+        byte[] board = Placement(placement);
+        int[] state = NewState(sideToMove, castlingRights, enPassantFile,
+            FindPiece(board, ChessRules.WhiteKing), FindPiece(board, ChessRules.BlackKing));
+        int[] moves = new int[ChessMoves.MaxMoves];
+        int count = ChessMoves.GenerateMoves(board, state, moves);
+        string errors = count == expected ? "" : " count " + count + " (expected " + expected + ")";
+        byte[] b = CopyBoard(board);
+        int[] s = CopyState(state);
+        for (int i = 0; i < count; i++) {
+            errors += MoveFieldErrors(board, state, moves[i]);
+            ChessPosition.MakeMove(b, s, moves[i]);
+            ChessPosition.UnmakeMove(b, s, moves[i]);
+            string diff = BoardDiff(b, board) + StateDiff(s, state);
+            if (diff != "") {
+                errors += " " + MoveText(moves[i]) + " make/unmake:" + diff;
+                b = CopyBoard(board);
+                s = CopyState(state);
+            }
+        }
+        Check(errors == "", "move count: " + name, errors);
+    }
+
+    void TestMoveGeneration() {
+        int white = ChessRules.White;
+        int black = ChessRules.Black;
+        int none = ChessRules.NoSquare;
+        int all = ChessRules.CastleAll;
+        int wk = ChessRules.CastleWhiteKingSide;
+        int wq = ChessRules.CastleWhiteQueenSide;
+        int bk = ChessRules.CastleBlackKingSide;
+        int bq = ChessRules.CastleBlackQueenSide;
+        int[] whiteToMove = NewState(white, 0, -1, none, none);
+        int[] blackToMove = NewState(black, 0, -1, none, none);
+
+        // Knights: an own piece blocks, an enemy piece is captured; no wrapping round the board's edges.
+        byte[] b = EmptyBoard();
+        b[ChessRules.D4] = ChessRules.WhiteKnight;
+        b[ChessRules.E6] = ChessRules.WhitePawn;
+        b[ChessRules.C6] = ChessRules.BlackRook;
+        b[ChessRules.H4] = ChessRules.WhiteKnight;
+        b[ChessRules.H8] = ChessRules.BlackKnight;
+        CheckMoves("knight with blocker and capture", b, whiteToMove, ChessRules.D4,
+            "d4c6xR d4b5 d4f5 d4b3 d4f3 d4c2 d4e2");
+        CheckMoves("knight on the h-file", b, whiteToMove, ChessRules.H4, "h4g6 h4f5 h4f3 h4g2");
+        CheckMoves("black knight in the corner", b, blackToMove, ChessRules.H8, "h8g6 h8f7");
+
+        // Sliders: each ray stops before an own piece and at an enemy piece.
+        b = EmptyBoard();
+        b[ChessRules.D4] = ChessRules.WhiteBishop;
+        b[ChessRules.F6] = ChessRules.WhitePawn;
+        b[ChessRules.B6] = ChessRules.BlackKnight;
+        CheckMoves("bishop", b, whiteToMove, ChessRules.D4, "d4e5 d4c5 d4b6xN d4e3 d4f2 d4g1 d4c3 d4b2 d4a1");
+
+        b = EmptyBoard();
+        b[ChessRules.E5] = ChessRules.BlackRook;
+        b[ChessRules.E7] = ChessRules.BlackPawn;
+        b[ChessRules.E2] = ChessRules.WhitePawn;
+        b[ChessRules.G5] = ChessRules.WhiteQueen;
+        CheckMoves("black rook", b, blackToMove, ChessRules.E5,
+            "e5e6 e5e4 e5e3 e5e2xP e5d5 e5c5 e5b5 e5a5 e5f5 e5g5xQ");
+
+        b = EmptyBoard();
+        b[ChessRules.A1] = ChessRules.WhiteQueen;
+        b[ChessRules.A3] = ChessRules.WhitePawn;
+        b[ChessRules.E1] = ChessRules.BlackBishop;
+        b[ChessRules.G7] = ChessRules.BlackPawn;
+        CheckMoves("queen in the corner", b, whiteToMove, ChessRules.A1,
+            "a1a2 a1b1 a1c1 a1d1 a1e1xB a1b2 a1c3 a1d4 a1e5 a1f6 a1g7xP");
+
+        // Kings, without castling. Moving next to danger is allowed here; the legal move list filters it.
+        b = EmptyBoard();
+        b[ChessRules.E4] = ChessRules.WhiteKing;
+        b[ChessRules.D5] = ChessRules.WhitePawn;
+        b[ChessRules.F5] = ChessRules.BlackPawn;
+        b[ChessRules.H8] = ChessRules.BlackKing;
+        CheckMoves("king", b, whiteToMove, ChessRules.E4, "e4d3 e4e3 e4f3 e4d4 e4f4 e4e5 e4f5xP");
+        CheckMoves("black king in the corner", b, blackToMove, ChessRules.H8, "h8g8 h8g7 h8h7");
+
+        // White pawns: pushes, blocked pushes, captures (never of its own pieces, a Java bug), no wrapping round the
+        // board's edges.
+        b = EmptyBoard();
+        b[ChessRules.E2] = ChessRules.WhitePawn;
+        b[ChessRules.D2] = ChessRules.WhitePawn;
+        b[ChessRules.D4] = ChessRules.BlackKnight;
+        b[ChessRules.C2] = ChessRules.WhitePawn;
+        b[ChessRules.C3] = ChessRules.WhiteKnight;
+        b[ChessRules.F2] = ChessRules.WhitePawn;
+        b[ChessRules.G3] = ChessRules.BlackKnight;
+        b[ChessRules.H4] = ChessRules.WhitePawn;
+        b[ChessRules.A6] = ChessRules.BlackPawn;
+        b[ChessRules.A3] = ChessRules.WhitePawn;
+        b[ChessRules.H3] = ChessRules.BlackKnight;
+        b[ChessRules.A1] = ChessRules.WhitePawn;
+        CheckMoves("white pawn single and double push", b, whiteToMove, ChessRules.E2, "e2e3 e2e4");
+        CheckMoves("white pawn double push blocked, own piece not captured", b, whiteToMove, ChessRules.D2, "d2d3");
+        CheckMoves("white pawn blocked", b, whiteToMove, ChessRules.C2, "");
+        CheckMoves("white pawn captures", b, whiteToMove, ChessRules.F2, "f2f3 f2f4 f2g3xN");
+        CheckMoves("white pawn on the h-file doesn't wrap", b, whiteToMove, ChessRules.H4, "h4h5");
+        CheckMoves("white pawn on the a-file doesn't wrap", b, whiteToMove, ChessRules.A3, "a3a4");
+        CheckMoves("white pawn on rank 1 has no moves", b, whiteToMove, ChessRules.A1, "");
+
+        // Black pawns.
+        b = EmptyBoard();
+        b[ChessRules.C7] = ChessRules.BlackPawn;
+        b[ChessRules.E7] = ChessRules.BlackPawn;
+        b[ChessRules.E6] = ChessRules.WhitePawn;
+        b[ChessRules.D6] = ChessRules.WhiteBishop;
+        b[ChessRules.F6] = ChessRules.BlackKnight;
+        b[ChessRules.A5] = ChessRules.BlackPawn;
+        b[ChessRules.H3] = ChessRules.WhiteKnight;
+        b[ChessRules.H6] = ChessRules.BlackPawn;
+        b[ChessRules.A6] = ChessRules.WhiteKnight;
+        CheckMoves("black pawn pushes and capture", b, blackToMove, ChessRules.C7, "c7c6 c7c5 c7d6xB");
+        CheckMoves("black pawn blocked, captures, own piece not captured", b, blackToMove, ChessRules.E7, "e7d6xB");
+        CheckMoves("black pawn on the a-file doesn't wrap", b, blackToMove, ChessRules.A5, "a5a4");
+        CheckMoves("black pawn on the h-file doesn't wrap", b, blackToMove, ChessRules.H6, "h6h5");
+
+        // En passant, from both sides of the pawn that double-pushed.
+        b = EmptyBoard();
+        b[ChessRules.E5] = ChessRules.WhitePawn;
+        b[ChessRules.C5] = ChessRules.WhitePawn;
+        b[ChessRules.B5] = ChessRules.WhitePawn;
+        b[ChessRules.D5] = ChessRules.BlackPawn;
+        b[ChessRules.D4] = ChessRules.BlackPawn;
+        b[ChessRules.F4] = ChessRules.BlackPawn;
+        b[ChessRules.E4] = ChessRules.WhitePawn;
+        int[] epWhite = NewState(white, 0, ChessRules.FileD, none, none);
+        int[] epBlack = NewState(black, 0, ChessRules.FileE, none, none);
+        CheckMoves("white en passant from the right", b, epWhite, ChessRules.E5, "e5e6 e5d6xP");
+        CheckMoves("white en passant from the left", b, epWhite, ChessRules.C5, "c5c6 c5d6xP");
+        CheckMoves("white pawn not beside the en passant pawn", b, epWhite, ChessRules.B5, "b5b6");
+        CheckMoves("black en passant from the left", b, epBlack, ChessRules.D4, "d4d3 d4e3xP");
+        CheckMoves("black en passant from the right", b, epBlack, ChessRules.F4, "f4f3 f4e3xP");
+        // Without the en passant state the same pawns can only push.
+        CheckMoves("no en passant without the state", b, whiteToMove, ChessRules.E5, "e5e6");
+
+        // Promotions, pushing and capturing, both colours.
+        b = EmptyBoard();
+        b[ChessRules.B7] = ChessRules.WhitePawn;
+        b[ChessRules.A8] = ChessRules.BlackRook;
+        b[ChessRules.C8] = ChessRules.WhiteKnight;
+        b[ChessRules.G7] = ChessRules.WhitePawn;
+        b[ChessRules.G8] = ChessRules.BlackBishop;
+        b[ChessRules.G2] = ChessRules.BlackPawn;
+        b[ChessRules.F1] = ChessRules.WhiteBishop;
+        CheckMoves("white promotions", b, whiteToMove, ChessRules.B7,
+            "b7b8=Q b7b8=R b7b8=B b7b8=N b7a8xR=Q b7a8xR=R b7a8xR=B b7a8xR=N");
+        CheckMoves("white pawn blocked on rank 7", b, whiteToMove, ChessRules.G7, "");
+        CheckMoves("black promotions", b, blackToMove, ChessRules.G2,
+            "g2g1=Q g2g1=R g2g1=B g2g1=N g2f1xB=Q g2f1xB=R g2f1xB=B g2f1xB=N");
+
+        // Castling, standard: r3k2r/8/8/8/8/8/8/R3K2R. Only the pieces are checked here, not check.
+        byte[] std = EmptyBoard();
+        std[ChessRules.E1] = ChessRules.WhiteKing;
+        std[ChessRules.A1] = ChessRules.WhiteRook;
+        std[ChessRules.H1] = ChessRules.WhiteRook;
+        std[ChessRules.E8] = ChessRules.BlackKing;
+        std[ChessRules.A8] = ChessRules.BlackRook;
+        std[ChessRules.H8] = ChessRules.BlackRook;
+        int[] stdWhite = NewState(white, all, -1, ChessRules.E1, ChessRules.E8);
+        int[] stdBlack = NewState(black, all, -1, ChessRules.E1, ChessRules.E8);
+        string whiteKingSteps = "e1d1 e1d2 e1e2 e1f2 e1f1";
+        CheckMoves("white castles both ways", std, stdWhite, ChessRules.E1, whiteKingSteps + " e1h1c e1a1c");
+        CheckMoves("black castles both ways", std, stdBlack, ChessRules.E8, "e8d8 e8d7 e8e7 e8f7 e8f8 e8h8c e8a8c");
+        CheckMoves("no castling without rights", std, NewState(white, bk | bq, -1, ChessRules.E1, ChessRules.E8),
+            ChessRules.E1, whiteKingSteps);
+        CheckMoves("castling only on the side with the right", std, NewState(white, wq, -1, ChessRules.E1, ChessRules.E8),
+            ChessRules.E1, whiteKingSteps + " e1a1c");
+
+        b = CopyBoard(std);
+        b[ChessRules.B1] = ChessRules.BlackKnight;
+        CheckMoves("piece on the rook's path blocks O-O-O", b, stdWhite, ChessRules.E1, whiteKingSteps + " e1h1c");
+        b = CopyBoard(std);
+        b[ChessRules.G1] = ChessRules.WhiteBishop;
+        CheckMoves("piece on the king's path blocks O-O", b, stdWhite, ChessRules.E1, whiteKingSteps + " e1a1c");
+        // Java bugs (docs/java-bugs.md): castling with the rook gone, or past another rook or king.
+        b = CopyBoard(std);
+        b[ChessRules.H1] = ChessRules.Empty;
+        CheckMoves("no castling with the rook gone", b, stdWhite, ChessRules.E1, whiteKingSteps + " e1a1c");
+        b = CopyBoard(std);
+        b[ChessRules.H1] = ChessRules.BlackRook;
+        CheckMoves("no castling with an enemy rook on the rook's square", b, stdWhite, ChessRules.E1,
+            whiteKingSteps + " e1a1c");
+        b = CopyBoard(std);
+        b[ChessRules.D1] = ChessRules.WhiteRook;
+        CheckMoves("another own rook blocks O-O-O", b, stdWhite, ChessRules.E1, "e1d2 e1e2 e1f2 e1f1 e1h1c");
+        b = CopyBoard(std);
+        b[ChessRules.F1] = ChessRules.BlackRook;
+        CheckMoves("an enemy rook blocks O-O", b, stdWhite, ChessRules.E1, "e1d1 e1d2 e1e2 e1f2 e1f1xR e1a1c");
+        b = CopyBoard(std);
+        b[ChessRules.C8] = ChessRules.WhiteKing;
+        b[ChessRules.E1] = ChessRules.Empty;
+        b[ChessRules.D8] = ChessRules.Empty;
+        CheckMoves("an enemy king blocks O-O-O", b, stdBlack, ChessRules.E8, "e8d8 e8d7 e8e7 e8f7 e8f8 e8h8c");
+        // A king off its starting square doesn't castle, even with the rights still set.
+        b = CopyBoard(std);
+        b[ChessRules.E1] = ChessRules.Empty;
+        b[ChessRules.F1] = ChessRules.WhiteKing;
+        CheckMoves("no castling with the king off its square", b, stdWhite, ChessRules.F1,
+            "f1e1 f1e2 f1f2 f1g2 f1g1");
+
+        // Castling, Chess960. King on c between rooks on b and g (as in 2.3b): O-O-O where the king doesn't move.
+        byte[] c960 = EmptyBoard();
+        c960[ChessRules.A1] = ChessRules.WhiteQueen;
+        c960[ChessRules.B1] = ChessRules.WhiteRook;
+        c960[ChessRules.C1] = ChessRules.WhiteKing;
+        c960[ChessRules.G1] = ChessRules.WhiteRook;
+        int[] c960White = NewState960(white, wk | wq, ChessRules.FileC, ChessRules.FileB, ChessRules.FileG,
+            ChessRules.C1, none);
+        CheckMoves("chess960 king on c", c960, c960White, ChessRules.C1, "c1d1 c1b2 c1c2 c1d2 c1g1c c1b1c");
+        b = CopyBoard(c960);
+        b[ChessRules.D1] = ChessRules.WhiteKnight;
+        CheckMoves("chess960 piece on d1 blocks both castles", b, c960White, ChessRules.C1, "c1b2 c1c2 c1d2");
+
+        // King on f between rooks on d and g: O-O swaps the king and rook; on O-O-O the rook doesn't move.
+        byte[] swap = EmptyBoard();
+        swap[ChessRules.D1] = ChessRules.WhiteRook;
+        swap[ChessRules.F1] = ChessRules.WhiteKing;
+        swap[ChessRules.G1] = ChessRules.WhiteRook;
+        int[] swapWhite = NewState960(white, wk | wq, ChessRules.FileF, ChessRules.FileD, ChessRules.FileG,
+            ChessRules.F1, none);
+        CheckMoves("chess960 king on f", swap, swapWhite, ChessRules.F1, "f1e1 f1e2 f1f2 f1g2 f1g1c f1d1c");
+        b = CopyBoard(swap);
+        b[ChessRules.E1] = ChessRules.WhiteBishop;
+        CheckMoves("chess960 piece between king and rook blocks O-O-O", b, swapWhite, ChessRules.F1,
+            "f1e2 f1f2 f1g2 f1g1c");
+
+        // King on g between rooks on b and h: O-O where the king doesn't move, and a long O-O-O.
+        byte[] kg = EmptyBoard();
+        kg[ChessRules.B1] = ChessRules.WhiteRook;
+        kg[ChessRules.G1] = ChessRules.WhiteKing;
+        kg[ChessRules.H1] = ChessRules.WhiteRook;
+        int[] kgWhite = NewState960(white, wk | wq, ChessRules.FileG, ChessRules.FileB, ChessRules.FileH,
+            ChessRules.G1, none);
+        CheckMoves("chess960 king on g", kg, kgWhite, ChessRules.G1, "g1f1 g1f2 g1g2 g1h2 g1h1c g1b1c");
+        b = CopyBoard(kg);
+        b[ChessRules.F1] = ChessRules.BlackKnight;
+        CheckMoves("chess960 enemy piece on f1 blocks both castles", b, kgWhite, ChessRules.G1,
+            "g1f1xN g1f2 g1g2 g1h2");
+
+        // Every move of the side to move, against the Java's counts with prohibitSelfCheck = false.
+        CheckMoveCount("standard start", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", white, all, -1, 20);
+        CheckMoveCount("Kiwipete, white", "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R", white, all, -1, 48);
+        CheckMoveCount("Kiwipete, black", "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R", black, all, -1, 43);
+        CheckMoveCount("perft position 3", "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8", white, 0, -1, 16);
+        CheckMoveCount("perft position 4", "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1", white, bk | bq, -1, 38);
+        CheckMoveCount("perft position 5", "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R", white, wk | wq, -1, 44);
     }
 }

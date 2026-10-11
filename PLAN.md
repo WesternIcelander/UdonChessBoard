@@ -93,8 +93,9 @@ The rules live in `Assets/Siggi/ChessBoard/Rules/` (namespace `SiggiChessBoard`)
 - [x] **2.3b** Make and unmake for castling (Chess960-aware), and castling rights and their restore.
   - Verify: as 2.3a, for both sides' O-O and O-O-O in the standard position and in Chess960 positions (including one where the king doesn't move); castling rights are lost after king and rook moves and when a rook is captured on its starting square, and are restored by unmake.
   - In `ChessPosition.MakeMove`/`UnmakeMove`; rights are lost by any move from or to a king's or rook's starting square (`ChessPosition.CastlingRightsAt`, see [Move encoding](docs/move-encoding.md#castling)).
-- [ ] **2.4a** Move generation per piece type.
+- [x] **2.4a** Move generation per piece type.
   - Verify: for hand-built positions with a single piece of each type (plus blockers and capturable pieces), the generated moves match a hand-written list.
+  - `ChessMoves.GenerateMoves`/`GeneratePieceMoves` in `Assets/Siggi/ChessBoard/Rules/ChessMoves.cs`: pseudo-legal moves into a caller's `int[ChessMoves.MaxMoves]`. The king's moves include castling, checked for the rights, the rook on its starting square and a clear path (only the castling king and rook may stand on it), but not for check, which 2.5 adds. The test also compares whole-side counts with the Java at `prohibitSelfCheck = false` (start 20, Kiwipete 48 / 43 for Black, perft positions 3–5: 16, 38, 44) and makes and unmakes every generated move.
 - [ ] **2.4b** The attack check.
   - Verify: for hand-built positions, attacked / not attacked is right for squares hit by each attacker type (pawn of each colour, knight, bishop, rook, queen, king), including blocked sliders.
 - [ ] **2.5** Legal move list (play, attack check, undo), with the `prohibitSelfCheck` option; setting it to `false` skips the check filtering (for Fog of War later).
