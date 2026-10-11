@@ -2,7 +2,7 @@ using SiggiChessBoard;
 using UdonSharp;
 using UnityEngine;
 
-// Step 2 test behaviour (PLAN.md section 2): checks the static rules with no world objects.
+// Step 2 and 3 test behaviour (PLAN.md sections 2 and 3): checks the static rules and FEN with no world objects.
 // Logs "[RulesTest] PASS: <check>" or "[RulesTest] FAIL: <check>: <details>" per check, then a summary line.
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
 public class RulesTest : UdonSharpBehaviour {
@@ -20,6 +20,7 @@ public class RulesTest : UdonSharpBehaviour {
         TestAttacks();
         TestLegalMoves();
         TestPositions();
+        TestFen();
         Debug.Log("[RulesTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
@@ -1645,5 +1646,140 @@ public class RulesTest : UdonSharpBehaviour {
         b = Placement("4k3/3p4/2n1b3/8/8/8/8/4K3");
         s = PlacementState(b, black, 0, -1);
         CheckLegalMoves("black pawn doesn't capture its own pieces", b, s, ChessRules.D7, "d7d6 d7d5", "d7d6 d7d5");
+    }
+
+    // ---- 3.1 ----
+
+    // Parses fen and checks the board (against Placement of its first field), the state (side to move from its second
+    // field, king squares found on the board, the rest as given) and the counters, then that writing it gives
+    // expected.
+    void CheckFen(string name, string fen, string expected, int castlingRights, int enPassantFile, int kingFile,
+        int leftRookFile, int rightRookFile, int halfmoves, int fullmoves) {
+        byte[] board = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        int h;
+        int f;
+        if (!ChessFen.ParseFen(fen, board, state, out h, out f)) {
+            Check(false, "FEN: " + name, "rejected");
+            return;
+        }
+        string[] fields = fen.Trim().Split(new char[] { ' ' });
+        byte[] expectedBoard = Placement(fields[0]);
+        int side = fields[1] == "w" ? ChessRules.White : ChessRules.Black;
+        int[] expectedState = NewState960(side, castlingRights, kingFile, leftRookFile, rightRookFile,
+            FindPiece(expectedBoard, ChessRules.WhiteKing), FindPiece(expectedBoard, ChessRules.BlackKing));
+        expectedState[ChessPosition.StateEnPassantFile] = enPassantFile;
+        string errors = BoardDiff(board, expectedBoard) + StateDiff(state, expectedState);
+        if (h != halfmoves || f != fullmoves) errors += " counters " + h + " " + f;
+        string written = ChessFen.WriteFen(board, state, h, f);
+        if (written != expected) errors += " wrote \"" + written + "\"";
+        Check(errors == "", "FEN: " + name, errors);
+    }
+
+    // fen must be rejected, leaving the arrays (holding Kiwipete) untouched.
+    void CheckFenRejected(string name, string fen) {
+        byte[] board = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        int h;
+        int f;
+        ChessFen.ParseFen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", board, state, out h, out f);
+        byte[] boardBefore = CopyBoard(board);
+        int[] stateBefore = CopyState(state);
+        bool ok = ChessFen.ParseFen(fen, board, state, out h, out f);
+        string errors = ok ? " accepted" : "";
+        string diff = BoardDiff(board, boardBefore) + StateDiff(state, stateBefore);
+        if (diff != "") errors += " arrays changed:" + diff;
+        Check(errors == "", "FEN rejected: " + name, errors);
+    }
+
+    void TestFen() {
+        int all = ChessRules.CastleAll;
+        int wk = ChessRules.CastleWhiteKingSide;
+        int wq = ChessRules.CastleWhiteQueenSide;
+        int bk = ChessRules.CastleBlackKingSide;
+        int bq = ChessRules.CastleBlackQueenSide;
+        int fa = ChessRules.FileA, fb = ChessRules.FileB, fc = ChessRules.FileC, fe = ChessRules.FileE;
+        int ff = ChessRules.FileF, fg = ChessRules.FileG, fh = ChessRules.FileH;
+
+        // Round trips.
+        string start = ChessFen.StartFen;
+        CheckFen("standard start", start, start, all, -1, fe, fa, fh, 0, 1);
+        string kiwipete = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
+        CheckFen("Kiwipete", kiwipete, kiwipete, all, -1, fe, fa, fh, 0, 1);
+        string s = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
+        CheckFen("en passant, Black to move", s, s, all, ChessRules.FileE, fe, fa, fh, 0, 1);
+        s = "rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3";
+        CheckFen("en passant, White to move", s, s, all, ChessRules.FileF, fe, fa, fh, 0, 3);
+        s = "r3k3/1P4P1/8/8/8/8/1p4p1/R3K2R b KQq - 3 40";
+        CheckFen("partial rights and counters", s, s, wk | wq | bq, -1, fe, fa, fh, 3, 40);
+        s = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1";
+        CheckFen("no castling", s, s, 0, -1, fe, fa, fh, 0, 1);
+        s = "qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w GBgb - 0 1";
+        CheckFen("Chess960, Shredder letters", s, s, all, -1, fc, fb, fg, 0, 1);
+        s = "bqnb1rkr/pp3ppp/3ppn2/2p5/5P2/P2P4/NPP1P1PP/BQ1BNRKR w HFhf - 2 9";
+        CheckFen("Chess960, rook on h", s, s, all, -1, fg, ff, fh, 2, 9);
+        s = "qbbnnrkr/2pp2pp/p7/1p2pp2/8/P3PP2/1PPP1KPP/QBBNNR1R w hf - 0 9";
+        CheckFen("Chess960, Black's rights only", s, s, bk | bq, -1, fg, ff, fh, 0, 9);
+
+        // Other spellings, written in the standard form.
+        CheckFen("Chess960 with KQkq", "qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w KQkq - 0 1",
+            "qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w GBgb - 0 1", all, -1, fc, fb, fg, 0, 1);
+        CheckFen("standard start with HAha", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w HAha - 0 1", start,
+            all, -1, fe, fa, fh, 0, 1);
+        CheckFen("K is the outermost rook", "4k3/8/8/8/8/8/8/4KR1R w K - 0 1", "4k3/8/8/8/8/8/8/4KR1R w K - 0 1",
+            wk, -1, fe, fa, fh, 0, 1);
+        CheckFen("a letter names an inner rook", "4k3/8/8/8/8/8/8/4KR1R w F - 0 1", "4k3/8/8/8/8/8/8/4KR1R w F - 0 1",
+            wk, -1, fe, fa, ff, 0, 1);
+        CheckFen("counters left out", "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - -",
+            "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1", 0, -1, fe, fa, fh, 0, 1);
+        CheckFen("extra spaces", "  rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w  KQkq - 0 1 ", start,
+            all, -1, fe, fa, fh, 0, 1);
+
+        // Malformed.
+        string startBoard = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
+        CheckFenRejected("empty", "");
+        CheckFenRejected("only the placement and side", startBoard + " w");
+        CheckFenRejected("five fields", startBoard + " w KQkq - 0");
+        CheckFenRejected("seven fields", startBoard + " w KQkq - 0 1 x");
+        CheckFenRejected("seven ranks", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP w KQkq - 0 1");
+        CheckFenRejected("nine ranks", startBoard + "/8 w KQkq - 0 1");
+        CheckFenRejected("rank too long", "rnbqkbnr/ppppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        CheckFenRejected("rank too short", "rnbqkbn/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        CheckFenRejected("digit 9", "rnbqkbnr/pppppppp/9/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        CheckFenRejected("digit 0", "rnbqkbnr/pppppppp/08/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        CheckFenRejected("bad piece letter", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNX w KQkq - 0 1");
+        CheckFenRejected("bad side to move", startBoard + " x KQkq - 0 1");
+        CheckFenRejected("uppercase side to move", startBoard + " W KQkq - 0 1");
+        CheckFenRejected("two white kings", "4k3/8/8/8/8/8/8/3KK3 w - - 0 1");
+        CheckFenRejected("no black king", "8/8/8/8/8/8/8/4K3 w - - 0 1");
+        CheckFenRejected("white pawn on rank 8", "P3k3/8/8/8/8/8/8/4K3 w - - 0 1");
+        CheckFenRejected("black pawn on rank 1", "4k3/8/8/8/8/8/8/p3K3 w - - 0 1");
+        CheckFenRejected("side not to move in check", "4k3/8/8/8/8/8/4R3/4K3 w - - 0 1");
+        CheckFenRejected("bad castling letter", startBoard + " w KQkqX - 0 1");
+        CheckFenRejected("castling digit", startBoard + " w 1 - 0 1");
+        CheckFenRejected("repeated right", startBoard + " w KK - 0 1");
+        CheckFenRejected("repeated right as K and H", "4k3/8/8/8/8/8/8/R3K2R w KH - 0 1");
+        CheckFenRejected("right without its rook", "4k3/8/8/8/8/8/8/R3K3 w K - 0 1");
+        CheckFenRejected("letter with no rook on that file", "4k3/8/8/8/8/8/8/R3K2R w G - 0 1");
+        CheckFenRejected("letter on the king's file", "4k3/8/8/8/8/8/8/R3K2R w E - 0 1");
+        CheckFenRejected("right with the king off the back rank", "4k3/8/8/8/8/8/4K3/R6R w KQ - 0 1");
+        CheckFenRejected("kings on different files", "r2k3r/8/8/8/8/8/8/R3K2R w KQkq - 0 1");
+        CheckFenRejected("rooks on different files", "1r2k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1");
+        CheckFenRejected("en passant on the wrong rank", startBoard + " w KQkq e3 0 1");
+        CheckFenRejected("en passant without the pawn", startBoard + " w KQkq e6 0 1");
+        CheckFenRejected("en passant with the pawn's square occupied",
+            "rnbqkbnr/pppppppp/8/4p3/8/8/PPPPPPPP/RNBQKBNR w KQkq e6 0 2");
+        CheckFenRejected("en passant square not a square", startBoard + " w KQkq e9 0 1");
+        CheckFenRejected("negative halfmove clock", startBoard + " w KQkq - -1 1");
+        CheckFenRejected("halfmove clock not a number", startBoard + " w KQkq - x 1");
+        CheckFenRejected("move number 0", startBoard + " w KQkq - 0 0");
+        CheckFenRejected("move number too long", startBoard + " w KQkq - 0 1234567890");
+
+        // null.
+        byte[] board = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        int h;
+        int f;
+        Check(!ChessFen.ParseFen(null, board, state, out h, out f), "FEN rejected: null", "accepted");
     }
 }

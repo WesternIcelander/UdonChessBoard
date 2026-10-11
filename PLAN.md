@@ -110,8 +110,9 @@ The rules live in `Assets/Siggi/ChessBoard/Rules/` (namespace `SiggiChessBoard`)
 
 **Read:** [udon-constraints](docs/udon-constraints.md) (regex, no I/O), [move-encoding](docs/move-encoding.md) (castling files, undo and halfmove clock), [modes](docs/modes.md) (Chess960), [java-bugs](docs/java-bugs.md) (comparing against the Java), [testing](docs/testing.md)
 
-- [ ] **3.1** FEN parsing and writing, including Chess960 castling letters and the king/rook starting files.
+- [x] **3.1** FEN parsing and writing, including Chess960 castling letters and the king/rook starting files.
   - Verify: parsing then writing returns the same string for the standard start, Kiwipete, a position with en passant, and Chess960 positions; the king and rook starting files are set; malformed FENs are rejected with a `false` result rather than a broken board.
+  - `ChessFen.ParseFen(fen, board, state, out halfmoveClock, out fullmoveNumber)`/`WriteFen` in `Assets/Siggi/ChessBoard/Rules/ChessFen.cs`, parsed by hand (no regex). On failure the arrays are left untouched. Castling accepts `KQkq` (X-FEN: the outermost rook on that side), Shredder letters, or a mix; writing uses `KQkq` when the rook files are a and h, Shredder letters otherwise, as the Java. Stricter than the Java on purpose (see the end of [Bugs found in the Java](docs/java-bugs.md)). The checks are `TestFen` in `RulesTest.cs`: round trips (the positions above, partial rights, Shredder and X-FEN on Chess960 positions, an inner rook named by its letter, counters left out), the state's files, and 36 malformed FENs that must leave the arrays as they were, plus `null`.
 - [ ] **3.2** **Test:** round-trip a set of FENs; compare against the Java's output for the same positions.
   - Verify: every FEN in the set round-trips, and matches the Java's output.
 - [ ] **3.3a** **Test:** a test behaviour running perft from published positions (standard start, Kiwipete, the other standard perft positions, some Chess960 positions), loaded from their FENs, and checking the counts. Record the timings.
