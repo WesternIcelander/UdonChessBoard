@@ -67,6 +67,8 @@ public class BoardTest : UdonSharpBehaviour {
             TestDrawAgreement();
             TestDrawClaims();
             TestAutomaticDraws();
+            TestGameIdFormat();
+            TestGameIds();
             TestSnapshot();
             if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
             board.ClearState();
@@ -2518,6 +2520,171 @@ public class BoardTest : UdonSharpBehaviour {
         Drop("Ana", ChessRules.E3, ChessRules.D2, "dead with an offer: Kxd2");
         CheckEnded(ChessGame.EndingInsufficientMaterial, ChessRules.NoColor, "1/2-1/2", "dead with an offer");
         CheckInt(board.drawOfferColor, ChessRules.NoColor, "dead with an offer: the offer lapses");
+
+        board.ClearState();
+    }
+
+    // ---- 7.6 Game IDs ----
+
+    // What's wrong with id as a Game ID (yyyyMMddHHmmss-xxxxxx, a real date and time), "" if nothing.
+    string GameIdProblem(string id) {
+        if (id == null) return "null";
+        if (id.Length != 21) return "length " + id.Length + " in \"" + id + "\"";
+        for (int i = 0; i < 21; i++) {
+            char c = id[i];
+            if (i == 14 ? c != '-' : (c < '0' || c > '9')) return "character " + i + " in \"" + id + "\"";
+        }
+        int month = int.Parse(id.Substring(4, 2));
+        int day = int.Parse(id.Substring(6, 2));
+        int hour = int.Parse(id.Substring(8, 2));
+        int minute = int.Parse(id.Substring(10, 2));
+        int second = int.Parse(id.Substring(12, 2));
+        if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) {
+            return "not a date and time: \"" + id + "\"";
+        }
+        return "";
+    }
+
+    void CheckGameId(string id, string name) {
+        string problem = GameIdProblem(id);
+        Check(problem == "", name, problem);
+    }
+
+    // The formatting itself, on fixed times and suffixes.
+    void TestGameIdFormat() {
+        CheckText(ChessGame.GameId(new System.DateTime(2026, 10, 5, 14, 30, 27), 48213), "20261005143027-048213",
+            "game ID format: the docs' example");
+        CheckText(ChessGame.GameId(new System.DateTime(2026, 1, 2, 3, 4, 5), 0), "20260102030405-000000",
+            "game ID format: single digits padded, suffix 0");
+        CheckText(ChessGame.GameId(new System.DateTime(9999, 12, 31, 23, 59, 59), 999999), "99991231235959-999999",
+            "game ID format: largest values");
+        CheckText(ChessGame.GameId(new System.DateTime(33, 7, 9, 0, 0, 0), 7), "00330709000000-000007",
+            "game ID format: a short year padded");
+        CheckText(ChessGame.GameId(new System.DateTime(2026, 10, 5, 14, 30, 27), -1), "",
+            "game ID format: negative suffix refused");
+        CheckText(ChessGame.GameId(new System.DateTime(2026, 10, 5, 14, 30, 27), 1000000), "",
+            "game ID format: seven-digit suffix refused");
+        CheckGameId(ChessGame.GameId(new System.DateTime(2026, 10, 5, 14, 30, 27), 48213),
+            "game ID format: the checker accepts the docs' example");
+        Check(GameIdProblem("20261005143027048213") != "" && GameIdProblem("20261305143027-048213") != ""
+            && GameIdProblem("2026100514302-0048213") != "", "game ID format: the checker refuses malformed IDs",
+            "a malformed ID was accepted");
+
+        CheckText(ChessGame.ContinuedFromText("20261005143027-048213", 3), "20261005143027-048213/3",
+            "continued from: the docs' example");
+        CheckText(ChessGame.ContinuedFromText("20261005143027-048213", 0), "20261005143027-048213/0",
+            "continued from: ply 0");
+        CheckText(ChessGame.ContinuedFromText("20261005143027-048213", 142), "20261005143027-048213/142",
+            "continued from: three-digit ply");
+        CheckText(ChessGame.ContinuedFromText("h0rrawli", 5), "h0rrawli/5", "continued from: any imported ID kept");
+        CheckText(ChessGame.ContinuedFromText("", 3), "", "continued from: none without a Game ID");
+        CheckText(ChessGame.ContinuedFromText(null, 3), "", "continued from: none for null");
+
+        // The random suffix: 1000 IDs for one time, all well formed, nearly all distinct (two of 1000 draws below a
+        // million coincide with chance about 0.4), spread over the range so short suffixes get padded.
+        System.DateTime time = new System.DateTime(2026, 10, 11, 12, 0, 0);
+        bool[] seen = new bool[ChessGame.GameIdSuffixCount];
+        int distinct = 0;
+        int bad = 0;
+        int low = 0;
+        int high = 0;
+        string firstBad = "";
+        for (int i = 0; i < 1000; i++) {
+            string id = board.NewGameIdAt(time);
+            if (GameIdProblem(id) != "" || !id.StartsWith("20261011120000-")) {
+                if (bad == 0) firstBad = id;
+                bad++;
+                continue;
+            }
+            int suffix = int.Parse(id.Substring(15));
+            if (!seen[suffix]) distinct++;
+            seen[suffix] = true;
+            if (suffix < 100000) low++;
+            if (suffix >= 900000) high++;
+        }
+        CheckInt(bad, 0, "random game IDs: all well formed for the given time (first bad: \"" + firstBad + "\")");
+        Check(distinct >= 995, "random game IDs: nearly all distinct", distinct + " distinct of 1000");
+        Check(low >= 50 && high >= 50, "random game IDs: suffixes spread over the range",
+            low + " below 100000, " + high + " from 900000");
+    }
+
+    // The board's IDs: created on Start (not before), from the network's UTC time; continued games.
+    void TestGameIds() {
+        LobbyWithTwoPlayers();
+        CheckText(board.gameId, "", "game ID: none in the lobby");
+        System.DateTime before = board.NetworkDateTime();
+        board.StartGameAs("Ana");
+        System.DateTime after = board.NetworkDateTime();
+        string id = board.gameId;
+        CheckGameId(id, "game ID: set on Start");
+        CheckText(board.continuedFrom, "", "game ID: a started game continues nothing");
+        // Fixed-width digits compare as text in time order.
+        string earliest = ChessGame.GameId(before, 0).Substring(0, 14);
+        string latest = ChessGame.GameId(after, 0).Substring(0, 14);
+        Check(id.Length == 21 && string.CompareOrdinal(id.Substring(0, 14), earliest) >= 0
+            && string.CompareOrdinal(id.Substring(0, 14), latest) <= 0, "game ID: the network time at Start",
+            id + " not from " + earliest + " to " + latest);
+        // The network time is UTC: within two minutes of this computer's UTC clock (a local time would be hours off,
+        // unless the local time zone is UTC).
+        double offset = (before - System.DateTime.UtcNow).TotalSeconds;
+        Check(offset > -120 && offset < 120, "game ID: network time is UTC",
+            "network time " + before + " is " + offset + " s from UTC now " + System.DateTime.UtcNow);
+        Debug.Log("[BoardTest] game ID at Start: " + id + " (network time " + before + ", UTC now "
+            + System.DateTime.UtcNow + ", local now " + System.DateTime.Now + ")");
+        board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4);
+        CheckText(board.gameId, id, "game ID: unchanged by a move");
+        board.ResignAs(ChessRules.Black, "Bob");
+        CheckText(board.gameId, id, "game ID: kept when the game ends");
+
+        // Each Start gets its own ID; Chess960 too.
+        string[] ids = new string[20];
+        int distinct = 0;
+        for (int i = 0; i < 20; i++) {
+            LobbyWithTwoPlayers();
+            if (i % 2 == 1) board.SetModeAs("Ana", ChessGame.ModeChess960);
+            board.StartGameAs("Bob");
+            ids[i] = board.gameId;
+            bool repeated = false;
+            for (int j = 0; j < i; j++) {
+                if (ids[j] == ids[i]) repeated = true;
+            }
+            if (!repeated && GameIdProblem(ids[i]) == "") distinct++;
+        }
+        CheckInt(distinct, 20, "game ID: 20 starts (half Chess960) give 20 distinct well-formed IDs");
+
+        // Continuing: ContinuedFrom is the previous ID and the ply, the new ID from the given time.
+        ButtonGame(0);
+        string first = board.gameId;
+        System.DateTime time = new System.DateTime(2026, 10, 11, 12, 0, 0);
+        board.ContinueGameIdAt(3, time);
+        CheckText(board.continuedFrom, first + "/3", "continued: ContinuedFrom is the old ID and ply 3");
+        Check(board.gameId.StartsWith("20261011120000-") && GameIdProblem(board.gameId) == "",
+            "continued: new ID from the given time", "got \"" + board.gameId + "\"");
+        Check(board.gameId != first, "continued: the ID changes", "still " + first);
+        string second = board.gameId;
+        board.ContinueGameIdAt(0, time.AddSeconds(5));
+        CheckText(board.continuedFrom, second + "/0", "continued again: references the game it came from, ply 0");
+        Check(board.gameId.StartsWith("20261011120005-"), "continued again: new ID from the given time",
+            "got \"" + board.gameId + "\"");
+
+        // A game with no ID (a PGN import without a GameID tag) gets a new one but no ContinuedFrom.
+        board.gameId = "";
+        board.ContinueGameIdAt(2, time);
+        CheckText(board.continuedFrom, "", "continued without an ID: no ContinuedFrom");
+        CheckGameId(board.gameId, "continued without an ID: gets a new ID");
+
+        // An imported ID that isn't one of ours is referenced as it is.
+        board.gameId = "h0rrawli";
+        board.ContinueGameIdAt(7, time);
+        CheckText(board.continuedFrom, "h0rrawli/7", "continued from a foreign ID: kept as it is");
+
+        // A new Start clears what an earlier continued game left.
+        board.ClearState();
+        CheckText(board.continuedFrom, "", "reset clears ContinuedFrom");
+        LobbyWithTwoPlayers();
+        board.continuedFrom = "20261011120000-000001/4";
+        board.StartGameAs("Ana");
+        CheckText(board.continuedFrom, "", "Start clears ContinuedFrom");
 
         board.ClearState();
     }

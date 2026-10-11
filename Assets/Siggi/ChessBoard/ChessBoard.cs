@@ -409,6 +409,8 @@ namespace SiggiChessBoard {
             whiteTime = startTime;
             blackTime = startTime;
             turnStart = Networking.GetServerTimeInSeconds();
+            gameId = NewGameIdAt(NetworkDateTime());
+            continuedFrom = "";
             lifecycle = LifecycleInGame;
             return InputAccepted;
         }
@@ -429,6 +431,29 @@ namespace SiggiChessBoard {
         // One of the 960 Chess960 starting positions at random (ChessGame.Chess960Position numbering).
         public int RandomChess960Index() {
             return UnityEngine.Random.Range(0, ChessGame.Chess960Count);
+        }
+
+        // ---- Game IDs (docs/game-ids.md) ----
+        // A game gets its ID when it begins: on Start, and when it's continued from an earlier position (a takeback,
+        // step 7.8b, or "Continue from here" on a loaded game, 7.9b), which also references the game it came from.
+
+        // The UTC date and time now as the network has it (VRChat's network time, so every client agrees on it to
+        // within a moment, whatever its own clock says).
+        public DateTime NetworkDateTime() {
+            return Networking.GetNetworkDateTime();
+        }
+
+        // A new Game ID for a game started at utc, with a random suffix.
+        public string NewGameIdAt(DateTime utc) {
+            return ChessGame.GameId(utc, UnityEngine.Random.Range(0, ChessGame.GameIdSuffixCount));
+        }
+
+        // The current game is continued from ply (half-moves from its starting position) as a new game started at
+        // utc: continuedFrom becomes "<gameId>/<ply>" ("" when the current game has no ID, as with a PGN import
+        // without a GameID tag) and the game gets a new ID. Truncating the history and the clocks is the caller's.
+        public void ContinueGameIdAt(int ply, DateTime utc) {
+            continuedFrom = ChessGame.ContinuedFromText(gameId, ply);
+            gameId = NewGameIdAt(utc);
         }
 
         // ---- Moves and clocks (docs/clocks.md) ----

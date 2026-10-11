@@ -1,8 +1,9 @@
+using System;
 using UdonSharp;
 
 namespace SiggiChessBoard {
     // Constants describing a game as a whole rather than a position: its mode (docs/modes.md) and how it ended
-    // (docs/game-endings.md), and the Chess960 starting positions. The board's synced mode and result fields hold
+    // (docs/game-endings.md), the Chess960 starting positions, and Game IDs (docs/game-ids.md). The board's synced mode and result fields hold
     // these; PGN export turns them into tags. Abstract because it is never placed as a component, only used for its
     // constants and static methods.
     public abstract class ChessGame : UdonSharpBehaviour {
@@ -99,6 +100,36 @@ namespace SiggiChessBoard {
             int[] state = new int[ChessPosition.StateLength];
             if (!Chess960Position(index, board, state)) return "";
             return ChessFen.WriteFen(board, state, 0, 1);
+        }
+
+        // ---- Game IDs (docs/game-ids.md) ----
+
+        // A Game ID is yyyyMMddHHmmss-xxxxxx: the UTC time the game started, then a random suffix below
+        // GameIdSuffixCount, zero-padded to six digits.
+        public const int GameIdSuffixCount = 1000000;
+        public const int GameIdLength = 21;
+
+        // The Game ID of a game started at utc (a UTC time; its Kind isn't looked at) with this suffix, or "" for a
+        // suffix out of range.
+        public static string GameId(DateTime utc, int suffix) {
+            if (suffix < 0 || suffix >= GameIdSuffixCount) return "";
+            return Digits(utc.Year, 4) + Digits(utc.Month, 2) + Digits(utc.Day, 2) + Digits(utc.Hour, 2)
+                + Digits(utc.Minute, 2) + Digits(utc.Second, 2) + "-" + Digits(suffix, 6);
+        }
+
+        // The ContinuedFrom value of a game continued from ply (half-moves from the original game's starting
+        // position) of the game with ID gameId: "<gameId>/<ply>", or "" when that game has no ID (a PGN import without
+        // a GameID tag), so the continued game gets no ContinuedFrom tag.
+        public static string ContinuedFromText(string gameId, int ply) {
+            if (gameId == null || gameId.Length == 0) return "";
+            return gameId + "/" + ply.ToString();
+        }
+
+        // value (not negative) in decimal, zero-padded to at least count digits.
+        static string Digits(int value, int count) {
+            string text = value.ToString();
+            while (text.Length < count) text = "0" + text;
+            return text;
         }
 
         // Puts type on the slot-th empty file (counting from 0 on the a-file) of a back rank being filled.
