@@ -38,6 +38,23 @@ The Java's tokenizer uses `find()`, so it silently skips anything it doesn't rec
 - Castling is written as `O-O`/`O-O-O` directly. The Java produces `0-0` and has `PGN.write` swap the zeros for letters afterwards.
 - Line wrapping (the Java's `LineWriter`) only splits on spaces; `string.Split(' ')` in C# is not regex-based.
 
+### Export tags
+
+`ChessPgn.WriteTags` writes the tag section in this order. The Java writes the seven-tag roster first and then whatever tags the `Game` holds; the port builds every tag from the game's own data (see [Continuing a loaded game](replay.md#continuing-a-loaded-game)).
+
+| Tag | Value |
+|---|---|
+| `Event`, `Site` | given by the caller (where the board gets them is settled with the board in step 7); `?` when empty |
+| `Date` | the game's start date, UTC, `yyyy.MM.dd`; `????.??.??` when unknown |
+| `Round` | always `-` |
+| `White`, `Black` | the players' names, escaped; `?` when empty |
+| `Result` | `1-0`, `0-1`, `1/2-1/2`, or `*` for a game in progress or unterminated (from the ending and winner, `ChessGame.Ending*`) |
+| `Variant` | `Chess960`, only for Chess960 games |
+| `SetUp`, `FEN` | `1` and the starting FEN, when the game didn't start from the standard position, and always for Chess960 (even position 518, the standard one, since Chess960 readers need the FEN) |
+| `TimeControl` | `base` or `base+increment` in seconds (`600`, `300+3`), `-` for no clock |
+| `GameID`, `ContinuedFrom` | see [Game IDs](game-ids.md); each left out when empty |
+| `Termination` | see [Game endings](game-endings.md); left out for a game still in progress |
+
 ## Player names in tags
 
 - `White` and `Black` hold VRChat display names, which can contain almost any character (e.g. `Siggі` with a Cyrillic `і`, `Nukaǃ` with U+01C3 instead of `!`). `Termination` contains them too (e.g. `Nukaǃ won by checkmate`).
