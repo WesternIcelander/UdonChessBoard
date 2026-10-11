@@ -85,7 +85,7 @@ The rules live in `Assets/Siggi/ChessBoard/Rules/` (namespace `SiggiChessBoard`)
 
 - [x] **2.1** Constants and helpers: piece types and colours, square ↔ file/rank, piece encoding in the `byte[64]` board.
   - Verify: the step 2 test behaviour checks square → file/rank → square for all 64 squares, and piece encode → decode for every colour and type, plus empty.
-- [ ] **2.2** Move encoding: pack/unpack helpers, and the derived en passant / double-push checks.
+- [x] **2.2** Move encoding: pack/unpack helpers, and the derived en passant / double-push checks.
   - Verify: pack → unpack returns every field unchanged, at each field's minimum and maximum; the derived checks are right for hand-built moves (en passant capture, double push, ordinary pawn move, non-pawn move).
 - [ ] **2.3a** Make and unmake a move on the board arrays: ordinary moves, captures, en passant, promotion, and en passant restore.
   - Verify: for each kind of move on a hand-built position, the position after make is as expected, and make followed by unmake restores every array exactly.

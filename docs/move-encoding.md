@@ -15,6 +15,9 @@
 - Only piece *types* are stored. The mover is the side to move; a captured piece is always the other colour.
 - Always mask after shifting (`(move >> shift) & mask`). Then `int` and `uint` behave the same: `>>` on a negative `int` copies the sign bit, but the mask discards it. Bits 30–31 are currently unused anyway.
 - The en passant rank isn't stored: it is rank 6 if White is moving, rank 3 if Black is.
+- Castling rights (bits 22–25) are in FEN order: bit 22 = White king side (`K`), 23 = White queen side (`Q`), 24 = Black king side (`k`), 25 = Black queen side (`q`). King side means the rook right of the king, queen side the rook left of it, so the names hold for Chess960 too (`ChessRules.CastleWhiteKingSide` etc.).
+- En passant (bits 26–29): bit 26 is the valid bit, bits 27–29 the file. `PackMove` takes the file, `-1` for none.
+- Helpers in `ChessRules`: `PackMove`, `MoveFrom`, `MoveTo`, `MovePieceType`, `MovePromotion`, `MoveCaptured`, `MoveIsCastle`, `MovePrevCastlingRights`, `MovePrevEnPassantValid`, `MovePrevEnPassantFile`, `MovePrevEnPassantSquare(move, moverColor)`, `IsEnPassantCapture`, `IsDoublePush`.
 
 ## Derived, not stored
 
@@ -26,7 +29,7 @@ static bool IsDoublePush(int move) =>
     PieceType(move) == PAWN && Math.Abs((To(move) >> 3) - (From(move) >> 3)) == 2;
 ```
 
-- **En passant capture**: the en passant square is always empty, so a pawn landing on it must be capturing en passant. The captured pawn is on the *from* rank, *to* file.
+- **En passant capture**: the en passant square is always empty, so a pawn landing on it must be capturing en passant. The captured pawn is on the *from* rank, *to* file. Since the move doesn't store the mover's colour, `IsEnPassantCapture` takes it from the pawn's direction (up the board = White) to find the en passant rank.
 - **Double push**: sets the new en passant square to the square between from and to.
 
 ## Castling

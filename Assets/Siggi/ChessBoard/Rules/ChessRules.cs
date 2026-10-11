@@ -49,6 +49,29 @@ namespace SiggiChessBoard {
         public const int A7 = 48, B7 = 49, C7 = 50, D7 = 51, E7 = 52, F7 = 53, G7 = 54, H7 = 55;
         public const int A8 = 56, B8 = 57, C8 = 58, D8 = 59, E8 = 60, F8 = 61, G8 = 62, H8 = 63;
 
+        // Castling rights, as a 4-bit set in FEN order (KQkq). King side is the rook right of the king (Java
+        // rightRookFile), queen side the rook left of it, so the names also hold for Chess960.
+        public const int CastleWhiteKingSide = 1;
+        public const int CastleWhiteQueenSide = 2;
+        public const int CastleBlackKingSide = 4;
+        public const int CastleBlackQueenSide = 8;
+        public const int CastleAll = 15;
+
+        // Packed move layout (docs/move-encoding.md). Read a field with (move >> shift) & mask.
+        public const int MoveFromShift = 0;
+        public const int MoveToShift = 6;
+        public const int MovePieceTypeShift = 12;
+        public const int MovePromotionShift = 15;
+        public const int MoveCapturedShift = 18;
+        public const int MoveCastleShift = 21;
+        public const int MoveCastlingRightsShift = 22;
+        public const int MoveEnPassantValidShift = 26;
+        public const int MoveEnPassantFileShift = 27;
+        public const int MoveSquareMask = 63;
+        public const int MoveTypeMask = 7;
+        public const int MoveCastlingRightsMask = 15;
+        public const int MoveEnPassantFileMask = 7;
+
         // ---- Squares ----
 
         // Java Square.of. No range check: file and rank must be 0-7.
@@ -142,6 +165,93 @@ namespace SiggiChessBoard {
                 case 'K': return King;
                 default: return NoPieceType;
             }
+        }
+
+        // ---- Moves ----
+
+        // Packs a move. When castling, from is the king's square and to the rook's starting square. castlingRights
+        // and enPassantFile are the board's state before the move; enPassantFile is -1 when there is none.
+        // No range checks: every field must fit its width.
+        public static int PackMove(int from, int to, int pieceType, int promotion, int captured, bool castle,
+            int castlingRights, int enPassantFile) {
+            int move = from
+                | (to << MoveToShift)
+                | (pieceType << MovePieceTypeShift)
+                | (promotion << MovePromotionShift)
+                | (captured << MoveCapturedShift)
+                | (castlingRights << MoveCastlingRightsShift);
+            if (castle) move |= 1 << MoveCastleShift;
+            if (enPassantFile >= 0) move |= (1 << MoveEnPassantValidShift) | (enPassantFile << MoveEnPassantFileShift);
+            return move;
+        }
+
+        public static int MoveFrom(int move) {
+            return (move >> MoveFromShift) & MoveSquareMask;
+        }
+
+        public static int MoveTo(int move) {
+            return (move >> MoveToShift) & MoveSquareMask;
+        }
+
+        public static int MovePieceType(int move) {
+            return (move >> MovePieceTypeShift) & MoveTypeMask;
+        }
+
+        // NoPieceType if the move isn't a promotion.
+        public static int MovePromotion(int move) {
+            return (move >> MovePromotionShift) & MoveTypeMask;
+        }
+
+        // NoPieceType if the move isn't a capture. Always the other colour from the mover.
+        public static int MoveCaptured(int move) {
+            return (move >> MoveCapturedShift) & MoveTypeMask;
+        }
+
+        public static bool MoveIsCastle(int move) {
+            return ((move >> MoveCastleShift) & 1) != 0;
+        }
+
+        // Castling rights before the move.
+        public static int MovePrevCastlingRights(int move) {
+            return (move >> MoveCastlingRightsShift) & MoveCastlingRightsMask;
+        }
+
+        // Whether there was an en passant square before the move.
+        public static bool MovePrevEnPassantValid(int move) {
+            return ((move >> MoveEnPassantValidShift) & 1) != 0;
+        }
+
+        // The en passant file before the move, -1 if there was none.
+        public static int MovePrevEnPassantFile(int move) {
+            if (((move >> MoveEnPassantValidShift) & 1) == 0) return -1;
+            return (move >> MoveEnPassantFileShift) & MoveEnPassantFileMask;
+        }
+
+        // The en passant square before the move, for the given mover: rank 6 if White is moving, rank 3 if Black is.
+        // NoSquare if there was none.
+        public static int MovePrevEnPassantSquare(int move, int moverColor) {
+            if (((move >> MoveEnPassantValidShift) & 1) == 0) return NoSquare;
+            int file = (move >> MoveEnPassantFileShift) & MoveEnPassantFileMask;
+            return (moverColor == White ? Rank6 << 3 : Rank3 << 3) | file;
+        }
+
+        // A pawn landing on the en passant square must be capturing en passant, since that square is always empty.
+        // The mover's colour follows from the direction the pawn moves. The captured pawn is on the from rank, to file.
+        public static bool IsEnPassantCapture(int move) {
+            if (((move >> MovePieceTypeShift) & MoveTypeMask) != Pawn) return false;
+            if (((move >> MoveEnPassantValidShift) & 1) == 0) return false;
+            int from = (move >> MoveFromShift) & MoveSquareMask;
+            int to = (move >> MoveToShift) & MoveSquareMask;
+            int moverColor = (to >> 3) > (from >> 3) ? White : Black;
+            return to == MovePrevEnPassantSquare(move, moverColor);
+        }
+
+        // A pawn moving two ranks. The new en passant square is the one between from and to.
+        public static bool IsDoublePush(int move) {
+            if (((move >> MovePieceTypeShift) & MoveTypeMask) != Pawn) return false;
+            int fromRank = (move >> (MoveFromShift + 3)) & 7;
+            int toRank = (move >> (MoveToShift + 3)) & 7;
+            return fromRank - toRank == 2 || toRank - fromRank == 2;
         }
     }
 }
