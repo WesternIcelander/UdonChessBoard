@@ -30,6 +30,7 @@ public class RulesTest : UdonSharpBehaviour {
         TestFenJava();
         TestSan();
         TestStatus();
+        TestHalfmoveClock();
         if (deepPerft) StartDeepPerft();
         else LogSummary();
     }
@@ -2384,5 +2385,166 @@ public class RulesTest : UdonSharpBehaviour {
         CheckStatus("fool's mate, prohibitSelfCheck off", foolsMate, false, -1, normal);
         CheckStatus("check, prohibitSelfCheck off", "R3k3/8/8/8/8/8/8/4K3 b - - 1 1", false, -1, normal);
         CheckStatus("no moves, prohibitSelfCheck off", foolsMate, false, 0, stalemate);
+    }
+
+    // ---- 4.3a ----
+
+    // Plays moveTexts (MoveText strings separated by spaces) from the position on board and state as the board will:
+    // the halfmove clock before each ply goes into clocks, then the clock after it. Returns the number of plies
+    // played, or -1 (after a failed check) if a move isn't legal. The arrays are left at the final position.
+    int PlayRecording(string name, byte[] board, int[] state, int startClock, string moveTexts, int[] history,
+        int[] clocks, out int clock) {
+        clock = startClock;
+        string[] texts = moveTexts.Split(new char[] { ' ' });
+        for (int i = 0; i < texts.Length; i++) {
+            int move = FindLegal(board, state, texts[i]);
+            if (move == -1) {
+                Check(false, "halfmove clock: " + name, texts[i] + " not legal at ply " + i);
+                return -1;
+            }
+            history[i] = move;
+            clocks[i] = clock;
+            clock = ChessDraws.HalfmoveClockAfter(clock, move);
+            ChessPosition.MakeMove(board, state, move);
+        }
+        return texts.Length;
+    }
+
+    string ClocksText(int[] clocks, int count) {
+        string text = "";
+        for (int i = 0; i < count; i++) text += (i == 0 ? "" : " ") + clocks[i];
+        return text;
+    }
+
+    void TestHalfmoveClock() {
+        // Which moves reset the clock: pawn pushes, double pushes, en passant, promotions with and without capture,
+        // captures by pieces; not castling, king, knight or rook moves.
+        string errors = "";
+        byte[] board = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        int h;
+        int f;
+        ChessFen.ParseFen("r3k2r/1P6/8/3pP3/4p3/7p/P2N4/R3K2R w KQkq d6 0 1", board, state, out h, out f);
+        string[] texts = "a2a3 a2a4 e5e6 e5d6xP b7b8=Q b7a8xR=N d2e4xP h1h3xP".Split(new char[] { ' ' });
+        for (int i = 0; i < texts.Length; i++) {
+            int candidate = FindLegal(board, state, texts[i]);
+            if (candidate == -1) errors += " " + texts[i] + ":not legal";
+            else if (!ChessDraws.ResetsHalfmoveClock(candidate) || ChessDraws.HalfmoveClockAfter(12, candidate) != 0)
+                errors += " " + texts[i] + ":kept";
+        }
+        texts = "e1h1c e1a1c e1d1 d2f3 a1b1 h1h2".Split(new char[] { ' ' });
+        for (int i = 0; i < texts.Length; i++) {
+            int candidate = FindLegal(board, state, texts[i]);
+            if (candidate == -1) errors += " " + texts[i] + ":not legal";
+            else if (ChessDraws.ResetsHalfmoveClock(candidate) || ChessDraws.HalfmoveClockAfter(12, candidate) != 13)
+                errors += " " + texts[i] + ":reset";
+        }
+        Check(errors == "", "halfmove clock resets on pawn moves and captures only", errors);
+
+        // A game from a position whose halfmove clock is 5: castling both sides, captures, pawn pushes, quiet moves.
+        string game = "e1h1c c6b4 d4e5xP f6e4xP c3e4xN d5e4xN f3g5 e8a8c d2d7xQ d8d7xQ g5f7xP h8f8 g1h1 a7a5 e5e6"
+            + " d7d2 a1e1";
+        int[] expected = new int[] { 5, 6, 7, 0, 0, 0, 0, 1, 2, 0, 0, 0, 1, 2, 0, 0, 1 };
+        ChessFen.ParseFen("r3k2r/pppq1ppp/2n2n2/3pp3/3PP3/2N2N2/PPPQ1PPP/R3K2R w KQkq - 5 9", board, state,
+            out h, out f);
+        byte[] startBoard = CopyBoard(board);
+        int[] startState = CopyState(state);
+        int[] history = new int[64];
+        int[] clocks = new int[64];
+        int clock;
+        int count = PlayRecording("game", board, state, h, game, history, clocks, out clock);
+        if (count == -1) return;
+        errors = "";
+        if (ClocksText(clocks, count) != ClocksText(expected, expected.Length))
+            errors += " got " + ClocksText(clocks, count) + " (expected " + ClocksText(expected, expected.Length) + ")";
+        if (clock != 2) errors += " current " + clock + " (expected 2)";
+        Check(errors == "", "halfmove clock while playing, from a starting clock of 5", errors);
+
+        // Rebuilding from the move history gives the values recorded while playing.
+        int[] rebuilt = new int[64];
+        int rebuiltClock = ChessDraws.BuildHalfmoveClocks(history, count, h, rebuilt);
+        errors = "";
+        if (ClocksText(rebuilt, count) != ClocksText(clocks, count))
+            errors += " got " + ClocksText(rebuilt, count) + " (expected " + ClocksText(clocks, count) + ")";
+        if (rebuiltClock != clock) errors += " current " + rebuiltClock + " (expected " + clock + ")";
+        Check(errors == "", "halfmove clock rebuilt from the move history", errors);
+        Check(ChessDraws.BuildHalfmoveClocks(history, 0, 7, rebuilt) == 7, "halfmove clock rebuilt with no moves",
+            "");
+
+        // Undo restores each ply's clock and, at the start, the starting clock.
+        errors = "";
+        for (int i = count - 1; i >= 0; i--) {
+            ChessPosition.UnmakeMove(board, state, history[i]);
+            clock = clocks[i];
+            if (clock != expected[i]) errors += " undo ply " + i + ": " + clock + " (expected " + expected[i] + ")";
+        }
+        if (clock != 5) errors += " back at the start: " + clock;
+        string diff = BoardDiff(board, startBoard) + StateDiff(state, startState);
+        if (diff != "") errors += " position changed:" + diff;
+        Check(errors == "", "halfmove clock restored by undo", errors);
+
+        // Undo the last five plies, play on differently (extending the array as the board does), and rebuild.
+        count = PlayRecording("game", board, state, h, game, history, clocks, out clock);
+        if (count == -1) return;
+        for (int i = count - 1; i >= 12; i--) ChessPosition.UnmakeMove(board, state, history[i]);
+        clock = clocks[12];
+        errors = "";
+        int move = FindLegal(board, state, "f7d6");
+        if (move == -1) {
+            errors += " f7d6 not legal";
+        } else {
+            history[12] = move;
+            clocks[12] = clock;
+            clock = ChessDraws.HalfmoveClockAfter(clock, move);
+            ChessPosition.MakeMove(board, state, move);
+            rebuiltClock = ChessDraws.BuildHalfmoveClocks(history, 13, h, rebuilt);
+            if (clocks[12] != 1 || clock != 2) errors += " clocks " + clocks[12] + " -> " + clock + " (expected 1 -> 2)";
+            if (ClocksText(rebuilt, 13) != ClocksText(clocks, 13) || rebuiltClock != clock)
+                errors += " rebuilt " + ClocksText(rebuilt, 13) + " / " + rebuiltClock;
+        }
+        Check(errors == "", "halfmove clock after undoing five plies and playing on", errors);
+
+        // The fifty- and seventy-five-move rules hold from exactly 100 and 150 plies.
+        Check(!ChessDraws.IsFiftyMoveRule(0) && !ChessDraws.IsFiftyMoveRule(99) && ChessDraws.IsFiftyMoveRule(100)
+            && ChessDraws.IsFiftyMoveRule(101) && !ChessDraws.IsSeventyFiveMoveRule(100)
+            && !ChessDraws.IsSeventyFiveMoveRule(149) && ChessDraws.IsSeventyFiveMoveRule(150)
+            && ChessDraws.IsSeventyFiveMoveRule(151), "fifty/seventy-five-move rule thresholds", "");
+
+        // A knight shuffle from the start: the rules first hold after ply 100 and 150.
+        ChessFen.ParseFen(ChessFen.StartFen, board, state, out h, out f);
+        string shuffles = "g1f3 g8f6 f3g1 f6g8";
+        for (int i = 1; i < 38; i++) shuffles += " g1f3 g8f6 f3g1 f6g8";
+        int[] longHistory = new int[160];
+        int[] longClocks = new int[160];
+        count = PlayRecording("knight shuffle", board, state, h, shuffles, longHistory, longClocks, out clock);
+        if (count == -1) return;
+        // Ply i is played with the clock at longClocks[i], so after i plies the clock is longClocks[i], or the
+        // current clock after the last.
+        int firstFifty = -1;
+        int firstSeventyFive = -1;
+        for (int i = 0; i <= count; i++) {
+            int c = i < count ? longClocks[i] : clock;
+            if (firstFifty == -1 && ChessDraws.IsFiftyMoveRule(c)) firstFifty = i;
+            if (firstSeventyFive == -1 && ChessDraws.IsSeventyFiveMoveRule(c)) firstSeventyFive = i;
+        }
+        Check(count == 152 && clock == 152 && firstFifty == 100 && firstSeventyFive == 150,
+            "knight shuffle: fifty-move rule after 100 plies, seventy-five after 150",
+            count + " plies, clock " + clock + ", fifty after " + firstFifty + ", seventy-five after " + firstSeventyFive);
+
+        // The starting clock counts: from 95, five quiet plies reach 100, where a pawn move would start again.
+        ChessFen.ParseFen("4k3/8/8/8/8/8/4P3/4K1N1 w - - 95 80", board, state, out h, out f);
+        count = PlayRecording("starting clock", board, state, h, "g1f3 e8d8 f3g1 d8e8", history, clocks, out clock);
+        if (count == -1) return;
+        errors = "";
+        if (clock != 99 || ChessDraws.IsFiftyMoveRule(clock)) errors += " after 4 plies " + clock;
+        int afterQuiet = ChessDraws.HalfmoveClockAfter(clock, FindLegal(board, state, "e1d1"));
+        if (afterQuiet != 100 || !ChessDraws.IsFiftyMoveRule(afterQuiet)) errors += " after 5 plies " + afterQuiet;
+        int afterPawn = ChessDraws.HalfmoveClockAfter(clock, FindLegal(board, state, "e2e4"));
+        if (afterPawn != 0 || ChessDraws.IsFiftyMoveRule(afterPawn)) errors += " after a pawn move " + afterPawn;
+        Check(errors == "", "fifty-move rule counts the starting halfmove clock", errors);
+        ChessFen.ParseFen("4k3/8/8/8/8/8/4P3/4K1N1 w - - 149 80", board, state, out h, out f);
+        int afterKnight = ChessDraws.HalfmoveClockAfter(h, FindLegal(board, state, "g1f3"));
+        Check(!ChessDraws.IsSeventyFiveMoveRule(h) && afterKnight == 150 && ChessDraws.IsSeventyFiveMoveRule(afterKnight),
+            "seventy-five-move rule counts the starting halfmove clock", "clock " + h + " -> " + afterKnight);
     }
 }
