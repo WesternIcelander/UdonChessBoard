@@ -39,6 +39,10 @@ namespace SiggiChessBoard {
         public const int Never = -1;
         public const int NoClock = -1;
 
+        // The override mask's bits: the setting bits themselves, then one bit per numeric setting above them.
+        public const int OverrideSettingsMask = (1 << SettingCount) - 1;
+        public const int OverrideNumbersMask = ((1 << NumberCount) - 1) << SettingCount;
+
         // ---- Instance defaults, set in the editor ----
         // Read once on Start into the synced defaults below; changing them afterwards does nothing.
 
@@ -68,11 +72,22 @@ namespace SiggiChessBoard {
         [Tooltip("Seconds added per move.")]
         public int forcedIncrement;
 
+        [Header("Boards")]
+        [Tooltip("How many boards can have their own overrides: board numbers 0 to this minus 1.")]
+        public int boardCount = 4;
+
         // ---- Synced settings ----
 
         // The instance defaults: setting bits and the numeric settings (NumberCount values).
         [UdonSynced] [NonSerialized] public int defaultSettings;
         [UdonSynced] [NonSerialized] public int[] defaultNumbers = new int[NumberCount];
+
+        // Per-board overrides, indexed by board number (docs/settings.md, Per-board overrides). overrideMask says what
+        // the board overrides (setting bits, plus OverrideNumberBit per numeric setting); overrideSettings holds the
+        // overriding setting bits and overrideNumbers the overriding numbers, NumberCount per board.
+        [UdonSynced] [NonSerialized] public int[] overrideMask = new int[0];
+        [UdonSynced] [NonSerialized] public int[] overrideSettings = new int[0];
+        [UdonSynced] [NonSerialized] public int[] overrideNumbers = new int[0];
 
         // Whether a serialization has arrived; the editor values then mustn't overwrite it.
         bool received;
@@ -85,6 +100,15 @@ namespace SiggiChessBoard {
                 Debug.LogWarning("[ChessArbiter] " + gameObject.name + ": invalid numeric settings in the editor were "
                     + "corrected: " + NumbersToString(defaultNumbers));
             }
+            int boards = boardCount;
+            if (boards < 0) {
+                Debug.LogWarning("[ChessArbiter] " + gameObject.name + ": boardCount " + boards + " is negative, "
+                    + "using 0");
+                boards = 0;
+            }
+            overrideMask = new int[boards];
+            overrideSettings = new int[boards];
+            overrideNumbers = new int[boards * NumberCount];
         }
 
         public override void OnDeserialization() {
@@ -125,6 +149,122 @@ namespace SiggiChessBoard {
         // A numeric setting's instance default.
         public int DefaultNumber(int number) {
             return defaultNumbers[number];
+        }
+
+        // ---- Per-board overrides ----
+        // The setters only change this client's copy; taking ownership and serializing comes with step 8.2. They
+        // return false for a board number without overrides (out of range), which then always has the defaults.
+
+        // How many boards can have overrides (as synced, so a late joiner agrees with the owner).
+        public int BoardCount() {
+            return overrideMask.Length;
+        }
+
+        public bool HasBoard(int board) {
+            return board >= 0 && board < overrideMask.Length;
+        }
+
+        // The override mask bit for a numeric setting.
+        public static int OverrideNumberBit(int number) {
+            return 1 << (SettingCount + number);
+        }
+
+        // Setting bits combined from defaults and overrides: the masked bits from values, the rest from defaults.
+        public static int CombineSettings(int defaults, int mask, int values) {
+            return ((defaults & ~mask) | (values & mask)) & OverrideSettingsMask;
+        }
+
+        // Overrides the given setting bits (one or several) on a board, on or off.
+        public bool SetSettingOverride(int board, int settings, bool on) {
+            if (!HasBoard(board)) return false;
+            settings &= OverrideSettingsMask;
+            overrideMask[board] |= settings;
+            if (on) overrideSettings[board] |= settings;
+            else overrideSettings[board] &= ~settings;
+            return true;
+        }
+
+        // Makes the given setting bits use the defaults again on a board.
+        public bool ClearSettingOverride(int board, int settings) {
+            if (!HasBoard(board)) return false;
+            settings &= OverrideSettingsMask;
+            overrideMask[board] &= ~settings;
+            overrideSettings[board] &= ~settings;
+            return true;
+        }
+
+        // Overrides a numeric setting on a board. The value is kept as given; EffectiveNumbers corrects the result.
+        public bool SetNumberOverride(int board, int number, int value) {
+            if (!HasBoard(board) || number < 0 || number >= NumberCount) return false;
+            overrideMask[board] |= OverrideNumberBit(number);
+            overrideNumbers[board * NumberCount + number] = value;
+            return true;
+        }
+
+        // Makes a numeric setting use the default again on a board.
+        public bool ClearNumberOverride(int board, int number) {
+            if (!HasBoard(board) || number < 0 || number >= NumberCount) return false;
+            overrideMask[board] &= ~OverrideNumberBit(number);
+            overrideNumbers[board * NumberCount + number] = 0;
+            return true;
+        }
+
+        // Makes everything use the defaults again on a board.
+        public bool ClearOverrides(int board) {
+            if (!HasBoard(board)) return false;
+            overrideMask[board] = 0;
+            overrideSettings[board] = 0;
+            for (int i = 0; i < NumberCount; i++) overrideNumbers[board * NumberCount + i] = 0;
+            return true;
+        }
+
+        // Whether a board overrides a setting bit, and the value it overrides it with (meaningful only if overridden).
+        public bool IsSettingOverridden(int board, int setting) {
+            return HasBoard(board) && (overrideMask[board] & setting) != 0;
+        }
+
+        public bool SettingOverrideValue(int board, int setting) {
+            return HasBoard(board) && (overrideSettings[board] & setting) != 0;
+        }
+
+        // Whether a board overrides a numeric setting, and the value it overrides it with (0 if not overridden).
+        public bool IsNumberOverridden(int board, int number) {
+            return HasBoard(board) && (overrideMask[board] & OverrideNumberBit(number)) != 0;
+        }
+
+        public int NumberOverrideValue(int board, int number) {
+            return HasBoard(board) ? overrideNumbers[board * NumberCount + number] : 0;
+        }
+
+        // ---- Effective settings ----
+
+        // A board's effective setting bits: its overrides, the instance defaults for the rest.
+        public int EffectiveSettings(int board) {
+            if (!HasBoard(board)) return defaultSettings;
+            return CombineSettings(defaultSettings, overrideMask[board], overrideSettings[board]);
+        }
+
+        public bool IsEffectiveOn(int board, int setting) {
+            return (EffectiveSettings(board) & setting) != 0;
+        }
+
+        // Fills numbers (NumberCount long) with a board's effective numeric settings: its overrides, the instance
+        // defaults for the rest, then corrected by FixNumbers, since an overridden time can conflict with a default
+        // one (e.g. an auto-reset time overridden below the default reset-available time clamps the latter).
+        public void EffectiveNumbers(int board, int[] numbers) {
+            bool has = HasBoard(board);
+            int mask = has ? overrideMask[board] : 0;
+            for (int i = 0; i < NumberCount; i++) {
+                numbers[i] = (mask & OverrideNumberBit(i)) != 0 ? overrideNumbers[board * NumberCount + i]
+                    : defaultNumbers[i];
+            }
+            FixNumbers(numbers);
+        }
+
+        public int EffectiveNumber(int board, int number) {
+            int[] numbers = new int[NumberCount];
+            EffectiveNumbers(board, numbers);
+            return numbers[number];
         }
 
         // Makes numeric settings valid, returning whether anything changed: any negative time becomes Never (or

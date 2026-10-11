@@ -691,6 +691,7 @@ MonoBehaviour:
   clockForced: 1
   forcedBaseTime: 599
   forcedIncrement: 1
+  boardCount: 4
 --- !u!114 &1280104625
 MonoBehaviour:
   m_ObjectHideFlags: 2
