@@ -19,6 +19,7 @@ public class RulesTest : UdonSharpBehaviour {
         TestMoveGeneration();
         TestAttacks();
         TestLegalMoves();
+        TestPositions();
         Debug.Log("[RulesTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
@@ -1412,5 +1413,237 @@ public class RulesTest : UdonSharpBehaviour {
             ChessRules.C1, ChessRules.A8);
         CheckLegalMoves("chess960 castling with the d-file attacked", b, s, ChessRules.C1, "c1b2 c1c2 c1b1c",
             "c1b2 c1c2 c1d2 c1d1 c1b1c c1g1c");
+    }
+
+    // ---- 2.6 ----
+
+    // Counts the legal move paths of the given depth (perft). buffers[d] is the move list for depth d, so each level
+    // keeps its own. The position is left as it was.
+    [RecursiveMethod]
+    int Perft(byte[] board, int[] state, int depth, bool prohibitSelfCheck, int[][] buffers) {
+        int[] moves = buffers[depth];
+        int count = ChessMoves.GenerateLegalMoves(board, state, moves, prohibitSelfCheck);
+        if (depth == 1) return count;
+        int nodes = 0;
+        for (int i = 0; i < count; i++) {
+            ChessPosition.MakeMove(board, state, moves[i]);
+            nodes += Perft(board, state, depth - 1, prohibitSelfCheck, buffers);
+            ChessPosition.UnmakeMove(board, state, moves[i]);
+        }
+        return nodes;
+    }
+
+    // Perft to each depth up to expected.Length, against expected (from the Java on port-reference, or published).
+    // Below the root, every root move is made, its subtree searched and the move unmade, and both arrays must then
+    // be exactly as they were.
+    void CheckPerft(string name, byte[] board, int[] state, bool prohibitSelfCheck, int[] expected) {
+        int maxDepth = expected.Length;
+        int[][] buffers = new int[maxDepth + 1][];
+        for (int d = 1; d <= maxDepth; d++) buffers[d] = new int[ChessMoves.MaxMoves];
+        byte[] b = CopyBoard(board);
+        int[] s = CopyState(state);
+        string errors = "";
+        string counts = "";
+        float startTime = Time.realtimeSinceStartup;
+        for (int depth = 1; depth <= maxDepth; depth++) {
+            int nodes;
+            if (depth == 1) {
+                nodes = ChessMoves.GenerateLegalMoves(b, s, buffers[1], prohibitSelfCheck);
+            } else {
+                // The root level here rather than in Perft, so each root move's undo can be checked.
+                int[] rootMoves = new int[ChessMoves.MaxMoves];
+                int count = ChessMoves.GenerateLegalMoves(b, s, rootMoves, prohibitSelfCheck);
+                nodes = 0;
+                for (int i = 0; i < count; i++) {
+                    ChessPosition.MakeMove(b, s, rootMoves[i]);
+                    nodes += Perft(b, s, depth - 1, prohibitSelfCheck, buffers);
+                    ChessPosition.UnmakeMove(b, s, rootMoves[i]);
+                    string diff = BoardDiff(b, board) + StateDiff(s, state);
+                    if (diff != "") {
+                        errors += " depth " + depth + " " + MoveText(rootMoves[i]) + " make/unmake:" + diff;
+                        b = CopyBoard(board);
+                        s = CopyState(state);
+                    }
+                }
+            }
+            counts += " " + nodes;
+            if (nodes != expected[depth - 1]) {
+                errors += " depth " + depth + ": " + nodes + " (expected " + expected[depth - 1] + ")";
+            }
+        }
+        string diffEnd = BoardDiff(b, board) + StateDiff(s, state);
+        if (diffEnd != "") errors += " position changed:" + diffEnd;
+        int ms = (int)((Time.realtimeSinceStartup - startTime) * 1000f);
+        Check(errors == "", "perft: " + name + (prohibitSelfCheck ? "" : ", prohibitSelfCheck off") + " (" + counts.Trim()
+            + " in " + ms + " ms)", errors);
+    }
+
+    // The board seen from the other side: ranks flipped and colours swapped.
+    byte[] MirrorBoard(byte[] board) {
+        byte[] mirror = new byte[64];
+        for (int sq = 0; sq < 64; sq++) {
+            if (board[sq] != ChessRules.Empty) mirror[sq ^ 56] = (byte)(board[sq] ^ 8);
+        }
+        return mirror;
+    }
+
+    // The legal move whose MoveText is text, or -1 if there is none.
+    int FindLegal(byte[] board, int[] state, string text) {
+        int[] moves = new int[ChessMoves.MaxMoves];
+        int count = ChessMoves.GenerateLegalMoves(board, state, moves, true);
+        for (int i = 0; i < count; i++) {
+            if (MoveText(moves[i]) == text) return moves[i];
+        }
+        return -1;
+    }
+
+    // Errors if the side to move's legal moves don't include each of present, or do include any of absent (MoveText
+    // strings separated by spaces, "" for none).
+    string LegalListErrors(byte[] board, int[] state, string present, string absent) {
+        string errors = "";
+        if (present != "") {
+            string[] names = present.Split(new char[] { ' ' });
+            for (int i = 0; i < names.Length; i++) {
+                if (FindLegal(board, state, names[i]) == -1) errors += " missing " + names[i];
+            }
+        }
+        if (absent != "") {
+            string[] names = absent.Split(new char[] { ' ' });
+            for (int i = 0; i < names.Length; i++) {
+                if (FindLegal(board, state, names[i]) != -1) errors += " unexpected " + names[i];
+            }
+        }
+        return errors;
+    }
+
+    // Plays moves (MoveText strings separated by spaces) from the position, each taken from the legal move list.
+    // After each ply the castling rights must be expectedRights[ply], and the next side's legal moves must include
+    // present[ply] and leave out absent[ply]. Then undoes every ply in reverse, checking each restores the position
+    // before it exactly.
+    void CheckLine(string name, byte[] board, int[] state, string line, int[] expectedRights, string[] present,
+        string[] absent) {
+        string[] texts = line.Split(new char[] { ' ' });
+        int count = texts.Length;
+        int[] moves = new int[count];
+        byte[][] boardsBefore = new byte[count][];
+        int[][] statesBefore = new int[count][];
+        byte[] b = CopyBoard(board);
+        int[] s = CopyState(state);
+        string errors = "";
+        int played = 0;
+        for (int i = 0; i < count; i++) {
+            int move = FindLegal(b, s, texts[i]);
+            if (move == -1) {
+                errors += " ply " + (i + 1) + " " + texts[i] + " not legal";
+                break;
+            }
+            boardsBefore[i] = CopyBoard(b);
+            statesBefore[i] = CopyState(s);
+            moves[i] = move;
+            ChessPosition.MakeMove(b, s, move);
+            played++;
+            int rights = s[ChessPosition.StateCastlingRights];
+            if (rights != expectedRights[i]) {
+                errors += " ply " + (i + 1) + " rights " + rights + " (expected " + expectedRights[i] + ")";
+            }
+            string listErrors = LegalListErrors(b, s, present[i], absent[i]);
+            if (listErrors != "") errors += " after ply " + (i + 1) + ":" + listErrors;
+        }
+        for (int i = played - 1; i >= 0; i--) {
+            ChessPosition.UnmakeMove(b, s, moves[i]);
+            string diff = BoardDiff(b, boardsBefore[i]) + StateDiff(s, statesBefore[i]);
+            if (diff != "") errors += " undo ply " + (i + 1) + ":" + diff;
+        }
+        Check(errors == "", "line: " + name, errors);
+    }
+
+    void TestPositions() {
+        int white = ChessRules.White;
+        int black = ChessRules.Black;
+        int all = ChessRules.CastleAll;
+        int wk = ChessRules.CastleWhiteKingSide;
+        int wq = ChessRules.CastleWhiteQueenSide;
+        int bk = ChessRules.CastleBlackKingSide;
+        int bq = ChessRules.CastleBlackQueenSide;
+
+        // The standard start, built with the constants. Published perft 20, 400, 8902.
+        byte[] start = StartBoard();
+        int[] startState = NewState(white, all, -1, ChessRules.E1, ChessRules.E8);
+        CheckPerft("standard start", start, startState, true, new int[] { 20, 400, 8902 });
+
+        // Castling both ways for both sides, en passant and promotion (push and capture of a rook on its starting
+        // square) all available: r3k2r/1P6/8/3pP3/8/8/8/R3K2R w KQkq d6. Counts from the Java on port-reference.
+        byte[] mixed = EmptyBoard();
+        mixed[ChessRules.E1] = ChessRules.WhiteKing;
+        mixed[ChessRules.A1] = ChessRules.WhiteRook;
+        mixed[ChessRules.H1] = ChessRules.WhiteRook;
+        mixed[ChessRules.E5] = ChessRules.WhitePawn;
+        mixed[ChessRules.B7] = ChessRules.WhitePawn;
+        mixed[ChessRules.D5] = ChessRules.BlackPawn;
+        mixed[ChessRules.E8] = ChessRules.BlackKing;
+        mixed[ChessRules.A8] = ChessRules.BlackRook;
+        mixed[ChessRules.H8] = ChessRules.BlackRook;
+        int[] mixedState = NewState(white, all, ChessRules.FileD, ChessRules.E1, ChessRules.E8);
+        CheckPerft("castling, en passant and promotion", mixed, mixedState, true, new int[] { 36, 719, 21611 });
+        CheckPerft("castling, en passant and promotion", mixed, mixedState, false, new int[] { 36, 852 });
+        // The same position from Black's side (r3k2r/8/8/8/3Pp3/8/1p6/R3K2R b KQkq d3) gives the same counts.
+        byte[] mirrored = MirrorBoard(mixed);
+        int[] mirroredState = NewState(black, all, ChessRules.FileD, ChessRules.E1, ChessRules.E8);
+        CheckPerft("castling, en passant and promotion, mirrored", mirrored, mirroredState, true,
+            new int[] { 36, 719, 21611 });
+        CheckPerft("castling, en passant and promotion, mirrored", mirrored, mirroredState, false, new int[] { 36, 852 });
+
+        // Published perft positions, shallow (the deep runs need FEN and come in step 3).
+        byte[] b = Placement("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R");
+        CheckPerft("Kiwipete", b, PlacementState(b, white, all, -1), true, new int[] { 48, 2039 });
+        b = Placement("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8");
+        CheckPerft("perft position 3", b, PlacementState(b, white, 0, -1), true, new int[] { 14, 191, 2812 });
+        b = Placement("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1");
+        CheckPerft("perft position 4", b, PlacementState(b, white, bk | bq, -1), true, new int[] { 6, 264, 9467 });
+        b = Placement("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R");
+        CheckPerft("perft position 5", b, PlacementState(b, white, wk | wq, -1), true, new int[] { 44, 1486 });
+        b = Placement("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1");
+        CheckPerft("perft position 6", b, PlacementState(b, white, 0, -1), true, new int[] { 46, 2079 });
+
+        // Java bugs (docs/java-bugs.md), through the legal move list.
+
+        // Capturing a rook on its starting square removes that side's castling right: after bxa8=Q Black can't
+        // O-O-O (and must answer the check), and after Bxh8 Black can't O-O, but can still O-O-O.
+        CheckLine("bxa8=Q+ removes black's O-O-O", mixed, mixedState, "b7a8xR=Q",
+            new int[] { wk | wq | bk }, new string[] { "e8e7" }, new string[] { "e8a8c e8h8c" });
+        b = Placement("r3k2r/8/8/8/8/2B5/8/4K3");
+        CheckLine("Bxh8 removes black's O-O", b, PlacementState(b, white, bk | bq, -1), "c3h8xR",
+            new int[] { bq }, new string[] { "e8a8c" }, new string[] { "e8h8c" });
+
+        // Castling is refused when the rook is gone (even with the right still set), or another piece is in the way.
+        b = Placement("4k3/8/8/8/8/8/8/R3K3");
+        int[] s = PlacementState(b, white, wk | wq, -1);
+        CheckLegalMoves("no O-O with the rook gone", b, s, ChessRules.E1, "e1d1 e1d2 e1e2 e1f2 e1f1 e1a1c",
+            "e1d1 e1d2 e1e2 e1f2 e1f1 e1a1c");
+        b = Placement("4k3/8/8/8/8/8/8/R2RK2R");
+        s = PlacementState(b, white, wk | wq, -1);
+        CheckLegalMoves("no O-O-O with another own rook in the way", b, s, ChessRules.E1, "e1d2 e1e2 e1f2 e1f1 e1h1c",
+            "e1d2 e1e2 e1f2 e1f1 e1h1c");
+        b = Placement("4k3/8/8/8/8/8/8/R3KN1R");
+        s = PlacementState(b, white, wk | wq, -1);
+        CheckLegalMoves("no O-O with a knight in the way", b, s, ChessRules.E1, "e1d1 e1d2 e1e2 e1f2 e1a1c",
+            "e1d1 e1d2 e1e2 e1f2 e1a1c");
+
+        // Castling removes both of that side's rights. A line from the mixed position: 1.exd6 e.p. O-O (Black loses
+        // k and q; O-O-O was refused anyway, the b7 pawn covering c8) 2.bxa8=Q Rxa8 (nothing more to lose; O-O was
+        // refused while the f8 rook covered f1) 3.O-O-O (White loses K and Q).
+        CheckLine("1.exd6 e.p. O-O 2.bxa8=Q Rxa8 3.O-O-O", mixed, mixedState,
+            "e5d6xP e8h8c b7a8xR=Q f8a8xQ e1a1c",
+            new int[] { all, wk | wq, wk | wq, wk | wq, 0 },
+            new string[] { "e8h8c", "e1a1c", "", "e1h1c e1a1c", "" },
+            new string[] { "e8a8c", "e1h1c", "", "", "" });
+
+        // Pawns can't capture their own pieces (the Java's d2xc3 and d2xe3 here).
+        b = Placement("4k3/8/8/8/8/2N1B3/3P4/4K3");
+        s = PlacementState(b, white, 0, -1);
+        CheckLegalMoves("pawn doesn't capture its own pieces", b, s, ChessRules.D2, "d2d3 d2d4", "d2d3 d2d4");
+        b = Placement("4k3/3p4/2n1b3/8/8/8/8/4K3");
+        s = PlacementState(b, black, 0, -1);
+        CheckLegalMoves("black pawn doesn't capture its own pieces", b, s, ChessRules.D7, "d7d6 d7d5", "d7d6 d7d5");
     }
 }
