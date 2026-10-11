@@ -23,6 +23,30 @@ namespace SiggiChessBoard {
         public const int StateBlackKingSquare = 7;
         public const int StateLength = 8;
 
+        // Castling destinations on the back rank, for any starting files (Chess960 too).
+        public const int KingSideKingFile = ChessRules.FileG;
+        public const int KingSideRookFile = ChessRules.FileF;
+        public const int QueenSideKingFile = ChessRules.FileC;
+        public const int QueenSideRookFile = ChessRules.FileD;
+
+        // The castling rights that are lost when a piece moves from or to this square: both of a side's rights for
+        // its king's starting square, one right for each rook's starting square. While a right is held, its king and
+        // rook are still on these squares, so any move from one is that piece moving and any move to one captures it.
+        public static int CastlingRightsAt(int[] state, int square) {
+            int file = square & 7;
+            int rank = square >> 3;
+            // The black rights are the white ones shifted up by two bits.
+            int shift;
+            if (rank == ChessRules.Rank1) shift = 0;
+            else if (rank == ChessRules.Rank8) shift = 2;
+            else return 0;
+            int rights = 0;
+            if (file == state[StateKingFile]) rights = ChessRules.CastleWhiteKingSide | ChessRules.CastleWhiteQueenSide;
+            else if (file == state[StateRightRookFile]) rights = ChessRules.CastleWhiteKingSide;
+            else if (file == state[StateLeftRookFile]) rights = ChessRules.CastleWhiteQueenSide;
+            return rights << shift;
+        }
+
         // Plays a move on the board and state. The move must have been packed for this position (its castling rights
         // and en passant fields are the state before it); nothing is checked.
         public static void MakeMove(byte[] board, int[] state, int move) {
@@ -34,13 +58,33 @@ namespace SiggiChessBoard {
             int promotion = (move >> ChessRules.MovePromotionShift) & ChessRules.MoveTypeMask;
             int captured = (move >> ChessRules.MoveCapturedShift) & ChessRules.MoveTypeMask;
 
-            // The captured pawn of an en passant capture is on the from rank, to file.
-            if (ChessRules.IsEnPassantCapture(move)) board[(from & 56) | (to & 7)] = ChessRules.Empty;
-            board[to] = (byte)((promotion != ChessRules.NoPieceType ? promotion : type) | (mover << 3));
-            board[from] = ChessRules.Empty;
+            if (((move >> ChessRules.MoveCastleShift) & 1) != 0) {
+                // From is the king, to its rook. Clear both before placing either, since the destinations can be
+                // the starting squares (e.g. a king already on g1, or a rook on d1 with the king on c1).
+                int backRank = from & 56;
+                bool kingSide = (to & 7) > (from & 7);
+                board[from] = ChessRules.Empty;
+                board[to] = ChessRules.Empty;
+                int kingTo = backRank | (kingSide ? KingSideKingFile : QueenSideKingFile);
+                board[kingTo] = (byte)(ChessRules.King | (mover << 3));
+                board[backRank | (kingSide ? KingSideRookFile : QueenSideRookFile)] = (byte)(ChessRules.Rook | (mover << 3));
+                state[StateWhiteKingSquare + mover] = kingTo;
+            } else {
+                // The captured pawn of an en passant capture is on the from rank, to file.
+                if (ChessRules.IsEnPassantCapture(move)) board[(from & 56) | (to & 7)] = ChessRules.Empty;
+                board[to] = (byte)((promotion != ChessRules.NoPieceType ? promotion : type) | (mover << 3));
+                board[from] = ChessRules.Empty;
 
-            if (type == ChessRules.King) state[StateWhiteKingSquare + mover] = to;
-            if (captured == ChessRules.King) state[StateWhiteKingSquare + opponent] = ChessRules.NoSquare;
+                if (type == ChessRules.King) state[StateWhiteKingSquare + mover] = to;
+                if (captured == ChessRules.King) state[StateWhiteKingSquare + opponent] = ChessRules.NoSquare;
+            }
+
+            // Moving the king or a rook, or capturing a rook on its starting square, loses those rights. Castling
+            // moves from the king's starting square, so it loses both of the mover's rights.
+            int rights = state[StateCastlingRights];
+            if (rights != 0) {
+                state[StateCastlingRights] = rights & ~(CastlingRightsAt(state, from) | CastlingRightsAt(state, to));
+            }
             state[StateEnPassantFile] = ChessRules.IsDoublePush(move) ? from & 7 : -1;
             state[StateSideToMove] = opponent;
         }
@@ -54,19 +98,31 @@ namespace SiggiChessBoard {
             int type = (move >> ChessRules.MovePieceTypeShift) & ChessRules.MoveTypeMask;
             int captured = (move >> ChessRules.MoveCapturedShift) & ChessRules.MoveTypeMask;
 
-            // The piece-type field is the piece before any promotion.
-            board[from] = (byte)(type | (mover << 3));
-            if (ChessRules.IsEnPassantCapture(move)) {
-                board[to] = ChessRules.Empty;
-                board[(from & 56) | (to & 7)] = (byte)(ChessRules.Pawn | (opponent << 3));
-            } else if (captured != ChessRules.NoPieceType) {
-                board[to] = (byte)(captured | (opponent << 3));
+            if (((move >> ChessRules.MoveCastleShift) & 1) != 0) {
+                // Clear the destinations before putting the king and rook back, as in MakeMove.
+                int backRank = from & 56;
+                bool kingSide = (to & 7) > (from & 7);
+                board[backRank | (kingSide ? KingSideKingFile : QueenSideKingFile)] = ChessRules.Empty;
+                board[backRank | (kingSide ? KingSideRookFile : QueenSideRookFile)] = ChessRules.Empty;
+                board[from] = (byte)(ChessRules.King | (mover << 3));
+                board[to] = (byte)(ChessRules.Rook | (mover << 3));
+                state[StateWhiteKingSquare + mover] = from;
             } else {
-                board[to] = ChessRules.Empty;
+                // The piece-type field is the piece before any promotion.
+                board[from] = (byte)(type | (mover << 3));
+                if (ChessRules.IsEnPassantCapture(move)) {
+                    board[to] = ChessRules.Empty;
+                    board[(from & 56) | (to & 7)] = (byte)(ChessRules.Pawn | (opponent << 3));
+                } else if (captured != ChessRules.NoPieceType) {
+                    board[to] = (byte)(captured | (opponent << 3));
+                } else {
+                    board[to] = ChessRules.Empty;
+                }
+
+                if (type == ChessRules.King) state[StateWhiteKingSquare + mover] = from;
+                if (captured == ChessRules.King) state[StateWhiteKingSquare + opponent] = to;
             }
 
-            if (type == ChessRules.King) state[StateWhiteKingSquare + mover] = from;
-            if (captured == ChessRules.King) state[StateWhiteKingSquare + opponent] = to;
             // The state before the move is in the move itself (docs/move-encoding.md#undo).
             state[StateCastlingRights] = (move >> ChessRules.MoveCastlingRightsShift) & ChessRules.MoveCastlingRightsMask;
             state[StateEnPassantFile] = ChessRules.MovePrevEnPassantFile(move);

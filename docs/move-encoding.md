@@ -35,9 +35,10 @@ static bool IsDoublePush(int move) =>
 ## Castling
 
 - Castle bit set; *from* = king's square, *to* = rook's starting square ("king takes own rook"). The side follows from whether the rook is right or left of the king. This supports Chess960 and configurable rook files, including castles where the king doesn't move.
-- Destinations are fixed: king to g/c, rook to f/d on the back rank.
+- Destinations are fixed: king to g/c, rook to f/d on the back rank. Make and unmake clear both starting squares before placing the king and rook, since in Chess960 a destination can be a starting square (the king already on g/c, or king and rook swapping).
 - Keeping the king in *from* means "the piece on *from* matches the piece-type field" holds for every move, so generic code (highlighting, notation matching) needs no castling special case.
 - Undo doesn't need from/to: castling is only legal while the king and rook are unmoved, so their squares are the board's stored starting files. The Java board already stores the rook files (`leftRookFile`/`rightRookFile`, set by `FEN.java`); the port adds a `kingFile`, set by the FEN loader.
+- **Losing rights.** Any move from or to a starting square loses the rights tied to it (`ChessPosition.CastlingRightsAt`): the king's square both of that side's rights, each rook's square its own right. While a right is held its king and rook are still on those squares, so a move from one is that piece moving and a move to one captures it. This covers king moves, castling, rook moves, and capturing a rook on its starting square (by any piece, including a capture-promotion), which the Java missed (see [Bugs found in the Java](java-bugs.md)). Unmake restores the rights from the move, like every other before-the-move state.
 
 ## Undo
 

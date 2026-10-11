@@ -15,6 +15,7 @@ public class RulesTest : UdonSharpBehaviour {
         TestMovePacking();
         TestMoveDerived();
         TestMakeUnmake();
+        TestCastling();
         Debug.Log("[RulesTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
@@ -276,6 +277,16 @@ public class RulesTest : UdonSharpBehaviour {
             board[ChessRules.SquareOf(file, ChessRules.Rank8)] = ChessRules.PieceOf(ChessRules.Black, backRank[file]);
         }
         return board;
+    }
+
+    // State with the given king and rook starting files.
+    int[] NewState960(int sideToMove, int castlingRights, int kingFile, int leftRookFile, int rightRookFile,
+        int whiteKing, int blackKing) {
+        int[] state = NewState(sideToMove, castlingRights, -1, whiteKing, blackKing);
+        state[ChessPosition.StateKingFile] = kingFile;
+        state[ChessPosition.StateLeftRookFile] = leftRookFile;
+        state[ChessPosition.StateRightRookFile] = rightRookFile;
+        return state;
     }
 
     // State with the standard king and rook starting files.
@@ -558,5 +569,231 @@ public class RulesTest : UdonSharpBehaviour {
             if (diff != "") errors += " undo ply " + (i + 1) + ":" + diff;
         }
         Check(errors == "", "make/unmake: 1.e4 d5 2.exd5 c5 3.dxc6 e.p. bxc6, then undo all", errors);
+    }
+
+    // Packs a castling move: from = the king's square, to = its rook's starting square.
+    int CastleOn(int[] state, int kingSquare, int rookSquare) {
+        return ChessRules.PackMove(kingSquare, rookSquare, ChessRules.King, 0, 0, true,
+            state[ChessPosition.StateCastlingRights], state[ChessPosition.StateEnPassantFile]);
+    }
+
+    // Checks one castling move: the king and rook end on the given squares and nothing else changes on the board;
+    // the mover loses both rights, en passant is cleared, the king square follows the king. Unmake restores both
+    // arrays.
+    void CheckCastle(string name, byte[] board, int[] state, int kingSquare, int rookSquare, int kingTo, int rookTo) {
+        int mover = state[ChessPosition.StateSideToMove];
+        byte[] eb = CopyBoard(board);
+        eb[kingSquare] = ChessRules.Empty;
+        eb[rookSquare] = ChessRules.Empty;
+        eb[kingTo] = ChessRules.PieceOf(mover, ChessRules.King);
+        eb[rookTo] = ChessRules.PieceOf(mover, ChessRules.Rook);
+        int[] es = CopyState(state);
+        es[ChessPosition.StateSideToMove] = mover ^ 1;
+        es[ChessPosition.StateEnPassantFile] = -1;
+        int moverRights = mover == ChessRules.White
+            ? ChessRules.CastleWhiteKingSide | ChessRules.CastleWhiteQueenSide
+            : ChessRules.CastleBlackKingSide | ChessRules.CastleBlackQueenSide;
+        es[ChessPosition.StateCastlingRights] = state[ChessPosition.StateCastlingRights] & ~moverRights;
+        es[ChessPosition.StateWhiteKingSquare + mover] = kingTo;
+        CheckMakeUnmake("castling: " + name, board, state, CastleOn(state, kingSquare, rookSquare), eb, es);
+    }
+
+    // Makes a non-castling move and checks the castling rights after it (the 2.3a checks cover the board), and that
+    // unmake restores both arrays.
+    void CheckRightsAfter(string name, byte[] board, int[] state, int from, int to, int promotion, int expectedRights) {
+        byte[] b = CopyBoard(board);
+        int[] s = CopyState(state);
+        int move = MoveOn(b, s, from, to, promotion);
+        ChessPosition.MakeMove(b, s, move);
+        string errors = "";
+        int rights = s[ChessPosition.StateCastlingRights];
+        if (rights != expectedRights) errors += " rights after make " + rights + " (expected " + expectedRights + ")";
+        ChessPosition.UnmakeMove(b, s, move);
+        string undoErrors = BoardDiff(b, board) + StateDiff(s, state);
+        if (undoErrors != "") errors += " after unmake:" + undoErrors;
+        Check(errors == "", "castling rights: " + name, errors);
+    }
+
+    void TestCastling() {
+        int white = ChessRules.White;
+        int black = ChessRules.Black;
+        int all = ChessRules.CastleAll;
+        int wk = ChessRules.CastleWhiteKingSide;
+        int wq = ChessRules.CastleWhiteQueenSide;
+        int bk = ChessRules.CastleBlackKingSide;
+        int bq = ChessRules.CastleBlackQueenSide;
+
+        // Standard: r3k2r/8/8/8/8/8/8/R3K2R, both sides' O-O and O-O-O. White moves with en passant set, to check
+        // that castling clears it.
+        byte[] std = EmptyBoard();
+        std[ChessRules.E1] = ChessRules.WhiteKing;
+        std[ChessRules.A1] = ChessRules.WhiteRook;
+        std[ChessRules.H1] = ChessRules.WhiteRook;
+        std[ChessRules.E8] = ChessRules.BlackKing;
+        std[ChessRules.A8] = ChessRules.BlackRook;
+        std[ChessRules.H8] = ChessRules.BlackRook;
+        int[] stdWhite = NewState(white, all, ChessRules.FileD, ChessRules.E1, ChessRules.E8);
+        int[] stdBlack = NewState(black, all, -1, ChessRules.E1, ChessRules.E8);
+        CheckCastle("white O-O", std, stdWhite, ChessRules.E1, ChessRules.H1, ChessRules.G1, ChessRules.F1);
+        CheckCastle("white O-O-O", std, stdWhite, ChessRules.E1, ChessRules.A1, ChessRules.C1, ChessRules.D1);
+        CheckCastle("black O-O", std, stdBlack, ChessRules.E8, ChessRules.H8, ChessRules.G8, ChessRules.F8);
+        CheckCastle("black O-O-O", std, stdBlack, ChessRules.E8, ChessRules.A8, ChessRules.C8, ChessRules.D8);
+
+        // The other side's rights are kept.
+        int[] partial = NewState(white, wk | bq, -1, ChessRules.E1, ChessRules.E8);
+        CheckCastle("white O-O keeps black's rights", std, partial, ChessRules.E1, ChessRules.H1, ChessRules.G1,
+            ChessRules.F1);
+
+        // Chess960, king on c between rooks on b and g (the chess960.pgn.txt start, "GBgb"): O-O-O where the king
+        // doesn't move, and O-O where it does.
+        byte[] c960 = EmptyBoard();
+        c960[ChessRules.C1] = ChessRules.WhiteKing;
+        c960[ChessRules.B1] = ChessRules.WhiteRook;
+        c960[ChessRules.G1] = ChessRules.WhiteRook;
+        c960[ChessRules.C8] = ChessRules.BlackKing;
+        c960[ChessRules.B8] = ChessRules.BlackRook;
+        c960[ChessRules.G8] = ChessRules.BlackRook;
+        c960[ChessRules.A1] = ChessRules.WhiteQueen;
+        c960[ChessRules.A8] = ChessRules.BlackQueen;
+        int[] c960White = NewState960(white, all, ChessRules.FileC, ChessRules.FileB, ChessRules.FileG,
+            ChessRules.C1, ChessRules.C8);
+        int[] c960Black = NewState960(black, all, ChessRules.FileC, ChessRules.FileB, ChessRules.FileG,
+            ChessRules.C1, ChessRules.C8);
+        CheckCastle("chess960 white O-O-O, king doesn't move", c960, c960White, ChessRules.C1, ChessRules.B1,
+            ChessRules.C1, ChessRules.D1);
+        CheckCastle("chess960 black O-O-O, king doesn't move", c960, c960Black, ChessRules.C8, ChessRules.B8,
+            ChessRules.C8, ChessRules.D8);
+        CheckCastle("chess960 white O-O", c960, c960White, ChessRules.C1, ChessRules.G1, ChessRules.G1, ChessRules.F1);
+        CheckCastle("chess960 black O-O", c960, c960Black, ChessRules.C8, ChessRules.G8, ChessRules.G8, ChessRules.F8);
+
+        // Chess960, king on f between rooks on d and g: O-O swaps the king and rook (f <-> g); on O-O-O the rook
+        // doesn't move.
+        byte[] swap = EmptyBoard();
+        swap[ChessRules.F1] = ChessRules.WhiteKing;
+        swap[ChessRules.D1] = ChessRules.WhiteRook;
+        swap[ChessRules.G1] = ChessRules.WhiteRook;
+        swap[ChessRules.F8] = ChessRules.BlackKing;
+        swap[ChessRules.D8] = ChessRules.BlackRook;
+        swap[ChessRules.G8] = ChessRules.BlackRook;
+        int[] swapWhite = NewState960(white, all, ChessRules.FileF, ChessRules.FileD, ChessRules.FileG,
+            ChessRules.F1, ChessRules.F8);
+        int[] swapBlack = NewState960(black, all, ChessRules.FileF, ChessRules.FileD, ChessRules.FileG,
+            ChessRules.F1, ChessRules.F8);
+        CheckCastle("chess960 white O-O, king and rook swap", swap, swapWhite, ChessRules.F1, ChessRules.G1,
+            ChessRules.G1, ChessRules.F1);
+        CheckCastle("chess960 black O-O, king and rook swap", swap, swapBlack, ChessRules.F8, ChessRules.G8,
+            ChessRules.G8, ChessRules.F8);
+        CheckCastle("chess960 white O-O-O, rook doesn't move", swap, swapWhite, ChessRules.F1, ChessRules.D1,
+            ChessRules.C1, ChessRules.D1);
+
+        // Chess960, king on d between rooks on c and h: O-O-O swaps the king and rook (d <-> c).
+        byte[] qswap = EmptyBoard();
+        qswap[ChessRules.D1] = ChessRules.WhiteKing;
+        qswap[ChessRules.C1] = ChessRules.WhiteRook;
+        qswap[ChessRules.H1] = ChessRules.WhiteRook;
+        qswap[ChessRules.D8] = ChessRules.BlackKing;
+        qswap[ChessRules.C8] = ChessRules.BlackRook;
+        qswap[ChessRules.H8] = ChessRules.BlackRook;
+        int[] qswapBlack = NewState960(black, all, ChessRules.FileD, ChessRules.FileC, ChessRules.FileH,
+            ChessRules.D1, ChessRules.D8);
+        CheckCastle("chess960 black O-O-O, king and rook swap", qswap, qswapBlack, ChessRules.D8, ChessRules.C8,
+            ChessRules.C8, ChessRules.D8);
+
+        // Chess960, king on g between rooks on b and h: O-O where the king doesn't move, and a long O-O-O.
+        byte[] kg = EmptyBoard();
+        kg[ChessRules.G1] = ChessRules.WhiteKing;
+        kg[ChessRules.B1] = ChessRules.WhiteRook;
+        kg[ChessRules.H1] = ChessRules.WhiteRook;
+        kg[ChessRules.G8] = ChessRules.BlackKing;
+        int[] kgWhite = NewState960(white, wk | wq, ChessRules.FileG, ChessRules.FileB, ChessRules.FileH,
+            ChessRules.G1, ChessRules.G8);
+        CheckCastle("chess960 white O-O, king doesn't move", kg, kgWhite, ChessRules.G1, ChessRules.H1,
+            ChessRules.G1, ChessRules.F1);
+        CheckCastle("chess960 white O-O-O from g", kg, kgWhite, ChessRules.G1, ChessRules.B1,
+            ChessRules.C1, ChessRules.D1);
+
+        // Losing rights by moving, standard position.
+        CheckRightsAfter("white king move loses both white rights", std, stdWhite, ChessRules.E1, ChessRules.E2, 0,
+            bk | bq);
+        CheckRightsAfter("black king move loses both black rights", std, stdBlack, ChessRules.E8, ChessRules.D7, 0,
+            wk | wq);
+        CheckRightsAfter("white h-rook move loses K", std, stdWhite, ChessRules.H1, ChessRules.H5, 0, wq | bk | bq);
+        CheckRightsAfter("white a-rook move loses Q", std, stdWhite, ChessRules.A1, ChessRules.B1, 0, wk | bk | bq);
+        CheckRightsAfter("black h-rook move loses k", std, stdBlack, ChessRules.H8, ChessRules.G8, 0, wk | wq | bq);
+        CheckRightsAfter("black a-rook move loses q", std, stdBlack, ChessRules.A8, ChessRules.A2, 0, wk | wq | bk);
+
+        // Capturing a rook on its starting square loses the opponent's right (Java bug, docs/java-bugs.md).
+        CheckRightsAfter("white Rxh8 loses K and k", std, stdWhite, ChessRules.H1, ChessRules.H8, 0, wq | bq);
+        CheckRightsAfter("black Rxa1 loses q and Q", std, stdBlack, ChessRules.A8, ChessRules.A1, 0, wk | bk);
+
+        byte[] bxh8 = CopyBoard(std);
+        bxh8[ChessRules.C3] = ChessRules.WhiteBishop;
+        bxh8[ChessRules.H1] = ChessRules.Empty;
+        int[] bxh8White = NewState(white, wq | bk | bq, -1, ChessRules.E1, ChessRules.E8);
+        CheckRightsAfter("white Bxh8 loses k only", bxh8, bxh8White, ChessRules.C3, ChessRules.H8, 0, wq | bq);
+        byte[] bxa1 = CopyBoard(std);
+        bxa1[ChessRules.D4] = ChessRules.BlackBishop;
+        CheckRightsAfter("black Bxa1 loses Q only", bxa1, stdBlack, ChessRules.D4, ChessRules.A1, 0, wk | bk | bq);
+
+        // Pawn capture-promotions onto a rook's starting square.
+        byte[] pxr = CopyBoard(std);
+        pxr[ChessRules.B7] = ChessRules.WhitePawn;
+        pxr[ChessRules.G2] = ChessRules.BlackPawn;
+        CheckRightsAfter("white bxa8=Q loses q", pxr, stdWhite, ChessRules.B7, ChessRules.A8, ChessRules.Queen,
+            wk | wq | bk);
+        CheckRightsAfter("black gxh1=N loses K", pxr, stdBlack, ChessRules.G2, ChessRules.H1, ChessRules.Knight,
+            wq | bk | bq);
+
+        // Moves that touch no starting square keep the rights: a capture elsewhere, a rook returning to its square.
+        byte[] other = CopyBoard(std);
+        other[ChessRules.D4] = ChessRules.WhiteKnight;
+        other[ChessRules.E6] = ChessRules.BlackPawn;
+        CheckRightsAfter("unrelated capture keeps all rights", other, stdWhite, ChessRules.D4, ChessRules.E6, 0, all);
+        byte[] movedRook = CopyBoard(std);
+        movedRook[ChessRules.H1] = ChessRules.Empty;
+        movedRook[ChessRules.H3] = ChessRules.WhiteRook;
+        int[] movedRookState = NewState(white, wq | bk | bq, -1, ChessRules.E1, ChessRules.E8);
+        CheckRightsAfter("rook returning to its start square changes nothing", movedRook, movedRookState,
+            ChessRules.H3, ChessRules.H1, 0, wq | bk | bq);
+
+        // Chess960 starting files: the b-rook is queen side, the g-rook king side, the c-king both.
+        CheckRightsAfter("chess960 white b-rook move loses Q", c960, c960White, ChessRules.B1, ChessRules.B5, 0,
+            wk | bk | bq);
+        CheckRightsAfter("chess960 white g-rook move loses K", c960, c960White, ChessRules.G1, ChessRules.G4, 0,
+            wq | bk | bq);
+        CheckRightsAfter("chess960 black king move loses k and q", c960, c960Black, ChessRules.C8, ChessRules.D7, 0,
+            wk | wq);
+        CheckRightsAfter("chess960 Rxg8 loses K and k", c960, c960White, ChessRules.G1, ChessRules.G8, 0, wq | bq);
+        // The queen on a1 stands where a standard rook would: moving it keeps the rights.
+        CheckRightsAfter("chess960 queen on a1 moving keeps rights", c960, c960White, ChessRules.A1, ChessRules.A4, 0,
+            all);
+
+        // A sequence with castling, undone in reverse: 1.O-O (loses K and Q) Rxa1 (loses q) 2.Rxa1 (nothing left to
+        // lose but k, which stays). Checks the rights after each ply and that each undo restores the step before.
+        byte[] b = CopyBoard(std);
+        int[] s = NewState(white, all, -1, ChessRules.E1, ChessRules.E8);
+        int count = 3;
+        int[] moves = new int[count];
+        byte[][] boardsBefore = new byte[count][];
+        int[][] statesBefore = new int[count][];
+        int[] expectedRights = new int[] { bk | bq, bk, bk };
+        string errors = "";
+        for (int i = 0; i < count; i++) {
+            boardsBefore[i] = CopyBoard(b);
+            statesBefore[i] = CopyState(s);
+            if (i == 0) moves[i] = CastleOn(s, ChessRules.E1, ChessRules.H1);
+            else if (i == 1) moves[i] = MoveOn(b, s, ChessRules.A8, ChessRules.A1, 0);
+            else moves[i] = MoveOn(b, s, ChessRules.F1, ChessRules.A1, 0);
+            ChessPosition.MakeMove(b, s, moves[i]);
+            if (s[ChessPosition.StateCastlingRights] != expectedRights[i]) {
+                errors += " ply " + (i + 1) + " rights " + s[ChessPosition.StateCastlingRights];
+            }
+        }
+        for (int i = count - 1; i >= 0; i--) {
+            ChessPosition.UnmakeMove(b, s, moves[i]);
+            string diff = BoardDiff(b, boardsBefore[i]) + StateDiff(s, statesBefore[i]);
+            if (diff != "") errors += " undo ply " + (i + 1) + ":" + diff;
+        }
+        Check(errors == "", "castling: 1.O-O Rxa1 2.Rxa1, rights per ply, then undo all", errors);
     }
 }
