@@ -38,3 +38,12 @@ Replay mode is entered from a game (in progress or ended) or by loading/importin
   - an organizer, at any time;
   - anyone else, once the board has been idle for the reset-available time (see [Inactivity](inactivity.md)).
 - A game in progress that's reset is logged and archived as unfinished (`*`), if it had any moves. So a player who resets instead of resigning doesn't record a loss; that's accepted.
+
+## Implementation
+
+`ChessBoard` in `Assets/Siggi/ChessBoard/ChessBoard.cs` (namespace `SiggiChessBoard`).
+
+- The lifecycle is the `lifecycle` field, one of `LifecycleReset`, `LifecycleLoaded`, `LifecycleLobby`, `LifecycleInGame`, `LifecycleEnded`.
+- The state fields are the ones under [Synced fields](networking.md#synced-fields-per-board), as plain public fields until they're synced in step 8.3. `ClearState()` puts them all back to the reset state: the standard starting position (so a reset board shows pieces ready to play), no moves, empty seats, no game ID, no result, Standard mode, no clock, no snapshot. On `Start` the board clears itself. The reset itself (who may, logging an unfinished game) is `Reset` (step 7.10).
+- Input methods return `InputAccepted` or `InputRejected`.
+- **Seats:** `JoinWhite()` / `JoinBlack()` (the buttons) seat the local player by display name, through `JoinAs(color, name)`, which tests and the debug view call with any name. A join is accepted on a reset board (which enters the lobby), in the lobby and on a loaded board (which stays loaded), and rejected in game and once ended. **A seat held by someone else can't be taken**, since there's no leaving a seat but a reset; names are compared exactly (C# `==` on strings is ordinal), so a lookalike name doesn't get the seat. Joining a seat you already hold is accepted and changes nothing. `IsSeated(color, name)` says whether a name holds a seat.

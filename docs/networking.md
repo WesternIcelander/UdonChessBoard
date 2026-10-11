@@ -30,7 +30,7 @@ No FEN or PGN goes over the network, so no client parses anything to stay in syn
 | starting halfmove clock, move number | `int` | from the starting position; see [Undo](move-encoding.md#undo) |
 | king / rook starting files | `byte` ×3 | for castling and undo (Chess960) |
 | move history | `int[]` | full packed moves, 4 bytes each |
-| notation | `string` | each move's SAN, space-separated |
+| notation | `string[]` | each move's SAN, `""` if not known yet |
 | starting position | `string` | FEN, copied into the PGN `FEN` tag when not the standard start; never parsed by receivers |
 | replay mode | `bool` | whether the board is showing replay or the live game |
 | replay index | `int` | ply of the game history the replay started from or is showing |
@@ -43,7 +43,7 @@ No FEN or PGN goes over the network, so no client parses anything to stay in syn
 | replay source White / Black / Result | `string` ×3 | from an imported PGN or an archived game, for display in replay; cleared when play continues |
 | white / black player | `string` ×2 | display names, so a rejoining player keeps their seat; see [Ownership](ownership.md) |
 | last activity | `double` | server time of the last piece touch, see [Inactivity](inactivity.md) |
-| result | `byte` | in progress, or ending + winner; see [Game endings](game-endings.md) |
+| result | `byte` ×2 | ending (in progress, or how it ended) and winner; see [Game endings](game-endings.md) |
 | lifecycle state | `byte` | reset, loaded, lobby, in game, ended; see [Board lifecycle](board-lifecycle.md) |
 | mode | `byte` | Standard, Chess960 (Fog of War later) |
 | time control | `int` ×2 | base and increment in seconds; base `-1` = no clock |
@@ -53,7 +53,8 @@ No FEN or PGN goes over the network, so no client parses anything to stay in syn
 
 - The move history is the full packed ints, not a 2-byte compact form. A long game is a couple of KB, well within manual sync limits, and receivers get the undo info with no reconstruction. This replaces the earlier 2-byte format, which was designed for receivers rebuilding moves themselves.
 - Because every packed move carries its own undo info, a client can walk back from the current position to any earlier one by undoing moves. Replay and filling in notation therefore don't need the starting FEN to be parsed.
-- Notation is a single space-separated string rather than a `string[]`; SAN never contains spaces, and a single string is the simplest synced type. A per-move synced `string[]` would also work if it turns out more convenient.
+- The board keeps notation as a `string[]`, one SAN per ply with `""` where not known yet, which PGN export takes as it is (`ChessPgn.WriteMoveText`). Whether it's synced as that array (never `null` elements, see below) or joined into one space-separated string (SAN never contains spaces) is decided in step 8.3.
+- Until step 8.3 the board's fields are plain fields, with `int` where this table has `byte`, and the side to move, castling rights, en passant and starting files are its `ChessPosition` state array; 8.3 picks the synced types. The history arrays (moves, notation, clock history) have spare room, with the move count saying how many entries are the game.
 - **Synced `string[]` must never contain `null`.** A single `null` element makes the whole serialization fail, so every element is initialised to an empty string (this applies to any synced `string[]`, not just notation).
 
 ## Filling in missing notation
