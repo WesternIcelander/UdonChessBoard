@@ -2,7 +2,7 @@ using UdonSharp;
 
 namespace SiggiChessBoard {
     // Draw rules (docs/game-endings.md#draw-rules): the halfmove clock and the fifty/seventy-five-move rules, and
-    // threefold/fivefold repetition.
+    // threefold/fivefold repetition, and dead positions by insufficient material.
     // Whether a rule is switched on, and checkmate or stalemate taking precedence, are up to the board.
     // Holds no state; everything comes in through parameters (see docs/architecture.md).
     // Abstract because it is never placed as a component, only used for its constants and static methods.
@@ -125,6 +125,35 @@ namespace SiggiChessBoard {
                 }
             }
             return -1;
+        }
+
+        // ---- Insufficient material ----
+
+        // Whether neither side has the material to checkmate, so the position is dead and drawn
+        // (docs/game-endings.md#draw-rules). Only the standard cases, not every dead position: kings alone, a single
+        // knight besides the kings, or bishops besides the kings that all stand on squares of one colour (K v K,
+        // K+N v K, K+B v K, K+B v K+B with same-coloured bishops, and more same-coloured bishops on either side,
+        // which can't mate either). Any pawn, rook or queen, two knights, a knight and a bishop, or bishops on both
+        // colours are enough, even if mate can't be forced.
+        public static bool IsInsufficientMaterial(byte[] board) {
+            int knights = 0;
+            bool lightBishop = false;
+            bool darkBishop = false;
+            for (int sq = 0; sq < 64; sq++) {
+                int type = board[sq] & 7;
+                if (type == ChessRules.NoPieceType || type == ChessRules.King) continue;
+                if (type == ChessRules.Knight) {
+                    knights++;
+                } else if (type == ChessRules.Bishop) {
+                    // a1 (square 0) is dark: a square is light when its file plus rank is odd.
+                    if ((((sq >> 3) + (sq & 7)) & 1) != 0) lightBishop = true;
+                    else darkBishop = true;
+                } else {
+                    return false;
+                }
+            }
+            if (knights == 0) return !(lightBishop && darkBishop);
+            return knights == 1 && !lightBishop && !darkBishop;
         }
     }
 }

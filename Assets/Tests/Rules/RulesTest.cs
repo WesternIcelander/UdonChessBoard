@@ -32,6 +32,7 @@ public class RulesTest : UdonSharpBehaviour {
         TestStatus();
         TestHalfmoveClock();
         TestRepetition();
+        TestInsufficientMaterial();
         if (deepPerft) StartDeepPerft();
         else LogSummary();
     }
@@ -2665,5 +2666,53 @@ public class RulesTest : UdonSharpBehaviour {
             if (file != expected[i]) errors += " " + fens[i] + ": " + file + " (expected " + expected[i] + ")";
         }
         Check(errors == "", "en passant file for repetition", errors);
+    }
+
+    // ---- 4.3c ----
+
+    void CheckInsufficient(string name, string fen, bool expected) {
+        byte[] board = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        int h;
+        int f;
+        if (!ChessFen.ParseFen(fen, board, state, out h, out f)) {
+            Check(false, "insufficient material: " + name, "FEN rejected");
+            return;
+        }
+        byte[] boardBefore = CopyBoard(board);
+        bool result = ChessDraws.IsInsufficientMaterial(board);
+        string errors = result == expected ? "" : " got " + (result ? "dead" : "not dead");
+        string diff = BoardDiff(board, boardBefore);
+        if (diff != "") errors += " position changed:" + diff;
+        Check(errors == "", "insufficient material: " + name + ": " + (expected ? "dead" : "not dead"), errors);
+    }
+
+    void TestInsufficientMaterial() {
+        // Dead: kings alone, a lone minor piece, bishops all on one colour (c1, e3 and f8 are dark; f1 and c8 light).
+        CheckInsufficient("K v K", "4k3/8/8/8/8/8/8/4K3 w - - 0 1", true);
+        CheckInsufficient("K v K, lichess-long-draw final position", "8/8/8/3k4/8/4K3/8/8 w - - 0 72", true);
+        CheckInsufficient("K+B v K", "4k3/8/8/8/8/8/8/2B1K3 w - - 0 1", true);
+        CheckInsufficient("K v K+B", "4k3/8/8/8/8/8/8/4Kb2 b - - 0 1", true);
+        CheckInsufficient("K+N v K", "4k3/8/8/8/8/8/8/1N2K3 w - - 0 1", true);
+        CheckInsufficient("K v K+N", "1n2k3/8/8/8/8/8/8/4K3 w - - 0 1", true);
+        CheckInsufficient("K+B v K+B, both dark", "4kb2/8/8/8/8/8/8/2B1K3 w - - 0 1", true);
+        CheckInsufficient("K+B v K+B, both light", "2b1k3/8/8/8/8/8/8/4KB2 w - - 0 1", true);
+        CheckInsufficient("K+B+B v K, both dark", "4k3/8/8/8/8/4B3/8/2B1K3 w - - 0 1", true);
+
+        // Not dead: bishops on both colours, a pawn, rook or queen, or two minor pieces that aren't
+        // same-coloured bishops.
+        CheckInsufficient("K+B v K+B, opposite colours", "2b1k3/8/8/8/8/8/8/2B1K3 w - - 0 1", false);
+        CheckInsufficient("K+B+B v K, opposite colours", "4k3/8/8/8/8/8/8/2B1KB2 w - - 0 1", false);
+        CheckInsufficient("K+P v K", "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1", false);
+        CheckInsufficient("K v K+P", "4k3/4p3/8/8/8/8/8/4K3 w - - 0 1", false);
+        CheckInsufficient("K+R v K", "4k3/8/8/8/8/8/8/R3K3 w - - 0 1", false);
+        CheckInsufficient("K v K+Q", "3qk3/8/8/8/8/8/8/4K3 w - - 0 1", false);
+        CheckInsufficient("K+B v K+P", "4k3/7p/8/8/8/8/8/2B1K3 w - - 0 1", false);
+        CheckInsufficient("K+B v K+B, same colour, with a pawn", "4kb2/8/8/8/8/8/P7/2B1K3 w - - 0 1", false);
+        CheckInsufficient("K+N+N v K", "4k3/8/8/8/8/8/8/1N2KN2 w - - 0 1", false);
+        CheckInsufficient("K+N v K+N", "1n2k3/8/8/8/8/8/8/1N2K3 w - - 0 1", false);
+        CheckInsufficient("K+N v K+B", "4kb2/8/8/8/8/8/8/1N2K3 w - - 0 1", false);
+        CheckInsufficient("K+B+N v K", "4k3/8/8/8/8/8/8/1NB1K3 w - - 0 1", false);
+        CheckInsufficient("start", ChessFen.StartFen, false);
     }
 }
