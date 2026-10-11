@@ -23,6 +23,11 @@ namespace SiggiChessBoard {
         // A drop matches a promotion: nothing is played until the view asks which piece and calls PromotionChosen.
         public const int InputPromotionNeeded = 2;
 
+        // The sides a king can castle to through the castle drop space (docs/player-input.md): king side is the rook
+        // right of the king, queen side the one left of it, as in Chess960.
+        public const int CastleKingSide = 0;
+        public const int CastleQueenSide = 1;
+
         // Room for this many plies in the history arrays at first; they grow as needed.
         public const int InitialHistoryCapacity = 128;
 
@@ -497,8 +502,10 @@ namespace SiggiChessBoard {
         // The view forwards pickups and drops as squares; the board decides. A drop is matched against the legal
         // moves by from and to square. One match is played; the four promotions of one pawn move answer
         // InputPromotionNeeded, and the view calls PromotionChosen with the same squares and the chosen piece. Nothing
-        // is remembered in between, so there's nothing to sync or clear. Castling by drop is step 7.4b, free moves in
-        // replay 7.8a, activity timestamps 8.5. The *As methods take any name, for tests and the debug view.
+        // is remembered in between, so there's nothing to sync or clear. A king castles by being dropped on its own
+        // rook, on its castling destination when no other king move ends there, or on the castle drop space (a view
+        // object, forwarded as KingDroppedOnCastleSpace). Free moves in replay are step 7.8a, activity timestamps
+        // 8.5. The *As methods take any name, for tests and the debug view.
 
         public int PiecePickedUp(int square) {
             return PiecePickedUpAs(LocalName(), square);
@@ -522,7 +529,9 @@ namespace SiggiChessBoard {
         }
 
         // name dropped the piece from from on to. Plays the legal move it matches, answers InputPromotionNeeded for a
-        // promotion (nothing played), and rejects anything else, including a drop back on its own square.
+        // promotion (nothing played), and rejects anything else, including a drop back on its own square. A king
+        // dropped on its own rook castles with it; dropped on its castling destination it castles unless a normal king
+        // move ends there too (Chess960 castles moving the king one square), which is then played instead.
         public int PieceDroppedAs(string name, int from, int to) {
             return DropAs(name, from, to, ChessRules.NoPieceType);
         }
@@ -541,6 +550,34 @@ namespace SiggiChessBoard {
             return DropAs(name, from, to, pieceType);
         }
 
+        public int KingDroppedOnCastleSpace(int side) {
+            return KingDroppedOnCastleSpaceAs(LocalName(), side);
+        }
+
+        // name dropped the king on the castle drop space of side (CastleKingSide or CastleQueenSide): plays the side to
+        // move's castle on that side if it's legal. The view shows the space only when IsCastleDropSpaceNeeded, but the
+        // castle is played either way.
+        public int KingDroppedOnCastleSpaceAs(string name, int side) {
+            if (!MayMove(name)) return InputRejected;
+            int legalCount = ChessMoves.GenerateLegalMoves(board, state, legalMoves, true);
+            int castle = FindCastle(legalCount, side);
+            if (castle == 0) return InputRejected;
+            return PlayMove(castle);
+        }
+
+        // Whether the view should offer the castle drop space for side while the side to move's king is held: a game
+        // is in progress and not in replay, that castle is legal, and dropping the king on its destination wouldn't
+        // castle (the king already stands there, or a normal king move ends there).
+        public bool IsCastleDropSpaceNeeded(int side) {
+            if (lifecycle != LifecycleInGame || replayMode) return false;
+            int legalCount = ChessMoves.GenerateLegalMoves(board, state, legalMoves, true);
+            int castle = FindCastle(legalCount, side);
+            if (castle == 0) return false;
+            int from = (castle >> ChessRules.MoveFromShift) & ChessRules.MoveSquareMask;
+            int destination = CastleDestination(castle);
+            return from == destination || FindNormalMove(legalCount, from, destination) != 0;
+        }
+
         // Whether name may move now: a game in progress, not in replay, the side to move's flag not fallen, and name
         // seated as the side to move.
         bool MayMove(string name) {
@@ -549,27 +586,69 @@ namespace SiggiChessBoard {
             return IsSeated(state[ChessPosition.StateSideToMove], name);
         }
 
-        // Matches from-to (and the promotion, NoPieceType for a plain drop) against the legal moves, leaving castles
-        // out, and plays a single match. A plain drop matching promotions answers InputPromotionNeeded.
+        // Matches from-to (and the promotion, NoPieceType for a plain drop) against the legal moves and plays a single
+        // match. A plain drop matching promotions answers InputPromotionNeeded. A castle matches a plain drop on its
+        // rook's square, or on the king's destination when no other move does.
         int DropAs(string name, int from, int to, int promotion) {
             if (!MayMove(name)) return InputRejected;
             if (from < 0 || from >= 64 || to < 0 || to >= 64 || from == to) return InputRejected;
             int legalCount = ChessMoves.GenerateLegalMoves(board, state, legalMoves, true);
             int found = 0;
             int matches = 0;
+            int castle = 0;
             for (int i = 0; i < legalCount; i++) {
                 int move = legalMoves[i];
                 if (((move >> ChessRules.MoveFromShift) & ChessRules.MoveSquareMask) != from) continue;
+                if (((move >> ChessRules.MoveCastleShift) & 1) != 0) {
+                    // No other move goes to a castle's rook square (the king's own rook stands there), but one can
+                    // end on its destination.
+                    if (promotion != ChessRules.NoPieceType) continue;
+                    if (((move >> ChessRules.MoveToShift) & ChessRules.MoveSquareMask) == to) return PlayMove(move);
+                    if (CastleDestination(move) == to) castle = move;
+                    continue;
+                }
                 if (((move >> ChessRules.MoveToShift) & ChessRules.MoveSquareMask) != to) continue;
-                if (((move >> ChessRules.MoveCastleShift) & 1) != 0) continue;
                 int movePromotion = (move >> ChessRules.MovePromotionShift) & ChessRules.MoveTypeMask;
                 if (promotion != ChessRules.NoPieceType && movePromotion != promotion) continue;
                 found = move;
                 matches++;
             }
-            if (matches == 0) return InputRejected;
+            if (matches == 0) return castle != 0 ? PlayMove(castle) : InputRejected;
             if (matches > 1) return InputPromotionNeeded;
             return PlayMove(found);
+        }
+
+        // The legal castle on side among the first legalCount of legalMoves, 0 if there's none (a castle is never 0:
+        // its castle bit is set).
+        int FindCastle(int legalCount, int side) {
+            for (int i = 0; i < legalCount; i++) {
+                int move = legalMoves[i];
+                if (((move >> ChessRules.MoveCastleShift) & 1) == 0) continue;
+                int kingFile = ((move >> ChessRules.MoveFromShift) & ChessRules.MoveSquareMask) & 7;
+                int rookFile = ((move >> ChessRules.MoveToShift) & ChessRules.MoveSquareMask) & 7;
+                if ((rookFile > kingFile ? CastleKingSide : CastleQueenSide) == side) return move;
+            }
+            return 0;
+        }
+
+        // The first move from-to among the first legalCount of legalMoves that isn't a castle, 0 if there's none.
+        int FindNormalMove(int legalCount, int from, int to) {
+            for (int i = 0; i < legalCount; i++) {
+                int move = legalMoves[i];
+                if (((move >> ChessRules.MoveCastleShift) & 1) != 0) continue;
+                if (((move >> ChessRules.MoveFromShift) & ChessRules.MoveSquareMask) == from
+                    && ((move >> ChessRules.MoveToShift) & ChessRules.MoveSquareMask) == to) {
+                    return move;
+                }
+            }
+            return 0;
+        }
+
+        // The square a castle puts the king on: g or c on its back rank, by the side of its rook.
+        static int CastleDestination(int move) {
+            int from = (move >> ChessRules.MoveFromShift) & ChessRules.MoveSquareMask;
+            int rookFile = ((move >> ChessRules.MoveToShift) & ChessRules.MoveSquareMask) & 7;
+            return (from & ~7) | (rookFile > (from & 7) ? ChessRules.FileG : ChessRules.FileC);
         }
 
         // Doubles the room in the history arrays, keeping the moves; new notation entries are "" (a synced string[]

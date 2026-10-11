@@ -54,6 +54,7 @@ public class BoardTest : UdonSharpBehaviour {
             TestClocks();
             TestPieceInput();
             TestPromotion();
+            TestCastling();
             TestSnapshot();
             if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
             board.ClearState();
@@ -1230,6 +1231,251 @@ public class BoardTest : UdonSharpBehaviour {
         CheckInt(board.PromotionChosen(ChessRules.B7, ChessRules.B8, ChessRules.Rook), ChessBoard.InputAccepted,
             "local: b8=R");
         CheckInt(board.board[ChessRules.B8], ChessRules.WhiteRook, "local: rook on b8");
+
+        board.ClearState();
+    }
+
+    // ---- 7.4b ----
+
+    // A game in progress between Ana and Bob, with no clock, in the position fen.
+    void CastlingGame(string fen) {
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        SetPosition(fen);
+    }
+
+    // Checks the last move played was a castle with this SAN and that the king and rook stand on these squares.
+    void CheckCastled(string san, int king, int kingSquare, int rook, int rookSquare, string name) {
+        Check(board.moveCount > 0 && ChessRules.MoveIsCastle(board.moveHistory[board.moveCount - 1]),
+            name + ": played a castle", "the last move isn't a castle");
+        if (board.moveCount > 0) CheckText(board.notation[board.moveCount - 1], san, name + ": SAN");
+        CheckInt(board.board[kingSquare], king, name + ": king on " + ChessRules.SquareName(kingSquare));
+        CheckInt(board.board[rookSquare], rook, name + ": rook on " + ChessRules.SquareName(rookSquare));
+    }
+
+    const string CastlingFen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
+
+    void TestCastling() {
+        NothingForced();
+
+        // Standard castles: on the destination and on the rook, both sides, both colours.
+        CastlingGame(CastlingFen);
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E1, ChessRules.G1), ChessBoard.InputAccepted,
+            "castling: e1 on g1 accepted");
+        CheckCastled("O-O", ChessRules.WhiteKing, ChessRules.G1, ChessRules.WhiteRook, ChessRules.F1,
+            "castling: e1 on g1");
+        CheckInt(board.board[ChessRules.H1], ChessRules.Empty, "castling: e1 on g1: h1 empty");
+        CheckInt(board.board[ChessRules.E1], ChessRules.Empty, "castling: e1 on g1: e1 empty");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.E8, ChessRules.A8), ChessBoard.InputAccepted,
+            "castling: e8 on a8 accepted");
+        CheckCastled("O-O-O", ChessRules.BlackKing, ChessRules.C8, ChessRules.BlackRook, ChessRules.D8,
+            "castling: e8 on a8");
+        CheckInt(board.moveCount, 2, "castling: two moves");
+        CheckText(Fen(), "2kr3r/8/8/8/8/8/8/R4RK1 w - - 2 2", "castling: position after both");
+
+        CastlingGame(CastlingFen);
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E1, ChessRules.H1), ChessBoard.InputAccepted,
+            "castling: e1 on h1 accepted");
+        CheckCastled("O-O", ChessRules.WhiteKing, ChessRules.G1, ChessRules.WhiteRook, ChessRules.F1,
+            "castling: e1 on h1");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.E8, ChessRules.C8), ChessBoard.InputAccepted,
+            "castling: e8 on c8 accepted");
+        CheckCastled("O-O-O", ChessRules.BlackKing, ChessRules.C8, ChessRules.BlackRook, ChessRules.D8,
+            "castling: e8 on c8");
+
+        CastlingGame(CastlingFen);
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E1, ChessRules.A1), ChessBoard.InputAccepted,
+            "castling: e1 on a1 accepted");
+        CheckCastled("O-O-O", ChessRules.WhiteKing, ChessRules.C1, ChessRules.WhiteRook, ChessRules.D1,
+            "castling: e1 on a1");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.E8, ChessRules.H8), ChessBoard.InputAccepted,
+            "castling: e8 on h8 accepted");
+        CheckCastled("O-O", ChessRules.BlackKing, ChessRules.G8, ChessRules.BlackRook, ChessRules.F8,
+            "castling: e8 on h8");
+
+        // The standard castles move the king two squares, so the destination is never ambiguous.
+        CastlingGame(CastlingFen);
+        Check(!board.IsCastleDropSpaceNeeded(ChessBoard.CastleKingSide), "castling: standard needs no king side space",
+            "the space is offered");
+        Check(!board.IsCastleDropSpaceNeeded(ChessBoard.CastleQueenSide),
+            "castling: standard needs no queen side space", "the space is offered");
+
+        // Refused castles: no rights, through check, by the wrong player or out of turn, a rook dropped on the king,
+        // a promotion choice on a castle, and invalid sides.
+        CastlingGame("r3k2r/8/8/8/8/8/8/R3K2R w - - 0 1");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E1, ChessRules.G1), ChessBoard.InputRejected,
+            "castling: no rights, e1 on g1");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E1, ChessRules.H1), ChessBoard.InputRejected,
+            "castling: no rights, e1 on h1");
+        CheckInt(board.KingDroppedOnCastleSpaceAs("Ana", ChessBoard.CastleKingSide), ChessBoard.InputRejected,
+            "castling: no rights, castle space");
+        CastlingGame("r3k2r/8/8/8/8/8/5r2/R3K2R w KQkq - 0 1");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E1, ChessRules.G1), ChessBoard.InputRejected,
+            "castling: through check, e1 on g1");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E1, ChessRules.H1), ChessBoard.InputRejected,
+            "castling: through check, e1 on h1");
+        CheckInt(board.KingDroppedOnCastleSpaceAs("Ana", ChessBoard.CastleKingSide), ChessBoard.InputRejected,
+            "castling: through check, castle space");
+        Check(!board.IsCastleDropSpaceNeeded(ChessBoard.CastleKingSide),
+            "castling: through check, no space offered", "the space is offered");
+        CheckInt(board.moveCount, 0, "castling: no castle without rights or through check");
+        CastlingGame(CastlingFen);
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.E1, ChessRules.G1), ChessBoard.InputRejected,
+            "castling: by the other player");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.E8, ChessRules.G8), ChessBoard.InputRejected,
+            "castling: out of turn");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.H1, ChessRules.E1), ChessBoard.InputRejected,
+            "castling: rook dropped on the king");
+        CheckInt(board.PromotionChosenAs("Ana", ChessRules.E1, ChessRules.H1, ChessRules.Queen),
+            ChessBoard.InputRejected, "castling: a promotion choice on the rook");
+        CheckInt(board.KingDroppedOnCastleSpaceAs("Bob", ChessBoard.CastleKingSide), ChessBoard.InputRejected,
+            "castling: castle space by the other player");
+        CheckInt(board.KingDroppedOnCastleSpaceAs("Cleo", ChessBoard.CastleKingSide), ChessBoard.InputRejected,
+            "castling: castle space by a non-player");
+        CheckInt(board.KingDroppedOnCastleSpaceAs("Ana", 2), ChessBoard.InputRejected, "castling: castle space side 2");
+        CheckInt(board.KingDroppedOnCastleSpaceAs("Ana", -1), ChessBoard.InputRejected,
+            "castling: castle space side -1");
+        Check(!board.IsCastleDropSpaceNeeded(2), "castling: no space for side 2", "offered");
+        CheckInt(board.moveCount, 0, "castling: refused castles play nothing");
+        CheckText(Fen(), CastlingFen, "castling: refused castles leave the position");
+
+        // The castle drop space also castles when the destination isn't ambiguous.
+        CheckInt(board.KingDroppedOnCastleSpaceAs("Ana", ChessBoard.CastleQueenSide), ChessBoard.InputAccepted,
+            "castling: queen side space in a standard position");
+        CheckCastled("O-O-O", ChessRules.WhiteKing, ChessRules.C1, ChessRules.WhiteRook, ChessRules.D1,
+            "castling: queen side space in a standard position");
+
+        // Not in replay or once ended, and no space offered there.
+        CastlingGame(CastlingFen);
+        board.replayMode = true;
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E1, ChessRules.G1), ChessBoard.InputRejected,
+            "castling: not in replay");
+        CheckInt(board.KingDroppedOnCastleSpaceAs("Ana", ChessBoard.CastleKingSide), ChessBoard.InputRejected,
+            "castling: castle space not in replay");
+        board.replayMode = false;
+        board.lifecycle = ChessBoard.LifecycleEnded;
+        CheckInt(board.KingDroppedOnCastleSpaceAs("Ana", ChessBoard.CastleKingSide), ChessBoard.InputRejected,
+            "castling: castle space not once ended");
+        CheckInt(board.moveCount, 0, "castling: nothing played in replay or once ended");
+
+        // Chess960, king f1 and rook h1: castling and Kg1 both put the king on g1, so the destination drop is Kg1 and
+        // the castle uses the space. The queen side castle moves the king three squares and needs no space. The f
+        // pawns keep a castled rook from giving check.
+        string oneSquare = "1r3k1r/5p2/8/8/8/8/5P2/1R3K1R w KQkq - 0 1";
+        CastlingGame(oneSquare);
+        Check(board.IsCastleDropSpaceNeeded(ChessBoard.CastleKingSide), "chess960 f1: king side space offered",
+            "not offered");
+        Check(!board.IsCastleDropSpaceNeeded(ChessBoard.CastleQueenSide), "chess960 f1: no queen side space",
+            "offered");
+        board.replayMode = true;
+        Check(!board.IsCastleDropSpaceNeeded(ChessBoard.CastleKingSide), "chess960 f1: no space in replay", "offered");
+        board.replayMode = false;
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.F1, ChessRules.G1), ChessBoard.InputAccepted,
+            "chess960 f1: f1 on g1 accepted");
+        Check(!ChessRules.MoveIsCastle(board.moveHistory[0]), "chess960 f1: f1 on g1 isn't a castle", "it castled");
+        CheckText(board.notation[0], "Kg1", "chess960 f1: f1 on g1 SAN");
+        CheckInt(board.board[ChessRules.G1], ChessRules.WhiteKing, "chess960 f1: king on g1");
+        CheckInt(board.board[ChessRules.H1], ChessRules.WhiteRook, "chess960 f1: rook still on h1");
+        // Black has the same position.
+        Check(board.IsCastleDropSpaceNeeded(ChessBoard.CastleKingSide), "chess960 f8: king side space offered",
+            "not offered");
+        CheckInt(board.KingDroppedOnCastleSpaceAs("Bob", ChessBoard.CastleKingSide), ChessBoard.InputAccepted,
+            "chess960 f8: castle space accepted");
+        CheckCastled("O-O", ChessRules.BlackKing, ChessRules.G8, ChessRules.BlackRook, ChessRules.F8,
+            "chess960 f8: castle space");
+        CheckInt(board.board[ChessRules.H8], ChessRules.Empty, "chess960 f8: h8 empty");
+
+        CastlingGame(oneSquare);
+        CheckInt(board.KingDroppedOnCastleSpaceAs("Ana", ChessBoard.CastleKingSide), ChessBoard.InputAccepted,
+            "chess960 f1: castle space accepted");
+        CheckCastled("O-O", ChessRules.WhiteKing, ChessRules.G1, ChessRules.WhiteRook, ChessRules.F1,
+            "chess960 f1: castle space");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.F8, ChessRules.H8), ChessBoard.InputAccepted,
+            "chess960 f8: f8 on h8 accepted");
+        CheckCastled("O-O", ChessRules.BlackKing, ChessRules.G8, ChessRules.BlackRook, ChessRules.F8,
+            "chess960 f8: f8 on h8");
+
+        CastlingGame(oneSquare);
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.F1, ChessRules.C1), ChessBoard.InputAccepted,
+            "chess960 f1: f1 on c1 accepted");
+        CheckCastled("O-O-O", ChessRules.WhiteKing, ChessRules.C1, ChessRules.WhiteRook, ChessRules.D1,
+            "chess960 f1: f1 on c1");
+        CheckInt(board.board[ChessRules.B1], ChessRules.Empty, "chess960 f1: f1 on c1: b1 empty");
+
+        // King d1 and rook a1: the queen side castle moves the king one square to c1.
+        string queenOneSquare = "r2k3r/3p4/8/8/8/8/3P4/R2K3R w KQkq - 0 1";
+        CastlingGame(queenOneSquare);
+        Check(board.IsCastleDropSpaceNeeded(ChessBoard.CastleQueenSide), "chess960 d1: queen side space offered",
+            "not offered");
+        Check(!board.IsCastleDropSpaceNeeded(ChessBoard.CastleKingSide), "chess960 d1: no king side space", "offered");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.D1, ChessRules.C1), ChessBoard.InputAccepted,
+            "chess960 d1: d1 on c1 accepted");
+        CheckText(board.notation[0], "Kc1", "chess960 d1: d1 on c1 is Kc1");
+        CastlingGame(queenOneSquare);
+        CheckInt(board.KingDroppedOnCastleSpaceAs("Ana", ChessBoard.CastleQueenSide), ChessBoard.InputAccepted,
+            "chess960 d1: castle space accepted");
+        CheckCastled("O-O-O", ChessRules.WhiteKing, ChessRules.C1, ChessRules.WhiteRook, ChessRules.D1,
+            "chess960 d1: castle space");
+        CheckInt(board.board[ChessRules.A1], ChessRules.Empty, "chess960 d1: a1 empty");
+
+        // King already on g1: castling doesn't move it, so dropping it on its own square is refused and the space
+        // castles; dropping it on the rook castles too.
+        string kingOnG = "6kr/8/8/8/8/8/8/6KR w Kk - 0 1";
+        CastlingGame(kingOnG);
+        Check(board.IsCastleDropSpaceNeeded(ChessBoard.CastleKingSide), "chess960 g1: king side space offered",
+            "not offered");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.G1, ChessRules.G1), ChessBoard.InputRejected,
+            "chess960 g1: g1 on g1 refused");
+        CheckInt(board.KingDroppedOnCastleSpaceAs("Ana", ChessBoard.CastleKingSide), ChessBoard.InputAccepted,
+            "chess960 g1: castle space accepted");
+        CheckCastled("O-O", ChessRules.WhiteKing, ChessRules.G1, ChessRules.WhiteRook, ChessRules.F1,
+            "chess960 g1: castle space");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.G8, ChessRules.H8), ChessBoard.InputAccepted,
+            "chess960 g8: g8 on h8 accepted");
+        CheckCastled("O-O", ChessRules.BlackKing, ChessRules.G8, ChessRules.BlackRook, ChessRules.F8,
+            "chess960 g8: g8 on h8");
+
+        // King already on c1, the queen side the same way.
+        string kingOnC = "1rk5/8/8/8/8/8/8/1RK5 w Qq - 0 1";
+        CastlingGame(kingOnC);
+        Check(board.IsCastleDropSpaceNeeded(ChessBoard.CastleQueenSide), "chess960 c1: queen side space offered",
+            "not offered");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.C1, ChessRules.B1), ChessBoard.InputAccepted,
+            "chess960 c1: c1 on b1 accepted");
+        CheckCastled("O-O-O", ChessRules.WhiteKing, ChessRules.C1, ChessRules.WhiteRook, ChessRules.D1,
+            "chess960 c1: c1 on b1");
+        CheckInt(board.KingDroppedOnCastleSpaceAs("Bob", ChessBoard.CastleQueenSide), ChessBoard.InputAccepted,
+            "chess960 c8: castle space accepted");
+        CheckCastled("O-O-O", ChessRules.BlackKing, ChessRules.C8, ChessRules.BlackRook, ChessRules.D8,
+            "chess960 c8: castle space");
+
+        // King f1 and rook g1: castling swaps them and the destination is the rook's square, so dropping on g1
+        // castles (no normal Kg1 is possible) and no space is offered. The g pawns keep the black rook off g1.
+        CastlingGame("r4kr1/5pp1/8/8/8/8/5PP1/R4KR1 w KQkq - 0 1");
+        Check(!board.IsCastleDropSpaceNeeded(ChessBoard.CastleKingSide), "chess960 swap: no space offered",
+            "offered");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.F1, ChessRules.G1), ChessBoard.InputAccepted,
+            "chess960 swap: f1 on g1 accepted");
+        CheckCastled("O-O", ChessRules.WhiteKing, ChessRules.G1, ChessRules.WhiteRook, ChessRules.F1,
+            "chess960 swap: f1 on g1");
+
+        // No space is offered outside a game.
+        LobbyWithTwoPlayers();
+        SetPosition(oneSquare);
+        Check(!board.IsCastleDropSpaceNeeded(ChessBoard.CastleKingSide), "castling: no space in the lobby", "offered");
+
+        // The local player's methods.
+        board.ClearState();
+        board.JoinWhite();
+        board.JoinBlack();
+        board.StartGame();
+        SetPosition(oneSquare);
+        CheckInt(board.KingDroppedOnCastleSpace(ChessBoard.CastleKingSide), ChessBoard.InputAccepted,
+            "local: castle space");
+        CheckCastled("O-O", ChessRules.WhiteKing, ChessRules.G1, ChessRules.WhiteRook, ChessRules.F1,
+            "local: castle space");
+        CheckInt(board.PieceDropped(ChessRules.F8, ChessRules.H8), ChessBoard.InputAccepted, "local: f8 on h8");
+        CheckCastled("O-O", ChessRules.BlackKing, ChessRules.G8, ChessRules.BlackRook, ChessRules.F8,
+            "local: f8 on h8");
 
         board.ClearState();
     }
