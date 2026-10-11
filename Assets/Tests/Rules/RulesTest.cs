@@ -31,6 +31,7 @@ public class RulesTest : UdonSharpBehaviour {
         TestSan();
         TestStatus();
         TestHalfmoveClock();
+        TestRepetition();
         if (deepPerft) StartDeepPerft();
         else LogSummary();
     }
@@ -2546,5 +2547,123 @@ public class RulesTest : UdonSharpBehaviour {
         int afterKnight = ChessDraws.HalfmoveClockAfter(h, FindLegal(board, state, "g1f3"));
         Check(!ChessDraws.IsSeventyFiveMoveRule(h) && afterKnight == 150 && ChessDraws.IsSeventyFiveMoveRule(afterKnight),
             "seventy-five-move rule counts the starting halfmove clock", "clock " + h + " -> " + afterKnight);
+    }
+
+    // ---- 4.3b ----
+
+    // Plays moveTexts (MoveText strings separated by spaces) from fen as the board will, and returns the repetition
+    // count after each ply, separated by spaces; "" (after a failed check) if a move isn't legal. Also fails the
+    // check if CountRepetitions changes the position.
+    string RepetitionCounts(string name, string fen, string moveTexts, bool prohibitSelfCheck) {
+        byte[] board = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        int clock;
+        int f;
+        ChessFen.ParseFen(fen, board, state, out clock, out f);
+        byte[] scratchBoard = new byte[64];
+        int[] scratchState = new int[ChessPosition.StateLength];
+        int[] scratchMoves = new int[ChessMoves.MaxMoves];
+        string[] texts = moveTexts.Split(new char[] { ' ' });
+        int[] history = new int[texts.Length];
+        string counts = "";
+        for (int i = 0; i < texts.Length; i++) {
+            int move = FindLegal(board, state, texts[i]);
+            if (move == -1) {
+                Check(false, name, texts[i] + " not legal at ply " + i);
+                return "";
+            }
+            history[i] = move;
+            clock = ChessDraws.HalfmoveClockAfter(clock, move);
+            ChessPosition.MakeMove(board, state, move);
+            byte[] before = CopyBoard(board);
+            int[] beforeState = CopyState(state);
+            int count = ChessDraws.CountRepetitions(board, state, history, i + 1, clock, scratchBoard, scratchState,
+                scratchMoves, prohibitSelfCheck);
+            string diff = BoardDiff(board, before) + StateDiff(state, beforeState);
+            if (diff != "") {
+                Check(false, name, "position changed at ply " + i + ":" + diff);
+                return "";
+            }
+            counts += (i == 0 ? "" : " ") + count;
+        }
+        return counts;
+    }
+
+    void CheckRepetitions(string name, string fen, string moveTexts, bool prohibitSelfCheck, string expected) {
+        string counts = RepetitionCounts(name, fen, moveTexts, prohibitSelfCheck);
+        if (counts == "") return;
+        Check(counts == expected, name, "got " + counts + " (expected " + expected + ")");
+    }
+
+    void TestRepetition() {
+        // A knight shuffle from the start: the starting position occurs for the third time after ply 8 and the
+        // fifth after ply 16; the position after Nf3 for the fourth time after ply 13.
+        string shuffle = "g1f3 g8f6 f3g1 f6g8";
+        string shuffles = shuffle + " " + shuffle + " " + shuffle + " " + shuffle;
+        string counts = RepetitionCounts("knight shuffle repetition", ChessFen.StartFen, shuffles, true);
+        if (counts != "") {
+            string[] parts = counts.Split(new char[] { ' ' });
+            int firstThreefold = -1;
+            int firstFivefold = -1;
+            for (int i = 0; i < parts.Length; i++) {
+                int count = int.Parse(parts[i]);
+                if (firstThreefold == -1 && ChessDraws.IsThreefoldRepetition(count)) firstThreefold = i + 1;
+                if (firstFivefold == -1 && ChessDraws.IsFivefoldRepetition(count)) firstFivefold = i + 1;
+            }
+            Check(counts == "1 1 1 2 2 2 2 3 3 3 3 4 4 4 4 5" && firstThreefold == 8 && firstFivefold == 16,
+                "knight shuffle: threefold after ply 8, fivefold after ply 16",
+                counts + ", threefold after " + firstThreefold + ", fivefold after " + firstFivefold);
+        }
+        Check(!ChessDraws.IsThreefoldRepetition(2) && ChessDraws.IsThreefoldRepetition(3)
+            && ChessDraws.IsThreefoldRepetition(4) && !ChessDraws.IsFivefoldRepetition(4)
+            && ChessDraws.IsFivefoldRepetition(5) && ChessDraws.IsFivefoldRepetition(6),
+            "threefold/fivefold repetition thresholds", "");
+
+        // A starting halfmove clock above the number of plies played: only positions since the start are known.
+        CheckRepetitions("repetition from a FEN with a halfmove clock of 40", "4k1n1/8/8/8/8/8/8/4K1N1 w - - 40 60",
+            shuffles, true, "1 1 1 2 2 2 2 3 3 3 3 4 4 4 4 5");
+
+        // Castling rights: the kings step off and back. The starting squares come back after plies 4, 8 and 12, but
+        // without the rights the start had, so only 3 times; after ply 1 only Black still had its rights.
+        CheckRepetitions("repetition: different castling rights don't count", "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",
+            "e1d1 e8d8 d1e1 d8e8 e1d1 e8d8 d1e1 d8e8 e1d1 e8d8 d1e1 d8e8", true,
+            "1 1 1 1 1 2 2 2 2 3 3 3");
+        // One side's rights only: White keeps its rights throughout, so the start counts.
+        CheckRepetitions("repetition: unchanged castling rights count", "r3k1nr/8/8/8/8/8/8/R3K1NR w KQ - 0 1",
+            shuffles, true, "1 1 1 2 2 2 2 3 3 3 3 4 4 4 4 5");
+
+        // En passant: after d4 Black can take e.p., so the knights coming back after ply 5 don't repeat it.
+        string afterDoublePush = "d2d4 g8f6 g1f3 f6g8 f3g1 g8f6 g1f3 f6g8 f3g1 g8f6 g1f3 f6g8 f3g1";
+        CheckRepetitions("repetition: a possible en passant capture counts", "4k1n1/8/8/8/4p3/8/3P4/4K1N1 w - - 0 1",
+            afterDoublePush, true, "1 1 1 1 1 2 2 2 2 3 3 3 3");
+        // With no pawn beside d4 there is no capture, so the position after d4 is the same as the later ones.
+        CheckRepetitions("repetition: en passant with no capturing pawn doesn't count",
+            "4k1n1/8/8/8/p7/8/3P4/4K1N1 w - - 0 1", afterDoublePush, true, "1 1 1 1 2 2 2 2 3 3 3 3 4");
+        // e4xd3 e.p. would open the fourth rank to the rook on h4, so it isn't legal and doesn't count; with
+        // prohibitSelfCheck off it can be played, so it does.
+        CheckRepetitions("repetition: an illegal en passant capture doesn't count",
+            "6n1/8/8/8/k3p2R/8/3P4/4K1N1 w - - 0 1", afterDoublePush, true, "1 1 1 1 2 2 2 2 3 3 3 3 4");
+        CheckRepetitions("repetition: en passant counts with prohibitSelfCheck off",
+            "6n1/8/8/8/k3p2R/8/3P4/4K1N1 w - - 0 1", afterDoublePush, false, "1 1 1 1 1 2 2 2 2 3 3 3 3");
+
+        // The en passant file used for comparing: kept only with a capture available.
+        byte[] board = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        int[] scratchMoves = new int[ChessMoves.MaxMoves];
+        int h;
+        int f;
+        string errors = "";
+        string[] fens = new string[] {
+            "4k3/8/8/8/3Pp3/8/8/4K3 b - d3 0 1", "4k3/8/8/8/2pP4/8/8/4K3 b - d3 0 1", "4k3/8/8/8/3P4/8/8/4K3 b - d3 0 1",
+            "8/8/8/8/k2Pp2R/8/8/4K3 b - d3 0 1", "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1", "4k3/8/8/2Pp4/8/8/8/4K3 w - d6 0 1",
+            "4k3/8/8/3p4/8/8/8/4K3 w - d6 0 1", "4k3/8/8/8/8/8/8/4K3 w - - 0 1"
+        };
+        int[] expected = new int[] { 3, 3, -1, -1, 3, 3, -1, -1 };
+        for (int i = 0; i < fens.Length; i++) {
+            ChessFen.ParseFen(fens[i], board, state, out h, out f);
+            int file = ChessDraws.EffectiveEnPassantFile(board, state, scratchMoves, true);
+            if (file != expected[i]) errors += " " + fens[i] + ": " + file + " (expected " + expected[i] + ")";
+        }
+        Check(errors == "", "en passant file for repetition", errors);
     }
 }

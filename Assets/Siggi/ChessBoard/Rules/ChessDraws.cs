@@ -1,7 +1,8 @@
 using UdonSharp;
 
 namespace SiggiChessBoard {
-    // Draw rules (docs/game-endings.md#draw-rules): the halfmove clock and the fifty/seventy-five-move rules.
+    // Draw rules (docs/game-endings.md#draw-rules): the halfmove clock and the fifty/seventy-five-move rules, and
+    // threefold/fivefold repetition.
     // Whether a rule is switched on, and checkmate or stalemate taking precedence, are up to the board.
     // Holds no state; everything comes in through parameters (see docs/architecture.md).
     // Abstract because it is never placed as a component, only used for its constants and static methods.
@@ -45,6 +46,85 @@ namespace SiggiChessBoard {
         // Whether the seventy-five-move rule draws the game at this halfmove clock.
         public static bool IsSeventyFiveMoveRule(int clock) {
             return clock >= SeventyFiveMoveRulePlies;
+        }
+
+        // ---- Repetition ----
+
+        // How many times the current position must have occurred for a draw to be claimable (threefold) or
+        // automatic (fivefold).
+        public const int ThreefoldRepetitionCount = 3;
+        public const int FivefoldRepetitionCount = 5;
+
+        // How many times the current position has occurred in the game, counting this time (1 if it is new). Positions
+        // are the same when the pieces, side to move, castling rights and en passant are (FIDE 9.2.3), where en
+        // passant only counts if the capture can actually be made.
+        // board and state are the position after moves[0..moveCount), and halfmoveClock its halfmove clock. A position
+        // can only repeat one since the last capture or pawn move, i.e. within the last halfmoveClock plies (and not
+        // before the first move: earlier positions aren't known), and only while the castling rights are unchanged.
+        // So this walks back through those plies with UnmakeMove on a copy in scratchBoard and scratchState, comparing
+        // every second one (same side to move); no hashing (docs/game-endings.md#draw-rules). scratchMoves (at least
+        // ChessMoves.MaxMoves) is for checking en passant captures. board and state are left as they were.
+        public static int CountRepetitions(byte[] board, int[] state, int[] moves, int moveCount, int halfmoveClock,
+            byte[] scratchBoard, int[] scratchState, int[] scratchMoves, bool prohibitSelfCheck) {
+            int plies = halfmoveClock < moveCount ? halfmoveClock : moveCount;
+            // Every move changes the board, so a repeat takes at least two moves each.
+            if (plies < 4) return 1;
+            int castlingRights = state[ChessPosition.StateCastlingRights];
+            int enPassantFile = EffectiveEnPassantFile(board, state, scratchMoves, prohibitSelfCheck);
+            System.Array.Copy(board, scratchBoard, 64);
+            System.Array.Copy(state, scratchState, ChessPosition.StateLength);
+            int count = 1;
+            for (int k = 1; k <= plies; k++) {
+                int move = moves[moveCount - k];
+                // Castling rights are only ever lost, so once they differ every earlier position differs too.
+                if (((move >> ChessRules.MoveCastlingRightsShift) & ChessRules.MoveCastlingRightsMask) != castlingRights) break;
+                ChessPosition.UnmakeMove(scratchBoard, scratchState, move);
+                if ((k & 1) != 0 || !SameSquares(board, scratchBoard)) continue;
+                if (EffectiveEnPassantFile(scratchBoard, scratchState, scratchMoves, prohibitSelfCheck) == enPassantFile) count++;
+            }
+            return count;
+        }
+
+        // Whether a draw by threefold repetition can be claimed with the position occurring count times.
+        public static bool IsThreefoldRepetition(int count) {
+            return count >= ThreefoldRepetitionCount;
+        }
+
+        // Whether fivefold repetition draws the game with the position occurring count times.
+        public static bool IsFivefoldRepetition(int count) {
+            return count >= FivefoldRepetitionCount;
+        }
+
+        static bool SameSquares(byte[] a, byte[] b) {
+            for (int sq = 0; sq < 64; sq++) {
+                if (a[sq] != b[sq]) return false;
+            }
+            return true;
+        }
+
+        // The en passant file as far as repetition is concerned: the state's en passant file if the side to move has
+        // a legal en passant capture (any pseudo-legal one with prohibitSelfCheck off), otherwise -1. A double push
+        // sets the en passant file even with no pawn beside it, and that position is the same as one without it.
+        // The position is left as it was.
+        public static int EffectiveEnPassantFile(byte[] board, int[] state, int[] scratchMoves, bool prohibitSelfCheck) {
+            int file = state[ChessPosition.StateEnPassantFile];
+            if (file < 0) return -1;
+            int mover = state[ChessPosition.StateSideToMove];
+            // The capturing pawns stand beside the double-pushed pawn: on rank 5 when White is to move, rank 4 when Black is.
+            int rank = mover == ChessRules.White ? ChessRules.Rank5 : ChessRules.Rank4;
+            int target = ((rank + (mover == ChessRules.White ? 1 : -1)) << 3) | file;
+            byte pawn = (byte)(ChessRules.Pawn | (mover << 3));
+            for (int side = -1; side <= 1; side += 2) {
+                int captureFile = file + side;
+                if (captureFile < 0 || captureFile > 7) continue;
+                int from = (rank << 3) | captureFile;
+                if (board[from] != pawn) continue;
+                int count = ChessMoves.GenerateLegalPieceMoves(board, state, from, scratchMoves, 0, prohibitSelfCheck);
+                for (int i = 0; i < count; i++) {
+                    if (((scratchMoves[i] >> ChessRules.MoveToShift) & ChessRules.MoveSquareMask) == target) return file;
+                }
+            }
+            return -1;
         }
     }
 }
