@@ -9,6 +9,7 @@ The standard starting position.
 - When Start is pressed, the starting position is generated randomly from the 960 legal Chess960 positions (bishops on opposite colours, king between the rooks; same setup for both sides). The player pressing Start generates it and syncs the result like any other state.
 - The king and rook starting files are set from the generated position; castling uses the Chess960 rules already supported by the move encoding.
 - PGN: `[Variant "Chess960"]`, `[SetUp "1"]` and the starting `FEN`.
+- **Implementation:** `ChessGame.Chess960Position(index, board, state)` sets up position `index` (0 to `Chess960Count` − 1) in Scharnagl's numbering, where 518 (`Chess960StandardIndex`) is the standard position: the light-squared bishop on file `2 × (index mod 4) + 1`, the dark-squared one on `2 × (index / 4 mod 4)`, the queen on empty square `index / 16 mod 6`, the knights by `index / 96` (0 to 9) from the usual table, then rook, king, rook. It sets White to move, every castling right, the king and rook files and the king squares, and returns `false` for an index out of range. `Chess960Fen(index)` gives the same position as `ChessFen.WriteFen` writes it (Shredder castling letters unless the rooks are on a and h). The board picks the index with `RandomChess960Index()` (`UnityEngine.Random.Range`) when Start is pressed.
 
 ## Fog of War (later)
 

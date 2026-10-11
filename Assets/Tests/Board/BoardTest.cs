@@ -43,6 +43,13 @@ public class BoardTest : UdonSharpBehaviour {
             TestSeatTaken();
             TestJoinInvalid();
             TestJoinByLifecycle();
+            TestSetMode();
+            TestSetClock();
+            TestForcedSettings();
+            TestStart();
+            TestChess960Positions();
+            TestChess960Random();
+            TestChess960Start();
             board.ClearState();
         }
         Debug.Log("[BoardTest] done: " + passed + " passed, " + failed + " failed"
@@ -172,5 +179,448 @@ public class BoardTest : UdonSharpBehaviour {
         CheckInt(board.JoinAs(ChessRules.Black, "Ana"), ChessBoard.InputAccepted, "loaded: join black accepted");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "loaded: stays loaded");
         CheckSeats(localName, "Ana", "loaded");
+    }
+
+    // ---- 7.1b ----
+
+    // A board in the lobby with Ana as White and Bob as Black (no snapshot until 7.2, so nothing is forced).
+    void LobbyWithTwoPlayers() {
+        board.ClearState();
+        board.JoinAs(ChessRules.White, "Ana");
+        board.JoinAs(ChessRules.Black, "Bob");
+    }
+
+    void TestSetMode() {
+        board.ClearState();
+        CheckInt(board.SetModeAs("Ana", ChessGame.ModeChess960), ChessBoard.InputRejected, "mode: reset board rejects");
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckInt(board.SetModeAs("Ana", ChessGame.ModeChess960), ChessBoard.InputAccepted, "mode: white player sets it");
+        CheckInt(board.mode, ChessGame.ModeChess960, "mode: now Chess960");
+        CheckInt(board.SetModeAs("Bob", ChessGame.ModeStandard), ChessBoard.InputRejected, "mode: non-player rejected");
+        CheckInt(board.SetModeAs("ana", ChessGame.ModeStandard), ChessBoard.InputRejected, "mode: other case rejected");
+        CheckInt(board.SetModeAs("", ChessGame.ModeStandard), ChessBoard.InputRejected, "mode: empty name rejected");
+        CheckInt(board.SetModeAs(null, ChessGame.ModeStandard), ChessBoard.InputRejected, "mode: null name rejected");
+        CheckInt(board.mode, ChessGame.ModeChess960, "mode: unchanged by rejected changes");
+        board.JoinAs(ChessRules.Black, "Bob");
+        CheckInt(board.SetModeAs("Bob", ChessGame.ModeStandard), ChessBoard.InputAccepted, "mode: black player sets it");
+        CheckInt(board.mode, ChessGame.ModeStandard, "mode: now Standard");
+        CheckInt(board.SetModeAs("Bob", 2), ChessBoard.InputRejected, "mode: unknown mode 2 rejected");
+        CheckInt(board.SetModeAs("Bob", -1), ChessBoard.InputRejected, "mode: unknown mode -1 rejected");
+        CheckInt(board.mode, ChessGame.ModeStandard, "mode: unchanged by unknown modes");
+
+        // The local player's button.
+        CheckInt(board.SetMode(ChessGame.ModeChess960), ChessBoard.InputRejected, "mode: unseated local player rejected");
+        board.ClearState();
+        board.JoinWhite();
+        CheckInt(board.SetMode(ChessGame.ModeChess960), ChessBoard.InputAccepted, "mode: seated local player sets it");
+        CheckInt(board.mode, ChessGame.ModeChess960, "mode: set by the local player");
+
+        // The mode of a loaded game is the game's own; once started or ended it's fixed.
+        board.ClearState();
+        board.lifecycle = ChessBoard.LifecycleLoaded;
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckInt(board.SetModeAs("Ana", ChessGame.ModeChess960), ChessBoard.InputRejected, "mode: loaded board rejects");
+        LobbyWithTwoPlayers();
+        board.lifecycle = ChessBoard.LifecycleInGame;
+        CheckInt(board.SetModeAs("Ana", ChessGame.ModeChess960), ChessBoard.InputRejected, "mode: in game rejects");
+        board.lifecycle = ChessBoard.LifecycleEnded;
+        CheckInt(board.SetModeAs("Ana", ChessGame.ModeChess960), ChessBoard.InputRejected, "mode: ended rejects");
+        CheckInt(board.mode, ChessGame.ModeStandard, "mode: unchanged after the lobby");
+    }
+
+    void TestSetClock() {
+        board.ClearState();
+        CheckInt(board.SetClockAs("Ana", 300, 3), ChessBoard.InputRejected, "clock: reset board rejects");
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckInt(board.SetClockAs("Ana", 300, 3), ChessBoard.InputAccepted, "clock: player sets 5+3");
+        CheckInt(board.baseTime, 300, "clock: base 300");
+        CheckInt(board.increment, 3, "clock: increment 3");
+        CheckInt(board.SetClockAs("Bob", 60, 0), ChessBoard.InputRejected, "clock: non-player rejected");
+        CheckInt(board.SetClockAs("Ana", ChessArbiter.NoClock, 0), ChessBoard.InputAccepted, "clock: no clock");
+        CheckInt(board.baseTime, ChessArbiter.NoClock, "clock: base NoClock");
+        CheckInt(board.increment, 0, "clock: no clock, increment 0");
+
+        // Validation: each rejected value leaves the time control as it was.
+        board.SetClockAs("Ana", 600, 5);
+        CheckInt(board.SetClockAs("Ana", ChessArbiter.NoClock, 3), ChessBoard.InputRejected,
+            "clock: no clock with an increment rejected");
+        CheckInt(board.SetClockAs("Ana", 0, 0), ChessBoard.InputRejected, "clock: base 0 rejected");
+        CheckInt(board.SetClockAs("Ana", -2, 0), ChessBoard.InputRejected, "clock: base -2 rejected");
+        CheckInt(board.SetClockAs("Ana", ChessBoard.MaxBaseTime + 1, 0), ChessBoard.InputRejected,
+            "clock: base over the maximum rejected");
+        CheckInt(board.SetClockAs("Ana", 300, -1), ChessBoard.InputRejected, "clock: negative increment rejected");
+        CheckInt(board.SetClockAs("Ana", 300, ChessBoard.MaxIncrement + 1), ChessBoard.InputRejected,
+            "clock: increment over the maximum rejected");
+        CheckInt(board.baseTime, 600, "clock: base unchanged by rejected values");
+        CheckInt(board.increment, 5, "clock: increment unchanged by rejected values");
+        CheckInt(board.SetClockAs("Ana", 1, 0), ChessBoard.InputAccepted, "clock: base 1 s accepted");
+        CheckInt(board.SetClockAs("Ana", ChessBoard.MaxBaseTime, ChessBoard.MaxIncrement), ChessBoard.InputAccepted,
+            "clock: the maximum accepted");
+
+        // The local player's button.
+        board.ClearState();
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckInt(board.SetClock(180, 2), ChessBoard.InputRejected, "clock: unseated local player rejected");
+        board.JoinBlack();
+        CheckInt(board.SetClock(180, 2), ChessBoard.InputAccepted, "clock: seated local player sets it");
+        CheckInt(board.baseTime * 1000 + board.increment, 180002, "clock: 3+2 set by the local player");
+
+        // A loaded board chooses the clock for continuing; once started or ended it's fixed.
+        board.ClearState();
+        board.lifecycle = ChessBoard.LifecycleLoaded;
+        CheckInt(board.SetClockAs("Ana", 300, 0), ChessBoard.InputRejected, "clock: loaded, nobody seated, rejected");
+        board.JoinAs(ChessRules.Black, "Ana");
+        CheckInt(board.SetClockAs("Ana", 300, 0), ChessBoard.InputAccepted, "clock: loaded board accepts");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "clock: loaded board stays loaded");
+        LobbyWithTwoPlayers();
+        board.lifecycle = ChessBoard.LifecycleInGame;
+        CheckInt(board.SetClockAs("Ana", 300, 0), ChessBoard.InputRejected, "clock: in game rejects");
+        board.lifecycle = ChessBoard.LifecycleEnded;
+        CheckInt(board.SetClockAs("Ana", 300, 0), ChessBoard.InputRejected, "clock: ended rejects");
+        CheckInt(board.baseTime, ChessArbiter.NoClock, "clock: unchanged after the lobby");
+    }
+
+    void TestForcedSettings() {
+        // The snapshot is taken in 7.2; here its fields are set directly.
+        LobbyWithTwoPlayers();
+        Check(!board.IsModeForced() && !board.IsClockForced(), "forced: nothing forced without a snapshot",
+            "a forced bit is on");
+        board.gameSettings = ChessArbiter.SettingModeForced;
+        board.gameNumbers[ChessArbiter.NumberForcedMode] = ChessGame.ModeChess960;
+        Check(board.IsModeForced() && !board.IsClockForced(), "forced mode: IsModeForced", "wrong forced bits");
+        CheckInt(board.SetModeAs("Ana", ChessGame.ModeStandard), ChessBoard.InputRejected, "forced mode: change rejected");
+        CheckInt(board.SetModeAs("Ana", ChessGame.ModeChess960), ChessBoard.InputRejected,
+            "forced mode: choosing the forced value rejected too");
+        CheckInt(board.SetClockAs("Ana", 300, 3), ChessBoard.InputAccepted, "forced mode: clock still free");
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, "forced mode: start");
+        CheckInt(board.mode, ChessGame.ModeChess960, "forced mode: the game has the forced mode");
+        CheckInt(board.baseTime * 1000 + board.increment, 300003, "forced mode: the players' clock kept");
+
+        // A forced Standard overrides a Chess960 chosen before the snapshot.
+        LobbyWithTwoPlayers();
+        board.SetModeAs("Ana", ChessGame.ModeChess960);
+        board.gameSettings = ChessArbiter.SettingModeForced;
+        board.gameNumbers[ChessArbiter.NumberForcedMode] = ChessGame.ModeStandard;
+        board.StartGameAs("Bob");
+        CheckInt(board.mode, ChessGame.ModeStandard, "forced Standard: overrides the earlier choice");
+        CheckText(board.startFen, ChessFen.StartFen, "forced Standard: standard starting position");
+
+        LobbyWithTwoPlayers();
+        board.SetModeAs("Ana", ChessGame.ModeChess960);
+        board.SetClockAs("Ana", 60, 1);
+        board.gameSettings = ChessArbiter.SettingClockForced;
+        board.gameNumbers[ChessArbiter.NumberForcedBaseTime] = 600;
+        board.gameNumbers[ChessArbiter.NumberForcedIncrement] = 5;
+        Check(!board.IsModeForced() && board.IsClockForced(), "forced clock: IsClockForced", "wrong forced bits");
+        CheckInt(board.SetClockAs("Ana", 300, 3), ChessBoard.InputRejected, "forced clock: change rejected");
+        CheckInt(board.SetClockAs("Ana", 600, 5), ChessBoard.InputRejected, "forced clock: forced value rejected too");
+        CheckInt(board.SetModeAs("Bob", ChessGame.ModeStandard), ChessBoard.InputAccepted, "forced clock: mode still free");
+        board.StartGameAs("Ana");
+        CheckInt(board.baseTime, 600, "forced clock: base");
+        CheckInt(board.increment, 5, "forced clock: increment");
+        CheckInt(board.whiteTime, 600000, "forced clock: white time");
+        CheckInt(board.blackTime, 600000, "forced clock: black time");
+        CheckInt(board.mode, ChessGame.ModeStandard, "forced clock: the players' mode kept");
+
+        // Forced "no clock" ignores the forced increment.
+        LobbyWithTwoPlayers();
+        board.SetClockAs("Ana", 60, 1);
+        board.gameSettings = ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced;
+        board.gameNumbers[ChessArbiter.NumberForcedMode] = ChessGame.ModeStandard;
+        board.gameNumbers[ChessArbiter.NumberForcedBaseTime] = ChessArbiter.NoClock;
+        board.gameNumbers[ChessArbiter.NumberForcedIncrement] = 5;
+        board.StartGameAs("Ana");
+        CheckInt(board.baseTime, ChessArbiter.NoClock, "forced no clock: base");
+        CheckInt(board.increment, 0, "forced no clock: increment 0");
+        CheckInt(board.whiteTime + board.blackTime, 0, "forced no clock: no time on the clocks");
+
+        // On a loaded board the forced clock blocks the choice too.
+        board.ClearState();
+        board.lifecycle = ChessBoard.LifecycleLoaded;
+        board.JoinAs(ChessRules.White, "Ana");
+        board.gameSettings = ChessArbiter.SettingClockForced;
+        CheckInt(board.SetClockAs("Ana", 300, 0), ChessBoard.InputRejected, "forced clock: loaded board rejects");
+    }
+
+    void TestStart() {
+        board.ClearState();
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputRejected, "start: reset board rejects");
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputRejected, "start: only white seated rejected");
+        board.ClearState();
+        board.JoinAs(ChessRules.Black, "Bob");
+        CheckInt(board.StartGameAs("Bob"), ChessBoard.InputRejected, "start: only black seated rejected");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "start: rejected start stays in the lobby");
+
+        LobbyWithTwoPlayers();
+        board.SetClockAs("Ana", 300, 3);
+        CheckInt(board.StartGameAs("Cleo"), ChessBoard.InputRejected, "start: non-player rejected");
+        CheckInt(board.StartGameAs(""), ChessBoard.InputRejected, "start: empty name rejected");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "start: still lobby after rejected starts");
+        double before = Networking.GetServerTimeInSeconds();
+        CheckInt(board.StartGameAs("Bob"), ChessBoard.InputAccepted, "start: black player starts");
+        double after = Networking.GetServerTimeInSeconds();
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "start: in game");
+        CheckInt(board.mode, ChessGame.ModeStandard, "start: Standard");
+        CheckText(ChessFen.WriteFen(board.board, board.state, board.halfmoveClock, board.moveNumber),
+            ChessFen.StartFen, "start: standard starting position");
+        CheckText(board.startFen, ChessFen.StartFen, "start: starting FEN");
+        CheckInt(board.moveCount, 0, "start: no moves");
+        CheckInt(board.whiteTime, 300000, "start: white has the base time");
+        CheckInt(board.blackTime, 300000, "start: black has the base time");
+        CheckInt(board.increment, 3, "start: increment kept");
+        Check(board.turnStart >= before && board.turnStart <= after, "start: turn start is the server time now",
+            "turn start " + board.turnStart + " not between " + before + " and " + after);
+        CheckSeats("Ana", "Bob", "start");
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputRejected, "start: second start rejected");
+        CheckInt(board.SetModeAs("Ana", ChessGame.ModeChess960), ChessBoard.InputRejected, "start: mode fixed in game");
+        CheckInt(board.JoinAs(ChessRules.White, "Cleo"), ChessBoard.InputRejected, "start: no joining in game");
+        board.lifecycle = ChessBoard.LifecycleEnded;
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputRejected, "start: ended board rejects");
+
+        // A loaded board continues with "Continue from here" (7.9b), not Start.
+        board.ClearState();
+        board.lifecycle = ChessBoard.LifecycleLoaded;
+        board.JoinAs(ChessRules.White, "Ana");
+        board.JoinAs(ChessRules.Black, "Bob");
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputRejected, "start: loaded board rejects");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "start: loaded board stays loaded");
+
+        // The local player's button, seated as both colours, with no clock.
+        board.ClearState();
+        board.JoinWhite();
+        CheckInt(board.StartGame(), ChessBoard.InputRejected, "start: local player alone, one seat, rejected");
+        board.JoinBlack();
+        CheckInt(board.StartGame(), ChessBoard.InputAccepted, "start: local player in both seats starts");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "start: local start in game");
+        CheckInt(board.baseTime, ChessArbiter.NoClock, "start: no clock by default");
+        CheckInt(board.whiteTime + board.blackTime, 0, "start: no time on the clocks without a clock");
+    }
+
+    // ---- Chess960 positions ----
+
+    // Checks a position as a Chess960 start without using the generator's method: pawns on their ranks, the middle
+    // empty, Black mirroring White, the piece counts, bishops on opposite colours, the king between the rooks, and
+    // the state (White to move, all castling rights, files and king squares). Returns "" if valid, otherwise what's
+    // wrong.
+    string Chess960Problem(byte[] b, int[] s) {
+        for (int file = 0; file < 8; file++) {
+            if (b[ChessRules.A2 + file] != ChessRules.WhitePawn) return "no white pawn on file " + file;
+            if (b[ChessRules.A7 + file] != ChessRules.BlackPawn) return "no black pawn on file " + file;
+            for (int rank = ChessRules.Rank3; rank <= ChessRules.Rank6; rank++) {
+                if (b[rank * 8 + file] != ChessRules.Empty) return "piece in the middle";
+            }
+            int white = b[file];
+            if (white == ChessRules.Empty || ChessRules.PieceColorOf(white) != ChessRules.White) {
+                return "no white piece on file " + file;
+            }
+            if (b[ChessRules.A8 + file] != ChessRules.PieceOf(ChessRules.Black, ChessRules.PieceTypeOf(white))) {
+                return "black doesn't mirror white on file " + file;
+            }
+        }
+        int kings = 0;
+        int queens = 0;
+        int rooks = 0;
+        int bishops = 0;
+        int knights = 0;
+        int kingFile = -1;
+        int rook1 = -1;
+        int rook2 = -1;
+        int bishop1 = -1;
+        int bishop2 = -1;
+        for (int file = 0; file < 8; file++) {
+            int type = ChessRules.PieceTypeOf(b[file]);
+            if (type == ChessRules.King) {
+                kings++;
+                kingFile = file;
+            } else if (type == ChessRules.Queen) {
+                queens++;
+            } else if (type == ChessRules.Rook) {
+                rooks++;
+                if (rook1 < 0) rook1 = file;
+                else rook2 = file;
+            } else if (type == ChessRules.Bishop) {
+                bishops++;
+                if (bishop1 < 0) bishop1 = file;
+                else bishop2 = file;
+            } else if (type == ChessRules.Knight) {
+                knights++;
+            }
+        }
+        if (kings != 1 || queens != 1 || rooks != 2 || bishops != 2 || knights != 2) return "wrong piece counts";
+        if (((bishop1 + bishop2) & 1) == 0) return "bishops on the same colour";
+        if (kingFile < rook1 || kingFile > rook2) return "king not between the rooks";
+        if (s[ChessPosition.StateSideToMove] != ChessRules.White) return "black to move";
+        if (s[ChessPosition.StateCastlingRights] != ChessRules.CastleAll) return "not all castling rights";
+        if (s[ChessPosition.StateEnPassantFile] != -1) return "en passant file set";
+        if (s[ChessPosition.StateKingFile] != kingFile) return "wrong king file in the state";
+        if (s[ChessPosition.StateLeftRookFile] != rook1 || s[ChessPosition.StateRightRookFile] != rook2) {
+            return "wrong rook files in the state";
+        }
+        if (s[ChessPosition.StateWhiteKingSquare] != kingFile
+            || s[ChessPosition.StateBlackKingSquare] != ChessRules.A8 + kingFile) {
+            return "wrong king squares in the state";
+        }
+        return "";
+    }
+
+    // The Scharnagl number of a valid Chess960 position, worked out from its back rank.
+    int Chess960Number(byte[] b) {
+        int light = 0;
+        int dark = 0;
+        int queen = 0;
+        int knightA = -1;
+        int knightB = -1;
+        for (int file = 0; file < 8; file++) {
+            if (ChessRules.PieceTypeOf(b[file]) != ChessRules.Bishop) continue;
+            if ((file & 1) == 1) light = file / 2;
+            else dark = file / 2;
+        }
+        int slot = 0;
+        for (int file = 0; file < 8; file++) {
+            int type = ChessRules.PieceTypeOf(b[file]);
+            if (type == ChessRules.Bishop) continue;
+            if (type == ChessRules.Queen) queen = slot;
+            slot++;
+        }
+        slot = 0;
+        for (int file = 0; file < 8; file++) {
+            int type = ChessRules.PieceTypeOf(b[file]);
+            if (type == ChessRules.Bishop || type == ChessRules.Queen) continue;
+            if (type == ChessRules.Knight) {
+                if (knightA < 0) knightA = slot;
+                else knightB = slot;
+            }
+            slot++;
+        }
+        // The knight pairs in order: (0,1) (0,2) (0,3) (0,4) (1,2) (1,3) (1,4) (2,3) (2,4) (3,4).
+        int knights = 0;
+        for (int first = 0; first < 5; first++) {
+            for (int second = first + 1; second < 5; second++) {
+                if (first == knightA && second == knightB) return light + 4 * dark + 16 * queen + 96 * knights;
+                knights++;
+            }
+        }
+        return -1;
+    }
+
+    void TestChess960Positions() {
+        CheckText(ChessGame.Chess960Fen(ChessGame.Chess960StandardIndex), ChessFen.StartFen,
+            "960: position 518 is the standard position");
+        CheckText(ChessGame.Chess960Fen(0), "bbqnnrkr/pppppppp/8/8/8/8/PPPPPPPP/BBQNNRKR w HFhf - 0 1",
+            "960: position 0");
+        CheckText(ChessGame.Chess960Fen(959), "rkrnnqbb/pppppppp/8/8/8/8/PPPPPPPP/RKRNNQBB w CAca - 0 1",
+            "960: position 959");
+        CheckText(ChessGame.Chess960Fen(-1), "", "960: index -1 gives \"\"");
+        CheckText(ChessGame.Chess960Fen(ChessGame.Chess960Count), "", "960: index 960 gives \"\"");
+        byte[] b = new byte[64];
+        int[] s = new int[ChessPosition.StateLength];
+        b[ChessRules.E4] = ChessRules.WhiteQueen;
+        Check(!ChessGame.Chess960Position(ChessGame.Chess960Count, b, s) && b[ChessRules.E4] == ChessRules.WhiteQueen,
+            "960: out of range leaves the board alone", "changed the board or returned true");
+
+        // Every number: a valid position, numbered as Scharnagl does (so all 960 differ), and its FEN reads back
+        // to the same position.
+        int invalid = 0;
+        int misnumbered = 0;
+        int badFen = 0;
+        string firstProblem = "";
+        byte[] parsed = new byte[64];
+        int[] parsedState = new int[ChessPosition.StateLength];
+        for (int i = 0; i < ChessGame.Chess960Count; i++) {
+            ChessGame.Chess960Position(i, b, s);
+            string problem = Chess960Problem(b, s);
+            if (problem != "") {
+                if (firstProblem == "") firstProblem = i + ": " + problem;
+                invalid++;
+                continue;
+            }
+            int numbered = Chess960Number(b);
+            if (numbered != i) {
+                if (firstProblem == "") firstProblem = i + ": numbered " + numbered;
+                misnumbered++;
+            }
+            string fen = ChessGame.Chess960Fen(i);
+            int clock;
+            int number;
+            bool same = ChessFen.ParseFen(fen, parsed, parsedState, out clock, out number) && clock == 0
+                && number == 1;
+            for (int sq = 0; sq < 64 && same; sq++) same = parsed[sq] == b[sq];
+            for (int k = 0; k < ChessPosition.StateLength && same; k++) same = parsedState[k] == s[k];
+            if (!same) {
+                if (firstProblem == "") firstProblem = i + ": FEN " + fen;
+                badFen++;
+            }
+        }
+        string details = firstProblem == "" ? "" : " (first: " + firstProblem + ")";
+        CheckInt(invalid, 0, "960: all 960 positions valid" + details);
+        CheckInt(misnumbered, 0, "960: all 960 positions distinct, numbered as Scharnagl" + details);
+        CheckInt(badFen, 0, "960: every FEN reads back to its position" + details);
+    }
+
+    void TestChess960Random() {
+        byte[] b = new byte[64];
+        int[] s = new int[ChessPosition.StateLength];
+        bool[] seen = new bool[ChessGame.Chess960Count];
+        int distinct = 0;
+        int invalid = 0;
+        string firstProblem = "";
+        for (int i = 0; i < 1000; i++) {
+            int index = board.RandomChess960Index();
+            string problem = "";
+            if (!ChessGame.Chess960Position(index, b, s)) problem = "index " + index + " out of range";
+            else problem = Chess960Problem(b, s);
+            if (problem != "") {
+                if (firstProblem == "") firstProblem = problem;
+                invalid++;
+                continue;
+            }
+            int n = Chess960Number(b);
+            if (!seen[n]) distinct++;
+            seen[n] = true;
+        }
+        CheckInt(invalid, 0, "960: 1000 random positions all valid" + (firstProblem == "" ? "" : " (first: "
+            + firstProblem + ")"));
+        // 1000 draws from 960 give about 620 distinct positions; fewer than 500 would mean a skewed generator.
+        Check(distinct >= 500, "960: 1000 random positions, many distinct (" + distinct + ")",
+            "only " + distinct + " distinct");
+    }
+
+    void TestChess960Start() {
+        bool[] seen = new bool[ChessGame.Chess960Count];
+        int distinct = 0;
+        int bad = 0;
+        string firstProblem = "";
+        for (int i = 0; i < 20; i++) {
+            LobbyWithTwoPlayers();
+            board.SetModeAs("Ana", ChessGame.ModeChess960);
+            string problem = "";
+            if (board.StartGameAs("Ana") != ChessBoard.InputAccepted || board.lifecycle != ChessBoard.LifecycleInGame
+                || board.mode != ChessGame.ModeChess960) {
+                problem = "not in a Chess960 game";
+            }
+            if (problem == "") problem = Chess960Problem(board.board, board.state);
+            if (problem == "" && board.startFen != ChessFen.WriteFen(board.board, board.state, 0, 1)) {
+                problem = "starting FEN " + board.startFen;
+            }
+            if (problem == "" && (board.halfmoveClock != 0 || board.moveNumber != 1 || board.startHalfmoveClock != 0
+                || board.startMoveNumber != 1)) {
+                problem = "counters not 0 and 1";
+            }
+            for (int sq = 0; sq < 64 && problem == ""; sq++) {
+                if (board.replayBoard[sq] != board.board[sq]) problem = "replay board differs";
+            }
+            if (problem != "") {
+                if (firstProblem == "") firstProblem = "start " + i + ": " + problem;
+                bad++;
+                continue;
+            }
+            int n = Chess960Number(board.board);
+            if (!seen[n]) distinct++;
+            seen[n] = true;
+        }
+        CheckInt(bad, 0, "960 start: 20 games start from valid Chess960 positions"
+            + (firstProblem == "" ? "" : " (first: " + firstProblem + ")"));
+        Check(distinct >= 2, "960 start: different positions across starts (" + distinct + ")", "always the same");
     }
 }

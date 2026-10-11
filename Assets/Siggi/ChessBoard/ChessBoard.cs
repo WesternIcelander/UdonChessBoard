@@ -107,11 +107,7 @@ namespace SiggiChessBoard {
             int clock;
             int number;
             ChessFen.ParseFen(ChessFen.StartFen, board, state, out clock, out number);
-            startFen = ChessFen.StartFen;
-            startHalfmoveClock = clock;
-            startMoveNumber = number;
-            halfmoveClock = clock;
-            moveNumber = number;
+            SetStartPosition(clock, number);
 
             moveHistory = new int[InitialHistoryCapacity];
             notation = new string[InitialHistoryCapacity];
@@ -125,7 +121,6 @@ namespace SiggiChessBoard {
 
             replayMode = false;
             replayIndex = 0;
-            Array.Copy(board, replayBoard, 64);
             replayCustom = false;
 
             takebackColor = ChessRules.NoColor;
@@ -156,6 +151,24 @@ namespace SiggiChessBoard {
             gameNumbers = new int[ChessArbiter.NumberCount];
         }
 
+        // Makes the position in board and state the game's starting position, with these FEN counters, and shows it
+        // on the replay board.
+        void SetStartPosition(int clock, int number) {
+            startFen = ChessFen.WriteFen(board, state, clock, number);
+            startHalfmoveClock = clock;
+            startMoveNumber = number;
+            halfmoveClock = clock;
+            moveNumber = number;
+            Array.Copy(board, replayBoard, 64);
+        }
+
+        // The local player's display name, "" if there's none.
+        string LocalName() {
+            VRCPlayerApi player = Networking.LocalPlayer;
+            if (!Utilities.IsValid(player)) return "";
+            return player.displayName;
+        }
+
         // ---- Seats (docs/board-lifecycle.md) ----
 
         // The Join White and Join Black buttons, for the local player.
@@ -168,9 +181,7 @@ namespace SiggiChessBoard {
         }
 
         public int Join(int color) {
-            VRCPlayerApi player = Networking.LocalPlayer;
-            if (!Utilities.IsValid(player)) return InputRejected;
-            return JoinAs(color, player.displayName);
+            return JoinAs(color, LocalName());
         }
 
         // Seats the player with this display name as color. Allowed on a reset board, which then enters the lobby, in
@@ -198,6 +209,108 @@ namespace SiggiChessBoard {
             if (name == null || name.Length == 0) return false;
             string seated = color == ChessRules.White ? whitePlayer : color == ChessRules.Black ? blackPlayer : "";
             return seated == name;
+        }
+
+        // Whether this display name has either seat.
+        public bool IsPlayer(string name) {
+            return IsSeated(ChessRules.White, name) || IsSeated(ChessRules.Black, name);
+        }
+
+        // ---- Lobby settings and Start (docs/board-lifecycle.md, Starting) ----
+        // Any seated player can change the mode and the clock, unless the snapshot forces them. The local-player
+        // methods are what the lobby buttons call; the *As methods take any name, for tests and the debug view.
+
+        // The longest time control a player can choose, in seconds: 24 hours base, 1 hour increment.
+        public const int MaxBaseTime = 86400;
+        public const int MaxIncrement = 3600;
+
+        // Whether the snapshot forces the mode or the clock.
+        public bool IsModeForced() {
+            return (gameSettings & ChessArbiter.SettingModeForced) != 0;
+        }
+
+        public bool IsClockForced() {
+            return (gameSettings & ChessArbiter.SettingClockForced) != 0;
+        }
+
+        public int SetMode(int newMode) {
+            return SetModeAs(LocalName(), newMode);
+        }
+
+        // Chooses Standard or Chess960. Only in the lobby: a loaded game's mode is the game's own.
+        public int SetModeAs(string name, int newMode) {
+            if (lifecycle != LifecycleLobby) return InputRejected;
+            if (!IsPlayer(name) || IsModeForced()) return InputRejected;
+            if (newMode != ChessGame.ModeStandard && newMode != ChessGame.ModeChess960) return InputRejected;
+            mode = newMode;
+            return InputAccepted;
+        }
+
+        public int SetClock(int newBaseTime, int newIncrement) {
+            return SetClockAs(LocalName(), newBaseTime, newIncrement);
+        }
+
+        // Chooses the time control (seconds; base ChessArbiter.NoClock with increment 0 for no clock). In the lobby
+        // and on a loaded board, which continues with fresh clocks.
+        public int SetClockAs(string name, int newBaseTime, int newIncrement) {
+            if (lifecycle != LifecycleLobby && lifecycle != LifecycleLoaded) return InputRejected;
+            if (!IsPlayer(name) || IsClockForced()) return InputRejected;
+            if (!IsValidTimeControl(newBaseTime, newIncrement)) return InputRejected;
+            baseTime = newBaseTime;
+            increment = newIncrement;
+            return InputAccepted;
+        }
+
+        // No clock (base NoClock, increment 0), or a base of 1 s to MaxBaseTime with an increment of 0 to
+        // MaxIncrement.
+        public static bool IsValidTimeControl(int baseSeconds, int incrementSeconds) {
+            if (baseSeconds == ChessArbiter.NoClock) return incrementSeconds == 0;
+            return baseSeconds >= 1 && baseSeconds <= MaxBaseTime && incrementSeconds >= 0
+                && incrementSeconds <= MaxIncrement;
+        }
+
+        public int StartGame() {
+            return StartGameAs(LocalName());
+        }
+
+        // The Start button: a seated player starts the game once both seats are filled. Forced settings are applied
+        // first; a Chess960 game gets a random starting position (generated here, by the player pressing Start, and
+        // synced like any other state). Both clocks get the base time and the white clock starts running.
+        public int StartGameAs(string name) {
+            if (lifecycle != LifecycleLobby) return InputRejected;
+            if (whitePlayer.Length == 0 || blackPlayer.Length == 0) return InputRejected;
+            if (!IsPlayer(name)) return InputRejected;
+
+            ApplyForcedSettings();
+            if (mode == ChessGame.ModeChess960) {
+                ChessGame.Chess960Position(RandomChess960Index(), board, state);
+                SetStartPosition(0, 1);
+            } else {
+                int clock;
+                int number;
+                ChessFen.ParseFen(ChessFen.StartFen, board, state, out clock, out number);
+                SetStartPosition(clock, number);
+            }
+            int startTime = baseTime == ChessArbiter.NoClock ? 0 : baseTime * 1000;
+            whiteTime = startTime;
+            blackTime = startTime;
+            turnStart = Networking.GetServerTimeInSeconds();
+            lifecycle = LifecycleInGame;
+            return InputAccepted;
+        }
+
+        // Copies the forced mode and clock from the snapshot over the players' choices.
+        void ApplyForcedSettings() {
+            if (IsModeForced()) mode = gameNumbers[ChessArbiter.NumberForcedMode];
+            if (IsClockForced()) {
+                baseTime = gameNumbers[ChessArbiter.NumberForcedBaseTime];
+                increment = baseTime == ChessArbiter.NoClock ? 0 : gameNumbers[ChessArbiter.NumberForcedIncrement];
+            }
+        }
+
+        // One of the 960 Chess960 starting positions at random (ChessGame.Chess960Position numbering).
+        public int RandomChess960Index() {
+            return UnityEngine.Random.Range(0, ChessGame.Chess960Count);
         }
     }
 }
