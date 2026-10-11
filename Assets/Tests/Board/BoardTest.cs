@@ -51,6 +51,7 @@ public class BoardTest : UdonSharpBehaviour {
             TestChess960Positions();
             TestChess960Random();
             TestChess960Start();
+            TestClocks();
             TestSnapshot();
             if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
             board.ClearState();
@@ -832,6 +833,210 @@ public class BoardTest : UdonSharpBehaviour {
         board.arbiter = arbiter;
 
         arbiter.ClearOverrides(n);
+        board.ClearState();
+    }
+
+    // ---- 7.3 clocks ----
+
+    // The legal move from one square to another in the board's position (the first one, so a promotion isn't
+    // chosen), 0 if there's none.
+    int FindMove(int from, int to) {
+        int[] moves = new int[ChessMoves.MaxMoves];
+        int count = ChessMoves.GenerateLegalMoves(board.board, board.state, moves, true);
+        for (int i = 0; i < count; i++) {
+            if (ChessRules.MoveFrom(moves[i]) == from && ChessRules.MoveTo(moves[i]) == to) return moves[i];
+        }
+        return 0;
+    }
+
+    // A game between Ana and Bob with this time control, started, with its turn start set to t.
+    void StartedGame(int baseSeconds, int incrementSeconds, double t) {
+        LobbyWithTwoPlayers();
+        board.SetClockAs("Ana", baseSeconds, incrementSeconds);
+        board.StartGameAs("Ana");
+        board.turnStart = t;
+    }
+
+    void CheckTimes(int white, int black, double now, string name) {
+        CheckInt(board.RemainingTimeAt(ChessRules.White, now), white, name + ": white's remaining time");
+        CheckInt(board.RemainingTimeAt(ChessRules.Black, now), black, name + ": black's remaining time");
+    }
+
+    // Plays from-to at server time now, checking it's legal and accepted.
+    void Play(int from, int to, double now, string name) {
+        int move = FindMove(from, to);
+        Check(move != 0, name + ": move found",
+            ChessRules.SquareName(from) + ChessRules.SquareName(to) + " isn't legal");
+        CheckInt(board.PlayMoveAt(move, now), ChessBoard.InputAccepted, name + ": accepted");
+    }
+
+    // The times are binary fractions of a second, so the milliseconds come out exact.
+    void TestClocks() {
+        NothingForced();
+
+        StartedGame(60, 2, 1000);
+        Check(board.HasClock() && board.IsClockRunning(), "clock: running after start", "not running");
+        CheckTimes(60000, 60000, 1000, "clock: at the turn start");
+        CheckTimes(57500, 60000, 1002.5, "clock: white's runs, black's doesn't");
+        CheckTimes(60000, 60000, 999, "clock: a time before the turn start counts as none passed");
+        CheckInt(board.FlaggedColorAt(1059.5), ChessRules.NoColor, "clock: 0.5 s left is no flag fall");
+
+        Play(ChessRules.E2, ChessRules.E4, 1002.5, "clock: 1. e4 after 2.5 s");
+        CheckInt(board.whiteTime, 59500, "clock: 1. e4 takes 2.5 s and adds 2 s");
+        CheckInt(board.clockHistory[0], 59500, "clock: history entry for 1. e4");
+        Check(board.turnStart == 1002.5, "clock: turn start reset to the move's time", "turn start " + board.turnStart);
+        CheckInt(board.moveCount, 1, "clock: one move");
+        CheckText(board.notation[0], "e4", "clock: SAN recorded");
+        CheckInt(board.state[ChessPosition.StateSideToMove], ChessRules.Black, "clock: black to move");
+        CheckTimes(59500, 52500, 1010, "clock: black's runs, white's stopped");
+
+        Play(ChessRules.E7, ChessRules.E5, 1010.25, "clock: 1... e5 after 7.75 s");
+        CheckInt(board.blackTime, 54250, "clock: 1... e5 takes 7.75 s and adds 2 s");
+        CheckInt(board.moveNumber, 2, "clock: move number after black's move");
+        Play(ChessRules.G1, ChessRules.F3, 1010.25, "clock: 2. Nf3 at once");
+        CheckInt(board.whiteTime, 61500, "clock: the increment can take the time over the base");
+        CheckInt(board.halfmoveClock, 1, "clock: halfmove clock after a knight move");
+        CheckInt(board.halfmoveClocks[2], 0, "clock: halfmove clock before 2. Nf3");
+        CheckText(board.notation[2], "Nf3", "clock: SAN of 2. Nf3");
+
+        // One history entry per move, and none after.
+        CheckInt(board.moveCount, 3, "clock: three moves");
+        CheckInt(board.clockHistory[0], 59500, "clock: history 1");
+        CheckInt(board.clockHistory[1], 54250, "clock: history 2");
+        CheckInt(board.clockHistory[2], 61500, "clock: history 3");
+        CheckInt(board.clockHistory[3], -1, "clock: no history entry past the last move");
+
+        // Replay pauses moves, not time.
+        board.replayMode = true;
+        CheckTimes(61500, 53250, 1011.25, "clock: still running in replay");
+        int nc6 = FindMove(ChessRules.B8, ChessRules.C6);
+        CheckInt(board.PlayMoveAt(nc6, 1011.25), ChessBoard.InputRejected, "clock: no move in replay");
+        board.replayMode = false;
+
+        // Black has 54.25 s from 1010.25, so the flag falls at 1064.5.
+        CheckInt(board.FlaggedColorAt(1064), ChessRules.NoColor, "clock: 0.5 s left, no flag fall");
+        CheckInt(board.FlaggedColorAt(1064.5), ChessRules.Black, "clock: black's flag falls at 0");
+        CheckInt(board.FlaggedColorAt(5000), ChessRules.Black, "clock: and stays fallen");
+        CheckTimes(61500, 0, 5000, "clock: out of time shows 0, not less");
+        CheckInt(board.PlayMoveAt(nc6, 1064.5), ChessBoard.InputRejected, "clock: no move once the flag has fallen");
+        CheckInt(board.moveCount, 3, "clock: refused move not recorded");
+        CheckInt(board.blackTime, 54250, "clock: refused move leaves the time");
+        Check(board.turnStart == 1010.25, "clock: refused move leaves the turn start", "turn start " + board.turnStart);
+        Play(ChessRules.B8, ChessRules.C6, 1064.25, "clock: 2... Nc6 with 0.25 s left");
+        CheckInt(board.blackTime, 2250, "clock: 0.25 s left plus 2 s");
+        CheckInt(board.FlaggedColorAt(1064.5), ChessRules.NoColor, "clock: no flag fall after moving in time");
+
+        // Moves that aren't legal.
+        CheckInt(board.PlayMoveAt(FindMove(ChessRules.E4, ChessRules.E5), 1065), ChessBoard.InputRejected,
+            "clock: no move (0) refused");
+        int illegal = ChessRules.PackMove(ChessRules.D2, ChessRules.D5, ChessRules.Pawn, 0, 0, false, 15, -1);
+        CheckInt(board.PlayMoveAt(illegal, 1065), ChessBoard.InputRejected, "clock: an illegal move refused");
+        CheckInt(board.moveCount, 4, "clock: refused moves not recorded");
+
+        // The clocks stop when the game ends (ending it is 7.5).
+        board.lifecycle = ChessBoard.LifecycleEnded;
+        Check(!board.IsClockRunning(), "clock: stopped once ended", "running");
+        CheckTimes(61500, 2250, 1e6, "clock: ended, times as stored");
+        CheckInt(board.FlaggedColorAt(1e6), ChessRules.NoColor, "clock: no flag fall once ended");
+        CheckInt(board.PlayMoveAt(FindMove(ChessRules.D2, ChessRules.D4), 1065), ChessBoard.InputRejected,
+            "clock: no move once ended");
+
+        // Not running before a game: in the lobby and on a loaded board.
+        LobbyWithTwoPlayers();
+        board.SetClockAs("Ana", 60, 0);
+        Check(!board.IsClockRunning(), "clock: not running in the lobby", "running");
+        CheckInt(board.PlayMoveAt(FindMove(ChessRules.E2, ChessRules.E4), 1000), ChessBoard.InputRejected,
+            "clock: no move in the lobby");
+        board.lifecycle = ChessBoard.LifecycleLoaded;
+        Check(!board.IsClockRunning(), "clock: not running on a loaded board", "running");
+
+        // A short time control, 1+0: a move with 1 ms left, then black's flag falls after exactly 1 s.
+        StartedGame(1, 0, 20);
+        Play(ChessRules.E2, ChessRules.E4, 20.9990234375, "clock: 1+0, 1. e4");
+        CheckInt(board.whiteTime, 1, "clock: 1+0, 1 ms left after 999 ms");
+        CheckInt(board.FlaggedColorAt(21.998046875), ChessRules.NoColor, "clock: 1+0, black with 1 ms left");
+        CheckInt(board.FlaggedColorAt(21.9990234375), ChessRules.Black, "clock: 1+0, black's flag falls after 1 s");
+
+        // The real server time: Start sets the turn start, so the clocks start full and run down.
+        LobbyWithTwoPlayers();
+        board.SetClockAs("Ana", 600, 0);
+        board.StartGameAs("Bob");
+        int left = board.RemainingTime(ChessRules.White);
+        Check(left > 590000 && left <= 600000, "clock: server time, white's clock starts full", "left " + left);
+        CheckInt(board.FlaggedColor(), ChessRules.NoColor, "clock: server time, no flag at the start");
+        CheckInt(board.PlayMove(FindMove(ChessRules.D2, ChessRules.D4)), ChessBoard.InputAccepted,
+            "clock: server time, 1. d4");
+        board.turnStart = board.ServerTime() - 601;
+        CheckInt(board.RemainingTime(ChessRules.Black), 0, "clock: server time, black out of time after 601 s");
+        CheckInt(board.FlaggedColor(), ChessRules.Black, "clock: server time, black's flag falls");
+        CheckInt(board.PlayMove(FindMove(ChessRules.D7, ChessRules.D5)), ChessBoard.InputRejected,
+            "clock: server time, no move after the flag");
+
+        // A time can't overflow.
+        StartedGame(60, 3600, 0);
+        board.whiteTime = int.MaxValue - 1000;
+        Play(ChessRules.E2, ChessRules.E4, 0, "clock: huge time");
+        CheckInt(board.whiteTime, int.MaxValue, "clock: huge time plus the increment stops at int.MaxValue");
+
+        // No clock: never running, no flag fall, -1 in the history. Also SAN with the mate suffix.
+        LobbyWithTwoPlayers();
+        board.StartGameAs("Ana");
+        board.turnStart = 0;
+        Check(!board.HasClock() && !board.IsClockRunning(), "no clock: not running", "running");
+        Play(ChessRules.F2, ChessRules.F3, 1e6, "no clock: 1. f3");
+        Play(ChessRules.E7, ChessRules.E5, 2e6, "no clock: 1... e5");
+        Play(ChessRules.G2, ChessRules.G4, 3e6, "no clock: 2. g4");
+        CheckTimes(0, 0, 4e6, "no clock: times stay 0");
+        CheckInt(board.FlaggedColorAt(4e6), ChessRules.NoColor, "no clock: no flag fall");
+        Play(ChessRules.D8, ChessRules.H4, 4e6, "no clock: 2... Qh4#");
+        CheckText(board.notation[3], "Qh4#", "no clock: SAN with the mate suffix");
+        bool noClocks = true;
+        for (int i = 0; i < 4; i++) {
+            if (board.clockHistory[i] != -1) noClocks = false;
+        }
+        Check(noClocks, "no clock: history entries -1", "an entry isn't -1");
+        CheckText(ChessFen.WriteFen(board.board, board.state, board.halfmoveClock, board.moveNumber),
+            "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3", "no clock: position after the moves");
+
+        // Past the history arrays' first capacity: knights out and back, 1 s per move with a 1 s increment.
+        StartedGame(10, 1, 0);
+        int plies = ChessBoard.InitialHistoryCapacity * 2 + 10;
+        int[] route = new int[] {
+            ChessRules.G1, ChessRules.F3, ChessRules.G8, ChessRules.F6,
+            ChessRules.F3, ChessRules.G1, ChessRules.F6, ChessRules.G8
+        };
+        bool allAccepted = true;
+        for (int i = 0; i < plies; i++) {
+            int step = (i % 4) * 2;
+            if (board.PlayMoveAt(FindMove(route[step], route[step + 1]), i + 1) != ChessBoard.InputAccepted) {
+                allAccepted = false;
+            }
+        }
+        Check(allAccepted, "history: " + plies + " moves accepted", "a move was refused");
+        CheckInt(board.moveCount, plies, "history: move count");
+        Check(board.moveHistory.Length >= plies && board.notation.Length == board.moveHistory.Length
+            && board.clockHistory.Length == board.moveHistory.Length
+            && board.halfmoveClocks.Length == board.moveHistory.Length,
+            "history: arrays grown together", "lengths " + board.moveHistory.Length + ", " + board.notation.Length
+            + ", " + board.clockHistory.Length + ", " + board.halfmoveClocks.Length);
+        bool clocksOk = true;
+        bool entriesOk = true;
+        for (int i = 0; i < board.moveCount; i++) {
+            // Each move takes 1 s and adds 1 s back.
+            if (board.clockHistory[i] != 10000) clocksOk = false;
+            string san = i % 4 == 0 ? "Nf3" : i % 4 == 1 ? "Nf6" : i % 4 == 2 ? "Ng1" : "Ng8";
+            if (board.notation[i] != san || board.halfmoveClocks[i] != i) entriesOk = false;
+        }
+        Check(clocksOk, "history: a clock entry for every move", "an entry is wrong");
+        Check(entriesOk, "history: SAN and halfmove clock for every move", "an entry is wrong");
+        bool restEmpty = true;
+        for (int i = board.moveCount; i < board.notation.Length; i++) {
+            if (board.notation[i] != "" || board.clockHistory[i] != -1) restEmpty = false;
+        }
+        Check(restEmpty, "history: entries past the game are \"\" and -1", "an entry is null or set");
+        CheckInt(board.halfmoveClock, plies, "history: halfmove clock");
+        CheckInt(board.moveNumber, 1 + plies / 2, "history: move number");
+
         board.ClearState();
     }
 }

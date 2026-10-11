@@ -387,5 +387,131 @@ namespace SiggiChessBoard {
         public int RandomChess960Index() {
             return UnityEngine.Random.Range(0, ChessGame.Chess960Count);
         }
+
+        // ---- Moves and clocks (docs/clocks.md) ----
+        // Only each side's remaining time when its turn began and the server time the current turn began are stored;
+        // every client works out the running clock from them, so nothing is sent while a player thinks. The *At
+        // methods take the server time to use, for tests; the others use the server time now.
+
+        // Scratch for PlayMoveAt: the legal moves, and what MoveToSan needs for the check suffix.
+        int[] legalMoves = new int[ChessMoves.MaxMoves];
+        int[] sanScratch = new int[ChessMoves.MaxMoves];
+
+        public double ServerTime() {
+            return Networking.GetServerTimeInSeconds();
+        }
+
+        // Whether the game has a time control.
+        public bool HasClock() {
+            return baseTime != ChessArbiter.NoClock;
+        }
+
+        // Whether the side to move's clock is running: a game with a clock is in progress. Replay doesn't stop it.
+        public bool IsClockRunning() {
+            return lifecycle == LifecycleInGame && baseTime != ChessArbiter.NoClock;
+        }
+
+        public int RemainingTime(int color) {
+            return RemainingTimeAt(color, ServerTime());
+        }
+
+        // A side's remaining time in milliseconds at server time now, never below 0. While the clock runs, the side
+        // to move's is its time at the turn start less the time since; otherwise both are as stored (0 with no clock).
+        public int RemainingTimeAt(int color, double now) {
+            int stored = color == ChessRules.White ? whiteTime : color == ChessRules.Black ? blackTime : 0;
+            if (!IsClockRunning() || color != state[ChessPosition.StateSideToMove]) return stored;
+            double left = stored - ElapsedMs(now);
+            return left <= 0 ? 0 : (int)left;
+        }
+
+        // Whole milliseconds since the turn began, never negative (a client's server time can be a little behind
+        // the one the turn start was taken from).
+        double ElapsedMs(double now) {
+            double elapsed = Math.Floor((now - turnStart) * 1000.0);
+            return elapsed < 0 ? 0 : elapsed;
+        }
+
+        public int FlaggedColor() {
+            return FlaggedColorAt(ServerTime());
+        }
+
+        // The side whose time has run out at server time now (flag fall), ChessRules.NoColor if none. Only the side to
+        // move's clock runs, and a move is refused once it has run out, so that's the only side that can flag. Every
+        // client sees it; ending the game (time forfeit) is step 7.5a.
+        public int FlaggedColorAt(double now) {
+            if (!IsClockRunning()) return ChessRules.NoColor;
+            int mover = state[ChessPosition.StateSideToMove];
+            return RemainingTimeAt(mover, now) == 0 ? mover : ChessRules.NoColor;
+        }
+
+        public int PlayMove(int move) {
+            return PlayMoveAt(move, ServerTime());
+        }
+
+        // Plays move, which must be one of the position's legal moves, as the next move of the game at server time
+        // now, and records it: the move, its SAN, the halfmove clock, and the clocks. With a clock, the mover's time
+        // is reduced by the time since their turn began, the increment is added, the result goes into the clock
+        // history (-1 without a clock) and the turn start resets to now. Refused unless a game is in progress and the
+        // board isn't in replay, if the mover's time has run out, and for a move that isn't legal. Who may move, and
+        // matching a drop to a move, are the input API's (step 7.4a); game endings are step 7.5.
+        public int PlayMoveAt(int move, double now) {
+            if (lifecycle != LifecycleInGame || replayMode) return InputRejected;
+            if (FlaggedColorAt(now) != ChessRules.NoColor) return InputRejected;
+            int legalCount = ChessMoves.GenerateLegalMoves(board, state, legalMoves, true);
+            bool legal = false;
+            for (int i = 0; i < legalCount; i++) {
+                if (legalMoves[i] == move) {
+                    legal = true;
+                    break;
+                }
+            }
+            if (!legal) return InputRejected;
+
+            if (moveCount == moveHistory.Length) GrowHistory();
+            int mover = state[ChessPosition.StateSideToMove];
+            notation[moveCount] = ChessNotation.MoveToSan(board, state, move, legalMoves, legalCount, sanScratch, true);
+            ChessPosition.MakeMove(board, state, move);
+            moveHistory[moveCount] = move;
+            halfmoveClocks[moveCount] = halfmoveClock;
+            halfmoveClock = ChessDraws.HalfmoveClockAfter(halfmoveClock, move);
+            if (mover == ChessRules.Black) moveNumber++;
+
+            if (baseTime == ChessArbiter.NoClock) {
+                clockHistory[moveCount] = -1;
+            } else {
+                double left = (mover == ChessRules.White ? whiteTime : blackTime) - ElapsedMs(now)
+                    + increment * 1000.0;
+                int newTime = left >= int.MaxValue ? int.MaxValue : (int)left;
+                if (mover == ChessRules.White) whiteTime = newTime;
+                else blackTime = newTime;
+                clockHistory[moveCount] = newTime;
+            }
+            turnStart = now;
+            moveCount++;
+            return InputAccepted;
+        }
+
+        // Doubles the room in the history arrays, keeping the moves; new notation entries are "" (a synced string[]
+        // must never hold null) and new clock entries -1.
+        void GrowHistory() {
+            int oldLength = moveHistory.Length;
+            int newLength = oldLength * 2;
+            int[] newMoves = new int[newLength];
+            string[] newNotation = new string[newLength];
+            int[] newClocks = new int[newLength];
+            int[] newHalfmoveClocks = new int[newLength];
+            Array.Copy(moveHistory, newMoves, oldLength);
+            Array.Copy(notation, newNotation, oldLength);
+            Array.Copy(clockHistory, newClocks, oldLength);
+            Array.Copy(halfmoveClocks, newHalfmoveClocks, oldLength);
+            for (int i = oldLength; i < newLength; i++) {
+                newNotation[i] = "";
+                newClocks[i] = -1;
+            }
+            moveHistory = newMoves;
+            notation = newNotation;
+            clockHistory = newClocks;
+            halfmoveClocks = newHalfmoveClocks;
+        }
     }
 }

@@ -11,3 +11,12 @@
 - **A player leaving doesn't stop their clock**: their time runs out as normal.
 - **The clock doesn't pause in replay.** Replay pauses moves, not time: the player to move keeps using their time while the board is in replay.
 - Time forfeit is a new row in Game endings.
+
+## Implementation
+
+On `ChessBoard` (`Assets/Siggi/ChessBoard/ChessBoard.cs`). The time control is `baseTime` and `increment` (seconds, base `ChessArbiter.NoClock` for none), the clocks `whiteTime`/`blackTime` (ms, each side's time when its turn began) and `turnStart` (server time). Each method that needs the time has an `*At(..., now)` form taking the server time, which tests use; the plain form uses `ServerTime()` (`Networking.GetServerTimeInSeconds()`).
+
+- **Running:** `IsClockRunning()` is a game in progress (`LifecycleInGame`, replay included) with a clock. Only the side to move's clock runs. `RemainingTimeAt(color, now)` is that side's stored time less the whole milliseconds since `turnStart` (rounded down; a time before the turn start counts as none passed), never below 0; the other side's, and both when the clock isn't running (lobby, loaded, ended, no clock), are as stored (0 with no clock).
+- **Flag fall:** `FlaggedColorAt(now)` is the side to move when its remaining time is 0, `ChessRules.NoColor` otherwise. A move is refused once the flag has fallen, so the side not to move always has time left. Ending the game on it (time forfeit, by the board's owner) is step 7.5a.
+- **Moves:** `PlayMoveAt(move, now)` plays a legal move as the game's next move: refused unless in game and not in replay, once the mover's flag has fallen, and for a move not in the position's legal list. It records the move, its SAN (`ChessNotation.MoveToSan`), the halfmove clock before it, and the move number; with a clock, the mover's time becomes their remaining time plus the increment (capped at `int.MaxValue`), which also goes into `clockHistory` (`-1` with no clock); `turnStart` becomes `now`. Who may move and matching a drop to a move are the input API (7.4a), which calls `PlayMove`; game endings are 7.5.
+- **History room:** the history arrays start with `InitialHistoryCapacity` (128) entries and double together when full; new notation entries are `""` and new clock entries `-1`.
