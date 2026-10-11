@@ -18,6 +18,7 @@ public class RulesTest : UdonSharpBehaviour {
         TestCastling();
         TestMoveGeneration();
         TestAttacks();
+        TestLegalMoves();
         Debug.Log("[RulesTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
@@ -838,7 +839,14 @@ public class RulesTest : UdonSharpBehaviour {
         int count = ChessMoves.GeneratePieceMoves(b, s, from, moves, 0);
         string errors = BoardDiff(b, board) + StateDiff(s, state);
         if (errors != "") errors = " changed the position:" + errors;
+        errors += CompareMoves(board, state, moves, count, expected);
+        Check(errors == "", "move generation: " + name, errors);
+    }
 
+    // Errors comparing moves[0..count), in any order, with expected: MoveText strings separated by spaces, "" for
+    // none. Also checks each move's shared fields.
+    string CompareMoves(byte[] board, int[] state, int[] moves, int count, string expected) {
+        string errors = "";
         string[] wanted = expected == "" ? new string[0] : expected.Split(new char[] { ' ' });
         bool[] found = new bool[wanted.Length];
         string extra = "";
@@ -861,7 +869,7 @@ public class RulesTest : UdonSharpBehaviour {
         }
         if (extra != "") errors += " unexpected:" + extra;
         if (missing != "") errors += " missing:" + missing;
-        Check(errors == "", "move generation: " + name, errors);
+        return errors;
     }
 
     // A board from the piece placement part of a FEN (test helper only; FEN parsing proper is step 3).
@@ -1247,5 +1255,162 @@ public class RulesTest : UdonSharpBehaviour {
         b[ChessRules.B1] = ChessRules.WhiteBishop;
         b[ChessRules.C2] = ChessRules.WhitePawn;
         CheckAttacked("sliders blocked by their own pieces", b, white, "a2 a3 b1 b5 c4 c2 b3 d3");
+    }
+
+    // ---- 2.5 ----
+
+    // State for a placement, with the kings' squares found on the board.
+    int[] PlacementState(byte[] board, int sideToMove, int castlingRights, int enPassantFile) {
+        return NewState(sideToMove, castlingRights, enPassantFile,
+            FindPiece(board, ChessRules.WhiteKing), FindPiece(board, ChessRules.BlackKing));
+    }
+
+    // Compares the legal moves of the piece on from with expectedLegal (prohibitSelfCheck on) and expectedAll
+    // (prohibitSelfCheck off), in any order, as in CheckMoves.
+    void CheckLegalMoves(string name, byte[] board, int[] state, int from, string expectedLegal, string expectedAll) {
+        int[] moves = new int[ChessMoves.MaxMoves];
+        byte[] b = CopyBoard(board);
+        int[] s = CopyState(state);
+        int count = ChessMoves.GenerateLegalPieceMoves(b, s, from, moves, 0, true);
+        string errors = BoardDiff(b, board) + StateDiff(s, state);
+        if (errors != "") errors = " changed the position:" + errors;
+        errors += CompareMoves(board, state, moves, count, expectedLegal);
+        Check(errors == "", "legal moves: " + name, errors);
+
+        count = ChessMoves.GenerateLegalPieceMoves(b, s, from, moves, 0, false);
+        errors = BoardDiff(b, board) + StateDiff(s, state);
+        if (errors != "") errors = " changed the position:" + errors;
+        errors += CompareMoves(board, state, moves, count, expectedAll);
+        Check(errors == "", "legal moves, prohibitSelfCheck off: " + name, errors);
+    }
+
+    // Compares all legal moves of the side to move with expected, and checks that with prohibitSelfCheck off the
+    // list is the pseudo-legal one.
+    void CheckLegalSide(string name, string placement, int sideToMove, int castlingRights, int enPassantFile,
+        string expected) {
+        byte[] board = Placement(placement);
+        int[] state = PlacementState(board, sideToMove, castlingRights, enPassantFile);
+        int[] moves = new int[ChessMoves.MaxMoves];
+        byte[] b = CopyBoard(board);
+        int[] s = CopyState(state);
+        int count = ChessMoves.GenerateLegalMoves(b, s, moves, true);
+        string errors = BoardDiff(b, board) + StateDiff(s, state);
+        if (errors != "") errors = " changed the position:" + errors;
+        errors += CompareMoves(board, state, moves, count, expected);
+        int all = ChessMoves.GenerateLegalMoves(b, s, moves, false);
+        int pseudo = ChessMoves.GenerateMoves(b, s, moves);
+        if (all != pseudo) errors += " prohibitSelfCheck off gave " + all + " moves, pseudo-legal " + pseudo;
+        Check(errors == "", "legal moves: " + name, errors);
+    }
+
+    // Compares the number of legal moves for the side to move with expectedLegal (prohibitSelfCheck on) and
+    // expectedAll (off).
+    void CheckLegalCount(string name, string placement, int sideToMove, int castlingRights, int enPassantFile,
+        int expectedLegal, int expectedAll) {
+        byte[] board = Placement(placement);
+        int[] state = PlacementState(board, sideToMove, castlingRights, enPassantFile);
+        int[] moves = new int[ChessMoves.MaxMoves];
+        byte[] b = CopyBoard(board);
+        int[] s = CopyState(state);
+        int legal = ChessMoves.GenerateLegalMoves(b, s, moves, true);
+        int all = ChessMoves.GenerateLegalMoves(b, s, moves, false);
+        string errors = BoardDiff(b, board) + StateDiff(s, state);
+        if (errors != "") errors = " changed the position:" + errors;
+        if (legal != expectedLegal) errors += " legal " + legal + " (expected " + expectedLegal + ")";
+        if (all != expectedAll) errors += " prohibitSelfCheck off " + all + " (expected " + expectedAll + ")";
+        Check(errors == "", "legal move count: " + name, errors);
+    }
+
+    void CheckInCheck(string name, string placement, int color, bool expected) {
+        byte[] board = Placement(placement);
+        int[] state = PlacementState(board, ChessRules.White, 0, -1);
+        bool inCheck = ChessMoves.IsInCheck(board, state, color);
+        Check(inCheck == expected, "in check: " + name, "got " + inCheck);
+    }
+
+    void TestLegalMoves() {
+        int white = ChessRules.White;
+        int black = ChessRules.Black;
+        int all = ChessRules.CastleAll;
+        int wk = ChessRules.CastleWhiteKingSide;
+        int wq = ChessRules.CastleWhiteQueenSide;
+        int bk = ChessRules.CastleBlackKingSide;
+        int bq = ChessRules.CastleBlackQueenSide;
+
+        // Whole-side counts: published perft depth 1 with prohibitSelfCheck on, the pseudo-legal counts (2.4a) off.
+        CheckLegalCount("standard start", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", white, all, -1, 20, 20);
+        CheckLegalCount("standard start, black", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", black, all, -1, 20, 20);
+        CheckLegalCount("Kiwipete", "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R", white, all, -1, 48, 48);
+        CheckLegalCount("perft position 3", "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8", white, 0, -1, 14, 16);
+        CheckLegalCount("perft position 4", "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1", white, bk | bq, -1,
+            6, 38);
+        CheckLegalCount("perft position 5", "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R", white, wk | wq, -1, 44, 44);
+
+        CheckInCheck("rook on the file", "4r2k/8/8/8/8/8/8/4K3", white, true);
+        CheckInCheck("rook blocked", "4r2k/8/8/8/4n3/8/8/4K3", white, false);
+        CheckInCheck("black king by a pawn", "8/8/8/8/8/3k4/4P3/7K", black, true);
+        CheckInCheck("no king", "8/8/8/8/8/8/8/4r3", white, false);
+
+        // Pinned pieces: a knight pinned on the file has no moves; a bishop pinned on the diagonal can still move
+        // along it, up to capturing the pinning piece.
+        byte[] b = Placement("k3r3/8/8/8/8/8/4N3/4K3");
+        int[] s = PlacementState(b, white, 0, -1);
+        CheckLegalMoves("pinned knight", b, s, ChessRules.E2, "", "e2c1 e2c3 e2d4 e2f4 e2g3 e2g1");
+        b = Placement("8/6b1/8/8/8/2B5/8/K6k");
+        s = PlacementState(b, white, 0, -1);
+        CheckLegalMoves("pinned bishop moves along the pin", b, s, ChessRules.C3, "c3b2 c3d4 c3e5 c3f6 c3g7xB",
+            "c3b2 c3d4 c3e5 c3f6 c3g7xB c3b4 c3a5 c3d2 c3e1");
+
+        // The king can't move into check, or capture a defended piece. Here it is in check from the pawn on f2
+        // (defended by the knight), and the rook covers the d-file.
+        b = Placement("k2r4/8/8/8/6n1/8/5p2/4K3");
+        s = PlacementState(b, white, 0, -1);
+        CheckLegalMoves("king doesn't move into check", b, s, ChessRules.E1, "e1e2 e1f1", "e1d1 e1d2 e1e2 e1f2xP e1f1");
+
+        // In check from a rook: the king can't step back along the rook's line (e2), and the other pieces may only
+        // block (Ra2-e2, Bb5-e2) or capture the rook (Bxe8).
+        CheckLegalSide("answering a check", "4r2k/8/8/1B6/8/8/R7/4K3", white, 0, -1,
+            "e1d1 e1d2 e1f1 e1f2 a2e2 b5e2 b5e8xR");
+
+        // En passant that would take both pawns off the king's rank, exposing the king to the rook.
+        b = Placement("7k/8/8/KPp4r/8/8/8/8");
+        s = PlacementState(b, white, 0, ChessRules.FileC);
+        CheckLegalMoves("en passant exposing the king", b, s, ChessRules.B5, "b5b6", "b5b6 b5c6xP");
+
+        // Castling out of, through and into check, with prohibitSelfCheck on and off. b1 being attacked doesn't stop
+        // O-O-O: only the king's squares (e1, d1, c1) count, not the rook's.
+        int castleRights = wk | wq;
+        b = Placement("k7/8/8/4r3/8/8/8/R3K2R");
+        s = PlacementState(b, white, castleRights, -1);
+        CheckLegalMoves("no castling out of check", b, s, ChessRules.E1, "e1d1 e1d2 e1f2 e1f1",
+            "e1d1 e1d2 e1e2 e1f2 e1f1 e1h1c e1a1c");
+        b = Placement("k7/8/8/5r2/8/8/8/R3K2R");
+        s = PlacementState(b, white, castleRights, -1);
+        CheckLegalMoves("no O-O through check", b, s, ChessRules.E1, "e1d1 e1d2 e1e2 e1a1c",
+            "e1d1 e1d2 e1e2 e1f2 e1f1 e1h1c e1a1c");
+        b = Placement("k7/8/8/6r1/8/8/8/R3K2R");
+        s = PlacementState(b, white, castleRights, -1);
+        CheckLegalMoves("no O-O into check", b, s, ChessRules.E1, "e1d1 e1d2 e1e2 e1f2 e1f1 e1a1c",
+            "e1d1 e1d2 e1e2 e1f2 e1f1 e1h1c e1a1c");
+        b = Placement("k7/8/8/3r4/8/8/8/R3K2R");
+        s = PlacementState(b, white, castleRights, -1);
+        CheckLegalMoves("no O-O-O through check", b, s, ChessRules.E1, "e1e2 e1f2 e1f1 e1h1c",
+            "e1d1 e1d2 e1e2 e1f2 e1f1 e1h1c e1a1c");
+        b = Placement("k7/8/8/1r6/8/8/8/R3K2R");
+        s = PlacementState(b, white, castleRights, -1);
+        CheckLegalMoves("O-O-O with b1 attacked", b, s, ChessRules.E1, "e1d1 e1d2 e1e2 e1f2 e1f1 e1h1c e1a1c",
+            "e1d1 e1d2 e1e2 e1f2 e1f1 e1h1c e1a1c");
+        b = Placement("r3k2r/8/8/8/5R2/8/8/K7");
+        s = PlacementState(b, black, bk | bq, -1);
+        CheckLegalMoves("black: no O-O through check", b, s, ChessRules.E8, "e8d8 e8d7 e8e7 e8a8c",
+            "e8d8 e8d7 e8e7 e8f7 e8f8 e8h8c e8a8c");
+
+        // Chess960, king on c1 between rooks on b1 and g1, d-file attacked: O-O-O leaves the king on c1 and puts the
+        // rook on the attacked d1, which is allowed; O-O takes the king through d1, which isn't.
+        b = Placement("k2r4/8/8/8/8/8/8/1RK3R1");
+        s = NewState960(white, castleRights, ChessRules.FileC, ChessRules.FileB, ChessRules.FileG,
+            ChessRules.C1, ChessRules.A8);
+        CheckLegalMoves("chess960 castling with the d-file attacked", b, s, ChessRules.C1, "c1b2 c1c2 c1b1c",
+            "c1b2 c1c2 c1d2 c1d1 c1b1c c1g1c");
     }
 }

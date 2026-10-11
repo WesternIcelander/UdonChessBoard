@@ -4,7 +4,7 @@ namespace SiggiChessBoard {
     // Move generation (Java MoveFinder*) on a position's board and state arrays (see ChessPosition). Generates
     // pseudo-legal moves: each piece's moves by its movement rules, without checking whether the mover's own king is
     // left in check. Castling checks the rights, the rook and a clear path, but not whether the king is in or passes
-    // through check. The legal move list filters these with the attack check.
+    // through check. The legal move list (GenerateLegalMoves) filters these with the attack check.
     // Holds no state; everything comes in through parameters (see docs/architecture.md).
     // Abstract because it is never placed as a component, only used for its constants and static methods.
     public abstract class ChessMoves : UdonSharpBehaviour {
@@ -265,6 +265,73 @@ namespace SiggiChessBoard {
                 }
             }
             return false;
+        }
+
+        // Java Board.getAllLegalMoves: all legal moves for the side to move, written to moves from index 0. Returns
+        // the count. With prohibitSelfCheck (Java Board.prohibitSelfCheck, normally true) a move is kept only if it
+        // doesn't leave the mover's king in check, and castling only if the king isn't in check and doesn't pass
+        // through or land on an attacked square. With it false this is GenerateMoves (for Fog of War, where the king
+        // can be captured). moves must hold at least MaxMoves. The position is left as it was.
+        public static int GenerateLegalMoves(byte[] board, int[] state, int[] moves, bool prohibitSelfCheck) {
+            int count = GenerateMoves(board, state, moves);
+            if (!prohibitSelfCheck) return count;
+            return FilterLegalMoves(board, state, moves, 0, count);
+        }
+
+        // The legal moves of the piece on from (see GenerateLegalMoves), appended to moves at index count. Returns
+        // the new count.
+        public static int GenerateLegalPieceMoves(byte[] board, int[] state, int from, int[] moves, int count,
+            bool prohibitSelfCheck) {
+            int end = GeneratePieceMoves(board, state, from, moves, count);
+            if (!prohibitSelfCheck) return end;
+            return FilterLegalMoves(board, state, moves, count, end);
+        }
+
+        // Drops the moves in moves[start..count) that leave the side to move's king in check, or castle out of,
+        // through or into check, keeping the others in order (docs/legality-checking.md: play the move, check the
+        // king's square, undo). Returns the new count. The position is left as it was.
+        public static int FilterLegalMoves(byte[] board, int[] state, int[] moves, int start, int count) {
+            int mover = state[ChessPosition.StateSideToMove];
+            int opponent = mover ^ 1;
+            int kept = start;
+            for (int i = start; i < count; i++) {
+                int move = moves[i];
+                if (((move >> ChessRules.MoveCastleShift) & 1) != 0 && !IsCastlePathSafe(board, move, opponent)) continue;
+                ChessPosition.MakeMove(board, state, move);
+                // With no king (only possible if it was captured with prohibitSelfCheck off) there is no check.
+                int king = state[ChessPosition.StateWhiteKingSquare + mover];
+                bool legal = king == ChessRules.NoSquare || !IsSquareAttacked(board, king, opponent);
+                ChessPosition.UnmakeMove(board, state, move);
+                if (legal) moves[kept++] = move;
+            }
+            return kept;
+        }
+
+        // Whether color's king is attacked. False if that king isn't on the board.
+        public static bool IsInCheck(byte[] board, int[] state, int color) {
+            int king = state[ChessPosition.StateWhiteKingSquare + color];
+            return king != ChessRules.NoSquare && IsSquareAttacked(board, king, color ^ 1);
+        }
+
+        // Java MoveFinderKing.findCastleMove's check conditions: no square from the king's square to its destination,
+        // both included, is attacked by opponent. As in the Java, each square is checked with the king lifted off its
+        // starting square and the rook still on its own. The position after castling is checked like any other move.
+        static bool IsCastlePathSafe(byte[] board, int move, int opponent) {
+            int from = (move >> ChessRules.MoveFromShift) & ChessRules.MoveSquareMask;
+            int to = (move >> ChessRules.MoveToShift) & ChessRules.MoveSquareMask;
+            int kingTo = (from & 56) | ((to & 7) > (from & 7) ? ChessPosition.KingSideKingFile : ChessPosition.QueenSideKingFile);
+            int step = kingTo >= from ? 1 : -1;
+            byte king = board[from];
+            board[from] = ChessRules.Empty;
+            bool safe = true;
+            for (int sq = from; sq != kingTo + step; sq += step) {
+                if (IsSquareAttacked(board, sq, opponent)) {
+                    safe = false;
+                    break;
+                }
+            }
+            board[from] = king;
+            return safe;
         }
 
         // Whether the king on kingSquare may castle with the rook on rookSquare as far as the pieces go: the rook must
