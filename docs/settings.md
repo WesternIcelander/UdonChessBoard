@@ -5,6 +5,17 @@ An arbiter is the official who enforces the rules at a chess event, which matche
 - Holds the rules settings: whether takebacks are allowed, each draw rule (agreement, threefold, fifty-move, fivefold, seventy-five-move, dead position; "No draws" is all draw rules off), the inactivity times, and the forced lobby settings (an optional forced mode and an optional forced time control; see [Starting](board-lifecycle.md#starting)).
 - Defaults come from the world's configuration in the editor. Only organizers can change settings in-world.
 
+## Instance defaults
+
+`ChessArbiter` in `Assets/Siggi/ChessBoard/ChessArbiter.cs`.
+
+- **Setting bits** (`Setting*` constants, `SettingCount` = 9, the lowest bits): `SettingTakebacks`, the six draw rules (`SettingDrawAgreement`, `SettingThreefoldRepetition`, `SettingFiftyMoveRule`, `SettingFivefoldRepetition`, `SettingSeventyFiveMoveRule`, `SettingDeadPosition`; together `SettingsDrawRules`), `SettingModeForced`, `SettingClockForced`.
+- **Numeric settings** are an `int[NumberCount]` (5) indexed by `NumberResetAvailableTime`, `NumberAutoResetTime` (seconds, `Never` = -1), `NumberForcedMode` (`ChessGame.Mode*`), `NumberForcedBaseTime` (seconds, `NoClock` = -1) and `NumberForcedIncrement` (seconds).
+- **Editor values:** one Inspector field per setting (`takebacksAllowed`, `drawAgreement`, ..., `resetAvailableTime`, `autoResetTime`, `modeForced`, `forcedMode`, `clockForced`, `forcedBaseTime`, `forcedIncrement`). Starting values: takebacks on, every draw rule off ("No draws"), reset-available 120 s, auto-reset 600 s, nothing forced (forced values Standard, 600+0).
+- On `Start`, every client copies the editor values into the synced `defaultSettings` (`int`) and `defaultNumbers` (`int[5]`), unless a serialization has already arrived (a late joiner whose `OnDeserialization` ran first keeps what was synced). All clients start from the same editor values, so nobody needs to serialize until settings change.
+- **Invalid editor numbers are corrected** (`FixNumbers`), with a warning naming the object: a time below -1 becomes -1, a reset-available time above the auto-reset time (both set) becomes the auto-reset time ([Inactivity](inactivity.md)), an unknown forced mode becomes Standard, a negative increment becomes 0.
+- Read with `IsDefaultOn(setting)` and `DefaultNumber(number)`; `SettingsToString` and `NumbersToString` give them as text for logs.
+
 ## Per-board overrides
 
 - Each setting has an instance-wide default, and any board can override any setting, e.g. a tournament board with no takebacks next to casual boards.
