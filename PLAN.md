@@ -133,8 +133,9 @@ The rules live in `Assets/Siggi/ChessBoard/Rules/` (namespace `SiggiChessBoard`)
     | Chess960 2–10 (the published list's next nine) | 3 | 10,471–31,058 | 500–1,149 | 0.4–1.3 s each | 0.88–1.11 |
 
     A legal list costs about 0.9–1.9 ms in the Editor, so about 1.3–2.9 ms in the client at 1.5× slower. That's roughly 1.8× the 1.5 stand-in for the same positions (start 0.87 vs 0.49 ms, Kiwipete 1.90 vs 1.29 ms). The PGN import and notation estimates in 1.5 should be read with that in mind: about 3–7 plies per 10 ms budget rather than 5–10.
-- [ ] **3.3b** Published counts only cover normal rules, so also run some positions with `prohibitSelfCheck = false` and compare with the Java's counts for the same setting.
+- [x] **3.3b** Published counts only cover normal rules, so also run some positions with `prohibitSelfCheck = false` and compare with the Java's counts for the same setting.
   - Verify: the counts match the Java's.
+  - Added to the same deep perft section of `RulesTest.cs` (`AddPerftSelfCheckOff`, logged as `..., prohibitSelfCheck off`): standard start (depth 4: 197,742 against the published 197,281), Kiwipete (3), perft position 3 (4), position 4 and its mirror (3; White starts in check, so Black can capture the king at ply 2 and ply 3 is White moving with no king), position 5 (3), the 2.6 castling/en passant/promotion position (3), Chess960 1 (3) and Chess960 3 (4, O-O swaps king and rook). The expected counts come from a throwaway Java perft run against `port-reference`'s classes with `Board.prohibitSelfCheck = false` (not kept); the same class reproduced the 2.6 counts with it on. All 9 pass (2026-10-11), about 4.4 s of Editor work in all: the start at depth 4 in 1.3 s, Chess960 3 at depth 4 in 1.5 s, the rest 0.07–0.33 s each. A move list without the check filter costs 0.07–0.16 ms against 0.9–1.9 ms with it, so the filter (make, attack check, unmake per move) is about 85–90% of a legal list's cost.
 
 ### 4. Notation, endings and draw detection
 

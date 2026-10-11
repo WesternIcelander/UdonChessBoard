@@ -4,10 +4,10 @@ using UnityEngine;
 
 // Step 2 and 3 test behaviour (PLAN.md sections 2 and 3): checks the static rules and FEN with no world objects.
 // Logs "[RulesTest] PASS: <check>" or "[RulesTest] FAIL: <check>: <details>" per check, then a summary line.
-// The deep perft runs (3.3a) are spread across frames in Update, so the summary line comes after them.
+// The deep perft runs (3.3a, 3.3b) are spread across frames in Update, so the summary line comes after them.
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
 public class RulesTest : UdonSharpBehaviour {
-    [Tooltip("Run the deep perft checks (3.3a), which take a minute or two in the Editor.")]
+    [Tooltip("Run the deep perft checks (3.3a, 3.3b), which take a few minutes in the Editor.")]
     public bool deepPerft = true;
     [Tooltip("Deep perft work done per frame, in milliseconds. Keeps each Update well under Udon's time limit.")]
     public float perftMsPerFrame = 20f;
@@ -1907,7 +1907,7 @@ public class RulesTest : UdonSharpBehaviour {
         CheckFenJava("rk5r/8/8/8/8/8/8/RK5R b HAha - 0 1", "rk5r/8/8/8/8/8/8/RK5R b KQkq - 0 1", 24, -1385981945);
     }
 
-    // ---- 3.3a ----
+    // ---- 3.3a, 3.3b ----
 
     // Deep perft from published positions, loaded from their FENs. Too slow for one frame, so it runs as a state
     // machine in Update with an explicit stack instead of recursion: perftMoves[p] holds the legal moves at ply p and
@@ -1917,6 +1917,7 @@ public class RulesTest : UdonSharpBehaviour {
     string[] perftNames;
     string[] perftFens;
     int[][] perftExpected;
+    bool[] perftProhibitSelfCheck;
     int perftPositionCount;
     int perftPosition = -1; // index of the position being searched, -1 when not running
     byte[] perftBoard;
@@ -1939,7 +1940,13 @@ public class RulesTest : UdonSharpBehaviour {
         perftNames[perftPositionCount] = name;
         perftFens[perftPositionCount] = fen;
         perftExpected[perftPositionCount] = expected;
+        perftProhibitSelfCheck[perftPositionCount] = true;
         perftPositionCount++;
+    }
+
+    void AddPerftSelfCheckOff(string name, string fen, int[] expected) {
+        AddPerft(name + ", prohibitSelfCheck off", fen, expected);
+        perftProhibitSelfCheck[perftPositionCount - 1] = false;
     }
 
     // Published counts (chessprogramming.org Perft Results and Chess960 Perft Results). The Java on port-reference
@@ -1948,6 +1955,7 @@ public class RulesTest : UdonSharpBehaviour {
         perftNames = new string[32];
         perftFens = new string[32];
         perftExpected = new int[32][];
+        perftProhibitSelfCheck = new bool[32];
         perftPositionCount = 0;
         AddPerft("standard start", ChessFen.StartFen, new int[] { 20, 400, 8902, 197281 });
         AddPerft("Kiwipete", "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
@@ -1983,6 +1991,29 @@ public class RulesTest : UdonSharpBehaviour {
             new int[] { 24, 572, 15243 });
         AddPerft("chess960 10", "qn1rbbkr/ppp2p1p/1n1pp1p1/8/3P4/P6P/1PP1PPPK/QNNRBB1R w hd - 2 9",
             new int[] { 28, 811, 23175 });
+
+        // 3.3b: prohibitSelfCheck = false, which no published counts cover. The counts come from the Java on
+        // port-reference with Board.prohibitSelfCheck = false (a throwaway perft class run against its classes, not
+        // kept). Moves into or staying in check and castling out of, through or into check are all counted, so kings
+        // get captured: in position 4 (White starts in check) Black can take the king at ply 2, and ply 3 is then
+        // White's moves with no king.
+        AddPerftSelfCheckOff("standard start", ChessFen.StartFen, new int[] { 20, 400, 8902, 197742 });
+        AddPerftSelfCheckOff("Kiwipete", "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+            new int[] { 48, 2049, 98903 });
+        AddPerftSelfCheckOff("perft position 3", "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+            new int[] { 16, 278, 4867, 90159 });
+        AddPerftSelfCheckOff("perft position 4",
+            "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1", new int[] { 38, 1845, 73094 });
+        AddPerftSelfCheckOff("perft position 4 mirrored",
+            "r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1", new int[] { 38, 1845, 73094 });
+        AddPerftSelfCheckOff("perft position 5", "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",
+            new int[] { 44, 1552, 71104 });
+        AddPerftSelfCheckOff("castling, en passant and promotion", "r3k2r/1P6/8/3pP3/8/8/8/R3K2R w KQkq d6 0 1",
+            new int[] { 36, 852, 27601 });
+        AddPerftSelfCheckOff("chess960 1", "bqnb1rkr/pp3ppp/3ppn2/2p5/5P2/P2P4/NPP1P1PP/BQ1BNRKR w HFhf - 2 9",
+            new int[] { 21, 528, 12277 });
+        AddPerftSelfCheckOff("chess960 3", "b1q1rrkb/pppppppp/3nn3/8/P7/1PPP4/4PPPP/BQNNRKRB w GE - 1 9",
+            new int[] { 20, 479, 10483, 274474 });
 
         perftBoard = new byte[64];
         perftState = new int[ChessPosition.StateLength];
@@ -2030,7 +2061,8 @@ public class RulesTest : UdonSharpBehaviour {
 
     // Generates the legal moves of the position at perftPly.
     void PerftEnter() {
-        int count = ChessMoves.GenerateLegalMoves(perftBoard, perftState, perftMoves[perftPly], true);
+        int count = ChessMoves.GenerateLegalMoves(perftBoard, perftState, perftMoves[perftPly],
+            perftProhibitSelfCheck[perftPosition]);
         perftCount[perftPly] = count;
         perftNext[perftPly] = 0;
         perftTotals[perftPly] += count;
