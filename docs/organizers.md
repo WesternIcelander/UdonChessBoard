@@ -22,6 +22,9 @@ public abstract class SimpleAuth : UdonSharpBehaviour {
   - **`NoOneAuth`:** nobody is authorized; the editor defaults apply unchanged.
   - Any other rules (lists of names, group roles, etc.) are left to the world creator's own subclass.
 - **Default: `FirstJoinerAuth`.** The arbiter prefab includes a `FirstJoinerAuth` component and its `SimpleAuth` field points to it, since that's most likely what someone building their own tournament world wants.
+- **Implementation:** the three built-ins are in `Assets/Siggi/ChessBoard/Auth/` (namespace `SiggiChessBoard`); the arbiter's field is `ChessArbiter.simpleAuth`, and the arbiter prefab is `Assets/Siggi/ChessBoard/ChessArbiter.prefab`.
+  - `FirstJoinerAuth` (manual sync, on the arbiter's object so it shares the arbiter's owner) keeps the name in the synced `firstJoiner` (`""` until set). In `OnPlayerJoined` for the local player, a client that owns the object and finds the name empty sets it to its own display name and serializes: the first player owns every object when they arrive, and a late joiner isn't the owner. A late joiner sees nobody authorized until the name arrives by serialization.
+  - `InstanceMasterAuth` is `who.isMaster`; `NoOneAuth` is always `false`. All three refuse an invalid player.
 - **An empty `SimpleAuth` field is an error**, since it can only happen if someone clears it on purpose (choosing nobody should be done with `NoOneAuth`).
   - **Build error:** an editor script implements the VRChat SDK's build callback (`IVRCSDKBuildRequestedCallback`), finds any `ChessArbiter` in the scene with an empty field, logs an error naming the object, and returns `false` to cancel the upload. This is a plain C# editor script in an `Editor` folder, not UdonSharp.
   - **In-game fallback:** for cases that bypass that check (e.g. Play Mode testing), the arbiter checks the field on `Start`. If it's empty it logs an error, shows a message in the settings UI, and behaves like `NoOneAuth`.

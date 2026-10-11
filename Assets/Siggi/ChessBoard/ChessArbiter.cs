@@ -1,4 +1,5 @@
 using System;
+using SiggiUSTools;
 using UdonSharp;
 using UnityEngine;
 
@@ -71,6 +72,11 @@ namespace SiggiChessBoard {
         public int forcedBaseTime = 600;
         [Tooltip("Seconds added per move.")]
         public int forcedIncrement;
+
+        [Header("Organizers")]
+        [Tooltip("Who may change settings in-world (docs/organizers.md). FirstJoinerAuth on this object by default; "
+            + "NoOneAuth for nobody. Must not be empty.")]
+        public SimpleAuth simpleAuth;
 
         [Header("Boards")]
         [Tooltip("How many boards can have their own overrides: board numbers 0 to this minus 1.")]

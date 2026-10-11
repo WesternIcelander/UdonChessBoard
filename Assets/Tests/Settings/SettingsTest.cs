@@ -11,20 +11,40 @@ public class SettingsTest : UdonSharpBehaviour {
     // compare what it reports with them, and its report is logged for comparing by eye.
     public ChessArbiter arbiter;
 
+    // The other built-in authorizations, found on this object (the arbiter's own is checked through the arbiter).
+    InstanceMasterAuth instanceMasterAuth;
+    NoOneAuth noOneAuth;
+
     int passed;
     int failed;
+    bool started;
+    bool joined;
+    bool ran;
 
+    // The checks run a frame after both this Start and the local player joining: the arbiter reads its editor values
+    // in its own Start, which may run after this one, and FirstJoinerAuth takes the first joiner's name on join.
     void Start() {
-        // The arbiter reads its editor values in its own Start, which may run after this one.
+        instanceMasterAuth = GetComponent<InstanceMasterAuth>();
+        noOneAuth = GetComponent<NoOneAuth>();
+        started = true;
+        SendCustomEventDelayedFrames(nameof(RunChecks), 1);
+    }
+
+    public override void OnPlayerJoined(VRCPlayerApi player) {
+        if (!player.isLocal) return;
+        joined = true;
         SendCustomEventDelayedFrames(nameof(RunChecks), 1);
     }
 
     public void RunChecks() {
+        if (ran || !started || !joined) return;
+        ran = true;
         TestSettingBits();
         TestFixNumbers();
         TestEditorDefaults();
         TestCombine();
         TestBoardOverrides();
+        TestAuth();
         Debug.Log("[SettingsTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
@@ -311,5 +331,48 @@ public class SettingsTest : UdonSharpBehaviour {
         int[] copy = new int[array.Length];
         for (int i = 0; i < array.Length; i++) copy[i] = array[i];
         return copy;
+    }
+
+    // ---- 6.2a ----
+
+    // The built-in authorizations for the local player, who in Play Mode is the first joiner and the instance master,
+    // and the arbiter's default wiring: its simpleAuth is the FirstJoinerAuth on its own object.
+    void TestAuth() {
+        VRCPlayerApi local = Networking.LocalPlayer;
+        if (!Utilities.IsValid(local)) {
+            Check(false, "auth", "no local player");
+            return;
+        }
+        Debug.Log("[SettingsTest] local player: " + local.displayName + (local.isMaster ? " (master)" : ""));
+
+        if (!Utilities.IsValid(arbiter)) {
+            Check(false, "auth: default wiring", "arbiter not assigned");
+        } else {
+            FirstJoinerAuth firstJoinerAuth = arbiter.GetComponent<FirstJoinerAuth>();
+            Check(Utilities.IsValid(firstJoinerAuth), "auth: the arbiter has a FirstJoinerAuth", "none on its object");
+            Check(Utilities.IsValid(arbiter.simpleAuth) && arbiter.simpleAuth == firstJoinerAuth,
+                "auth: the arbiter's simpleAuth is its FirstJoinerAuth",
+                Utilities.IsValid(arbiter.simpleAuth) ? "it is " + arbiter.simpleAuth.GetUdonTypeName() : "it is empty");
+            if (Utilities.IsValid(firstJoinerAuth)) {
+                CheckText(firstJoinerAuth.firstJoiner, local.displayName, "auth: first joiner is the local player");
+                Check(firstJoinerAuth.IsAuthorized(local), "auth: FirstJoinerAuth authorizes the local player", "");
+                Check(!firstJoinerAuth.IsAuthorized(null), "auth: FirstJoinerAuth refuses no player", "");
+            }
+        }
+
+        if (!Utilities.IsValid(instanceMasterAuth)) {
+            Check(false, "auth: InstanceMasterAuth", "none on the test object");
+        } else {
+            Check(local.isMaster, "auth: the local player is master", "");
+            Check(instanceMasterAuth.IsAuthorized(local), "auth: InstanceMasterAuth authorizes the local player", "");
+            Check(!instanceMasterAuth.IsAuthorized(null), "auth: InstanceMasterAuth refuses no player", "");
+        }
+
+        if (!Utilities.IsValid(noOneAuth)) {
+            Check(false, "auth: NoOneAuth", "none on the test object");
+        } else {
+            Check(!noOneAuth.IsAuthorized(local), "auth: NoOneAuth refuses the local player", "");
+            Check(!noOneAuth.IsAuthorized(null), "auth: NoOneAuth refuses no player", "");
+        }
     }
 }
