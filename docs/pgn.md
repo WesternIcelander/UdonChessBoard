@@ -84,8 +84,8 @@ Details settled while writing the reader (5.2a):
 
 | Tag | Value |
 |---|---|
-| `Event`, `Site` | given by the caller (where the board gets them is settled with the board in step 7); `?` when empty |
-| `Date` | the game's start date, UTC, `yyyy.MM.dd`; `????.??.??` when unknown |
+| `Event`, `Site` | given by the caller; the board passes its Inspector fields `pgnEvent` (default empty) and `pgnSite` (default `VRChat`); `?` when empty |
+| `Date` | the game's start date, UTC, `yyyy.MM.dd`; `????.??.??` when unknown. The board takes it from the Game ID's first eight digits (`ChessGame.DateFromGameId`), so it's unknown only for an ID in another format |
 | `Round` | always `-` |
 | `White`, `Black` | the players' names, escaped; `?` when empty |
 | `Result` | `1-0`, `0-1`, `1/2-1/2`, or `*` for a game in progress or unterminated (from the ending and winner, `ChessGame.Ending*`) |
@@ -124,4 +124,6 @@ Details settled while writing the reader (5.2a):
 - Every completed game's PGN is written to the VRChat output log, so players can recover it later and a bot can capture every game in the instance.
 - One log call per PGN with a distinctive prefix (e.g. `[ChessPGN]`), so a bot can find it among other log lines.
 - Every client needs the full move list to produce the PGN — another reason to sync moves, not just positions.
+- **Implementation (7.7):** `ChessBoard.LogGame(ending, winner)` writes one `Debug.Log` entry: a `[ChessPGN]` line, then the PGN (tags, a blank line, the move text, ending with `\n`). A bot takes everything after the prefix line up to the next log entry. `EndGameAt` calls it when the game goes from in game to ended, and it does nothing for a game with no moves. It takes the ending and winner as parameters so that an unfinished game can be logged as `EndingUnterminated` (`*`) without ending it (takeback 7.8b, reset 7.10). `GamePgn()` gives the game's PGN as it stands (for the text box, 11.2a). The board counts the games it has logged in `loggedGames` and keeps the last PGN in `lastLoggedPgn`. Both are local and not synced, for tests. With networking (step 8), `OnDeserialization` logs on the same transition.
+- The PGN's first move number is the starting position's (`startMoveNumber`), and its side to move is worked out from the current side to move and the number of moves.
 - New work, not porting: the Java has check and checkmate but no game results. The port adds a synced game-result field (see [Game endings](game-endings.md)).

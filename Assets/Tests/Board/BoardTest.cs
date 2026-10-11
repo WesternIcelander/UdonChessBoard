@@ -69,7 +69,10 @@ public class BoardTest : UdonSharpBehaviour {
             TestAutomaticDraws();
             TestGameIdFormat();
             TestGameIds();
+            TestPgnLog();
             TestSnapshot();
+            // Every [ChessPGN] entry in the log is one of these, so the two counts must agree.
+            Debug.Log("[BoardTest] games logged by the board: " + board.loggedGames);
             if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
             board.ClearState();
         }
@@ -2686,6 +2689,192 @@ public class BoardTest : UdonSharpBehaviour {
         board.StartGameAs("Ana");
         CheckText(board.continuedFrom, "", "Start clears ContinuedFrom");
 
+        board.ClearState();
+    }
+
+    // ---- 7.7 PGN logging ----
+
+    // The board has logged expected games since its count was before.
+    void CheckLogged(int before, int expected, string name) {
+        CheckInt(board.loggedGames - before, expected, name);
+    }
+
+    void CheckLogHas(string text, string name) {
+        Check(board.lastLoggedPgn.Contains(text), name, "\"" + text + "\" not in:\n" + board.lastLoggedPgn);
+    }
+
+    // One game logged since before, with this Result and Termination, the result ending the move text, and the
+    // logged PGN the board's own.
+    void CheckLoggedEnding(int before, string result, string termination, string name) {
+        CheckLogged(before, 1, name + ": logged once");
+        CheckLogHas("[Result \"" + result + "\"]\n", name + ": Result tag");
+        CheckLogHas("[Termination \"" + termination + "\"]\n", name + ": Termination tag");
+        Check(board.lastLoggedPgn.EndsWith(" " + result + "\n") || board.lastLoggedPgn.EndsWith("\n" + result + "\n"),
+            name + ": the move text ends with the result", "PGN:\n" + board.lastLoggedPgn);
+        CheckText(board.lastLoggedPgn, board.GamePgn(), name + ": the logged PGN is the board's");
+    }
+
+    void TestPgnLog() {
+        NothingForced();
+        string savedEvent = board.pgnEvent;
+        string savedSite = board.pgnSite;
+        board.pgnEvent = "Test Event";
+        board.pgnSite = "Test Site";
+        int dead = ChessArbiter.SettingDeadPosition;
+
+        CheckText(ChessGame.DateFromGameId("20261005143027-048213"), "2026.10.05", "PGN date: from a game ID");
+        CheckText(ChessGame.DateFromGameId("h0rrawli"), "", "PGN date: none from a foreign ID");
+        CheckText(ChessGame.DateFromGameId("202610051430270048213"), "", "PGN date: none without the dash");
+        CheckText(ChessGame.DateFromGameId("2026100514302a-048213"), "", "PGN date: none with a letter");
+        CheckText(ChessGame.DateFromGameId(""), "", "PGN date: none from no ID");
+        CheckText(ChessGame.DateFromGameId(null), "", "PGN date: none from null");
+
+        // Fool's mate with 60+2: the whole PGN, logged once.
+        int before = board.loggedGames;
+        StartedGame(60, 2, 1000);
+        string id = board.gameId;
+        Play(ChessRules.F2, ChessRules.F3, 1001, "log: 1. f3");
+        Play(ChessRules.E7, ChessRules.E5, 1002, "log: 1... e5");
+        Play(ChessRules.G2, ChessRules.G4, 1003, "log: 2. g4");
+        CheckLogged(before, 0, "log: nothing while in game");
+        Play(ChessRules.D8, ChessRules.H4, 1004.5, "log: 2... Qh4#");
+        CheckLogged(before, 1, "log: fool's mate logged once");
+        string date = id.Length >= 8 ? id.Substring(0, 4) + "." + id.Substring(4, 2) + "." + id.Substring(6, 2) : "?";
+        string expected = "[Event \"Test Event\"]\n[Site \"Test Site\"]\n[Date \"" + date + "\"]\n[Round \"-\"]\n"
+            + "[White \"Ana\"]\n[Black \"Bob\"]\n[Result \"0-1\"]\n[TimeControl \"60+2\"]\n[GameID \"" + id + "\"]\n"
+            + "[Termination \"checkmate\"]\n\n"
+            + "1. f3 { [%clk 0:01:01] } 1... e5 { [%clk 0:01:01] } 2. g4 { [%clk 0:01:02] }\n"
+            + "2... Qh4# { [%clk 0:01:01.5] } 0-1\n";
+        CheckText(board.lastLoggedPgn, expected, "log: fool's mate PGN");
+        CheckText(board.GamePgn(), expected, "log: GamePgn gives it too");
+        board.CheckFlagFallAt(1e6);
+        board.ResignAs(ChessRules.White, "Ana");
+        board.PieceDroppedAs("Ana", ChessRules.E1, ChessRules.F2);
+        CheckLogged(before, 1, "log: nothing more once ended");
+
+        // Games with no moves aren't logged, however they end.
+        before = board.loggedGames;
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.ResignAs(ChessRules.White, "Ana");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "no moves: resigned");
+        StartedGame(60, 0, 1000);
+        Check(board.CheckFlagFallAt(1060), "no moves: flag fall", "not ended");
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = ChessArbiter.SettingDrawAgreement;
+        board.OfferDrawAs(ChessRules.White, "Ana");
+        CheckInt(board.AcceptDrawAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "no moves: draw agreed");
+        LobbyWithTwoPlayers();
+        board.ClearState();
+        CheckLogged(before, 0, "no moves: nothing logged");
+
+        // Resignation, with no clock and a ContinuedFrom.
+        before = board.loggedGames;
+        ButtonGame(0);
+        board.continuedFrom = "20261011120000-000001/4";
+        board.ResignAs(ChessRules.White, "Ana");
+        CheckLoggedEnding(before, "0-1", "resignation", "log: resignation");
+        CheckLogHas("[TimeControl \"-\"]\n", "log: resignation: no clock");
+        CheckLogHas("[ContinuedFrom \"20261011120000-000001/4\"]\n", "log: resignation: ContinuedFrom");
+        Check(board.lastLoggedPgn.EndsWith("\n\n1. Nf3 Nf6 2. Ng1 Ng8 0-1\n"), "log: resignation: move text",
+            "PGN:\n" + board.lastLoggedPgn);
+        Check(!board.lastLoggedPgn.Contains("[%clk"), "log: resignation: no clock comments", "has [%clk");
+
+        // Time forfeit: a loss, and a draw when the opponent can't mate.
+        before = board.loggedGames;
+        StartedGame(60, 0, 1000);
+        Play(ChessRules.E2, ChessRules.E4, 1001, "log: forfeit: 1. e4");
+        Check(board.CheckFlagFallAt(1100), "log: forfeit: black's flag", "not ended");
+        CheckLoggedEnding(before, "1-0", "time forfeit", "log: time forfeit");
+        CheckLogHas("1. e4 { [%clk 0:00:59] } 1-0\n", "log: time forfeit: move text");
+
+        before = board.loggedGames;
+        StartedGame(60, 0, 1000);
+        board.gameSettings = dead;
+        SetPosition("k7/p7/8/8/8/8/8/K7 w - - 0 1");
+        Play(ChessRules.A1, ChessRules.A2, 1001, "log: forfeit draw: Ka2");
+        Check(board.CheckFlagFallAt(1100), "log: forfeit draw: black's flag", "not ended");
+        CheckLoggedEnding(before, "1/2-1/2", "time forfeit", "log: time forfeit drawn");
+
+        // Stalemate and every draw.
+        before = board.loggedGames;
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        SetPosition("7k/8/8/5Q2/8/8/8/K7 w - - 0 1");
+        Drop("Ana", ChessRules.F5, ChessRules.G6, "log: stalemate");
+        CheckLoggedEnding(before, "1/2-1/2", "stalemate", "log: stalemate");
+
+        before = board.loggedGames;
+        ButtonGame(ChessArbiter.SettingDrawAgreement);
+        board.OfferDrawAs(ChessRules.White, "Ana");
+        board.AcceptDrawAs(ChessRules.Black, "Bob");
+        CheckLoggedEnding(before, "1/2-1/2", "draw agreement", "log: draw agreement");
+
+        before = board.loggedGames;
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = ChessArbiter.SettingThreefoldRepetition;
+        KnightShuffle(2, "log: threefold");
+        CheckInt(board.ClaimDrawAs("Ana"), ChessBoard.InputAccepted, "log: threefold claimed");
+        CheckLoggedEnding(before, "1/2-1/2", "threefold repetition", "log: threefold repetition");
+
+        before = board.loggedGames;
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = ChessArbiter.SettingFiftyMoveRule;
+        SetPosition("k7/8/8/8/8/8/8/K6R w - - 99 80");
+        Drop("Ana", ChessRules.H1, ChessRules.H2, "log: fifty-move");
+        CheckInt(board.ClaimDrawAs("Bob"), ChessBoard.InputAccepted, "log: fifty-move claimed");
+        CheckLoggedEnding(before, "1/2-1/2", "fifty-move rule", "log: fifty-move rule");
+
+        before = board.loggedGames;
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = ChessArbiter.SettingFivefoldRepetition;
+        KnightShuffle(4, "log: fivefold");
+        CheckLoggedEnding(before, "1/2-1/2", "fivefold repetition", "log: fivefold repetition");
+
+        before = board.loggedGames;
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = ChessArbiter.SettingSeventyFiveMoveRule;
+        SetPosition("k7/8/8/8/8/8/8/K6R w - - 149 80");
+        Drop("Ana", ChessRules.H1, ChessRules.H2, "log: seventy-five-move");
+        CheckLoggedEnding(before, "1/2-1/2", "seventy-five-move rule", "log: seventy-five-move rule");
+
+        before = board.loggedGames;
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = dead;
+        SetPosition("8/8/4k3/8/8/4K3/3r4/8 w - - 0 1");
+        Drop("Ana", ChessRules.E3, ChessRules.D2, "log: dead position");
+        CheckLoggedEnding(before, "1/2-1/2", "insufficient material", "log: insufficient material");
+
+        // Chess960: Variant, SetUp and the starting FEN.
+        before = board.loggedGames;
+        LobbyWithTwoPlayers();
+        board.SetModeAs("Ana", ChessGame.ModeChess960);
+        board.StartGameAs("Ana");
+        int[] moves = new int[ChessMoves.MaxMoves];
+        ChessMoves.GenerateLegalMoves(board.board, board.state, moves, true);
+        CheckInt(board.PlayMove(moves[0]), ChessBoard.InputAccepted, "log: Chess960: a move");
+        board.ResignAs(ChessRules.Black, "Bob");
+        CheckLoggedEnding(before, "1-0", "resignation", "log: Chess960");
+        CheckLogHas("[Variant \"Chess960\"]\n[SetUp \"1\"]\n[FEN \"" + board.startFen + "\"]\n",
+            "log: Chess960: Variant, SetUp and FEN");
+
+        // A game starting with Black to move at move 30, and a name to escape.
+        before = board.loggedGames;
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.blackPlayer = "Nu\"ka";
+        string fen = "4k3/4p3/8/8/8/8/4P3/4K3 b - - 0 30";
+        SetPosition(fen);
+        board.startFen = fen;
+        board.startMoveNumber = 30;
+        Drop("Nu\"ka", ChessRules.E7, ChessRules.E5, "log: black first");
+        Drop("Ana", ChessRules.E2, ChessRules.E4, "log: black first");
+        board.ResignAs(ChessRules.White, "Ana");
+        CheckLoggedEnding(before, "0-1", "resignation", "log: black first");
+        CheckLogHas("[Black \"Nu\\\"ka\"]\n", "log: black first: name escaped");
+        CheckLogHas("[SetUp \"1\"]\n[FEN \"" + fen + "\"]\n", "log: black first: SetUp and FEN");
+        Check(board.lastLoggedPgn.EndsWith("\n\n30... e5 31. e4 0-1\n"), "log: black first: numbered from 30...",
+            "PGN:\n" + board.lastLoggedPgn);
+
+        board.pgnEvent = savedEvent;
+        board.pgnSite = savedSite;
         board.ClearState();
     }
 }

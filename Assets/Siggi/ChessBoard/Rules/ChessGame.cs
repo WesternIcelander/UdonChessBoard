@@ -117,6 +117,17 @@ namespace SiggiChessBoard {
                 + Digits(utc.Minute, 2) + Digits(utc.Second, 2) + "-" + Digits(suffix, 6);
         }
 
+        // The PGN Date (yyyy.MM.dd) of the game whose ID is gameId: the UTC start date its first eight digits give, or
+        // "" (an unknown date) when gameId isn't in the yyyyMMddHHmmss-xxxxxx form, e.g. an imported game's own ID.
+        public static string DateFromGameId(string gameId) {
+            if (gameId == null || gameId.Length != GameIdLength) return "";
+            for (int i = 0; i < GameIdLength; i++) {
+                char c = gameId[i];
+                if (i == 14 ? c != '-' : (c < '0' || c > '9')) return "";
+            }
+            return gameId.Substring(0, 4) + "." + gameId.Substring(4, 2) + "." + gameId.Substring(6, 2);
+        }
+
         // The ContinuedFrom value of a game continued from ply (half-moves from the original game's starting
         // position) of the game with ID gameId: "<gameId>/<ply>", or "" when that game has no ID (a PGN import without
         // a GameID tag), so the continued game gets no ContinuedFrom tag.

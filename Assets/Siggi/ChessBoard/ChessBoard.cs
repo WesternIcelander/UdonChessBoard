@@ -38,6 +38,11 @@ namespace SiggiChessBoard {
         [Tooltip("This board's number for per-board setting overrides: 0 to the arbiter's Board Count - 1. A number "
             + "outside that range always gets the instance defaults.")]
         public int boardNumber;
+        // The PGN Event and Site tags of this board's games (docs/pgn.md, Export tags); empty is written "?".
+        [Tooltip("The PGN Event tag of games played on this board. Empty is written \"?\".")]
+        public string pgnEvent = "";
+        [Tooltip("The PGN Site tag of games played on this board. Empty is written \"?\".")]
+        public string pgnSite = "VRChat";
 
         // ---- Board state (docs/networking.md, Synced fields) ----
 
@@ -112,6 +117,12 @@ namespace SiggiChessBoard {
         // The settings snapshot (docs/settings.md): ChessArbiter setting bits and its numeric settings.
         [NonSerialized] public int gameSettings;
         [NonSerialized] public int[] gameNumbers = new int[ChessArbiter.NumberCount];
+
+        // ---- Local, not synced ----
+
+        // How many games this client has logged, and the last one's PGN (docs/pgn.md, Logging), for tests.
+        [NonSerialized] public int loggedGames;
+        [NonSerialized] public string lastLoggedPgn = "";
 
         void Start() {
             if (!Utilities.IsValid(arbiter)) {
@@ -605,8 +616,9 @@ namespace SiggiChessBoard {
         // Ends the game in progress at server time now: how it ended, who won (ChessRules.NoColor for a draw), and
         // the ended state. A running clock stops with the side to move's remaining time stored, so it keeps showing
         // what was left. A pending draw offer lapses; a takeback request stays, since an ended game can still be
-        // continued. Logging the PGN on this transition is step 7.7.
+        // continued. The game's PGN is logged on this transition, unless it has no moves.
         void EndGameAt(int newEnding, int newWinner, double now) {
+            bool wasInGame = lifecycle == LifecycleInGame;
             if (IsClockRunning()) {
                 int mover = state[ChessPosition.StateSideToMove];
                 int left = RemainingTimeAt(mover, now);
@@ -617,6 +629,37 @@ namespace SiggiChessBoard {
             winner = newWinner;
             lifecycle = LifecycleEnded;
             drawOfferColor = ChessRules.NoColor;
+            if (wasInGame) LogGame(ending, winner);
+        }
+
+        // ---- PGN (docs/pgn.md, Export and Logging) ----
+
+        // The game's PGN as it stands: its tags (ChessPgn.WriteTags), a blank line and its move text.
+        public string GamePgn() {
+            return PgnWith(ending, winner);
+        }
+
+        // The game's PGN with this ending and winner in place of the board's own, so an unfinished game can be
+        // logged as ChessGame.EndingUnterminated (a reset, 7.10, or a takeback, 7.8b) without ending it. The Date is
+        // the start date in the Game ID; the first move's number and side come from the starting position.
+        string PgnWith(int pgnEnding, int pgnWinner) {
+            int firstSide = state[ChessPosition.StateSideToMove];
+            if (moveCount % 2 == 1) firstSide = ChessRules.OtherColor(firstSide);
+            string tags = ChessPgn.WriteTags(pgnEvent, pgnSite, ChessGame.DateFromGameId(gameId), whitePlayer,
+                blackPlayer, pgnEnding, pgnWinner, mode, startFen, baseTime == ChessArbiter.NoClock ? 0 : baseTime,
+                increment, gameId, continuedFrom);
+            return tags + "\n" + ChessPgn.WriteMoveText(notation, clockHistory, moveCount, startMoveNumber, firstSide,
+                pgnEnding, pgnWinner, ChessPgn.LineWidth);
+        }
+
+        // Writes the game's PGN, with this ending and winner, to the log as one entry: a "[ChessPGN]" line, then the
+        // PGN, so a bot reading the output log finds every game (docs/game-endings.md: each client logs once, on the
+        // transition). A game with no moves isn't logged.
+        void LogGame(int logEnding, int logWinner) {
+            if (moveCount == 0) return;
+            lastLoggedPgn = PgnWith(logEnding, logWinner);
+            loggedGames++;
+            Debug.Log("[ChessPGN]\n" + lastLoggedPgn);
         }
 
         public int Resign(int color) {

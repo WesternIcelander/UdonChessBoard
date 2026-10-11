@@ -61,7 +61,7 @@ Each FIDE draw rule can be switched on or off in the instance settings menu (on 
 
 ## Implementation
 
-On `ChessBoard` (`Assets/Siggi/ChessBoard/ChessBoard.cs`). `EndGameAt(ending, winner, now)` sets `ending` and `winner` (`ChessRules.NoColor` for a draw), enters `LifecycleEnded`, stops a running clock with the side to move's remaining time stored (see [Clocks](clocks.md#implementation)), and lets a pending draw offer lapse. A pending takeback request stays, since an ended game can still be continued. Replay mode is left as it is. Logging the PGN on this transition is step 7.7.
+On `ChessBoard` (`Assets/Siggi/ChessBoard/ChessBoard.cs`). `EndGameAt(ending, winner, now)` sets `ending` and `winner` (`ChessRules.NoColor` for a draw), enters `LifecycleEnded`, stops a running clock with the side to move's remaining time stored (see [Clocks](clocks.md#implementation)), and lets a pending draw offer lapse. A pending takeback request stays, since an ended game can still be continued. Replay mode is left as it is. The game's PGN is logged on this transition, unless it has no moves (see [PGN](pgn.md#logging)).
 
 - **Checkmate and stalemate:** `PlayMoveAt` checks the position after every move (`ChessMoves.PositionStatus`): checkmate ends the game with the mover as winner, stalemate as a draw, whatever the draw settings. The automatic draws are checked after them (below).
 - **Resign:** `Resign(color)` / `ResignAs(color, name)`, accepted when `CanResignAs` holds (the game running, `name` seated as `color`, in replay too); the other colour wins. A player in both seats chooses the side that resigns.
