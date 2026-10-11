@@ -3,7 +3,7 @@
 Neither codebase has tests yet, and UdonSharp code only runs inside Unity, so tests can't run under a plain .NET test runner.
 
 - A test behaviour, run in Unity Play Mode (with ClientSim), that executes checks and logs pass/fail.
-- Perft counts from known positions (standard start, Kiwipete, Chess960 positions) against published values, which avoids depending on the Java. Perft also gives the speed numbers needed to judge the Udon performance concerns (see [Udon constraints](udon-constraints.md)).
+- Perft counts from known positions (standard start, Kiwipete, Chess960 positions) against published values, which avoids depending on the Java. Perft also gives the speed numbers needed to judge the Udon performance concerns (see [Udon constraints](udon-constraints.md)). The deep perft in `RulesTest` (3.3a, 3.3b) takes a couple of minutes, so it sits behind the `deepPerft` Inspector tick. It only exercises move generation and make/unmake (`ChessMoves`, `ChessPosition`, `ChessRules`, and `ChessFen` parsing), so untick it for steps that don't touch those files and tick it again when they change. The shallow perft and move-count checks always run and still catch most move-generation regressions.
 - **Networking needs real clients.** ClientSim runs a single local player, so ownership, sync, late joiners and the `VRCObjectSync` behaviour have to be tested with several clients, e.g. VRChat's Build & Test with multiple instances of the client.
 - PGN import and export are tested with the PGN test set below, comparing against the Java (on `port-reference`) where the Java can read the file.
 
