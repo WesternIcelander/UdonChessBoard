@@ -11,8 +11,16 @@ namespace SiggiChessBoard {
         public int callbackOrder => 0;
 
         public bool OnBuildRequested(VRCSDKRequestedBuildType requestedBuildType) {
+            return Run(requestedBuildType, true);
+        }
+
+        // Whether a build of this type may go ahead. With report, a cancelled build also logs an error per arbiter,
+        // selects the first and shows the dialog; ChessArbiterBuildCheckTest runs it without, since its empty fields
+        // are only emptied for the test and the dialog would claim the scene's are.
+        public static bool Run(VRCSDKRequestedBuildType requestedBuildType, bool report) {
             List<ChessArbiter> empty = Blocking(requestedBuildType);
             if (empty.Count == 0) return true;
+            if (!report) return false;
 
             // The SDK's own popup only names this callback, so explain in a dialog too: the person building may not
             // think to look in the Console. Selecting the first arbiter shows them where to fix it.
@@ -40,7 +48,7 @@ namespace SiggiChessBoard {
         }
 
         // The arbiters that stop a build of this type: none unless it's a world build, then the ones with an empty
-        // field. What OnBuildRequested decides on, without its dialog (ChessArbiterBuildCheckTest calls it).
+        // field. What Run decides on.
         public static List<ChessArbiter> Blocking(VRCSDKRequestedBuildType requestedBuildType) {
             if (requestedBuildType != VRCSDKRequestedBuildType.Scene) return new List<ChessArbiter>();
             return FindEmpty();

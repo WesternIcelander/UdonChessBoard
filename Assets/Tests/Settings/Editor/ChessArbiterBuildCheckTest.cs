@@ -7,10 +7,9 @@ using VRC.SDKBase.Editor.BuildPipeline;
 
 // Step 6.3's check of the empty-SimpleAuth build check (ChessArbiterBuildCheck), without building: run it from
 // Tools > Chess Board > Test Build Check with the test scene open (it needs at least one ChessArbiter). It empties the
-// arbiters' fields for a moment, in memory only, and puts them back.
+// arbiters' fields for a moment, in memory only, and puts them back. It runs the check without its error log, selection
+// and dialog, which would otherwise claim that the scene's field is empty.
 // Logs "[BuildCheckTest] PASS: <check>" or "[BuildCheckTest] FAIL: <check>: <details>" per check, then a summary line.
-// The last check runs the real callback with an empty field, so its dialog and its "Build cancelled" error appear: press
-// OK.
 public static class ChessArbiterBuildCheckTest {
     static int passed;
     static int failed;
@@ -32,18 +31,19 @@ public static class ChessArbiterBuildCheckTest {
                 + "treat it as empty");
         }
 
-        ChessArbiterBuildCheck callback = new ChessArbiterBuildCheck();
-        bool callbackRan = false;
-        bool callbackAllowed = true;
+        bool checkRan = false;
+        bool worldAllowed = true;
+        bool avatarAllowed = false;
         try {
-            // With every field set, nothing blocks and the real callback lets the build through (no dialog).
+            // With every field set, nothing blocks and the check lets the build through.
             for (int i = 0; i < arbiters.Count; i++) {
                 if (arbiters[i].simpleAuth == null) arbiters[i].simpleAuth = AnyAuth(saved);
             }
             if (AnyAuth(saved) != null) {
                 CheckBlocking(VRCSDKRequestedBuildType.Scene, arbiters, new bool[arbiters.Count],
                     "all set: a world build isn't blocked");
-                Check(callback.OnBuildRequested(VRCSDKRequestedBuildType.Scene), "all set: the callback allows it", "");
+                Check(ChessArbiterBuildCheck.Run(VRCSDKRequestedBuildType.Scene, false), "all set: the check allows it",
+                    "");
             }
 
             // Each field emptied on its own blocks a world build, naming only that arbiter; an avatar build isn't
@@ -67,17 +67,17 @@ public static class ChessArbiterBuildCheckTest {
             }
             CheckBlocking(VRCSDKRequestedBuildType.Scene, arbiters, allEmpty, "all emptied: every arbiter blocks");
 
-            // The real callback cancels with the first one emptied.
+            // The check cancels a world build with the first one emptied, and allows an avatar build.
             for (int i = 0; i < arbiters.Count; i++) arbiters[i].simpleAuth = saved[i];
             arbiters[0].simpleAuth = null;
-            Debug.Log("[BuildCheckTest] running the real callback with " + arbiters[0].name + " emptied: expect its "
-                + "dialog and a \"Build cancelled\" error");
-            callbackAllowed = callback.OnBuildRequested(VRCSDKRequestedBuildType.Scene);
-            callbackRan = true;
+            worldAllowed = ChessArbiterBuildCheck.Run(VRCSDKRequestedBuildType.Scene, false);
+            avatarAllowed = ChessArbiterBuildCheck.Run(VRCSDKRequestedBuildType.Avatar, false);
+            checkRan = true;
         } finally {
             for (int i = 0; i < arbiters.Count; i++) arbiters[i].simpleAuth = saved[i];
         }
-        Check(callbackRan && !callbackAllowed, "emptied: the callback cancels the build", "it allowed it");
+        Check(checkRan && !worldAllowed, "emptied: the check cancels a world build", "it allowed it");
+        Check(checkRan && avatarAllowed, "emptied: the check allows an avatar build", "it cancelled it");
         bool restored = true;
         for (int i = 0; i < arbiters.Count; i++) {
             if (arbiters[i].simpleAuth != saved[i]) restored = false;
