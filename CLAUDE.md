@@ -44,4 +44,5 @@ See [docs/architecture.md](docs/architecture.md).
 
 - Unity only imports `Assets/` and `Packages/`; `JavaChessBoard/` sits alongside without being imported. Java sources are under `JavaChessBoard/src/main/java/io/siggi/chessboard/`.
 - Development uses Unity with the VRChat Worlds SDK (which includes UdonSharp). There is no standalone .NET SDK.
+- Python is not installed. Don't try to use it for scripts; use PowerShell, Bash, or Java instead.
 - UdonSharp code only runs inside Unity, so tests can't run from the shell under a .NET test runner. Tests are test behaviours run in Unity Play Mode (ClientSim), and networking needs several real clients. See [docs/testing.md](docs/testing.md).
