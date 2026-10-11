@@ -81,7 +81,9 @@ Already settled, so no early check is needed:
 
 **Read:** [udon-constraints](docs/udon-constraints.md), [architecture](docs/architecture.md), [move-encoding](docs/move-encoding.md), [legality-checking](docs/legality-checking.md), [modes](docs/modes.md) (`prohibitSelfCheck`, Chess960 castling), [java-bugs](docs/java-bugs.md), [testing](docs/testing.md)
 
-- [ ] **2.1** Constants and helpers: piece types and colours, square ↔ file/rank, piece encoding in the `byte[64]` board.
+The rules live in `Assets/Siggi/ChessBoard/Rules/` (namespace `SiggiChessBoard`), as static methods and constants on abstract `UdonSharpBehaviour` classes, starting with `ChessRules`. The step 2 test behaviour is `Assets/Tests/Rules/RulesTest.cs`.
+
+- [x] **2.1** Constants and helpers: piece types and colours, square ↔ file/rank, piece encoding in the `byte[64]` board.
   - Verify: the step 2 test behaviour checks square → file/rank → square for all 64 squares, and piece encode → decode for every colour and type, plus empty.
 - [ ] **2.2** Move encoding: pack/unpack helpers, and the derived en passant / double-push checks.
   - Verify: pack → unpack returns every field unchanged, at each field's minimum and maximum; the derived checks are right for hand-built moves (en passant capture, double push, ordinary pawn move, non-pawn move).
