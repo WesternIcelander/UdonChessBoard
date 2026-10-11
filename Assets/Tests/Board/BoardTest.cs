@@ -61,6 +61,9 @@ public class BoardTest : UdonSharpBehaviour {
             TestTakebackButtons();
             TestContinueResetLoadButtons();
             TestLocalButtons();
+            TestMateAndStalemate();
+            TestResign();
+            TestTimeForfeit();
             TestSnapshot();
             if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
             board.ClearState();
@@ -942,7 +945,7 @@ public class BoardTest : UdonSharpBehaviour {
         CheckInt(board.PlayMoveAt(illegal, 1065), ChessBoard.InputRejected, "clock: an illegal move refused");
         CheckInt(board.moveCount, 4, "clock: refused moves not recorded");
 
-        // The clocks stop when the game ends (ending it is 7.5).
+        // The clocks stop when the game ends (set directly here; TestEndings ends games).
         board.lifecycle = ChessBoard.LifecycleEnded;
         Check(!board.IsClockRunning(), "clock: stopped once ended", "running");
         CheckTimes(61500, 2250, 1e6, "clock: ended, times as stored");
@@ -1945,6 +1948,253 @@ public class BoardTest : UdonSharpBehaviour {
         Check(board.CanReset(), "local buttons: reset", "refused");
         board.lifecycle = ChessBoard.LifecycleLoaded;
         Check(board.CanContinue(), "local buttons: continue a loaded game", "refused");
+
+        board.ClearState();
+    }
+
+    // ---- 7.5a game endings ----
+
+    void CheckEnded(int ending, int winner, string result, string name) {
+        CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, name + ": ended");
+        CheckInt(board.ending, ending, name + ": ending");
+        CheckInt(board.winner, winner, name + ": winner");
+        CheckText(ChessPgn.ResultText(board.ending, board.winner), result, name + ": result");
+    }
+
+    void CheckInGame(string name) {
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, name + ": still in game");
+        CheckInt(board.ending, ChessGame.EndingNone, name + ": no ending");
+        CheckInt(board.winner, ChessRules.NoColor, name + ": no winner");
+    }
+
+    void TestMateAndStalemate() {
+        NothingForced();
+
+        // Fool's mate with a clock: Black wins, and the clocks stop with what each side had left.
+        StartedGame(60, 2, 1000);
+        Play(ChessRules.F2, ChessRules.F3, 1001, "mate: 1. f3");
+        Play(ChessRules.E7, ChessRules.E5, 1002, "mate: 1... e5");
+        Play(ChessRules.G2, ChessRules.G4, 1003, "mate: 2. g4");
+        CheckInGame("mate: before the mate");
+        Play(ChessRules.D8, ChessRules.H4, 1004.5, "mate: 2... Qh4#");
+        CheckEnded(ChessGame.EndingCheckmate, ChessRules.Black, "0-1", "mate: fool's mate");
+        CheckInt(board.moveCount, 4, "mate: the mating move recorded");
+        CheckInt(board.clockHistory[3], 61500, "mate: the mating move's clock entry");
+        Check(!board.IsClockRunning(), "mate: clock stopped", "running");
+        CheckTimes(62000, 61500, 1e6, "mate: times kept");
+        CheckInt(board.FlaggedColorAt(1e6), ChessRules.NoColor, "mate: no flag fall later");
+        Check(!board.CheckFlagFallAt(1e6), "mate: no time forfeit later", "forfeit");
+        CheckInt(board.ending, ChessGame.EndingCheckmate, "mate: still checkmate");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E1, ChessRules.F2), ChessBoard.InputRejected,
+            "mate: no move after it");
+        Check(!board.CanResignAs(ChessRules.White, "Ana"), "mate: no resigning after it", "allowed");
+
+        // Scholar's mate by drops with every draw rule on: White wins. A check that isn't mate goes on.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = ChessArbiter.SettingsDrawRules;
+        board.drawOfferColor = ChessRules.Black;
+        board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4);
+        board.PieceDroppedAs("Bob", ChessRules.E7, ChessRules.E5);
+        board.PieceDroppedAs("Ana", ChessRules.F1, ChessRules.C4);
+        board.PieceDroppedAs("Bob", ChessRules.B8, ChessRules.C6);
+        board.PieceDroppedAs("Ana", ChessRules.D1, ChessRules.H5);
+        board.PieceDroppedAs("Bob", ChessRules.G8, ChessRules.F6);
+        CheckInGame("mate: scholar's, before the mate");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.H5, ChessRules.F7), ChessBoard.InputAccepted,
+            "mate: 4. Qxf7# accepted");
+        CheckText(board.notation[6], "Qxf7#", "mate: SAN Qxf7#");
+        CheckEnded(ChessGame.EndingCheckmate, ChessRules.White, "1-0", "mate: scholar's mate");
+        CheckInt(board.drawOfferColor, ChessRules.NoColor, "mate: a pending draw offer lapses");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.E8, ChessRules.F7), ChessBoard.InputRejected,
+            "mate: no reply");
+
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4);
+        board.PieceDroppedAs("Bob", ChessRules.F7, ChessRules.F6);
+        board.PieceDroppedAs("Ana", ChessRules.D1, ChessRules.H5);
+        CheckText(board.notation[2], "Qh5+", "check: SAN Qh5+");
+        CheckInGame("check: a check that isn't mate");
+
+        // Stalemate ends the game as a draw under "No draws" and with every draw rule on.
+        StartedGame(60, 0, 1000);
+        SetPosition("7k/8/8/5Q2/8/8/8/K7 w - - 0 1");
+        Play(ChessRules.F5, ChessRules.G6, 1003, "stalemate: Qg6");
+        CheckEnded(ChessGame.EndingStalemate, ChessRules.NoColor, "1/2-1/2", "stalemate: no draws");
+        Check(!board.IsClockRunning(), "stalemate: clock stopped", "running");
+        CheckTimes(57000, 60000, 1e6, "stalemate: times kept");
+
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = ChessArbiter.SettingsDrawRules;
+        SetPosition("7k/8/8/5Q2/8/8/8/K7 w - - 0 1");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.F5, ChessRules.G6), ChessBoard.InputAccepted,
+            "stalemate: Qg6 dropped");
+        CheckEnded(ChessGame.EndingStalemate, ChessRules.NoColor, "1/2-1/2", "stalemate: every draw rule on");
+
+        // A king in the corner with a square left isn't stalemated.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        SetPosition("7k/8/4Q3/8/8/8/8/K7 w - - 0 1");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E6, ChessRules.E7), ChessBoard.InputAccepted,
+            "no stalemate: Qe7");
+        CheckInGame("no stalemate: Kg8 left");
+
+        board.ClearState();
+    }
+
+    void TestResign() {
+        NothingForced();
+
+        // Each player for their own colour: the other side wins.
+        ButtonGame(0);
+        CheckInt(board.ResignAs(ChessRules.Black, "Ana"), ChessBoard.InputRejected, "resign: not white for black");
+        CheckInt(board.ResignAs(ChessRules.White, "Bob"), ChessBoard.InputRejected, "resign: not black for white");
+        CheckInt(board.ResignAs(ChessRules.White, "Cleo"), ChessBoard.InputRejected, "resign: not a non-player");
+        CheckInt(board.ResignAs(ChessRules.White, ""), ChessBoard.InputRejected, "resign: not an empty name");
+        CheckInt(board.ResignAs(2, "Ana"), ChessBoard.InputRejected, "resign: not colour 2");
+        CheckInGame("resign: refused");
+        CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "resign: white resigns");
+        CheckEnded(ChessGame.EndingResignation, ChessRules.Black, "0-1", "resign: white resigned");
+        CheckInt(board.ResignAs(ChessRules.Black, "Bob"), ChessBoard.InputRejected, "resign: not once ended");
+        CheckInt(board.winner, ChessRules.Black, "resign: the result stays");
+
+        // Black resigns while White is to move, from replay; a draw offer lapses, a takeback request stays.
+        ButtonGame(ChessArbiter.SettingDrawAgreement | ChessArbiter.SettingTakebacks);
+        board.drawOfferColor = ChessRules.White;
+        board.replayMode = true;
+        board.replayIndex = 1;
+        board.takebackColor = ChessRules.White;
+        board.takebackPly = 1;
+        CheckInt(board.ResignAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "resign: black, in replay");
+        CheckEnded(ChessGame.EndingResignation, ChessRules.White, "1-0", "resign: black resigned");
+        Check(board.replayMode && board.replayIndex == 1, "resign: replay kept", "replay changed");
+        CheckInt(board.drawOfferColor, ChessRules.NoColor, "resign: the draw offer lapses");
+        CheckInt(board.takebackColor, ChessRules.White, "resign: the takeback request stays");
+        CheckInt(board.moveCount, 4, "resign: the moves stay");
+
+        // Not once the flag has fallen (that's a time forfeit).
+        ButtonGame(0);
+        FlagFallen();
+        CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputRejected, "resign: not after the flag");
+        CheckInt(board.ending, ChessGame.EndingNone, "resign: refused after the flag, no ending");
+
+        // Not before a game.
+        LobbyWithTwoPlayers();
+        CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputRejected, "resign: not in the lobby");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "resign: lobby stays");
+
+        // With a clock: it stops with the time the side to move had left.
+        StartedGame(60, 0, board.ServerTime() - 2);
+        CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "resign: with a clock");
+        Check(board.whiteTime > 57000 && board.whiteTime <= 58000, "resign: white's time stopped after 2 s",
+            "time " + board.whiteTime);
+        CheckInt(board.blackTime, 60000, "resign: black's time untouched");
+        Check(!board.IsClockRunning(), "resign: clock stopped", "running");
+        CheckInt(board.RemainingTimeAt(ChessRules.White, board.ServerTime() + 1000), board.whiteTime,
+            "resign: white's time stays");
+
+        // The local player in both seats chooses the side.
+        board.ClearState();
+        board.JoinWhite();
+        board.JoinBlack();
+        board.StartGame();
+        CheckInt(board.Resign(ChessRules.Black), ChessBoard.InputAccepted, "resign: local player for black");
+        CheckEnded(ChessGame.EndingResignation, ChessRules.White, "1-0", "resign: local player");
+        CheckInt(board.Resign(ChessRules.White), ChessBoard.InputRejected, "resign: local player, not twice");
+
+        board.ClearState();
+    }
+
+    // A game with a 60 s clock from server time 1000 in the position fen, with these settings, ended by
+    // CheckFlagFallAt at 1060, when the side to move's flag falls.
+    void CheckForfeit(string fen, int settings, int winner, string result, string name) {
+        StartedGame(60, 0, 1000);
+        board.gameSettings = settings;
+        SetPosition(fen);
+        CheckText(Fen(), fen, name + ": position set up");
+        Check(board.CheckFlagFallAt(1060), name + ": forfeit", "not ended");
+        CheckEnded(ChessGame.EndingTimeForfeit, winner, result, name);
+    }
+
+    void TestTimeForfeit() {
+        NothingForced();
+        int allDraws = ChessArbiter.SettingsDrawRules;
+        int dead = ChessArbiter.SettingDeadPosition;
+
+        // White's flag falls at exactly 0.
+        StartedGame(60, 0, 1000);
+        board.drawOfferColor = ChessRules.Black;
+        Check(!board.CheckFlagFallAt(1059.5), "forfeit: not with 0.5 s left", "ended");
+        CheckInGame("forfeit: 0.5 s left");
+        Check(board.CheckFlagFallAt(1060), "forfeit: white's flag", "not ended");
+        CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.Black, "0-1", "forfeit: white out of time");
+        CheckInt(board.whiteTime, 0, "forfeit: white's time 0");
+        CheckInt(board.blackTime, 60000, "forfeit: black's time untouched");
+        CheckInt(board.drawOfferColor, ChessRules.NoColor, "forfeit: the draw offer lapses");
+        Check(!board.IsClockRunning(), "forfeit: clock stopped", "running");
+        CheckTimes(0, 60000, 1e6, "forfeit: times kept");
+        Check(!board.CheckFlagFallAt(1e6), "forfeit: only once", "ended again");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4), ChessBoard.InputRejected,
+            "forfeit: no move after it");
+        Check(!board.CanResignAs(ChessRules.Black, "Bob"), "forfeit: no resigning after it", "allowed");
+
+        // Black's flag; every draw rule on doesn't help with mating material on the board.
+        StartedGame(60, 0, 1000);
+        board.gameSettings = allDraws;
+        Play(ChessRules.E2, ChessRules.E4, 1000, "forfeit: 1. e4");
+        Check(!board.CheckFlagFallAt(1059.5), "forfeit: black not yet", "ended");
+        Check(board.CheckFlagFallAt(1060), "forfeit: black's flag", "not ended");
+        CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.White, "1-0", "forfeit: black out of time");
+        CheckInt(board.blackTime, 0, "forfeit: black's time 0");
+
+        // The opponent can't checkmate: a draw with the dead-position rule on, a loss otherwise.
+        string loneKing = "k7/8/8/8/8/8/8/KQR5 w - - 0 1";
+        CheckForfeit(loneKing, dead, ChessRules.NoColor, "1/2-1/2", "forfeit: lone king, dead position on");
+        CheckForfeit(loneKing, allDraws, ChessRules.NoColor, "1/2-1/2", "forfeit: lone king, every draw rule");
+        CheckForfeit(loneKing, 0, ChessRules.Black, "0-1", "forfeit: lone king, no draws");
+        CheckForfeit(loneKing, allDraws & ~dead, ChessRules.Black, "0-1", "forfeit: lone king, dead position off");
+        CheckForfeit(loneKing, ChessArbiter.SettingTakebacks | ChessArbiter.SettingModeForced
+            | ChessArbiter.SettingClockForced, ChessRules.Black, "0-1", "forfeit: lone king, only other settings");
+        CheckForfeit("k7/8/8/8/8/8/8/K5n1 w - - 0 1", dead, ChessRules.NoColor, "1/2-1/2",
+            "forfeit: K v K+N");
+        CheckForfeit("k7/8/8/8/8/8/P7/K5n1 w - - 0 1", dead, ChessRules.Black, "0-1",
+            "forfeit: K+P v K+N can be mated");
+        CheckForfeit("k7/8/8/8/8/8/8/K1N4n w - - 0 1", dead, ChessRules.Black, "0-1",
+            "forfeit: K+N v K+N can be mated");
+        CheckForfeit("k4b2/8/8/8/8/8/8/K1B5 w - - 0 1", dead, ChessRules.NoColor, "1/2-1/2",
+            "forfeit: bishops on one colour");
+        CheckForfeit("k3b3/8/8/8/8/8/8/K1B5 w - - 0 1", dead, ChessRules.Black, "0-1",
+            "forfeit: bishops on both colours");
+        CheckForfeit("k7/8/8/8/8/8/8/K1B5 b - - 0 1", dead, ChessRules.NoColor, "1/2-1/2",
+            "forfeit: black flags against K+B");
+        CheckForfeit("k7/8/8/3q4/8/8/8/K1B5 b - - 0 1", dead, ChessRules.White, "1-0",
+            "forfeit: K+Q flags against K+B");
+        CheckForfeit("k7/8/8/8/8/8/P7/K7 b - - 0 1", dead, ChessRules.White, "1-0",
+            "forfeit: a lone king flags against a pawn");
+
+        // In replay too: replay doesn't stop the clock.
+        StartedGame(60, 0, 1000);
+        board.replayMode = true;
+        Check(board.CheckFlagFallAt(1060), "forfeit: in replay", "not ended");
+        CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.Black, "0-1", "forfeit: in replay");
+        Check(board.replayMode, "forfeit: replay kept", "left replay");
+
+        // Never without a clock, before a game, or on a loaded board.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        Check(!board.CheckFlagFallAt(1e9), "forfeit: never without a clock", "ended");
+        CheckInGame("forfeit: no clock");
+        LobbyWithTwoPlayers();
+        board.SetClockAs("Ana", 60, 0);
+        Check(!board.CheckFlagFallAt(1e9), "forfeit: not in the lobby", "ended");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "forfeit: lobby stays");
+        board.lifecycle = ChessBoard.LifecycleLoaded;
+        Check(!board.CheckFlagFallAt(1e9), "forfeit: not on a loaded board", "ended");
+
+        // The real server time.
+        StartedGame(60, 0, 0);
+        board.turnStart = board.ServerTime();
+        Check(!board.CheckFlagFall(), "forfeit: server time, time left", "ended");
+        FlagFallen();
+        Check(board.CheckFlagFall(), "forfeit: server time, flag fallen", "not ended");
+        CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.Black, "0-1", "forfeit: server time");
 
         board.ClearState();
     }

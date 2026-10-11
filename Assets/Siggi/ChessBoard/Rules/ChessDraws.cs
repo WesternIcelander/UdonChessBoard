@@ -155,5 +155,22 @@ namespace SiggiChessBoard {
             if (knights == 0) return !(lightBishop && darkBishop);
             return knights == 1 && !lightBishop && !darkBishop;
         }
+
+        // Whether color can't checkmate by any series of legal moves, which turns its opponent's time forfeit into a
+        // draw (FIDE 6.9): color has only its king, or the whole board is insufficient material
+        // (IsInsufficientMaterial). Otherwise the opponent's own pieces can hem their king in, so even a lone knight or
+        // bishop can mate (K+N v K+P, K+B v K+N), and the flag loses.
+        public static bool HasNoMatingMaterial(byte[] board, int color) {
+            bool onlyKing = true;
+            for (int sq = 0; sq < 64; sq++) {
+                int piece = board[sq];
+                if (piece == ChessRules.Empty || ChessRules.PieceTypeOf(piece) == ChessRules.King) continue;
+                if (ChessRules.PieceColorOf(piece) == color) {
+                    onlyKing = false;
+                    break;
+                }
+            }
+            return onlyKing || IsInsufficientMaterial(board);
+        }
     }
 }

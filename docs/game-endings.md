@@ -51,4 +51,18 @@ Each FIDE draw rule can be switched on or off in the instance settings menu (on 
 - **Claims:** for threefold and fifty-move, show a "Claim draw" button to the player to move when the condition holds. FIDE also lets a player claim with a move they're about to make; leave that out.
 - **Draw result:** PGN `1/2-1/2`, logged like any other ending, with the rule recorded in `Termination`.
 - **Stalemate is not one of these switches.** It always ends the game as a stalemate, whatever the draw settings, including "No draws".
-- **Under "No draws"**, none of the rules above end a game. Apart from checkmate and stalemate, the only ways to end it are resignation or a reset. In dead positions and repetition or move-count situations, play simply continues.
+- **Under "No draws"**, none of the rules above end a game. Apart from checkmate and stalemate, the only ways to end it are resignation, time forfeit (always a loss) or a reset. In dead positions and repetition or move-count situations, play simply continues.
+
+## Time forfeit
+
+- FIDE 6.9: the side out of time loses, unless its opponent can't checkmate by any series of legal moves, which makes it a draw. That exception is the **dead-position rule's**: it applies only while the snapshot has the dead-position draw rule on, so under "No draws" (or with only the other draw rules on) a timeout is always a loss.
+- **"Can't checkmate"** (`ChessDraws.HasNoMatingMaterial(board, color)`): the opponent has only its king, or the whole board is insufficient material (`IsInsufficientMaterial`, the standard cases above). Anything else counts as able to mate, since the flagged side's own pieces can hem its king in: K+N or K+B against a king with a pawn or a minor piece can mate, so the flag loses there.
+- The result is the time forfeit ending either way (`Termination "time forfeit"`), with `1/2-1/2` for the draw.
+
+## Implementation
+
+On `ChessBoard` (`Assets/Siggi/ChessBoard/ChessBoard.cs`). `EndGameAt(ending, winner, now)` sets `ending` and `winner` (`ChessRules.NoColor` for a draw), enters `LifecycleEnded`, stops a running clock with the side to move's remaining time stored (see [Clocks](clocks.md#implementation)), and lets a pending draw offer lapse. A pending takeback request stays, since an ended game can still be continued. Replay mode is left as it is. Logging the PGN on this transition is step 7.7.
+
+- **Checkmate and stalemate:** `PlayMoveAt` checks the position after every move (`ChessMoves.PositionStatus`): checkmate ends the game with the mover as winner, stalemate as a draw, whatever the draw settings. The automatic draws come with step 7.5b.
+- **Resign:** `Resign(color)` / `ResignAs(color, name)`, accepted when `CanResignAs` holds (the game running, `name` seated as `color`, in replay too); the other colour wins. A player in both seats chooses the side that resigns.
+- **Time forfeit:** `CheckFlagFall()` / `CheckFlagFallAt(now)` ends the game when the side to move's flag has fallen (`FlaggedColorAt`), and returns whether it did; the winner is the opponent, or nobody under the exception above. It works in replay too, since replay doesn't stop the clock. The board calls it from `Update` while a game is in progress; with networking (step 8) only the owner does, once.

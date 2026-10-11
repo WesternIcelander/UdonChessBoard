@@ -480,7 +480,7 @@ namespace SiggiChessBoard {
 
         // The side whose time has run out at server time now (flag fall), ChessRules.NoColor if none. Only the side to
         // move's clock runs, and a move is refused once it has run out, so that's the only side that can flag. Every
-        // client sees it; ending the game (time forfeit) is step 7.5a.
+        // client sees it; the owner ends the game on it (CheckFlagFallAt).
         public int FlaggedColorAt(double now) {
             if (!IsClockRunning()) return ChessRules.NoColor;
             int mover = state[ChessPosition.StateSideToMove];
@@ -496,7 +496,8 @@ namespace SiggiChessBoard {
         // is reduced by the time since their turn began, the increment is added, the result goes into the clock
         // history (-1 without a clock) and the turn start resets to now. Refused unless a game is in progress and the
         // board isn't in replay, if the mover's time has run out, and for a move that isn't legal. Who may move, and
-        // matching a drop to a move, are the input API's (step 7.4a); game endings are step 7.5.
+        // matching a drop to a move, are the input API's (step 7.4a). A move that checkmates or stalemates ends the
+        // game.
         public int PlayMoveAt(int move, double now) {
             if (lifecycle != LifecycleInGame || replayMode) return InputRejected;
             if (FlaggedColorAt(now) != ChessRules.NoColor) return InputRejected;
@@ -531,7 +532,67 @@ namespace SiggiChessBoard {
             }
             turnStart = now;
             moveCount++;
+
+            // Checkmate and stalemate end the game whatever the draw settings; the automatic draws are step 7.5b.
+            int status = ChessMoves.PositionStatus(board, state,
+                ChessMoves.GenerateLegalMoves(board, state, legalMoves, true), true);
+            if (status == ChessMoves.StatusCheckmate) EndGameAt(ChessGame.EndingCheckmate, mover, now);
+            else if (status == ChessMoves.StatusStalemate) {
+                EndGameAt(ChessGame.EndingStalemate, ChessRules.NoColor, now);
+            }
             return InputAccepted;
+        }
+
+        // ---- Game endings (docs/game-endings.md) ----
+
+        // The owner watches for flag fall. Ownership comes with step 8; until then every client is the owner.
+        void Update() {
+            if (lifecycle == LifecycleInGame) CheckFlagFall();
+        }
+
+        // Ends the game in progress at server time now: how it ended, who won (ChessRules.NoColor for a draw), and
+        // the ended state. A running clock stops with the side to move's remaining time stored, so it keeps showing
+        // what was left. A pending draw offer lapses; a takeback request stays, since an ended game can still be
+        // continued. Logging the PGN on this transition is step 7.7.
+        void EndGameAt(int newEnding, int newWinner, double now) {
+            if (IsClockRunning()) {
+                int mover = state[ChessPosition.StateSideToMove];
+                int left = RemainingTimeAt(mover, now);
+                if (mover == ChessRules.White) whiteTime = left;
+                else blackTime = left;
+            }
+            ending = newEnding;
+            winner = newWinner;
+            lifecycle = LifecycleEnded;
+            drawOfferColor = ChessRules.NoColor;
+        }
+
+        public int Resign(int color) {
+            return ResignAs(color, LocalName());
+        }
+
+        // The resign button: name resigns for color (CanResignAs), and the other side wins.
+        public int ResignAs(int color, string name) {
+            if (!CanResignAs(color, name)) return InputRejected;
+            EndGameAt(ChessGame.EndingResignation, ChessRules.OtherColor(color), ServerTime());
+            return InputAccepted;
+        }
+
+        public bool CheckFlagFall() {
+            return CheckFlagFallAt(ServerTime());
+        }
+
+        // Ends the game on time forfeit if the side to move's flag has fallen at server time now, and returns whether
+        // it did. The side out of time loses, unless its opponent can't checkmate (ChessDraws.HasNoMatingMaterial) and
+        // the snapshot's dead-position rule is on, which makes it a draw; under "No draws" it always loses.
+        public bool CheckFlagFallAt(double now) {
+            int flagged = FlaggedColorAt(now);
+            if (flagged == ChessRules.NoColor) return false;
+            int opponent = ChessRules.OtherColor(flagged);
+            bool draw = IsGameSettingOn(ChessArbiter.SettingDeadPosition)
+                && ChessDraws.HasNoMatingMaterial(board, opponent);
+            EndGameAt(ChessGame.EndingTimeForfeit, draw ? ChessRules.NoColor : opponent, now);
+            return true;
         }
 
         // ---- Piece input (docs/player-input.md) ----
@@ -689,10 +750,10 @@ namespace SiggiChessBoard {
 
         // ---- Buttons (docs/player-input.md, Buttons) ----
         // Whether each board button applies, for the view (which shows only those that do) and for the button's own
-        // method, which refuses when its check does. The methods themselves come with their steps: resign 7.5a, draws
-        // 7.5b, replay 7.8a, takebacks 7.8b, loading 7.9a, continuing 7.9b, reset 7.10. The plain checks are for the
-        // local player; the *As ones take any name, and an organizer flag where organizers count, for tests and the
-        // debug view. Taking ownership, and the idle-reset exception for everyone else, come with step 8.
+        // method, which refuses when its check does. The methods themselves come with their steps: resign (with the
+        // game endings), draws 7.5b, replay 7.8a, takebacks 7.8b, loading 7.9a, continuing 7.9b, reset 7.10. The plain
+        // checks are for the local player; the *As ones take any name, and an organizer flag where organizers count,
+        // for tests and the debug view. Taking ownership, and the idle-reset exception for everyone else, come with step 8.
 
         // Scratch for ClaimableDraw's repetition count.
         byte[] repetitionBoard = new byte[64];

@@ -8,7 +8,7 @@
 | Loaded | a game is imported (PGN) or loaded from the archive | the loaded game is shown in replay mode; players can join seats and continue it (see [Continuing a loaded game](replay.md#continuing-a-loaded-game)) |
 | Lobby | someone presses Join White or Join Black on a reset board | seats being filled, mode chosen |
 | In game | Start pressed | moves allowed |
-| Ended | checkmate, king capture, stalemate, resignation, draw | replay and continuing still available |
+| Ended | checkmate, king capture, stalemate, resignation, time forfeit, draw | replay and continuing still available |
 
 Replay mode is entered from a game (in progress or ended) or by loading/importing a game, as described under [Replay mode](replay.md).
 
