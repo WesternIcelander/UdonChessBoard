@@ -22,3 +22,34 @@ On `ChessBoard` (`Assets/Siggi/ChessBoard/ChessBoard.cs`). Each method has an `*
 - `KingDroppedOnCastleSpace(side)`: the view's drop on the castle drop space, `CastleKingSide` (rook right of the king) or `CastleQueenSide`; plays the side to move's legal castle on that side, otherwise rejected. It castles in unambiguous positions too, since the view only offers the space when needed.
 - `IsCastleDropSpaceNeeded(side)`: tells the view (step 9.3b) whether to show the space while the king is held: a game in progress and not in replay, the castle on that side legal, and a drop on its destination not a castle (the king already stands there, or a normal king move ends there).
 - Free moves in replay are step 7.8a; activity timestamps on touches come with inactivity (step 8.5).
+
+## Buttons
+
+The board's buttons are one method each on `ChessBoard` (see [Architecture](architecture.md#logical-board-and-physical-board)), and each has a `Can…` check that says whether it applies. The view shows a button only while its check holds (steps 9.4a/b), and the button's method refuses whenever its check doesn't, so the two can never disagree. The checks for Join, mode, clock and Start come with their methods (step 7.1); the others come before their methods, which arrive with resign (7.5a), draws (7.5b), replay (7.8a), takebacks (7.8b), loading (7.9a), continuing (7.9b) and reset (7.10).
+
+Like the input methods, each check has a plain form for the local player and an `*As` form taking any name; where organizers count, the `*As` form also takes an `organizer` flag (the plain one asks `arbiter.IsOrganizer` for the local player). A button that acts for one colour takes it, so a player in both seats chooses which side resigns, offers or accepts.
+
+| Check | Applies when |
+|---|---|
+| `CanJoinAs(color, name)` | a reset, lobby or loaded board, and that seat is empty |
+| `CanSetModeAs(name)` | a seated player, in the lobby, the mode not forced |
+| `CanSetClockAs(name)` | a seated player, in the lobby or on a loaded board, the clock not forced |
+| `CanStartGameAs(name)` | a seated player, in the lobby, both seats filled |
+| `CanResignAs(color, name)` | the game running, `name` seated as `color` |
+| `CanOfferDrawAs(color, name)` | draws by agreement on, the game running, `name` seated as `color`, no offer pending |
+| `CanAcceptDrawAs` / `CanDeclineDrawAs(color, name)` | the other colour's offer pending, draws by agreement still on, the game running, `name` seated as `color` |
+| `CanClaimDrawAs(name)` | the game running, `name` seated as the side to move, and `ClaimableDraw()` has a draw |
+| `CanEnterReplayAs(name, organizer)` | a game in progress or ended, not in replay, `name` may work the replay controls |
+| `CanLeaveReplayAs(name, organizer)` | in replay of a game in progress or ended (not a loaded board), `name` may work the replay controls |
+| `CanStepToAs(name, organizer, ply)` | in replay, `name` may work the replay controls, `ply` from 0 to `moveCount` and not the position shown (unless that's custom) |
+| `CanRequestTakebackAs(color, name)` | takebacks on, no request pending, `name` seated as `color`, and the game can continue from the replay position |
+| `CanAcceptTakebackAs` / `CanDeclineTakebackAs(color, name)` | the other colour's request pending for the ply still shown, takebacks still on, `name` seated as `color`, and the game can continue from the replay position |
+| `CanContinueAs(name)` | a loaded board in replay on a game position (not custom, the last one included), both seats filled, `name` seated |
+| `CanResetAs(name, organizer)` | the board isn't reset, and `name` is seated or an organizer |
+| `CanLoadGame()` | the board is reset |
+
+- **The game running** means in progress (`LifecycleInGame`) with the side to move's flag not fallen. Resigning, draw offers and claims aren't moves, so they work in replay too.
+- **`ClaimableDraw()`** is the draw the side to move could claim: `EndingThreefoldRepetition` when the position has occurred three times and that claim is on in the snapshot, otherwise `EndingFiftyMoveRule` when the halfmove clock has reached 100 and that claim is on, otherwise `EndingNone` (always under "No draws"). Step 7.5b ends the game with it.
+- **Who may work the replay controls:** a seated player or an organizer, or anyone on a board where nobody is seated (a loaded game nobody has joined), since the ownership rule only limits who isn't seated while someone is (see [Ownership](ownership.md)). A bystander's way in once the players have gone idle comes with ownership and inactivity (steps 8.4, 8.5).
+- **The game can continue from the replay position** when it's a position of the game history (not custom) with at least one move after it (a takeback takes back at least one move), and the game is running or ended. A loaded game continues with "Continue from here" instead, which needs no agreement and can also start from the last position.
+- Reset by anyone else once the board has been idle for the reset-available time comes with inactivity (step 8.5).

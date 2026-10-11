@@ -210,14 +210,7 @@ namespace SiggiChessBoard {
         // else can't be joined (there's no leaving a seat but a reset); names are compared exactly. Joining a seat
         // you already have changes nothing. Public for tests and the debug view; the buttons use JoinWhite/JoinBlack.
         public int JoinAs(int color, string name) {
-            if (color != ChessRules.White && color != ChessRules.Black) return InputRejected;
-            if (name == null || name.Length == 0) return InputRejected;
-            if (lifecycle != LifecycleReset && lifecycle != LifecycleLobby && lifecycle != LifecycleLoaded) {
-                return InputRejected;
-            }
-            string seated = color == ChessRules.White ? whitePlayer : blackPlayer;
-            // == on strings is ordinal: no trimming, case folding or normalization (docs/ownership.md).
-            if (seated.Length != 0) return seated == name ? InputAccepted : InputRejected;
+            if (!CanJoinAs(color, name)) return IsSeated(color, name) && SeatsOpen() ? InputAccepted : InputRejected;
 
             if (color == ChessRules.White) whitePlayer = name;
             else blackPlayer = name;
@@ -228,10 +221,28 @@ namespace SiggiChessBoard {
             return InputAccepted;
         }
 
+        public bool CanJoin(int color) {
+            return CanJoinAs(color, LocalName());
+        }
+
+        // Whether the Join button of color applies to name: the seats are open (a reset board, the lobby or a loaded
+        // board) and that seat is empty. A seat already held, by name or anyone else, has nothing to join.
+        public bool CanJoinAs(int color, string name) {
+            if (color != ChessRules.White && color != ChessRules.Black) return false;
+            if (name == null || name.Length == 0 || !SeatsOpen()) return false;
+            return (color == ChessRules.White ? whitePlayer : blackPlayer).Length == 0;
+        }
+
+        // Seats can be joined until a game starts: on a reset board, in the lobby and on a loaded board.
+        bool SeatsOpen() {
+            return lifecycle == LifecycleReset || lifecycle == LifecycleLobby || lifecycle == LifecycleLoaded;
+        }
+
         // Whether this display name has the seat of color.
         public bool IsSeated(int color, string name) {
             if (name == null || name.Length == 0) return false;
             string seated = color == ChessRules.White ? whitePlayer : color == ChessRules.Black ? blackPlayer : "";
+            // == on strings is ordinal: no trimming, case folding or normalization (docs/ownership.md).
             return seated == name;
         }
 
@@ -315,10 +326,19 @@ namespace SiggiChessBoard {
             return SetModeAs(LocalName(), newMode);
         }
 
-        // Chooses Standard or Chess960. Only in the lobby: a loaded game's mode is the game's own.
+        public bool CanSetMode() {
+            return CanSetModeAs(LocalName());
+        }
+
+        // Whether name may choose the mode: a seated player in the lobby (a loaded game's mode is the game's own),
+        // with the mode not forced.
+        public bool CanSetModeAs(string name) {
+            return lifecycle == LifecycleLobby && IsPlayer(name) && !IsModeForced();
+        }
+
+        // Chooses Standard or Chess960.
         public int SetModeAs(string name, int newMode) {
-            if (lifecycle != LifecycleLobby) return InputRejected;
-            if (!IsPlayer(name) || IsModeForced()) return InputRejected;
+            if (!CanSetModeAs(name)) return InputRejected;
             if (newMode != ChessGame.ModeStandard && newMode != ChessGame.ModeChess960) return InputRejected;
             mode = newMode;
             return InputAccepted;
@@ -328,11 +348,19 @@ namespace SiggiChessBoard {
             return SetClockAs(LocalName(), newBaseTime, newIncrement);
         }
 
-        // Chooses the time control (seconds; base ChessArbiter.NoClock with increment 0 for no clock). In the lobby
-        // and on a loaded board, which continues with fresh clocks.
+        public bool CanSetClock() {
+            return CanSetClockAs(LocalName());
+        }
+
+        // Whether name may choose the clock: a seated player in the lobby or on a loaded board (which continues with
+        // fresh clocks), with the clock not forced.
+        public bool CanSetClockAs(string name) {
+            return (lifecycle == LifecycleLobby || lifecycle == LifecycleLoaded) && IsPlayer(name) && !IsClockForced();
+        }
+
+        // Chooses the time control (seconds; base ChessArbiter.NoClock with increment 0 for no clock).
         public int SetClockAs(string name, int newBaseTime, int newIncrement) {
-            if (lifecycle != LifecycleLobby && lifecycle != LifecycleLoaded) return InputRejected;
-            if (!IsPlayer(name) || IsClockForced()) return InputRejected;
+            if (!CanSetClockAs(name)) return InputRejected;
             if (!IsValidTimeControl(newBaseTime, newIncrement)) return InputRejected;
             baseTime = newBaseTime;
             increment = newIncrement;
@@ -351,13 +379,21 @@ namespace SiggiChessBoard {
             return StartGameAs(LocalName());
         }
 
+        public bool CanStartGame() {
+            return CanStartGameAs(LocalName());
+        }
+
+        // Whether the Start button applies to name: a seated player in the lobby with both seats filled (a loaded
+        // board continues instead, see CanContinueAs).
+        public bool CanStartGameAs(string name) {
+            return lifecycle == LifecycleLobby && whitePlayer.Length != 0 && blackPlayer.Length != 0 && IsPlayer(name);
+        }
+
         // The Start button: a seated player starts the game once both seats are filled. Forced settings are applied
         // first; a Chess960 game gets a random starting position (generated here, by the player pressing Start, and
         // synced like any other state). Both clocks get the base time and the white clock starts running.
         public int StartGameAs(string name) {
-            if (lifecycle != LifecycleLobby) return InputRejected;
-            if (whitePlayer.Length == 0 || blackPlayer.Length == 0) return InputRejected;
-            if (!IsPlayer(name)) return InputRejected;
+            if (!CanStartGameAs(name)) return InputRejected;
 
             ApplyForcedSettings();
             if (mode == ChessGame.ModeChess960) {
@@ -649,6 +685,215 @@ namespace SiggiChessBoard {
             int from = (move >> ChessRules.MoveFromShift) & ChessRules.MoveSquareMask;
             int rookFile = ((move >> ChessRules.MoveToShift) & ChessRules.MoveSquareMask) & 7;
             return (from & ~7) | (rookFile > (from & 7) ? ChessRules.FileG : ChessRules.FileC);
+        }
+
+        // ---- Buttons (docs/player-input.md, Buttons) ----
+        // Whether each board button applies, for the view (which shows only those that do) and for the button's own
+        // method, which refuses when its check does. The methods themselves come with their steps: resign 7.5a, draws
+        // 7.5b, replay 7.8a, takebacks 7.8b, loading 7.9a, continuing 7.9b, reset 7.10. The plain checks are for the
+        // local player; the *As ones take any name, and an organizer flag where organizers count, for tests and the
+        // debug view. Taking ownership, and the idle-reset exception for everyone else, come with step 8.
+
+        // Scratch for ClaimableDraw's repetition count.
+        byte[] repetitionBoard = new byte[64];
+        int[] repetitionState = new int[ChessPosition.StateLength];
+
+        // Whether the local player is an organizer of the board's arbiter (docs/organizers.md).
+        bool LocalIsOrganizer() {
+            VRCPlayerApi player = Networking.LocalPlayer;
+            return Utilities.IsValid(player) && Utilities.IsValid(arbiter) && arbiter.IsOrganizer(player);
+        }
+
+        // Whether the game is being played: in progress and the side to move's flag not fallen. Replay doesn't pause
+        // anything but moves, so the buttons below that aren't moves work in replay too.
+        bool GameRunning() {
+            return lifecycle == LifecycleInGame && FlaggedColor() == ChessRules.NoColor;
+        }
+
+        public bool CanResign(int color) {
+            return CanResignAs(color, LocalName());
+        }
+
+        // Whether name may resign for color: the game is running and name has that seat (a player in both seats
+        // chooses which side resigns).
+        public bool CanResignAs(int color, string name) {
+            return GameRunning() && IsSeated(color, name);
+        }
+
+        public bool CanOfferDraw(int color) {
+            return CanOfferDrawAs(color, LocalName());
+        }
+
+        // Whether name may offer a draw for color: the snapshot allows draws by agreement, the game is running, name
+        // has that seat and no offer is pending (one from the other side is accepted instead).
+        public bool CanOfferDrawAs(int color, string name) {
+            return IsGameSettingOn(ChessArbiter.SettingDrawAgreement) && GameRunning() && IsSeated(color, name)
+                && drawOfferColor == ChessRules.NoColor;
+        }
+
+        public bool CanAcceptDraw(int color) {
+            return CanAnswerDrawAs(color, LocalName());
+        }
+
+        public bool CanAcceptDrawAs(int color, string name) {
+            return CanAnswerDrawAs(color, name);
+        }
+
+        public bool CanDeclineDraw(int color) {
+            return CanAnswerDrawAs(color, LocalName());
+        }
+
+        public bool CanDeclineDrawAs(int color, string name) {
+            return CanAnswerDrawAs(color, name);
+        }
+
+        // Whether name may accept or decline a draw offer for color: the other side's offer is pending, the snapshot
+        // still allows draws by agreement (a re-snapshot can turn them off), the game is running and name has that
+        // seat.
+        bool CanAnswerDrawAs(int color, string name) {
+            if (color != ChessRules.White && color != ChessRules.Black) return false;
+            return IsGameSettingOn(ChessArbiter.SettingDrawAgreement) && GameRunning() && IsSeated(color, name)
+                && drawOfferColor == ChessRules.OtherColor(color);
+        }
+
+        // The draw the side to move could claim now (docs/game-endings.md, Claims): ChessGame.EndingThreefoldRepetition
+        // when the position has occurred three times and the snapshot allows that claim, otherwise
+        // EndingFiftyMoveRule when fifty moves each have passed without a capture or pawn move and that claim is
+        // allowed, otherwise EndingNone. Under "No draws" it's always EndingNone.
+        public int ClaimableDraw() {
+            if (IsGameSettingOn(ChessArbiter.SettingThreefoldRepetition)) {
+                int count = ChessDraws.CountRepetitions(board, state, moveHistory, moveCount, halfmoveClock,
+                    repetitionBoard, repetitionState, legalMoves, true);
+                if (ChessDraws.IsThreefoldRepetition(count)) return ChessGame.EndingThreefoldRepetition;
+            }
+            if (IsGameSettingOn(ChessArbiter.SettingFiftyMoveRule) && ChessDraws.IsFiftyMoveRule(halfmoveClock)) {
+                return ChessGame.EndingFiftyMoveRule;
+            }
+            return ChessGame.EndingNone;
+        }
+
+        public bool CanClaimDraw() {
+            return CanClaimDrawAs(LocalName());
+        }
+
+        // Whether name may claim a draw: the game is running, name has the side to move's seat and ClaimableDraw has
+        // one.
+        public bool CanClaimDrawAs(string name) {
+            if (!GameRunning() || !IsSeated(state[ChessPosition.StateSideToMove], name)) return false;
+            return ClaimableDraw() != ChessGame.EndingNone;
+        }
+
+        // Whether name may work the replay controls: an organizer, a seated player, or anyone on a board nobody has
+        // joined (a loaded game; docs/ownership.md limits only who isn't seated while someone is).
+        bool MayControlReplay(string name, bool organizer) {
+            if (organizer || IsPlayer(name)) return true;
+            return name != null && name.Length != 0 && whitePlayer.Length == 0 && blackPlayer.Length == 0;
+        }
+
+        public bool CanEnterReplay() {
+            return CanEnterReplayAs(LocalName(), LocalIsOrganizer());
+        }
+
+        // Whether name may enter replay: a game in progress or ended, not already in replay, and name may work the
+        // replay controls. A loaded game is always in replay.
+        public bool CanEnterReplayAs(string name, bool organizer) {
+            if (lifecycle != LifecycleInGame && lifecycle != LifecycleEnded) return false;
+            return !replayMode && MayControlReplay(name, organizer);
+        }
+
+        public bool CanLeaveReplay() {
+            return CanLeaveReplayAs(LocalName(), LocalIsOrganizer());
+        }
+
+        // Whether name may leave replay: in replay of a game in progress or ended (a loaded board has no game to go
+        // back to), and name may work the replay controls.
+        public bool CanLeaveReplayAs(string name, bool organizer) {
+            if (lifecycle != LifecycleInGame && lifecycle != LifecycleEnded) return false;
+            return replayMode && MayControlReplay(name, organizer);
+        }
+
+        public bool CanStepTo(int ply) {
+            return CanStepToAs(LocalName(), LocalIsOrganizer(), ply);
+        }
+
+        // Whether name may step the replay to ply (0 before the first move to moveCount after the last): in replay,
+        // name may work the replay controls, and ply is in the game and not the position already shown (from a custom
+        // position, stepping to its ply shows the game's position again).
+        public bool CanStepToAs(string name, bool organizer, int ply) {
+            if (!replayMode || !MayControlReplay(name, organizer)) return false;
+            if (ply < 0 || ply > moveCount) return false;
+            return ply != replayIndex || replayCustom;
+        }
+
+        // Whether a game can continue from the replay position: a position of the game history (not custom) with a
+        // move after it, of a game in progress (the side to move's flag not fallen) or ended.
+        bool CanContinueFromReplay() {
+            if (!replayMode || replayCustom || replayIndex < 0 || replayIndex >= moveCount) return false;
+            return GameRunning() || lifecycle == LifecycleEnded;
+        }
+
+        public bool CanRequestTakeback(int color) {
+            return CanRequestTakebackAs(color, LocalName());
+        }
+
+        // Whether name may ask, for color, to continue from the replay position (docs/replay.md): the snapshot allows
+        // takebacks, no request is pending, name has that seat, and the game can continue from there.
+        public bool CanRequestTakebackAs(int color, string name) {
+            return IsGameSettingOn(ChessArbiter.SettingTakebacks) && takebackColor == ChessRules.NoColor
+                && IsSeated(color, name) && CanContinueFromReplay();
+        }
+
+        public bool CanAcceptTakeback(int color) {
+            return CanAnswerTakebackAs(color, LocalName());
+        }
+
+        public bool CanAcceptTakebackAs(int color, string name) {
+            return CanAnswerTakebackAs(color, name);
+        }
+
+        public bool CanDeclineTakeback(int color) {
+            return CanAnswerTakebackAs(color, LocalName());
+        }
+
+        public bool CanDeclineTakebackAs(int color, string name) {
+            return CanAnswerTakebackAs(color, name);
+        }
+
+        // Whether name may accept or decline a takeback request for color: the other side's request is pending for
+        // the position still shown, the snapshot still allows takebacks, name has that seat, and the game can
+        // continue from there.
+        bool CanAnswerTakebackAs(int color, string name) {
+            if (color != ChessRules.White && color != ChessRules.Black) return false;
+            return IsGameSettingOn(ChessArbiter.SettingTakebacks) && takebackColor == ChessRules.OtherColor(color)
+                && takebackPly == replayIndex && IsSeated(color, name) && CanContinueFromReplay();
+        }
+
+        public bool CanContinue() {
+            return CanContinueAs(LocalName());
+        }
+
+        // Whether name may press "Continue from here" on a loaded game (docs/replay.md): both seats filled, name
+        // seated, and the replay showing a position of the game's history (not custom). Unlike a takeback it can
+        // continue from the last position too, since nobody has played the loaded game on.
+        public bool CanContinueAs(string name) {
+            if (lifecycle != LifecycleLoaded || !replayMode || replayCustom) return false;
+            if (replayIndex < 0 || replayIndex > moveCount) return false;
+            return whitePlayer.Length != 0 && blackPlayer.Length != 0 && IsPlayer(name);
+        }
+
+        public bool CanReset() {
+            return CanResetAs(LocalName(), LocalIsOrganizer());
+        }
+
+        // Whether name may reset the board (docs/board-lifecycle.md, Reset): a board that isn't reset already, by a
+        // seated player or an organizer. Everyone else once the board has been idle long enough comes with step 8.5.
+        public bool CanResetAs(string name, bool organizer) {
+            return lifecycle != LifecycleReset && (organizer || IsPlayer(name));
+        }
+
+        // Whether a game can be loaded (a PGN import, or from the archive): only onto a reset board, by anyone.
+        public bool CanLoadGame() {
+            return lifecycle == LifecycleReset;
         }
 
         // Doubles the room in the history arrays, keeping the moves; new notation entries are "" (a synced string[]

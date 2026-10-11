@@ -18,7 +18,7 @@ Each board is split into two behaviours that never reach into each other's domai
 **Logical → physical: change notification.**
 - Udon has no C# events or delegates, so the board keeps a reference to its listener(s) and calls a method on them when its state changes: `OnBoardChanged()`.
 - So the board doesn't depend on the concrete view class, listeners derive from an abstract `ChessBoardListener` base behaviour with virtual methods (UdonSharp supports inheritance with virtual methods; interfaces aren't available). The board holds an array of them, so a move-list display or clock can listen too.
-- The view then reads what it needs from the board through public getters: piece on each square, last move, mode (game/replay), result, whose turn, pending requests, which buttons apply.
+- The view then reads what it needs from the board through public getters: piece on each square, last move, mode (game/replay), result, whose turn, pending requests, which buttons apply (the `Can…` checks under [Buttons](player-input.md#buttons)).
 - A "last change" value (move played, reset, entered replay, loaded game...) lets the view animate a move rather than snapping every piece.
 - The same path serves remote updates: `OnDeserialization` updates the board's state, and the board notifies its listeners exactly as for a local change.
 

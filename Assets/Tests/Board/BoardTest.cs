@@ -55,6 +55,12 @@ public class BoardTest : UdonSharpBehaviour {
             TestPieceInput();
             TestPromotion();
             TestCastling();
+            TestLobbyButtons();
+            TestResignAndDrawButtons();
+            TestReplayButtons();
+            TestTakebackButtons();
+            TestContinueResetLoadButtons();
+            TestLocalButtons();
             TestSnapshot();
             if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
             board.ClearState();
@@ -1476,6 +1482,469 @@ public class BoardTest : UdonSharpBehaviour {
         CheckInt(board.PieceDropped(ChessRules.F8, ChessRules.H8), ChessBoard.InputAccepted, "local: f8 on h8");
         CheckCastled("O-O", ChessRules.BlackKing, ChessRules.G8, ChessRules.BlackRook, ChessRules.F8,
             "local: f8 on h8");
+
+        board.ClearState();
+    }
+
+    // ---- 7.4c buttons ----
+
+    // A game between Ana and Bob with no clock, 1. Nf3 Nf6 2. Ng1 Ng8 played, and the snapshot's setting bits set to
+    // settings.
+    void ButtonGame(int settings) {
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = settings;
+        board.PieceDroppedAs("Ana", ChessRules.G1, ChessRules.F3);
+        board.PieceDroppedAs("Bob", ChessRules.G8, ChessRules.F6);
+        board.PieceDroppedAs("Ana", ChessRules.F3, ChessRules.G1);
+        board.PieceDroppedAs("Bob", ChessRules.F6, ChessRules.G8);
+        CheckInt(board.moveCount, 4, "buttons: the game has four moves");
+    }
+
+    // The board of ButtonGame in replay showing ply.
+    void ButtonReplay(int settings, int ply) {
+        ButtonGame(settings);
+        board.replayMode = true;
+        board.replayIndex = ply;
+    }
+
+    // Lets the side to move's flag fall: a 60 s clock whose turn began 61 s ago.
+    void FlagFallen() {
+        board.baseTime = 60;
+        board.whiteTime = 60000;
+        board.blackTime = 60000;
+        board.turnStart = board.ServerTime() - 61;
+    }
+
+    void TestLobbyButtons() {
+        NothingForced();
+        board.ClearState();
+        Check(board.CanJoinAs(ChessRules.White, "Ana"), "join button: white on a reset board", "refused");
+        Check(board.CanJoinAs(ChessRules.Black, "Ana"), "join button: black on a reset board", "refused");
+        Check(!board.CanJoinAs(ChessRules.NoColor, "Ana"), "join button: no colour", "allowed");
+        Check(!board.CanJoinAs(2, "Ana"), "join button: colour 2", "allowed");
+        Check(!board.CanJoinAs(ChessRules.White, ""), "join button: empty name", "allowed");
+        Check(!board.CanJoinAs(ChessRules.White, null), "join button: null name", "allowed");
+        Check(!board.CanSetModeAs("Ana"), "mode button: not on a reset board", "allowed");
+        Check(!board.CanSetClockAs("Ana"), "clock button: not on a reset board", "allowed");
+        Check(!board.CanStartGameAs("Ana"), "start button: not on a reset board", "allowed");
+
+        board.JoinAs(ChessRules.White, "Ana");
+        Check(!board.CanJoinAs(ChessRules.White, "Ana"), "join button: not the seat already held", "allowed");
+        Check(!board.CanJoinAs(ChessRules.White, "Bob"), "join button: not a seat held by someone else", "allowed");
+        Check(board.CanJoinAs(ChessRules.Black, "Bob"), "join button: the empty seat in the lobby", "refused");
+        Check(board.CanJoinAs(ChessRules.Black, "Ana"), "join button: the other seat for the same player", "refused");
+        Check(board.CanSetModeAs("Ana"), "mode button: seated player in the lobby", "refused");
+        Check(!board.CanSetModeAs("Bob"), "mode button: not a non-player", "allowed");
+        Check(board.CanSetClockAs("Ana"), "clock button: seated player in the lobby", "refused");
+        Check(!board.CanSetClockAs("Bob"), "clock button: not a non-player", "allowed");
+        Check(!board.CanStartGameAs("Ana"), "start button: not with one seat filled", "allowed");
+
+        board.JoinAs(ChessRules.Black, "Bob");
+        Check(!board.CanJoinAs(ChessRules.Black, "Cleo"), "join button: not with both seats filled", "allowed");
+        Check(board.CanStartGameAs("Ana"), "start button: white with both seats filled", "refused");
+        Check(board.CanStartGameAs("Bob"), "start button: black with both seats filled", "refused");
+        Check(!board.CanStartGameAs("Cleo"), "start button: not a non-player", "allowed");
+        Check(!board.CanStartGameAs(""), "start button: not an empty name", "allowed");
+
+        // Forced settings take the buttons away, and the methods agree.
+        board.gameSettings = ChessArbiter.SettingModeForced;
+        Check(!board.CanSetModeAs("Ana"), "mode button: not when forced", "allowed");
+        CheckInt(board.SetModeAs("Ana", ChessGame.ModeChess960), ChessBoard.InputRejected,
+            "mode button: the method refuses when forced");
+        Check(board.CanSetClockAs("Ana"), "clock button: the mode forced leaves the clock", "refused");
+        board.gameSettings = ChessArbiter.SettingClockForced;
+        Check(board.CanSetModeAs("Ana"), "mode button: the clock forced leaves the mode", "refused");
+        Check(!board.CanSetClockAs("Ana"), "clock button: not when forced", "allowed");
+        CheckInt(board.SetClockAs("Ana", 300, 0), ChessBoard.InputRejected,
+            "clock button: the method refuses when forced");
+        Check(board.CanStartGameAs("Ana"), "start button: forced settings leave Start", "refused");
+        board.gameSettings = 0;
+
+        board.StartGameAs("Ana");
+        Check(!board.CanJoinAs(ChessRules.White, "Ana"), "join button: not in game", "allowed");
+        Check(!board.CanSetModeAs("Ana"), "mode button: not in game", "allowed");
+        Check(!board.CanSetClockAs("Ana"), "clock button: not in game", "allowed");
+        Check(!board.CanStartGameAs("Ana"), "start button: not in game", "allowed");
+        board.lifecycle = ChessBoard.LifecycleEnded;
+        Check(!board.CanJoinAs(ChessRules.White, "Cleo"), "join button: not once ended", "allowed");
+        Check(!board.CanStartGameAs("Ana"), "start button: not once ended", "allowed");
+
+        // A loaded board: seats and the clock, but not the mode or Start (it continues instead).
+        board.ClearState();
+        board.lifecycle = ChessBoard.LifecycleLoaded;
+        board.replayMode = true;
+        Check(board.CanJoinAs(ChessRules.White, "Ana"), "join button: on a loaded board", "refused");
+        board.JoinAs(ChessRules.White, "Ana");
+        board.JoinAs(ChessRules.Black, "Bob");
+        Check(board.CanSetClockAs("Ana"), "clock button: on a loaded board", "refused");
+        Check(!board.CanSetModeAs("Ana"), "mode button: not on a loaded board", "allowed");
+        Check(!board.CanStartGameAs("Ana"), "start button: not on a loaded board", "allowed");
+
+        board.ClearState();
+    }
+
+    void TestResignAndDrawButtons() {
+        NothingForced();
+
+        // Resign: each player for their own colour while the game runs, in replay too.
+        ButtonGame(0);
+        Check(board.CanResignAs(ChessRules.White, "Ana"), "resign button: white for white", "refused");
+        Check(board.CanResignAs(ChessRules.Black, "Bob"), "resign button: black for black", "refused");
+        Check(!board.CanResignAs(ChessRules.Black, "Ana"), "resign button: not white for black", "allowed");
+        Check(!board.CanResignAs(ChessRules.White, "Bob"), "resign button: not black for white", "allowed");
+        Check(!board.CanResignAs(ChessRules.White, "Cleo"), "resign button: not a non-player", "allowed");
+        Check(!board.CanResignAs(ChessRules.White, ""), "resign button: not an empty name", "allowed");
+        Check(!board.CanResignAs(2, "Ana"), "resign button: not colour 2", "allowed");
+        board.replayMode = true;
+        Check(board.CanResignAs(ChessRules.White, "Ana"), "resign button: in replay", "refused");
+        board.replayMode = false;
+        FlagFallen();
+        Check(!board.CanResignAs(ChessRules.White, "Ana"), "resign button: not after the flag", "allowed");
+        board.turnStart = board.ServerTime();
+        Check(board.CanResignAs(ChessRules.White, "Ana"), "resign button: with time left", "refused");
+        board.lifecycle = ChessBoard.LifecycleEnded;
+        Check(!board.CanResignAs(ChessRules.White, "Ana"), "resign button: not once ended", "allowed");
+        LobbyWithTwoPlayers();
+        Check(!board.CanResignAs(ChessRules.White, "Ana"), "resign button: not in the lobby", "allowed");
+        board.lifecycle = ChessBoard.LifecycleLoaded;
+        Check(!board.CanResignAs(ChessRules.White, "Ana"), "resign button: not on a loaded board", "allowed");
+
+        // Draw offers only with draws by agreement on.
+        ButtonGame(0);
+        Check(!board.CanOfferDrawAs(ChessRules.White, "Ana"), "offer draw button: not with agreement off", "allowed");
+        board.gameSettings = ChessArbiter.SettingsDrawRules & ~ChessArbiter.SettingDrawAgreement;
+        Check(!board.CanOfferDrawAs(ChessRules.White, "Ana"), "offer draw button: not with only the other draw rules",
+            "allowed");
+        board.gameSettings = ChessArbiter.SettingDrawAgreement;
+        Check(board.CanOfferDrawAs(ChessRules.White, "Ana"), "offer draw button: white", "refused");
+        Check(board.CanOfferDrawAs(ChessRules.Black, "Bob"), "offer draw button: black, not to move", "refused");
+        Check(!board.CanOfferDrawAs(ChessRules.Black, "Ana"), "offer draw button: not white for black", "allowed");
+        Check(!board.CanOfferDrawAs(ChessRules.White, "Cleo"), "offer draw button: not a non-player", "allowed");
+        Check(!board.CanAcceptDrawAs(ChessRules.Black, "Bob"), "accept draw button: not with no offer", "allowed");
+        Check(!board.CanDeclineDrawAs(ChessRules.Black, "Bob"), "decline draw button: not with no offer", "allowed");
+        board.replayMode = true;
+        Check(board.CanOfferDrawAs(ChessRules.White, "Ana"), "offer draw button: in replay", "refused");
+        board.replayMode = false;
+
+        // White's offer pending: Black answers it, nobody offers again.
+        board.drawOfferColor = ChessRules.White;
+        Check(!board.CanOfferDrawAs(ChessRules.White, "Ana"), "offer draw button: not again", "allowed");
+        Check(!board.CanOfferDrawAs(ChessRules.Black, "Bob"), "offer draw button: not with one pending", "allowed");
+        Check(board.CanAcceptDrawAs(ChessRules.Black, "Bob"), "accept draw button: black", "refused");
+        Check(board.CanDeclineDrawAs(ChessRules.Black, "Bob"), "decline draw button: black", "refused");
+        Check(!board.CanAcceptDrawAs(ChessRules.White, "Ana"), "accept draw button: not the offerer", "allowed");
+        Check(!board.CanDeclineDrawAs(ChessRules.White, "Ana"), "decline draw button: not the offerer", "allowed");
+        Check(!board.CanAcceptDrawAs(ChessRules.Black, "Ana"), "accept draw button: not white for black", "allowed");
+        Check(!board.CanAcceptDrawAs(ChessRules.Black, "Cleo"), "accept draw button: not a non-player", "allowed");
+        Check(!board.CanAcceptDrawAs(2, "Bob"), "accept draw button: not colour 2", "allowed");
+        Check(!board.CanAcceptDrawAs(ChessRules.NoColor, "Bob"), "accept draw button: not no colour", "allowed");
+        board.replayMode = true;
+        Check(board.CanAcceptDrawAs(ChessRules.Black, "Bob"), "accept draw button: in replay", "refused");
+        board.replayMode = false;
+        board.gameSettings = 0;
+        Check(!board.CanAcceptDrawAs(ChessRules.Black, "Bob"), "accept draw button: not once agreement is off",
+            "allowed");
+        board.gameSettings = ChessArbiter.SettingDrawAgreement;
+        board.drawOfferColor = ChessRules.Black;
+        Check(board.CanAcceptDrawAs(ChessRules.White, "Ana"), "accept draw button: white, black's offer", "refused");
+        Check(!board.CanAcceptDrawAs(ChessRules.Black, "Bob"), "accept draw button: not black, black's offer",
+            "allowed");
+        FlagFallen();
+        Check(!board.CanAcceptDrawAs(ChessRules.White, "Ana"), "accept draw button: not after the flag", "allowed");
+        board.turnStart = board.ServerTime();
+        board.lifecycle = ChessBoard.LifecycleEnded;
+        Check(!board.CanAcceptDrawAs(ChessRules.White, "Ana"), "accept draw button: not once ended", "allowed");
+        board.drawOfferColor = ChessRules.NoColor;
+        Check(!board.CanOfferDrawAs(ChessRules.White, "Ana"), "offer draw button: not once ended", "allowed");
+
+        // Threefold repetition: the starting position again after 4. Ng1 Ng8, its third time, with White to move.
+        ButtonGame(0);
+        board.PieceDroppedAs("Ana", ChessRules.G1, ChessRules.F3);
+        board.PieceDroppedAs("Bob", ChessRules.G8, ChessRules.F6);
+        board.PieceDroppedAs("Ana", ChessRules.F3, ChessRules.G1);
+        board.gameSettings = ChessArbiter.SettingsDrawRules;
+        CheckInt(board.ClaimableDraw(), ChessGame.EndingNone, "claim: nothing after 7 plies");
+        Check(!board.CanClaimDrawAs("Bob"), "claim button: not after 7 plies", "allowed");
+        board.PieceDroppedAs("Bob", ChessRules.F6, ChessRules.G8);
+        CheckInt(board.moveCount, 8, "claim: eight moves played");
+        board.gameSettings = 0;
+        CheckInt(board.ClaimableDraw(), ChessGame.EndingNone, "claim: threefold not claimable under No draws");
+        Check(!board.CanClaimDrawAs("Ana"), "claim button: not under No draws", "allowed");
+        board.gameSettings = ChessArbiter.SettingsDrawRules & ~ChessArbiter.SettingThreefoldRepetition;
+        CheckInt(board.ClaimableDraw(), ChessGame.EndingNone, "claim: not with every rule but threefold");
+        board.gameSettings = ChessArbiter.SettingThreefoldRepetition;
+        CheckInt(board.ClaimableDraw(), ChessGame.EndingThreefoldRepetition, "claim: threefold");
+        Check(board.CanClaimDrawAs("Ana"), "claim button: the side to move", "refused");
+        Check(!board.CanClaimDrawAs("Bob"), "claim button: not the side not to move", "allowed");
+        Check(!board.CanClaimDrawAs("Cleo"), "claim button: not a non-player", "allowed");
+        Check(!board.CanClaimDrawAs(""), "claim button: not an empty name", "allowed");
+        board.replayMode = true;
+        Check(board.CanClaimDrawAs("Ana"), "claim button: in replay", "refused");
+        board.replayMode = false;
+        board.gameSettings = ChessArbiter.SettingThreefoldRepetition | ChessArbiter.SettingFiftyMoveRule;
+        board.halfmoveClock = 100;
+        CheckInt(board.ClaimableDraw(), ChessGame.EndingThreefoldRepetition, "claim: threefold before fifty-move");
+        board.halfmoveClock = 8;
+        FlagFallen();
+        Check(!board.CanClaimDrawAs("Ana"), "claim button: not after the flag", "allowed");
+        board.turnStart = board.ServerTime();
+        board.lifecycle = ChessBoard.LifecycleEnded;
+        Check(!board.CanClaimDrawAs("Ana"), "claim button: not once ended", "allowed");
+
+        // Fifty-move rule: claimable at a halfmove clock of 100, not 99.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        SetPosition("8/8/4k3/8/8/4K3/8/R7 b - - 99 80");
+        board.gameSettings = ChessArbiter.SettingsDrawRules;
+        CheckInt(board.ClaimableDraw(), ChessGame.EndingNone, "claim: not at 99 halfmoves");
+        SetPosition("8/8/4k3/8/8/4K3/8/R7 b - - 100 80");
+        board.gameSettings = ChessArbiter.SettingsDrawRules & ~ChessArbiter.SettingFiftyMoveRule;
+        CheckInt(board.ClaimableDraw(), ChessGame.EndingNone, "claim: not with every rule but fifty-move");
+        board.gameSettings = ChessArbiter.SettingFiftyMoveRule;
+        CheckInt(board.ClaimableDraw(), ChessGame.EndingFiftyMoveRule, "claim: fifty-move");
+        Check(board.CanClaimDrawAs("Bob"), "claim button: fifty-move, black to move", "refused");
+        Check(!board.CanClaimDrawAs("Ana"), "claim button: fifty-move, not white", "allowed");
+        LobbyWithTwoPlayers();
+        board.gameSettings = ChessArbiter.SettingsDrawRules;
+        Check(!board.CanClaimDrawAs("Ana"), "claim button: not in the lobby", "allowed");
+
+        board.ClearState();
+    }
+
+    void TestReplayButtons() {
+        NothingForced();
+        LobbyWithTwoPlayers();
+        Check(!board.CanEnterReplayAs("Ana", false), "enter replay button: not in the lobby", "allowed");
+        Check(!board.CanEnterReplayAs("Cleo", true), "enter replay button: not in the lobby for an organizer",
+            "allowed");
+        board.ClearState();
+        Check(!board.CanEnterReplayAs("Cleo", true), "enter replay button: not on a reset board", "allowed");
+
+        ButtonGame(0);
+        Check(board.CanEnterReplayAs("Ana", false), "enter replay button: white", "refused");
+        Check(board.CanEnterReplayAs("Bob", false), "enter replay button: black", "refused");
+        Check(board.CanEnterReplayAs("Cleo", true), "enter replay button: an organizer", "refused");
+        Check(!board.CanEnterReplayAs("Cleo", false), "enter replay button: not a bystander", "allowed");
+        Check(!board.CanEnterReplayAs("", false), "enter replay button: not an empty name", "allowed");
+        Check(!board.CanLeaveReplayAs("Ana", false), "leave replay button: not out of replay", "allowed");
+        Check(!board.CanStepToAs("Ana", false, 2), "step button: not out of replay", "allowed");
+        FlagFallen();
+        Check(board.CanEnterReplayAs("Ana", false), "enter replay button: after the flag", "refused");
+        board.turnStart = board.ServerTime();
+
+        board.replayMode = true;
+        board.replayIndex = 4;
+        Check(!board.CanEnterReplayAs("Ana", false), "enter replay button: not in replay", "allowed");
+        Check(board.CanLeaveReplayAs("Ana", false), "leave replay button: white", "refused");
+        Check(board.CanLeaveReplayAs("Bob", false), "leave replay button: black", "refused");
+        Check(board.CanLeaveReplayAs("Cleo", true), "leave replay button: an organizer", "refused");
+        Check(!board.CanLeaveReplayAs("Cleo", false), "leave replay button: not a bystander", "allowed");
+        Check(board.CanStepToAs("Ana", false, 3), "step button: back one", "refused");
+        Check(board.CanStepToAs("Bob", false, 0), "step button: to the start", "refused");
+        Check(board.CanStepToAs("Cleo", true, 1), "step button: an organizer", "refused");
+        Check(!board.CanStepToAs("Cleo", false, 1), "step button: not a bystander", "allowed");
+        Check(!board.CanStepToAs("Ana", false, 4), "step button: not to the ply shown", "allowed");
+        Check(!board.CanStepToAs("Ana", false, 5), "step button: not past the last move", "allowed");
+        Check(!board.CanStepToAs("Ana", false, -1), "step button: not before the start", "allowed");
+        board.replayCustom = true;
+        Check(board.CanStepToAs("Ana", false, 4), "step button: to the ply shown from a custom position", "refused");
+        board.replayCustom = false;
+        board.replayIndex = 0;
+        Check(board.CanStepToAs("Ana", false, 4), "step button: forward to the last move", "refused");
+        Check(!board.CanStepToAs("Ana", false, 0), "step button: not to the start shown", "allowed");
+
+        board.lifecycle = ChessBoard.LifecycleEnded;
+        Check(board.CanLeaveReplayAs("Ana", false), "leave replay button: once ended", "refused");
+        Check(board.CanStepToAs("Bob", false, 2), "step button: once ended", "refused");
+        board.replayMode = false;
+        Check(board.CanEnterReplayAs("Bob", false), "enter replay button: once ended", "refused");
+        Check(!board.CanEnterReplayAs("Cleo", false), "enter replay button: not a bystander once ended", "allowed");
+
+        // A loaded game: always in replay, stepping by anyone while nobody is seated, by the player once one is.
+        board.lifecycle = ChessBoard.LifecycleLoaded;
+        board.replayMode = true;
+        board.replayIndex = 4;
+        board.whitePlayer = "";
+        board.blackPlayer = "";
+        Check(!board.CanLeaveReplayAs("Cleo", true), "leave replay button: not on a loaded board", "allowed");
+        Check(!board.CanEnterReplayAs("Cleo", true), "enter replay button: not on a loaded board", "allowed");
+        Check(board.CanStepToAs("Cleo", false, 2), "step button: anyone on a loaded board with no players",
+            "refused");
+        Check(!board.CanStepToAs("", false, 2), "step button: not an empty name", "allowed");
+        board.JoinAs(ChessRules.White, "Ana");
+        Check(board.CanStepToAs("Ana", false, 2), "step button: the seated player on a loaded board", "refused");
+        Check(!board.CanStepToAs("Cleo", false, 2), "step button: not a bystander once someone is seated",
+            "allowed");
+        Check(board.CanStepToAs("Cleo", true, 2), "step button: an organizer on a loaded board", "refused");
+
+        board.ClearState();
+    }
+
+    void TestTakebackButtons() {
+        NothingForced();
+
+        ButtonReplay(0, 2);
+        Check(!board.CanRequestTakebackAs(ChessRules.White, "Ana"), "takeback button: not with takebacks off",
+            "allowed");
+        board.gameSettings = ChessArbiter.SettingTakebacks;
+        Check(board.CanRequestTakebackAs(ChessRules.White, "Ana"), "takeback button: white", "refused");
+        Check(board.CanRequestTakebackAs(ChessRules.Black, "Bob"), "takeback button: black", "refused");
+        Check(!board.CanRequestTakebackAs(ChessRules.Black, "Ana"), "takeback button: not white for black",
+            "allowed");
+        Check(!board.CanRequestTakebackAs(ChessRules.White, "Cleo"), "takeback button: not a non-player", "allowed");
+        Check(!board.CanRequestTakebackAs(2, "Ana"), "takeback button: not colour 2", "allowed");
+        board.replayIndex = 0;
+        Check(board.CanRequestTakebackAs(ChessRules.White, "Ana"), "takeback button: from the start", "refused");
+        board.replayIndex = 4;
+        Check(!board.CanRequestTakebackAs(ChessRules.White, "Ana"), "takeback button: not from the last position",
+            "allowed");
+        board.replayIndex = 2;
+        board.replayCustom = true;
+        Check(!board.CanRequestTakebackAs(ChessRules.White, "Ana"), "takeback button: not from a custom position",
+            "allowed");
+        board.replayCustom = false;
+        board.replayMode = false;
+        Check(!board.CanRequestTakebackAs(ChessRules.White, "Ana"), "takeback button: not out of replay", "allowed");
+        board.replayMode = true;
+        FlagFallen();
+        Check(!board.CanRequestTakebackAs(ChessRules.White, "Ana"), "takeback button: not after the flag",
+            "allowed");
+        board.turnStart = board.ServerTime();
+        board.lifecycle = ChessBoard.LifecycleEnded;
+        Check(board.CanRequestTakebackAs(ChessRules.White, "Ana"), "takeback button: once ended", "refused");
+        board.lifecycle = ChessBoard.LifecycleLoaded;
+        Check(!board.CanRequestTakebackAs(ChessRules.White, "Ana"), "takeback button: not on a loaded board",
+            "allowed");
+        board.lifecycle = ChessBoard.LifecycleInGame;
+
+        // White's request to continue from ply 2: Black answers it while ply 2 is still shown.
+        board.takebackColor = ChessRules.White;
+        board.takebackPly = 2;
+        Check(!board.CanRequestTakebackAs(ChessRules.Black, "Bob"), "takeback button: not with one pending",
+            "allowed");
+        Check(board.CanAcceptTakebackAs(ChessRules.Black, "Bob"), "accept takeback button: black", "refused");
+        Check(board.CanDeclineTakebackAs(ChessRules.Black, "Bob"), "decline takeback button: black", "refused");
+        Check(!board.CanAcceptTakebackAs(ChessRules.White, "Ana"), "accept takeback button: not the requester",
+            "allowed");
+        Check(!board.CanDeclineTakebackAs(ChessRules.White, "Ana"), "decline takeback button: not the requester",
+            "allowed");
+        Check(!board.CanAcceptTakebackAs(ChessRules.Black, "Ana"), "accept takeback button: not white for black",
+            "allowed");
+        Check(!board.CanAcceptTakebackAs(ChessRules.Black, "Cleo"), "accept takeback button: not a non-player",
+            "allowed");
+        Check(!board.CanAcceptTakebackAs(2, "Bob"), "accept takeback button: not colour 2", "allowed");
+        board.replayIndex = 1;
+        Check(!board.CanAcceptTakebackAs(ChessRules.Black, "Bob"),
+            "accept takeback button: not once the position changed", "allowed");
+        board.replayIndex = 2;
+        board.replayCustom = true;
+        Check(!board.CanAcceptTakebackAs(ChessRules.Black, "Bob"),
+            "accept takeback button: not from a custom position", "allowed");
+        board.replayCustom = false;
+        board.gameSettings = 0;
+        Check(!board.CanAcceptTakebackAs(ChessRules.Black, "Bob"),
+            "accept takeback button: not once takebacks are off", "allowed");
+        board.gameSettings = ChessArbiter.SettingTakebacks;
+        board.lifecycle = ChessBoard.LifecycleEnded;
+        Check(board.CanAcceptTakebackAs(ChessRules.Black, "Bob"), "accept takeback button: once ended", "refused");
+        board.takebackColor = ChessRules.Black;
+        Check(board.CanAcceptTakebackAs(ChessRules.White, "Ana"), "accept takeback button: white, black's request",
+            "refused");
+        Check(!board.CanAcceptTakebackAs(ChessRules.Black, "Bob"),
+            "accept takeback button: not black, black's request", "allowed");
+
+        board.ClearState();
+    }
+
+    void TestContinueResetLoadButtons() {
+        NothingForced();
+
+        // "Continue from here" on a loaded game: both seats filled, a seated player, a position of the game.
+        ButtonReplay(0, 2);
+        Check(!board.CanContinueAs("Ana"), "continue button: not in game", "allowed");
+        board.lifecycle = ChessBoard.LifecycleLoaded;
+        Check(board.CanContinueAs("Ana"), "continue button: white", "refused");
+        Check(board.CanContinueAs("Bob"), "continue button: black", "refused");
+        Check(!board.CanContinueAs("Cleo"), "continue button: not a non-player", "allowed");
+        board.replayIndex = 4;
+        Check(board.CanContinueAs("Ana"), "continue button: from the last position", "refused");
+        board.replayIndex = 0;
+        Check(board.CanContinueAs("Ana"), "continue button: from the start", "refused");
+        board.replayCustom = true;
+        Check(!board.CanContinueAs("Ana"), "continue button: not from a custom position", "allowed");
+        board.replayCustom = false;
+        board.blackPlayer = "";
+        Check(!board.CanContinueAs("Ana"), "continue button: not with a seat empty", "allowed");
+        board.blackPlayer = "Bob";
+        board.lifecycle = ChessBoard.LifecycleEnded;
+        Check(!board.CanContinueAs("Ana"), "continue button: not once ended", "allowed");
+
+        // Reset: a seated player or an organizer, on any board that isn't reset; loading only onto a reset board.
+        board.ClearState();
+        Check(!board.CanResetAs("Ana", false), "reset button: not on a reset board", "allowed");
+        Check(!board.CanResetAs("Cleo", true), "reset button: not on a reset board for an organizer", "allowed");
+        Check(board.CanLoadGame(), "load: on a reset board", "refused");
+        board.JoinAs(ChessRules.White, "Ana");
+        Check(board.CanResetAs("Ana", false), "reset button: the player in the lobby", "refused");
+        Check(!board.CanResetAs("Cleo", false), "reset button: not a bystander in the lobby", "allowed");
+        Check(board.CanResetAs("Cleo", true), "reset button: an organizer in the lobby", "refused");
+        Check(!board.CanResetAs("", false), "reset button: not an empty name", "allowed");
+        Check(!board.CanLoadGame(), "load: not in the lobby", "allowed");
+        ButtonGame(0);
+        Check(board.CanResetAs("Bob", false), "reset button: a player in game", "refused");
+        Check(!board.CanResetAs("Cleo", false), "reset button: not a bystander in game", "allowed");
+        Check(board.CanResetAs("Cleo", true), "reset button: an organizer in game", "refused");
+        Check(!board.CanLoadGame(), "load: not in game", "allowed");
+        board.lifecycle = ChessBoard.LifecycleEnded;
+        Check(board.CanResetAs("Ana", false), "reset button: a player once ended", "refused");
+        Check(!board.CanResetAs("Cleo", false), "reset button: not a bystander once ended", "allowed");
+        Check(!board.CanLoadGame(), "load: not once ended", "allowed");
+        board.lifecycle = ChessBoard.LifecycleLoaded;
+        board.whitePlayer = "";
+        board.blackPlayer = "";
+        Check(!board.CanResetAs("Cleo", false), "reset button: not a bystander on a loaded board", "allowed");
+        Check(board.CanResetAs("Cleo", true), "reset button: an organizer on a loaded board", "refused");
+        Check(!board.CanLoadGame(), "load: not on a loaded board", "allowed");
+
+        board.ClearState();
+    }
+
+    // The local player's checks, seated in both seats.
+    void TestLocalButtons() {
+        NothingForced();
+        board.ClearState();
+        Check(board.CanJoin(ChessRules.White), "local buttons: join white", "refused");
+        board.JoinWhite();
+        board.JoinBlack();
+        Check(!board.CanJoin(ChessRules.Black), "local buttons: not a seat held", "allowed");
+        Check(board.CanSetMode(), "local buttons: mode", "refused");
+        Check(board.CanSetClock(), "local buttons: clock", "refused");
+        Check(board.CanStartGame(), "local buttons: start", "refused");
+        board.StartGame();
+        board.gameSettings = ChessArbiter.SettingDrawAgreement | ChessArbiter.SettingTakebacks;
+        Check(board.CanResign(ChessRules.White), "local buttons: resign for white", "refused");
+        Check(board.CanResign(ChessRules.Black), "local buttons: resign for black", "refused");
+        Check(board.CanOfferDraw(ChessRules.White), "local buttons: offer a draw", "refused");
+        board.drawOfferColor = ChessRules.White;
+        Check(board.CanAcceptDraw(ChessRules.Black), "local buttons: accept the own offer from the other seat",
+            "refused");
+        Check(board.CanDeclineDraw(ChessRules.Black), "local buttons: decline it", "refused");
+        board.drawOfferColor = ChessRules.NoColor;
+        Check(!board.CanClaimDraw(), "local buttons: nothing to claim", "allowed");
+        Check(board.CanEnterReplay(), "local buttons: enter replay", "refused");
+        board.PieceDropped(ChessRules.E2, ChessRules.E4);
+        board.replayMode = true;
+        board.replayIndex = 1;
+        Check(board.CanLeaveReplay(), "local buttons: leave replay", "refused");
+        Check(board.CanStepTo(0), "local buttons: step", "refused");
+        board.replayIndex = 0;
+        Check(board.CanRequestTakeback(ChessRules.White), "local buttons: request a takeback", "refused");
+        board.takebackColor = ChessRules.White;
+        board.takebackPly = 0;
+        Check(board.CanAcceptTakeback(ChessRules.Black), "local buttons: accept a takeback", "refused");
+        Check(board.CanDeclineTakeback(ChessRules.Black), "local buttons: decline a takeback", "refused");
+        Check(board.CanReset(), "local buttons: reset", "refused");
+        board.lifecycle = ChessBoard.LifecycleLoaded;
+        Check(board.CanContinue(), "local buttons: continue a loaded game", "refused");
 
         board.ClearState();
     }
