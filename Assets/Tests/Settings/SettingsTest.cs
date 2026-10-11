@@ -1,4 +1,5 @@
 using SiggiChessBoard;
+using SiggiUSTools;
 using UdonSharp;
 using UnityEngine;
 using VRC.SDKBase;
@@ -45,6 +46,7 @@ public class SettingsTest : UdonSharpBehaviour {
         TestCombine();
         TestBoardOverrides();
         TestAuth();
+        TestAuthFallback();
         Debug.Log("[SettingsTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
@@ -374,5 +376,41 @@ public class SettingsTest : UdonSharpBehaviour {
             Check(!noOneAuth.IsAuthorized(local), "auth: NoOneAuth refuses the local player", "");
             Check(!noOneAuth.IsAuthorized(null), "auth: NoOneAuth refuses no player", "");
         }
+    }
+
+    // ---- 6.2c ----
+
+    // The arbiter's organizer answer and its fallback for an empty simpleAuth. With the field set (as it should be),
+    // IsOrganizer gives simpleAuth's answer, and emptying the field for a moment makes it refuse everyone. With the
+    // field emptied in the editor (6.2c's manual check; TestAuth's wiring check then fails), the arbiter must have
+    // noticed it on Start and refuse everyone.
+    void TestAuthFallback() {
+        VRCPlayerApi local = Networking.LocalPlayer;
+        if (!Utilities.IsValid(arbiter)) {
+            Check(false, "auth fallback", "arbiter not assigned");
+            return;
+        }
+        SimpleAuth auth = arbiter.simpleAuth;
+        if (!Utilities.IsValid(auth)) {
+            Debug.Log("[SettingsTest] the arbiter's simpleAuth is empty: checking the in-game fallback");
+            Check(arbiter.simpleAuthMissing, "auth fallback: the arbiter noticed the empty field on Start", "");
+            Check(!arbiter.IsOrganizer(local), "auth fallback: empty field, the local player isn't an organizer", "");
+            Check(!arbiter.IsOrganizer(null), "auth fallback: empty field, no player isn't an organizer", "");
+            return;
+        }
+        Check(!arbiter.simpleAuthMissing, "auth fallback: field set, the arbiter reports it present", "");
+        Check(arbiter.IsOrganizer(local) == auth.IsAuthorized(local),
+            "auth fallback: field set, IsOrganizer is simpleAuth's answer for the local player",
+            "IsOrganizer " + arbiter.IsOrganizer(local) + ", simpleAuth " + auth.IsAuthorized(local));
+        Check(arbiter.IsOrganizer(local), "auth fallback: field set, the local player is an organizer", "");
+        Check(!arbiter.IsOrganizer(null), "auth fallback: field set, no player isn't an organizer", "");
+        arbiter.simpleAuth = null;
+        bool localWhileEmpty = arbiter.IsOrganizer(local);
+        bool noneWhileEmpty = arbiter.IsOrganizer(null);
+        arbiter.simpleAuth = auth;
+        Check(!localWhileEmpty, "auth fallback: field emptied, the local player isn't an organizer", "");
+        Check(!noneWhileEmpty, "auth fallback: field emptied, no player isn't an organizer", "");
+        Check(arbiter.simpleAuth == auth && arbiter.IsOrganizer(local),
+            "auth fallback: field restored, the local player is an organizer again", "");
     }
 }

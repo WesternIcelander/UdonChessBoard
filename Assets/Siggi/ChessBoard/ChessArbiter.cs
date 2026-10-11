@@ -2,6 +2,7 @@ using System;
 using SiggiUSTools;
 using UdonSharp;
 using UnityEngine;
+using VRC.SDKBase;
 
 namespace SiggiChessBoard {
     // The instance's rules settings (docs/settings.md): which rules apply to the boards, as one int of setting bits
@@ -95,10 +96,21 @@ namespace SiggiChessBoard {
         [UdonSynced] [NonSerialized] public int[] overrideSettings = new int[0];
         [UdonSynced] [NonSerialized] public int[] overrideNumbers = new int[0];
 
+        // Whether simpleAuth was empty on Start (docs/organizers.md, In-game fallback): nobody is an organizer then,
+        // and the settings menu (step 11) shows a message.
+        [NonSerialized] public bool simpleAuthMissing;
+
         // Whether a serialization has arrived; the editor values then mustn't overwrite it.
         bool received;
 
         void Start() {
+            // The build check (ChessArbiterBuildCheck) stops uploads with an empty field; this catches Play Mode.
+            if (!Utilities.IsValid(simpleAuth)) {
+                simpleAuthMissing = true;
+                Debug.LogError("[ChessArbiter] " + gameObject.name + ": the Simple Auth field is empty. Set it to an "
+                    + "authorization behaviour (NoOneAuth if nobody should be an organizer). Until then nobody is "
+                    + "an organizer.");
+            }
             if (received) return;
             defaultSettings = EditorSettings();
             defaultNumbers = EditorNumbers();
@@ -155,6 +167,15 @@ namespace SiggiChessBoard {
         // A numeric setting's instance default.
         public int DefaultNumber(int number) {
             return defaultNumbers[number];
+        }
+
+        // ---- Organizers ----
+
+        // Whether a player is an organizer (docs/organizers.md): simpleAuth's answer, or nobody if it's empty, as
+        // with NoOneAuth. Everything that asks who is an organizer asks here, not simpleAuth directly.
+        public bool IsOrganizer(VRCPlayerApi who) {
+            if (!Utilities.IsValid(simpleAuth)) return false;
+            return simpleAuth.IsAuthorized(who);
         }
 
         // ---- Per-board overrides ----
