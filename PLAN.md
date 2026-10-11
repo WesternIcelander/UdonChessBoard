@@ -87,8 +87,9 @@ The rules live in `Assets/Siggi/ChessBoard/Rules/` (namespace `SiggiChessBoard`)
   - Verify: the step 2 test behaviour checks square → file/rank → square for all 64 squares, and piece encode → decode for every colour and type, plus empty.
 - [x] **2.2** Move encoding: pack/unpack helpers, and the derived en passant / double-push checks.
   - Verify: pack → unpack returns every field unchanged, at each field's minimum and maximum; the derived checks are right for hand-built moves (en passant capture, double push, ordinary pawn move, non-pawn move).
-- [ ] **2.3a** Make and unmake a move on the board arrays: ordinary moves, captures, en passant, promotion, and en passant restore.
+- [x] **2.3a** Make and unmake a move on the board arrays: ordinary moves, captures, en passant, promotion, and en passant restore.
   - Verify: for each kind of move on a hand-built position, the position after make is as expected, and make followed by unmake restores every array exactly.
+  - `ChessPosition.MakeMove`/`UnmakeMove` in `Assets/Siggi/ChessBoard/Rules/ChessPosition.cs`, on the board and a state array (see [Architecture](docs/architecture.md)). En passant is set on every double push, as in the Java.
 - [ ] **2.3b** Make and unmake for castling (Chess960-aware), and castling rights and their restore.
   - Verify: as 2.3a, for both sides' O-O and O-O-O in the standard position and in Chess960 positions (including one where the king doesn't move); castling rights are lost after king and rook moves and when a rook is captured on its starting square, and are restored by unmake.
 - [ ] **2.4a** Move generation per piece type.

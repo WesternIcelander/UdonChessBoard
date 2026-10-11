@@ -14,6 +14,7 @@ public class RulesTest : UdonSharpBehaviour {
         TestPieces();
         TestMovePacking();
         TestMoveDerived();
+        TestMakeUnmake();
         Debug.Log("[RulesTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
@@ -253,5 +254,309 @@ public class RulesTest : UdonSharpBehaviour {
             && !ChessRules.IsDoublePush(bishop) && !ChessRules.IsEnPassantCapture(bishop)
             && !ChessRules.IsDoublePush(knight) && !ChessRules.IsEnPassantCapture(knight),
             "non-pawn moves", "");
+    }
+
+    // ---- 2.3 ----
+
+    byte[] EmptyBoard() {
+        return new byte[64];
+    }
+
+    // The standard starting position.
+    byte[] StartBoard() {
+        byte[] board = new byte[64];
+        int[] backRank = new int[] {
+            ChessRules.Rook, ChessRules.Knight, ChessRules.Bishop, ChessRules.Queen,
+            ChessRules.King, ChessRules.Bishop, ChessRules.Knight, ChessRules.Rook
+        };
+        for (int file = 0; file < 8; file++) {
+            board[ChessRules.SquareOf(file, ChessRules.Rank1)] = ChessRules.PieceOf(ChessRules.White, backRank[file]);
+            board[ChessRules.SquareOf(file, ChessRules.Rank2)] = ChessRules.WhitePawn;
+            board[ChessRules.SquareOf(file, ChessRules.Rank7)] = ChessRules.BlackPawn;
+            board[ChessRules.SquareOf(file, ChessRules.Rank8)] = ChessRules.PieceOf(ChessRules.Black, backRank[file]);
+        }
+        return board;
+    }
+
+    // State with the standard king and rook starting files.
+    int[] NewState(int sideToMove, int castlingRights, int enPassantFile, int whiteKing, int blackKing) {
+        int[] state = new int[ChessPosition.StateLength];
+        state[ChessPosition.StateSideToMove] = sideToMove;
+        state[ChessPosition.StateCastlingRights] = castlingRights;
+        state[ChessPosition.StateEnPassantFile] = enPassantFile;
+        state[ChessPosition.StateKingFile] = ChessRules.FileE;
+        state[ChessPosition.StateLeftRookFile] = ChessRules.FileA;
+        state[ChessPosition.StateRightRookFile] = ChessRules.FileH;
+        state[ChessPosition.StateWhiteKingSquare] = whiteKing;
+        state[ChessPosition.StateBlackKingSquare] = blackKing;
+        return state;
+    }
+
+    byte[] CopyBoard(byte[] board) {
+        byte[] copy = new byte[board.Length];
+        for (int i = 0; i < board.Length; i++) copy[i] = board[i];
+        return copy;
+    }
+
+    int[] CopyState(int[] state) {
+        int[] copy = new int[state.Length];
+        for (int i = 0; i < state.Length; i++) copy[i] = state[i];
+        return copy;
+    }
+
+    // "" if equal, else the squares that differ.
+    string BoardDiff(byte[] actual, byte[] expected) {
+        string diff = "";
+        for (int sq = 0; sq < 64; sq++) {
+            if (actual[sq] != expected[sq]) {
+                diff += " " + ChessRules.SquareName(sq) + "=" + actual[sq] + " (expected " + expected[sq] + ")";
+            }
+        }
+        return diff;
+    }
+
+    // "" if equal, else the state entries that differ.
+    string StateDiff(int[] actual, int[] expected) {
+        string diff = "";
+        for (int i = 0; i < ChessPosition.StateLength; i++) {
+            if (actual[i] != expected[i]) diff += " state[" + i + "]=" + actual[i] + " (expected " + expected[i] + ")";
+        }
+        return diff;
+    }
+
+    // Packs a non-castling move for the position, taking the piece, capture and previous state from the arrays.
+    // A pawn moving diagonally onto an empty square is taken to be capturing en passant.
+    int MoveOn(byte[] board, int[] state, int from, int to, int promotion) {
+        int type = ChessRules.PieceTypeOf(board[from]);
+        int captured = ChessRules.PieceTypeOf(board[to]);
+        if (type == ChessRules.Pawn && captured == ChessRules.NoPieceType
+            && ChessRules.FileOf(from) != ChessRules.FileOf(to)) captured = ChessRules.Pawn;
+        return ChessRules.PackMove(from, to, type, promotion, captured, false,
+            state[ChessPosition.StateCastlingRights], state[ChessPosition.StateEnPassantFile]);
+    }
+
+    // Makes the move on copies of board/state, compares with the expected position, then unmakes it and compares
+    // with the original.
+    void CheckMakeUnmake(string name, byte[] board, int[] state, int move, byte[] expectedBoard, int[] expectedState) {
+        byte[] b = CopyBoard(board);
+        int[] s = CopyState(state);
+        ChessPosition.MakeMove(b, s, move);
+        string errors = BoardDiff(b, expectedBoard) + StateDiff(s, expectedState);
+        if (errors != "") errors = " after make:" + errors;
+        ChessPosition.UnmakeMove(b, s, move);
+        string undoErrors = BoardDiff(b, board) + StateDiff(s, state);
+        if (undoErrors != "") errors += " after unmake:" + undoErrors;
+        Check(errors == "", "make/unmake: " + name, errors);
+    }
+
+    void TestMakeUnmake() {
+        int white = ChessRules.White;
+        int black = ChessRules.Black;
+        int all = ChessRules.CastleAll;
+
+        // Ordinary moves: double pushes set en passant, any other move clears it.
+        byte[] start = StartBoard();
+        int[] startState = NewState(white, all, -1, ChessRules.E1, ChessRules.E8);
+        byte[] eb = CopyBoard(start);
+        eb[ChessRules.E2] = ChessRules.Empty;
+        eb[ChessRules.E4] = ChessRules.WhitePawn;
+        int[] es = CopyState(startState);
+        es[ChessPosition.StateSideToMove] = black;
+        es[ChessPosition.StateEnPassantFile] = ChessRules.FileE;
+        CheckMakeUnmake("white double push sets en passant", start, startState,
+            MoveOn(start, startState, ChessRules.E2, ChessRules.E4, 0), eb, es);
+
+        int[] blackState = NewState(black, all, ChessRules.FileE, ChessRules.E1, ChessRules.E8);
+        eb = CopyBoard(start);
+        eb[ChessRules.D7] = ChessRules.Empty;
+        eb[ChessRules.D5] = ChessRules.BlackPawn;
+        es = CopyState(blackState);
+        es[ChessPosition.StateSideToMove] = white;
+        es[ChessPosition.StateEnPassantFile] = ChessRules.FileD;
+        CheckMakeUnmake("black double push replaces en passant", start, blackState,
+            MoveOn(start, blackState, ChessRules.D7, ChessRules.D5, 0), eb, es);
+
+        int[] epState = NewState(white, all, ChessRules.FileD, ChessRules.E1, ChessRules.E8);
+        eb = CopyBoard(start);
+        eb[ChessRules.G1] = ChessRules.Empty;
+        eb[ChessRules.F3] = ChessRules.WhiteKnight;
+        es = CopyState(epState);
+        es[ChessPosition.StateSideToMove] = black;
+        es[ChessPosition.StateEnPassantFile] = -1;
+        CheckMakeUnmake("knight move clears en passant", start, epState,
+            MoveOn(start, epState, ChessRules.G1, ChessRules.F3, 0), eb, es);
+
+        eb = CopyBoard(start);
+        eb[ChessRules.E2] = ChessRules.Empty;
+        eb[ChessRules.E3] = ChessRules.WhitePawn;
+        CheckMakeUnmake("single push clears en passant", start, epState,
+            MoveOn(start, epState, ChessRules.E2, ChessRules.E3, 0), eb, es);
+
+        // Captures by both colours.
+        byte[] cap = EmptyBoard();
+        cap[ChessRules.E1] = ChessRules.WhiteKing;
+        cap[ChessRules.E8] = ChessRules.BlackKing;
+        cap[ChessRules.C4] = ChessRules.WhiteBishop;
+        cap[ChessRules.F7] = ChessRules.BlackPawn;
+        cap[ChessRules.D8] = ChessRules.BlackQueen;
+        cap[ChessRules.D1] = ChessRules.WhiteQueen;
+        int[] capState = NewState(white, 0, -1, ChessRules.E1, ChessRules.E8);
+        int bxf7 = MoveOn(cap, capState, ChessRules.C4, ChessRules.F7, 0);
+        eb = CopyBoard(cap);
+        eb[ChessRules.C4] = ChessRules.Empty;
+        eb[ChessRules.F7] = ChessRules.WhiteBishop;
+        es = CopyState(capState);
+        es[ChessPosition.StateSideToMove] = black;
+        CheckMakeUnmake("white bishop captures pawn", cap, capState, bxf7, eb, es);
+        Check(ChessRules.MoveCaptured(bxf7) == ChessRules.Pawn, "capture move records the captured type",
+            "captured " + ChessRules.MoveCaptured(bxf7));
+
+        int[] capStateBlack = NewState(black, 0, -1, ChessRules.E1, ChessRules.E8);
+        eb = CopyBoard(cap);
+        eb[ChessRules.D8] = ChessRules.Empty;
+        eb[ChessRules.D1] = ChessRules.BlackQueen;
+        es = CopyState(capStateBlack);
+        es[ChessPosition.StateSideToMove] = white;
+        CheckMakeUnmake("black queen captures queen", cap, capStateBlack,
+            MoveOn(cap, capStateBlack, ChessRules.D8, ChessRules.D1, 0), eb, es);
+
+        // En passant by both colours: the captured pawn is beside the from square, not on the to square.
+        byte[] ep = EmptyBoard();
+        ep[ChessRules.E1] = ChessRules.WhiteKing;
+        ep[ChessRules.E8] = ChessRules.BlackKing;
+        ep[ChessRules.E5] = ChessRules.WhitePawn;
+        ep[ChessRules.D5] = ChessRules.BlackPawn;
+        ep[ChessRules.D4] = ChessRules.BlackPawn;
+        ep[ChessRules.E4] = ChessRules.WhitePawn;
+        int[] epWhite = NewState(white, 0, ChessRules.FileD, ChessRules.E1, ChessRules.E8);
+        int exd6 = MoveOn(ep, epWhite, ChessRules.E5, ChessRules.D6, 0);
+        eb = CopyBoard(ep);
+        eb[ChessRules.E5] = ChessRules.Empty;
+        eb[ChessRules.D5] = ChessRules.Empty;
+        eb[ChessRules.D6] = ChessRules.WhitePawn;
+        es = CopyState(epWhite);
+        es[ChessPosition.StateSideToMove] = black;
+        es[ChessPosition.StateEnPassantFile] = -1;
+        CheckMakeUnmake("white en passant capture", ep, epWhite, exd6, eb, es);
+
+        int[] epBlack = NewState(black, 0, ChessRules.FileE, ChessRules.E1, ChessRules.E8);
+        eb = CopyBoard(ep);
+        eb[ChessRules.D4] = ChessRules.Empty;
+        eb[ChessRules.E4] = ChessRules.Empty;
+        eb[ChessRules.E3] = ChessRules.BlackPawn;
+        es = CopyState(epBlack);
+        es[ChessPosition.StateSideToMove] = white;
+        es[ChessPosition.StateEnPassantFile] = -1;
+        CheckMakeUnmake("black en passant capture", ep, epBlack,
+            MoveOn(ep, epBlack, ChessRules.D4, ChessRules.E3, 0), eb, es);
+
+        // Promotions: push and capture, both colours, including underpromotion.
+        byte[] promo = EmptyBoard();
+        promo[ChessRules.H1] = ChessRules.WhiteKing;
+        promo[ChessRules.H8] = ChessRules.BlackKing;
+        promo[ChessRules.A7] = ChessRules.WhitePawn;
+        promo[ChessRules.C7] = ChessRules.WhitePawn;
+        promo[ChessRules.B8] = ChessRules.BlackKnight;
+        promo[ChessRules.E2] = ChessRules.BlackPawn;
+        promo[ChessRules.G2] = ChessRules.BlackPawn;
+        promo[ChessRules.F1] = ChessRules.WhiteBishop;
+        int[] promoWhite = NewState(white, 0, -1, ChessRules.H1, ChessRules.H8);
+        int[] promoBlack = NewState(black, 0, -1, ChessRules.H1, ChessRules.H8);
+
+        eb = CopyBoard(promo);
+        eb[ChessRules.A7] = ChessRules.Empty;
+        eb[ChessRules.A8] = ChessRules.WhiteQueen;
+        es = CopyState(promoWhite);
+        es[ChessPosition.StateSideToMove] = black;
+        CheckMakeUnmake("white promotion to queen", promo, promoWhite,
+            MoveOn(promo, promoWhite, ChessRules.A7, ChessRules.A8, ChessRules.Queen), eb, es);
+
+        eb = CopyBoard(promo);
+        eb[ChessRules.C7] = ChessRules.Empty;
+        eb[ChessRules.B8] = ChessRules.WhiteKnight;
+        CheckMakeUnmake("white capture-promotion to knight", promo, promoWhite,
+            MoveOn(promo, promoWhite, ChessRules.C7, ChessRules.B8, ChessRules.Knight), eb, es);
+
+        eb = CopyBoard(promo);
+        eb[ChessRules.E2] = ChessRules.Empty;
+        eb[ChessRules.E1] = ChessRules.BlackRook;
+        es = CopyState(promoBlack);
+        es[ChessPosition.StateSideToMove] = white;
+        CheckMakeUnmake("black promotion to rook", promo, promoBlack,
+            MoveOn(promo, promoBlack, ChessRules.E2, ChessRules.E1, ChessRules.Rook), eb, es);
+
+        eb = CopyBoard(promo);
+        eb[ChessRules.G2] = ChessRules.Empty;
+        eb[ChessRules.F1] = ChessRules.BlackQueen;
+        CheckMakeUnmake("black capture-promotion to queen", promo, promoBlack,
+            MoveOn(promo, promoBlack, ChessRules.G2, ChessRules.F1, ChessRules.Queen), eb, es);
+
+        // King moves update the king square; capturing a king (only with prohibitSelfCheck off) clears it.
+        byte[] kings = EmptyBoard();
+        kings[ChessRules.E1] = ChessRules.WhiteKing;
+        kings[ChessRules.E8] = ChessRules.BlackKing;
+        kings[ChessRules.E4] = ChessRules.WhiteRook;
+        int[] kingsWhite = NewState(white, 0, -1, ChessRules.E1, ChessRules.E8);
+        eb = CopyBoard(kings);
+        eb[ChessRules.E1] = ChessRules.Empty;
+        eb[ChessRules.D2] = ChessRules.WhiteKing;
+        es = CopyState(kingsWhite);
+        es[ChessPosition.StateSideToMove] = black;
+        es[ChessPosition.StateWhiteKingSquare] = ChessRules.D2;
+        CheckMakeUnmake("white king move updates its square", kings, kingsWhite,
+            MoveOn(kings, kingsWhite, ChessRules.E1, ChessRules.D2, 0), eb, es);
+
+        int[] kingsBlack = NewState(black, 0, -1, ChessRules.E1, ChessRules.E8);
+        eb = CopyBoard(kings);
+        eb[ChessRules.E8] = ChessRules.Empty;
+        eb[ChessRules.F7] = ChessRules.BlackKing;
+        es = CopyState(kingsBlack);
+        es[ChessPosition.StateSideToMove] = white;
+        es[ChessPosition.StateBlackKingSquare] = ChessRules.F7;
+        CheckMakeUnmake("black king move updates its square", kings, kingsBlack,
+            MoveOn(kings, kingsBlack, ChessRules.E8, ChessRules.F7, 0), eb, es);
+
+        eb = CopyBoard(kings);
+        eb[ChessRules.E4] = ChessRules.Empty;
+        eb[ChessRules.E8] = ChessRules.WhiteRook;
+        es = CopyState(kingsWhite);
+        es[ChessPosition.StateSideToMove] = black;
+        es[ChessPosition.StateBlackKingSquare] = ChessRules.NoSquare;
+        CheckMakeUnmake("capturing a king clears its square", kings, kingsWhite,
+            MoveOn(kings, kingsWhite, ChessRules.E4, ChessRules.E8, 0), eb, es);
+
+        // A sequence made and then unmade in reverse, checking each step's undo restores the position before it:
+        // 1.e4 d5 2.exd5 c5 3.dxc6 e.p. bxc6.
+        byte[] b = StartBoard();
+        int[] s = NewState(white, all, -1, ChessRules.E1, ChessRules.E8);
+        int[] froms = new int[] { ChessRules.E2, ChessRules.D7, ChessRules.E4, ChessRules.C7, ChessRules.D5, ChessRules.B7 };
+        int[] tos = new int[] { ChessRules.E4, ChessRules.D5, ChessRules.D5, ChessRules.C5, ChessRules.C6, ChessRules.C6 };
+        int count = froms.Length;
+        int[] moves = new int[count];
+        byte[][] boardsBefore = new byte[count][];
+        int[][] statesBefore = new int[count][];
+        for (int i = 0; i < count; i++) {
+            boardsBefore[i] = CopyBoard(b);
+            statesBefore[i] = CopyState(s);
+            moves[i] = MoveOn(b, s, froms[i], tos[i], 0);
+            ChessPosition.MakeMove(b, s, moves[i]);
+        }
+        eb = StartBoard();
+        eb[ChessRules.E2] = ChessRules.Empty;
+        eb[ChessRules.D7] = ChessRules.Empty;
+        eb[ChessRules.C7] = ChessRules.Empty;
+        eb[ChessRules.B7] = ChessRules.Empty;
+        eb[ChessRules.C6] = ChessRules.BlackPawn;
+        string errors = BoardDiff(b, eb);
+        if (!ChessRules.IsEnPassantCapture(moves[4])) errors += " dxc6 not en passant";
+        if (s[ChessPosition.StateSideToMove] != white || s[ChessPosition.StateEnPassantFile] != -1) {
+            errors += " state after:" + StateDiff(s, NewState(white, all, -1, ChessRules.E1, ChessRules.E8));
+        }
+        for (int i = count - 1; i >= 0; i--) {
+            ChessPosition.UnmakeMove(b, s, moves[i]);
+            string diff = BoardDiff(b, boardsBefore[i]) + StateDiff(s, statesBefore[i]);
+            if (diff != "") errors += " undo ply " + (i + 1) + ":" + diff;
+        }
+        Check(errors == "", "make/unmake: 1.e4 d5 2.exd5 c5 3.dxc6 e.p. bxc6, then undo all", errors);
     }
 }
