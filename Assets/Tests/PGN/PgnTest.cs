@@ -9,6 +9,8 @@ using UnityEngine;
 public class PgnTest : UdonSharpBehaviour {
     // The PGN test set (docs/testing.md), found by name (the file name without .txt).
     public TextAsset[] pgnFiles;
+    // The importer the multi-frame import checks (5.3) run on; they fail if it isn't assigned.
+    public ChessPgnImporter importer;
 
     Regex tokenRegex;
     Regex clockRegex;
@@ -26,7 +28,8 @@ public class PgnTest : UdonSharpBehaviour {
         TestSanMatching();
         TestImportGames();
         TestImportFailures();
-        LogSummary();
+        // The importer checks take frames; the summary is logged once they finish.
+        StartFrameImports();
     }
 
     void LogSummary() {
@@ -910,5 +913,125 @@ public class PgnTest : UdonSharpBehaviour {
         CheckImport("import: over-disambiguated SAN recorded as the board writes it",
             "1. Ng1f3 Nb8c6 2. e2e4 e7xe5 *", ChessPgn.ImportIllegalMove, "2...", 3,
             "r1bqkbnr/pppppppp/2n5/8/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq e3 0 2", "Nf3 Nc6 e4", 600);
+    }
+
+    // ---- 5.3 ----
+
+    // The multi-frame imports, run one after another: each file is imported in one go and then over frames with
+    // the given budget, and the two must give the same result. minFrames is the fewest frames the budgeted import
+    // must take.
+    string[] frameFiles;
+    float[] frameBudgets;
+    int[] frameResults;
+    int[] framePlies;
+    int[] frameMinFrames;
+    int frameIndex;
+    string frameOneGo;
+    double frameOneGoMs;
+    bool abandonedEventSent;
+
+    void StartFrameImports() {
+        if (importer == null) {
+            Check(false, "importer: multi-frame imports", "no ChessPgnImporter assigned to PgnTest's importer");
+            LogSummary();
+            return;
+        }
+        // lichess-long-draw with the normal budget, Siggi-vs-Nuka with a small one, and two at one step per frame:
+        // formatting (clocks, comments and variations between moves) and a failure.
+        frameFiles = new string[] { "lichess-long-draw.pgn", "Siggi-vs-Nuka.pgn", "formatting.pgn", "illegal-move.pgn" };
+        frameBudgets = new float[] { ChessPgnImporter.DefaultBudgetMs, 1f, 0f, 0f };
+        frameResults = new int[] {
+            ChessPgn.ImportDone, ChessPgn.ImportDone, ChessPgn.ImportDone, ChessPgn.ImportIllegalMove
+        };
+        framePlies = new int[] { 142, 54, 24, 3 };
+        frameMinFrames = new int[] { 2, 2, 24, 4 };
+        frameIndex = -1;
+        NextFrameImport();
+    }
+
+    // Starts the next multi-frame import, or the abandon check after the last.
+    void NextFrameImport() {
+        while (true) {
+            frameIndex++;
+            if (frameIndex >= frameFiles.Length) {
+                StartAbandonCheck();
+                return;
+            }
+            string pgn = PgnText(frameFiles[frameIndex]);
+            if (pgn == null) {
+                Check(false, "importer: " + frameFiles[frameIndex], "PGN file not assigned in PgnTest's pgnFiles");
+                continue;
+            }
+            importer.StartImport(pgn, 600, frameBudgets[frameIndex], null, "");
+            importer.ImportFor(float.MaxValue);
+            frameOneGo = ImporterSummary();
+            frameOneGoMs = importer.totalMs;
+            Check(importer.result == frameResults[frameIndex] && importer.MoveCount() == framePlies[frameIndex]
+                && importer.frames == 1 && !importer.importing,
+                "importer: " + frameFiles[frameIndex] + " in one go",
+                "result " + importer.result + ", " + importer.MoveCount() + " plies, " + importer.frames
+                + " frames, importing " + importer.importing);
+            importer.StartImport(pgn, 600, frameBudgets[frameIndex], this, nameof(OnFrameImportDone));
+            return;
+        }
+    }
+
+    public void OnFrameImportDone() {
+        string name = frameFiles[frameIndex];
+        string summary = ImporterSummary();
+        string errors = "";
+        if (summary != frameOneGo) errors += " differs from the import in one go:\n" + summary + "\n" + frameOneGo;
+        if (importer.frames < frameMinFrames[frameIndex]) {
+            errors += " only " + importer.frames + " frames (expected at least " + frameMinFrames[frameIndex] + ")";
+        }
+        if (importer.importing) errors += " still importing";
+        Check(errors == "", "importer: " + name + " over frames with a " + frameBudgets[frameIndex]
+            + " ms budget gives the same result", errors);
+        Debug.Log("[PgnTest] importer timing: " + name + ": " + importer.MoveCount() + " plies, budget "
+            + frameBudgets[frameIndex] + " ms: " + importer.frames + " frames, longest frame "
+            + importer.longestFrameMs.ToString("F2") + " ms, total " + importer.totalMs.ToString("F2")
+            + " ms; in one go " + frameOneGoMs.ToString("F2") + " ms");
+        NextFrameImport();
+    }
+
+    // The importer's result as text, for comparing two imports of the same PGN: the result, the failing move, the
+    // plies played, the position reached, every ply's move, SAN and clock, and the tags.
+    string ImporterSummary() {
+        int moveCount = importer.MoveCount();
+        int[] cursor = importer.cursor;
+        int halfmoveClock = ChessDraws.BuildHalfmoveClocks(importer.moves, moveCount,
+            cursor[ChessPgn.CursorFirstHalfmoveClock], new int[moveCount]);
+        int fullmoveNumber = cursor[ChessPgn.CursorFirstMoveNumber]
+            + (cursor[ChessPgn.CursorFirstSideToMove] + moveCount) / 2;
+        string summary = importer.result + " " + (importer.result == ChessPgn.ImportDone ? "" : importer.FailedAt())
+            + " " + moveCount + " " + ChessFen.WriteFen(importer.board, importer.state, halfmoveClock, fullmoveNumber)
+            + " " + importer.StartFen();
+        for (int i = 0; i < moveCount; i++) {
+            summary += " " + importer.moves[i] + "/" + importer.sans[i] + "/" + importer.clocks[i];
+        }
+        for (int tag = 0; tag < ChessPgn.TagCount; tag++) summary += " [" + importer.tags[tag] + "]";
+        return summary;
+    }
+
+    // An abandoned import stops where it is and sends no event.
+    void StartAbandonCheck() {
+        abandonedEventSent = false;
+        importer.StartImport(PgnText("lichess-long-draw.pgn"), 600, 0f, this, nameof(OnAbandonedImportDone));
+        importer.ImportFor(0f);
+        importer.Abandon();
+        SendCustomEventDelayedFrames(nameof(FinishAbandonCheck), 3);
+    }
+
+    public void OnAbandonedImportDone() {
+        abandonedEventSent = true;
+    }
+
+    public void FinishAbandonCheck() {
+        Check(!abandonedEventSent && !importer.importing && importer.frames == 1 && importer.MoveCount() == 1
+                && importer.result == ChessPgn.ImportMore,
+            "importer: an abandoned import stops and sends no event",
+            "event " + abandonedEventSent + ", importing " + importer.importing + ", " + importer.frames + " frames, "
+            + importer.MoveCount() + " moves, result " + importer.result);
+        LogSummary();
     }
 }
