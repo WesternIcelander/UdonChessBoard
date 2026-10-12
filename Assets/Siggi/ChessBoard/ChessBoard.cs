@@ -1159,8 +1159,11 @@ namespace SiggiChessBoard {
         }
 
         // Puts the position before ply of the game's moves on the replay board, undoing the moves after it from the
-        // current position, and makes ply the replay's game position (not custom).
+        // current position, and makes ply the replay's game position (not custom). The replay position changes, so a
+        // pending takeback request is cancelled.
         void ShowPly(int ply) {
+            takebackColor = ChessRules.NoColor;
+            takebackPly = 0;
             Array.Copy(board, replayBoard, 64);
             Array.Copy(state, replayState, ChessPosition.StateLength);
             for (int i = moveCount - 1; i >= ply; i--) {
@@ -1179,15 +1182,107 @@ namespace SiggiChessBoard {
         }
 
         // A free move in replay: the piece on from goes to to, replacing whatever stood there (any piece, kings too),
-        // with no legality, promotion or castling, and the position becomes custom. Rejected unless name may pick the
-        // piece up, and for a drop back on its own square or off the board.
+        // with no legality, promotion or castling, and the position becomes custom, which cancels a pending takeback
+        // request. Rejected unless name may pick the piece up, and for a drop back on its own square or off the board.
         public int ReplayPieceDroppedAs(string name, bool organizer, int from, int to) {
             if (ReplayPiecePickedUpAs(name, organizer, from) != InputAccepted) return InputRejected;
             if (to < 0 || to >= 64 || to == from) return InputRejected;
             replayBoard[to] = replayBoard[from];
             replayBoard[from] = ChessRules.Empty;
             replayCustom = true;
+            takebackColor = ChessRules.NoColor;
+            takebackPly = 0;
             return InputAccepted;
+        }
+
+        // ---- Takebacks (docs/replay.md, Continuing from an earlier position) ----
+        // A seated player asks to continue the game from the replay position; the other side accepts or declines. The
+        // request is for the ply shown, and changing the replay position cancels it (ShowPly, ReplayPieceDroppedAs).
+
+        public int RequestTakeback(int color) {
+            return RequestTakebackAs(color, LocalName());
+        }
+
+        // The takeback button: name asks, for color, to continue from the position the replay shows
+        // (CanRequestTakebackAs).
+        public int RequestTakebackAs(int color, string name) {
+            if (!CanRequestTakebackAs(color, name)) return InputRejected;
+            takebackColor = color;
+            takebackPly = replayIndex;
+            return InputAccepted;
+        }
+
+        public int DeclineTakeback(int color) {
+            return DeclineTakebackAs(color, LocalName());
+        }
+
+        // The decline takeback button: name declines, for color, the other side's request (CanDeclineTakebackAs).
+        public int DeclineTakebackAs(int color, string name) {
+            if (!CanDeclineTakebackAs(color, name)) return InputRejected;
+            takebackColor = ChessRules.NoColor;
+            takebackPly = 0;
+            return InputAccepted;
+        }
+
+        public int AcceptTakeback(int color) {
+            return AcceptTakebackAs(color, LocalName());
+        }
+
+        // The accept takeback button: name accepts, for color, the other side's request (CanAcceptTakebackAs), and the
+        // game continues from the requested ply as a new game. A game still in progress is first logged as unfinished
+        // (*) with its whole history; an ended one was logged when it ended. The continued game gets a new ID
+        // referencing this one at that ply (ContinueGameIdAt), the history is cut there, the clocks are put back to
+        // what they were at that ply with the turn starting now, and the game is in progress again, out of replay,
+        // with no result and nothing pending.
+        public int AcceptTakebackAs(int color, string name) {
+            if (!CanAcceptTakebackAs(color, name)) return InputRejected;
+            int ply = takebackPly;
+            if (lifecycle == LifecycleInGame) LogGame(ChessGame.EndingUnterminated, ChessRules.NoColor);
+            ContinueGameIdAt(ply, NetworkDateTime());
+            TruncateHistory(ply);
+            RestoreClocks(ServerTime());
+            ending = ChessGame.EndingNone;
+            winner = ChessRules.NoColor;
+            lifecycle = LifecycleInGame;
+            drawOfferColor = ChessRules.NoColor;
+            ShowPly(moveCount);
+            replayMode = false;
+            return InputAccepted;
+        }
+
+        // Cuts the game back to its first ply moves: undoes the moves after them on the game position (with the move
+        // number and halfmove clock) and empties their history entries.
+        void TruncateHistory(int ply) {
+            if (ply >= moveCount) return;
+            halfmoveClock = halfmoveClocks[ply];
+            for (int i = moveCount - 1; i >= ply; i--) {
+                ChessPosition.UnmakeMove(board, state, moveHistory[i]);
+                if (state[ChessPosition.StateSideToMove] == ChessRules.Black) moveNumber--;
+                moveHistory[i] = 0;
+                notation[i] = "";
+                clockHistory[i] = -1;
+                halfmoveClocks[i] = 0;
+            }
+            moveCount = ply;
+        }
+
+        // Puts both clocks back to what they were after the last move each side made (the clock history), or the base
+        // time for a side that hasn't moved, and starts the side to move's turn at server time now. With no clock
+        // they stay 0. A history entry of -1 (none known) counts as the base time.
+        void RestoreClocks(double now) {
+            int start = baseTime == ChessArbiter.NoClock ? 0 : baseTime * 1000;
+            int toMove = moveCount >= 2 ? clockHistory[moveCount - 2] : -1;
+            int moved = moveCount >= 1 ? clockHistory[moveCount - 1] : -1;
+            if (baseTime == ChessArbiter.NoClock || toMove < 0) toMove = start;
+            if (baseTime == ChessArbiter.NoClock || moved < 0) moved = start;
+            if (state[ChessPosition.StateSideToMove] == ChessRules.White) {
+                whiteTime = toMove;
+                blackTime = moved;
+            } else {
+                whiteTime = moved;
+                blackTime = toMove;
+            }
+            turnStart = now;
         }
 
         // Doubles the room in the history arrays, keeping the moves; new notation entries are "" (a synced string[]

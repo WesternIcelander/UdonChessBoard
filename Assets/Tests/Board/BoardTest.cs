@@ -71,6 +71,7 @@ public class BoardTest : UdonSharpBehaviour {
             TestGameIds();
             TestPgnLog();
             TestReplay();
+            TestTakeback();
             TestSnapshot();
             // Every [ChessPGN] entry in the log is one of these, so the two counts must agree.
             Debug.Log("[BoardTest] games logged by the board: " + board.loggedGames);
@@ -2888,6 +2889,250 @@ public class BoardTest : UdonSharpBehaviour {
         Check(board.replayCustom, "local replay: custom", "not custom");
         CheckInt(board.LeaveReplay(), ChessBoard.InputAccepted, "local replay: leave");
         CheckText(GameText(), local, "local replay: the game as it was");
+
+        board.ClearState();
+    }
+
+    // ---- 7.8b takebacks ----
+
+    // In replay (entered if needed) at ply, requester (Ana for White, Bob for Black) asks to continue from there
+    // and the other side accepts; both must be accepted.
+    void Takeback(int ply, int requester, string name) {
+        if (!board.replayMode) board.EnterReplayAs("Ana", false);
+        if (board.replayIndex != ply || board.replayCustom) board.StepToAs("Ana", false, ply);
+        string requesterName = requester == ChessRules.White ? "Ana" : "Bob";
+        string answerer = requester == ChessRules.White ? "Bob" : "Ana";
+        CheckInt(board.RequestTakebackAs(requester, requesterName), ChessBoard.InputAccepted, name + ": requested");
+        CheckInt(board.AcceptTakebackAs(ChessRules.OtherColor(requester), answerer), ChessBoard.InputAccepted,
+            name + ": accepted");
+    }
+
+    // The board after a takeback to ply: in game, out of replay, nothing pending, no result, the history cut at
+    // ply with empty entries after it, and the replay fields on the position.
+    void CheckContinued(int ply, string fen, string name) {
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, name + ": in game");
+        Check(!board.replayMode && !board.replayCustom, name + ": out of replay", "replay flags set");
+        CheckInt(board.takebackColor, ChessRules.NoColor, name + ": no request pending");
+        CheckInt(board.drawOfferColor, ChessRules.NoColor, name + ": no draw offer");
+        CheckInt(board.ending, ChessGame.EndingNone, name + ": no ending");
+        CheckInt(board.winner, ChessRules.NoColor, name + ": no winner");
+        CheckInt(board.moveCount, ply, name + ": move count");
+        CheckText(Fen(), fen, name + ": the position at that ply");
+        int dirty = 0;
+        for (int i = ply; i < board.moveHistory.Length; i++) {
+            if (board.moveHistory[i] != 0 || board.notation[i] != "" || board.clockHistory[i] != -1
+                || board.halfmoveClocks[i] != 0) {
+                dirty++;
+            }
+        }
+        CheckInt(dirty, 0, name + ": history entries after the ply empty");
+        CheckShows(ply, BoardText(board.board), name + ": replay fields");
+    }
+
+    void TestTakeback() {
+        NothingForced();
+        int takebacks = ChessArbiter.SettingTakebacks;
+
+        // A 60+2 game, each position and its clocks recorded: White 61, 62, 63 s, Black 60, 59, 57 s.
+        StartedGame(60, 2, 1000);
+        board.gameSettings = takebacks;
+        string[] fens = new string[7];
+        fens[0] = Fen();
+        int[] from = { ChessRules.E2, ChessRules.E7, ChessRules.G1, ChessRules.B8, ChessRules.F1, ChessRules.G8 };
+        int[] to = { ChessRules.E4, ChessRules.E5, ChessRules.F3, ChessRules.C6, ChessRules.C4, ChessRules.F6 };
+        double[] times = { 1001, 1003, 1004, 1007, 1008, 1012 };
+        for (int i = 0; i < 6; i++) {
+            Play(from[i], to[i], times[i], "takeback game ply " + i);
+            fens[i + 1] = Fen();
+        }
+        board.turnStart = board.ServerTime();
+        string game = GameText();
+        string firstId = board.gameId;
+
+        // Requests: only by a seated player for their own colour, in replay on a game position with a move after it.
+        CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputRejected,
+            "takeback: no request out of replay");
+        board.EnterReplayAs("Bob", false);
+        board.StepToAs("Bob", false, 3);
+        CheckInt(board.RequestTakebackAs(ChessRules.Black, "Cleo"), ChessBoard.InputRejected,
+            "takeback: no request by a non-player");
+        CheckInt(board.RequestTakebackAs(ChessRules.White, "Bob"), ChessBoard.InputRejected,
+            "takeback: no request for the other colour");
+        board.gameSettings = 0;
+        CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputRejected,
+            "takeback: no request with takebacks off");
+        board.gameSettings = takebacks;
+        CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "takeback: requested");
+        CheckInt(board.takebackColor, ChessRules.Black, "takeback: requesting colour");
+        CheckInt(board.takebackPly, 3, "takeback: requested ply");
+        CheckInt(board.RequestTakebackAs(ChessRules.White, "Ana"), ChessBoard.InputRejected,
+            "takeback: no second request while one is pending");
+        CheckInt(board.AcceptTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputRejected,
+            "takeback: the requester can't accept");
+        CheckInt(board.AcceptTakebackAs(ChessRules.White, "Cleo"), ChessBoard.InputRejected,
+            "takeback: a non-player can't accept");
+        CheckInt(board.AcceptTakebackAs(ChessRules.White, "Bob"), ChessBoard.InputRejected,
+            "takeback: not accepted for the wrong colour");
+        CheckInt(board.DeclineTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputRejected,
+            "takeback: the requester can't decline");
+        board.gameSettings = 0;
+        CheckInt(board.AcceptTakebackAs(ChessRules.White, "Ana"), ChessBoard.InputRejected,
+            "takeback: not accepted once takebacks are off");
+        board.gameSettings = takebacks;
+        CheckText(GameText(), game, "takeback: refused calls leave the game");
+
+        // A request is cancelled whenever the replay position changes: stepping, a free move, leaving.
+        board.StepToAs("Ana", false, 2);
+        CheckInt(board.takebackColor, ChessRules.NoColor, "takeback: stepping cancels the request");
+        board.StepToAs("Ana", false, 3);
+        CheckInt(board.AcceptTakebackAs(ChessRules.White, "Ana"), ChessBoard.InputRejected,
+            "takeback: a cancelled request can't be accepted back on its ply");
+        board.RequestTakebackAs(ChessRules.Black, "Bob");
+        board.PieceDroppedAs("Bob", ChessRules.A7, ChessRules.A6);
+        CheckInt(board.takebackColor, ChessRules.NoColor, "takeback: a free move cancels the request");
+        CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputRejected,
+            "takeback: no request from a custom position");
+        board.StepToAs("Ana", false, 3);
+        board.RequestTakebackAs(ChessRules.Black, "Bob");
+        board.LeaveReplayAs("Ana", false);
+        CheckInt(board.takebackColor, ChessRules.NoColor, "takeback: leaving replay cancels the request");
+        board.EnterReplayAs("Ana", false);
+        board.StepToAs("Ana", false, 3);
+        board.RequestTakebackAs(ChessRules.Black, "Bob");
+        CheckInt(board.DeclineTakebackAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "takeback: declined");
+        CheckInt(board.takebackColor, ChessRules.NoColor, "takeback: declining clears the request");
+        CheckInt(board.AcceptTakebackAs(ChessRules.White, "Ana"), ChessBoard.InputRejected,
+            "takeback: a declined request can't be accepted");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "takeback: declining changes nothing else");
+        board.LeaveReplayAs("Ana", false);
+        CheckText(GameText(), game, "takeback: requests and answers leave the game");
+
+        // Accepted from a game in progress: logged once as unfinished, then cut at ply 3 with the clocks there.
+        board.gameSettings = takebacks | ChessArbiter.SettingDrawAgreement;
+        board.OfferDrawAs(ChessRules.White, "Ana");
+        int before = board.loggedGames;
+        double timeBefore = board.ServerTime();
+        Takeback(3, ChessRules.Black, "takeback to 3");
+        double timeAfter = board.ServerTime();
+        CheckLogged(before, 1, "takeback to 3: the unfinished game logged once");
+        CheckLogHas("[Result \"*\"]\n", "takeback to 3: logged as *");
+        CheckLogHas("[GameID \"" + firstId + "\"]\n", "takeback to 3: logged with its own ID");
+        CheckLogHas("3. Bc4 { [%clk 0:01:03] } 3... Nf6", "takeback to 3: logged with the whole history");
+        Check(board.lastLoggedPgn.EndsWith("[%clk 0:00:57] } *\n"), "takeback to 3: the move text ends with *",
+            "PGN:\n" + board.lastLoggedPgn);
+        CheckContinued(3, fens[3], "takeback to 3");
+        CheckInt(board.state[ChessPosition.StateSideToMove], ChessRules.Black, "takeback to 3: black to move");
+        CheckInt(board.whiteTime, 62000, "takeback to 3: white's clock after its second move");
+        CheckInt(board.blackTime, 60000, "takeback to 3: black's clock after its first move");
+        Check(board.turnStart >= timeBefore && board.turnStart <= timeAfter, "takeback to 3: the turn starts now",
+            "turn start " + board.turnStart + ", not between " + timeBefore + " and " + timeAfter);
+        CheckText(board.continuedFrom, firstId + "/3", "takeback to 3: ContinuedFrom");
+        Check(board.gameId != firstId && board.gameId.Length == 21 && board.gameId[14] == '-',
+            "takeback to 3: a new game ID", "\"" + board.gameId + "\"");
+        CheckText(board.notation[2], "Nf3", "takeback to 3: the history up to it kept");
+        CheckInt(board.clockHistory[2], 62000, "takeback to 3: the clock history up to it kept");
+
+        // The continued game plays on and is logged in full when it ends, referencing the first.
+        string secondId = board.gameId;
+        board.turnStart = 2000;
+        Play(ChessRules.G8, ChessRules.F6, 2001, "continued: 2... Nf6");
+        Play(ChessRules.D2, ChessRules.D4, 2002, "continued: 3. d4");
+        CheckInt(board.blackTime, 61000, "continued: black's clock runs on from the restored time");
+        board.turnStart = board.ServerTime();
+        before = board.loggedGames;
+        board.ResignAs(ChessRules.Black, "Bob");
+        CheckLoggedEnding(before, "1-0", "resignation", "continued");
+        CheckLogHas("[GameID \"" + secondId + "\"]\n[ContinuedFrom \"" + firstId + "/3\"]\n",
+            "continued: GameID and ContinuedFrom");
+        CheckLogHas("1. e4 { [%clk 0:01:01] } 1... e5 { [%clk 0:01:00] } 2. Nf3 { [%clk 0:01:02] }",
+            "continued: the moves before the takeback");
+        CheckLogHas("2... Nf6 { [%clk 0:01:01] } 3. d4", "continued: the moves after it");
+
+        // Accepted once ended: nothing more logged, the result gone, and a chain of continuations.
+        before = board.loggedGames;
+        Takeback(1, ChessRules.White, "takeback once ended");
+        CheckLogged(before, 0, "takeback once ended: nothing more logged");
+        CheckContinued(1, fens[1], "takeback once ended");
+        CheckInt(board.whiteTime, 61000, "takeback once ended: white's clock after its first move");
+        CheckInt(board.blackTime, 60000, "takeback once ended: black's base time");
+        CheckText(board.continuedFrom, secondId + "/1", "takeback once ended: ContinuedFrom the game before");
+        Check(board.gameId != secondId && board.gameId != firstId, "takeback once ended: a new game ID",
+            "\"" + board.gameId + "\"");
+
+        // Back to the start: the base time for both, and nothing left to take back.
+        before = board.loggedGames;
+        Takeback(0, ChessRules.Black, "takeback to the start");
+        CheckLogged(before, 1, "takeback to the start: the unfinished game logged");
+        CheckContinued(0, fens[0], "takeback to the start");
+        CheckInt(board.whiteTime, 60000, "takeback to the start: white's base time");
+        CheckInt(board.blackTime, 60000, "takeback to the start: black's base time");
+        CheckInt(board.EnterReplayAs("Ana", false), ChessBoard.InputAccepted, "takeback to the start: replay again");
+        CheckInt(board.RequestTakebackAs(ChessRules.White, "Ana"), ChessBoard.InputRejected,
+            "takeback to the start: nothing left to take back");
+        board.LeaveReplayAs("Ana", false);
+
+        // White to move: each side's clock after its own last move.
+        StartedGame(60, 2, 1000);
+        board.gameSettings = takebacks;
+        for (int i = 0; i < 5; i++) Play(from[i], to[i], times[i], "white-to-move takeback game ply " + i);
+        board.turnStart = board.ServerTime();
+        Takeback(4, ChessRules.White, "takeback to 4");
+        CheckContinued(4, fens[4], "takeback to 4");
+        CheckInt(board.whiteTime, 62000, "takeback to 4: white's clock after its second move");
+        CheckInt(board.blackTime, 59000, "takeback to 4: black's clock after its second move");
+
+        // A time forfeit taken back: the flagged side's clock comes back.
+        StartedGame(60, 0, 1000);
+        board.gameSettings = takebacks;
+        Play(ChessRules.E2, ChessRules.E4, 1001, "forfeit takeback: 1. e4");
+        Check(board.CheckFlagFallAt(1100), "forfeit takeback: black's flag", "not ended");
+        before = board.loggedGames;
+        Takeback(0, ChessRules.White, "forfeit takeback");
+        CheckLogged(before, 0, "forfeit takeback: nothing more logged");
+        CheckContinued(0, fens[0], "forfeit takeback");
+        CheckInt(board.whiteTime, 60000, "forfeit takeback: white's base time");
+        CheckInt(board.blackTime, 60000, "forfeit takeback: black's base time");
+        CheckInt(board.FlaggedColor(), ChessRules.NoColor, "forfeit takeback: no flag");
+
+        // Castling, en passant and the counters come back exactly; no clock stays 0.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        board.gameSettings = takebacks;
+        int[] from2 = { ChessRules.E2, ChessRules.G8, ChessRules.E4, ChessRules.D7, ChessRules.E5, ChessRules.C7,
+            ChessRules.G1, ChessRules.B8, ChessRules.F1, ChessRules.G7, ChessRules.E1, ChessRules.F8 };
+        int[] to2 = { ChessRules.E4, ChessRules.F6, ChessRules.E5, ChessRules.D5, ChessRules.D6, ChessRules.D6,
+            ChessRules.F3, ChessRules.C6, ChessRules.E2, ChessRules.G6, ChessRules.G1, ChessRules.G7 };
+        string[] fens2 = new string[from2.Length + 1];
+        fens2[0] = Fen();
+        for (int i = 0; i < from2.Length; i++) {
+            Drop(i % 2 == 0 ? "Ana" : "Bob", from2[i], to2[i], "position takeback game ply " + i);
+            fens2[i + 1] = Fen();
+        }
+        Takeback(10, ChessRules.White, "takeback before castling");
+        CheckContinued(10, fens2[10], "takeback before castling");
+        CheckInt(board.whiteTime + board.blackTime, 0, "takeback with no clock: both 0");
+        Drop("Ana", ChessRules.E1, ChessRules.G1, "takeback before castling: castles again");
+        Takeback(4, ChessRules.Black, "takeback before en passant");
+        CheckContinued(4, fens2[4], "takeback before en passant");
+        Drop("Ana", ChessRules.E5, ChessRules.D6, "takeback before en passant: en passant again");
+        CheckText(Fen(), fens2[5], "takeback before en passant: the same position after it");
+
+        // The local player's methods, seated in both seats.
+        board.ClearState();
+        board.JoinWhite();
+        board.JoinBlack();
+        board.StartGame();
+        board.gameSettings = takebacks;
+        board.PieceDropped(ChessRules.E2, ChessRules.E4);
+        board.PieceDropped(ChessRules.E7, ChessRules.E5);
+        board.EnterReplay();
+        board.StepTo(1);
+        CheckInt(board.RequestTakeback(ChessRules.White), ChessBoard.InputAccepted, "local takeback: request");
+        CheckInt(board.DeclineTakeback(ChessRules.Black), ChessBoard.InputAccepted, "local takeback: decline");
+        CheckInt(board.RequestTakeback(ChessRules.Black), ChessBoard.InputAccepted, "local takeback: request again");
+        CheckInt(board.AcceptTakeback(ChessRules.Black), ChessBoard.InputRejected,
+            "local takeback: not for the requesting colour");
+        CheckInt(board.AcceptTakeback(ChessRules.White), ChessBoard.InputAccepted, "local takeback: accept");
+        CheckContinued(1, fens[1], "local takeback");
 
         board.ClearState();
     }
