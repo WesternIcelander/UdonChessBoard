@@ -28,6 +28,9 @@ public class ViewTest : UdonSharpBehaviour {
     bool joined;
     bool ran;
     int waitedFrames;
+    bool savedAnimate;
+    int savedAnimationStyle;
+    Vector3[] before = new Vector3[ChessBoardView.PieceCount];
 
     void Start() {
         SendCustomEventDelayedFrames(nameof(WaitForBoardTest), 1);
@@ -57,6 +60,9 @@ public class ViewTest : UdonSharpBehaviour {
             return;
         }
         localName = Networking.LocalPlayer.displayName;
+        // Every check but the animation checks (9.5b) looks at pieces in place straight after a change.
+        savedAnimate = view.animateMoves;
+        view.animateMoves = false;
         RunGameChecks();
     }
 
@@ -1230,7 +1236,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckPicker(false, "", "cleared after the highlight checks");
         CheckView("cleared after the highlight checks");
         RunBlockerChecks();
-        LogSummary();
+        SendCustomEventDelayedFrames(nameof(RunAnimationChecks), 1);
     }
 
     // ---- 9.5a2: walking through the board ----
@@ -1284,6 +1290,223 @@ public class ViewTest : UdonSharpBehaviour {
         view.Refresh();
         Check(blocker.enabled, "blocker: enabled again once cleared", "disabled");
         CheckView("cleared after the blocker checks");
+    }
+
+    // ---- 9.5b: move animations ----
+
+    // The eleventh frame, with animations on and Pickups. No time passes within a frame, so a travelling object
+    // still stands where it started; each check starts with everything in place (Settle). A move made on the board
+    // (as one arriving from another client is) sets its piece travelling, and a Refresh meanwhile doesn't cut it
+    // short; a captured piece (en passant too) travels off the board once the mover has landed; castling moves the
+    // king and the rook together; a piece dropped through the view is put in place at once, and the piece it
+    // captures leaves without waiting; a rejected drop goes back at once; stepping to the start of a longer game in
+    // replay puts everything in place at once, one ply on travels; a reset and a load put everything in place at
+    // once, as does any move with animations off. Then a last move, checked once it has had time to land.
+    public void RunAnimationChecks() {
+        view.animateMoves = true;
+        savedAnimationStyle = view.inputStyle;
+        view.SetInputStyle(ChessBoardView.InputPickups);
+        string a = "animation";
+        board.ClearState();
+        view.Refresh();
+        StartGame(ChessGame.ModeStandard, a + " game");
+        CheckAtRest(a + " game started");
+
+        int mover = BeforeMove("e2");
+        PlayOnBoard("e2", "e4", a);
+        CheckTravel(mover, "e4", false, a + ": e4");
+        CheckInt(TravellingFromBoard(), 1, a + ": e4: one object travelling from the board");
+        view.Refresh();
+        CheckTravel(mover, "e4", false, a + ": e4, after another Refresh");
+        Settle();
+        PlayOnBoard("d7", "d5", a);
+        Settle();
+
+        mover = BeforeMove("e4");
+        int captured = view.squareObject[Sq("d5")];
+        PlayOnBoard("e4", "d5", a);
+        CheckTravel(mover, "d5", false, a + ": exd5");
+        CheckTravelOff(captured, true, a + ": exd5: the d5 pawn");
+        CheckInt(TravellingFromBoard(), 2, a + ": exd5: two objects travelling from the board");
+        Settle();
+        PlayOnBoard("c7", "c5", a);
+        Settle();
+
+        mover = BeforeMove("d5");
+        captured = view.squareObject[Sq("c5")];
+        PlayOnBoard("d5", "c6", a);
+        CheckTravel(mover, "c6", false, a + ": dxc6 e.p.");
+        CheckTravelOff(captured, true, a + ": dxc6 e.p.: the c5 pawn");
+        CheckInt(TravellingFromBoard(), 2, a + ": dxc6 e.p.: two objects travelling from the board");
+        Settle();
+        PlayOnBoard("b7", "c6", a);
+        PlayOnBoard("g1", "f3", a);
+        PlayOnBoard("g8", "f6", a);
+        PlayOnBoard("f1", "c4", a);
+        PlayOnBoard("e7", "e6", a);
+        Settle();
+
+        mover = BeforeMove("e1");
+        int rook = view.squareObject[Sq("h1")];
+        PlayOnBoard("e1", "g1", a);
+        CheckTravel(mover, "g1", false, a + ": O-O: the king");
+        CheckTravel(rook, "f1", false, a + ": O-O: the rook");
+        CheckInt(TravellingFromBoard(), 2, a + ": O-O: two objects travelling from the board");
+        Settle();
+
+        // Dropped through the view: the queen lands where it's let go, then stands on d2 at once.
+        RecordPositions();
+        int queen = view.squareObject[Sq("d8")];
+        captured = view.squareObject[Sq("d2")];
+        CheckInt(ViewDrop("d8", Over("d2")), ChessBoard.InputAccepted, a + ": d8 picked up");
+        CheckInt(board.lastChange, ChessBoard.ChangeMove, a + ": Qxd2 dropped: played");
+        view.Refresh();
+        Check(!view.animating[queen] && (view.pieces[queen].localPosition - view.SquarePosition(Sq("d2"))).sqrMagnitude
+            < 1e-10f, a + ": Qxd2 dropped: the queen in place at once",
+            "at " + view.pieces[queen].localPosition.ToString("F3"));
+        CheckTravelOff(captured, false, a + ": Qxd2 dropped: the d2 pawn");
+        CheckInt(TravellingFromBoard(), 1, a + ": Qxd2 dropped: one object travelling from the board");
+        Settle();
+
+        CheckInt(ViewDrop("b1", Over("b5")), ChessBoard.InputAccepted, a + ": b1 picked up");
+        CheckInt(board.lastChange, ChessBoard.ChangeRejected, a + ": b1 dropped over b5: rejected");
+        view.Refresh();
+        CheckAtRest(a + ": b1 dropped over b5, put back at once");
+
+        // Replay: to the start of 12 plies at once, then one ply on travelling.
+        CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, a + ": entered replay");
+        view.Refresh();
+        CheckAtRest(a + ": entered replay");
+        CheckInt(board.StepToAs(localName, true, 0), ChessBoard.InputAccepted, a + ": stepped to the start");
+        view.Refresh();
+        CheckAtRest(a + ": stepped to the start");
+        mover = BeforeMove("e2");
+        CheckInt(board.StepToAs(localName, true, 1), ChessBoard.InputAccepted, a + ": stepped to ply 1");
+        view.Refresh();
+        CheckTravel(mover, "e4", false, a + ": stepped to ply 1");
+        CheckInt(TravellingFromBoard(), 1, a + ": stepped to ply 1: one object travelling from the board");
+        Settle();
+
+        // A reset from ply 1 in replay moves one piece back, but a reset never travels.
+        CheckInt(board.ResetBoardAs(localName, true), ChessBoard.InputAccepted, a + ": reset");
+        view.Refresh();
+        CheckAtRest(a + ": reset");
+
+        if (Utilities.IsValid(importer) && chess960Pgn != null) {
+            board.ClearState();
+            importer.StartImport(chess960Pgn.text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
+            CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, a + ": chess960.pgn imported");
+            CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, a + ": chess960.pgn loaded");
+            view.Refresh();
+            CheckAtRest(a + ": chess960.pgn loaded");
+        }
+
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, a + " game 2");
+        CheckAtRest(a + " game 2 started");
+        view.animateMoves = false;
+        PlayOnBoard("e2", "e4", a + " off");
+        view.Refresh();
+        CheckAtRest(a + " off: e4");
+        view.animateMoves = true;
+
+        mover = BeforeMove("d7");
+        PlayOnBoard("d7", "d5", a);
+        CheckTravel(mover, "d5", false, a + ": d5");
+        SendCustomEventDelayedSeconds(nameof(RunAnimationEndChecks), view.moveSeconds + 0.5f);
+    }
+
+    // Once the last move has had time to land: everything in place, nothing travelling.
+    public void RunAnimationEndChecks() {
+        CheckAtRest("animation: d5 landed");
+        board.ClearState();
+        view.SetInputStyle(savedAnimationStyle);
+        view.animateMoves = savedAnimate;
+        view.Refresh();
+        CheckView("cleared after the animation checks");
+        LogSummary();
+    }
+
+    // Records where every object stands and returns the object on square, about to move.
+    int BeforeMove(string square) {
+        RecordPositions();
+        return view.squareObject[Sq(square)];
+    }
+
+    void RecordPositions() {
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) before[obj] = view.pieces[obj].localPosition;
+    }
+
+    // Plays from to on the board directly (as a move arriving from another client is), then refreshes the view.
+    void PlayOnBoard(string from, string to, string name) {
+        CheckInt(board.PieceDroppedAs(localName, Sq(from), Sq(to)), ChessBoard.InputAccepted,
+            name + ": " + from + "-" + to + " played");
+        view.Refresh();
+    }
+
+    // Puts everything in place at once (a Refresh with animations off), then turns them back on.
+    void Settle() {
+        view.animateMoves = false;
+        view.Refresh();
+        view.animateMoves = true;
+        CheckAtRest("settled");
+    }
+
+    // Whether obj travels from where it stood (RecordPositions) to square, still standing there, starting now or
+    // (waits) once the others have landed.
+    void CheckTravel(int obj, string square, bool waits, string name) {
+        CheckTravelTo(obj, view.SquarePosition(Sq(square)), waits, name + ": travels to " + square);
+    }
+
+    // The same for a captured piece, to its place beside the board: once the mover has landed (waits), or at once
+    // when the mover was dropped in place.
+    void CheckTravelOff(int obj, bool waits, string name) {
+        if (obj == ChessBoardView.NoObject) {
+            Check(false, name + ": travels off the board", "no object");
+            return;
+        }
+        CheckTravelTo(obj, view.SparePosition(obj), waits,
+            name + ": travels off the board, " + (waits ? "once the mover has landed" : "without waiting"));
+    }
+
+    void CheckTravelTo(int obj, Vector3 to, bool waits, string name) {
+        if (obj == ChessBoardView.NoObject) {
+            Check(false, name, "no object");
+            return;
+        }
+        Vector3 from = before[obj];
+        bool waiting = view.animationStart[obj] > Time.time + 0.001f;
+        Check(view.animating[obj] && (view.animationFrom[obj] - from).sqrMagnitude < 1e-10f
+            && (view.animationTo[obj] - to).sqrMagnitude < 1e-10f && waiting == waits
+            && (view.pieces[obj].localPosition - from).sqrMagnitude < 1e-10f, name,
+            "animating " + view.animating[obj] + " from " + view.animationFrom[obj].ToString("F3") + " (expected "
+            + from.ToString("F3") + ") to " + view.animationTo[obj].ToString("F3") + " (expected " + to.ToString("F3")
+            + "), waiting " + waiting + ", now at " + view.pieces[obj].localPosition.ToString("F3"));
+    }
+
+    int TravellingCount() {
+        int count = 0;
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            if (view.animating[obj]) count++;
+        }
+        return count;
+    }
+
+    // The objects travelling that stood on the board (RecordPositions): not the ones beside it, which shift along
+    // their rows when a captured piece takes a place before them.
+    int TravellingFromBoard() {
+        int count = 0;
+        float half = 4 * view.squareSize;
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            if (view.animating[obj] && Mathf.Abs(before[obj].x) < half && Mathf.Abs(before[obj].z) < half) count++;
+        }
+        return count;
+    }
+
+    // The view shows the board with every object in place and none travelling.
+    void CheckAtRest(string name) {
+        CheckView(name);
+        CheckInt(TravellingCount(), 0, name + ": nothing travelling");
     }
 
     // Whether the object has a collider and it's a trigger.

@@ -115,6 +115,23 @@ namespace SiggiChessBoard {
         // client unless the local player has a seat (UpdateBlocker). Players collide only on their own client, so
         // each client's blocker stops only its own player. Below the surface, so it doesn't catch pointing or clicks.
         public Collider blocker;
+        // Move animations (step 9.5b): after a change that moves a few pieces (a move, a replay step, a free move, a
+        // takeback, a rejection), each object whose place changed travels there over moveSeconds in a low arc
+        // (MoveLift squares high for two squares or more), the ones leaving the board starting once the others have
+        // landed. A reset, a load, entering, leaving or continuing replay, or a change moving more than
+        // MaxAnimatedObjects objects between squares puts every object in place at once, as does animateMoves off.
+        public bool animateMoves = true;
+        public float moveSeconds = 0.35f;
+        public const float MoveLift = 1;
+        public const int MaxAnimatedObjects = 4;
+        // Each object's animation: whether it's under way, where it started and goes (local space), and when it
+        // starts moving (Time.time; later than now while it waits for the others to land).
+        [NonSerialized] public bool[] animating = new bool[PieceCount];
+        [NonSerialized] public Vector3[] animationFrom = new Vector3[PieceCount];
+        [NonSerialized] public Vector3[] animationTo = new Vector3[PieceCount];
+        [NonSerialized] public float[] animationStart = new float[PieceCount];
+        float[] animationLift = new float[PieceCount];
+        int animatingCount;
 
         // Which object stands on each square (NoObject for none), and the other way round (NoSquare for an object
         // off the board: captured, or not needed by the position). objectType is the piece type each object stands
@@ -141,6 +158,15 @@ namespace SiggiChessBoard {
         // otherwise run past Udon's time limit.
         bool dirty;
         bool warnedShort;
+        // The square each object was on when last placed (NeverPlaced before the first time), to count how many
+        // changed squares since; the board changes since the last Refresh and whether all of them may animate; and
+        // the objects the local player has just let go of, put in place at once since they're already where they
+        // landed (or are going back from where a rejected drop left them).
+        const int NeverPlaced = -2;
+        int[] placedSquare = new int[PieceCount];
+        int changesSinceRefresh;
+        bool changesAnimate;
+        bool[] snapNext = new bool[PieceCount];
         // When the pieces' pickupable is next brought up to date without a change: who may touch the pieces also
         // depends on whether the local player is an organizer, which the arbiter can change without telling the board.
         float nextPickupCheck;
@@ -178,6 +204,7 @@ namespace SiggiChessBoard {
                 objectLastSquare[i] = ChessRules.NoSquare;
                 objectType[i] = ChessRules.NoPieceType;
                 objectMeshType[i] = -1;
+                placedSquare[i] = NeverPlaced;
             }
             if (!Utilities.IsValid(board)) {
                 Debug.LogError("[ChessBoardView] " + gameObject.name + ": the Board field is empty.");
@@ -195,14 +222,18 @@ namespace SiggiChessBoard {
                 // Being an organizer and the board's idle time (for Reset) change without the board changing.
                 UpdateButtons();
             }
+            if (animatingCount > 0) StepAnimations();
         }
 
         // A move one ply on from the position the mapping shows moves its objects now, so the right object travels
-        // (and, from step 9.5b, animates); everything is checked against the board and placed on the next frame.
+        // (and animates); everything is checked against the board and placed on the next frame.
         public override void OnBoardChanged() {
             dirty = true;
             if (!Utilities.IsValid(board)) return;
             int change = board.lastChange;
+            if (changesSinceRefresh == 0) changesAnimate = true;
+            changesSinceRefresh++;
+            if (!ChangeAnimates(change)) changesAnimate = false;
             // The position the promotion was asked in may be gone; a touch from another client changed nothing.
             if (change != ChessBoard.ChangeActivity) ClearPromotion();
             if (mappingStale) return;
@@ -244,9 +275,7 @@ namespace SiggiChessBoard {
             // worked out again, since the position may have changed (a takeback, another player's free move).
             CheckSelection();
             if (selectedObject != NoObject) FindTargets(selectedFrom, selectedInReplay, selectedTargets);
-            for (int i = 0; i < PieceCount; i++) {
-                if (i != heldObject) PlaceObject(i);
-            }
+            PlaceObjects();
             UpdatePickupable();
             // A held piece's targets, and the castle a held king could make, may have changed (or the game ended, or
             // replay began).
@@ -273,6 +302,8 @@ namespace SiggiChessBoard {
         // when it says no; the board's rejection then puts it back. A promotion waiting for its piece is dropped.
         public void OnPiecePickedUp(int obj) {
             if (obj < 0 || obj >= PieceCount) return;
+            // The hand has it now, wherever it was going.
+            StopAnimation(obj);
             ClearPromotion();
             heldObject = NoObject;
             int square = objectSquare[obj];
@@ -297,6 +328,7 @@ namespace SiggiChessBoard {
         public void OnPieceDropped(int obj) {
             if (obj < 0 || obj >= PieceCount) return;
             dirty = true;
+            snapNext[obj] = true;
             if (obj != heldObject) return;
             if (!Utilities.IsValid(board) || !Utilities.IsValid(pieces[obj])) {
                 heldObject = NoObject;
@@ -708,6 +740,7 @@ namespace SiggiChessBoard {
         }
 
         void LetGoOf(int obj) {
+            snapNext[obj] = true;
             VRCPickup pickup = piecePickups[obj];
             // Its OnDrop is then ignored, since it's no longer heldObject.
             if (Utilities.IsValid(pickup) && pickup.IsHeld) pickup.Drop();
@@ -1183,11 +1216,103 @@ namespace SiggiChessBoard {
 
         // ---- Placing ----
 
-        // Puts obj where the mapping says, with its mesh: on its square, or beside the board when it's off it.
-        // Black's pieces face the other way, for the knights.
-        void PlaceObject(int obj) {
+        // Puts every object but the held one where the mapping says (PrepareObject). If the board's changes since the
+        // last Refresh may animate (ChangeAnimates) and moved at most MaxAnimatedObjects objects between squares, each
+        // object whose place changed travels there, those leaving the board waiting for those landing on it; otherwise
+        // (and for a piece the local player has just let go of) it's put there at once. An object already travelling
+        // to its place carries on.
+        void PlaceObjects() {
+            bool animate = animateMoves && moveSeconds > 0 && changesSinceRefresh > 0 && changesAnimate;
+            if (animate) {
+                int moved = 0;
+                for (int obj = 0; obj < PieceCount; obj++) {
+                    if (obj != heldObject && objectSquare[obj] != placedSquare[obj]) moved++;
+                }
+                animate = moved <= MaxAnimatedObjects;
+            }
+            changesSinceRefresh = 0;
+            // The objects on the board first, so those leaving it know whether to wait.
+            bool landing = false;
+            for (int pass = 0; pass < 2; pass++) {
+                for (int obj = 0; obj < PieceCount; obj++) {
+                    if (obj == heldObject || !Utilities.IsValid(pieces[obj])) continue;
+                    bool onBoard = objectSquare[obj] != ChessRules.NoSquare || obj == promotionObject;
+                    if (onBoard != (pass == 0)) continue;
+                    Vector3 target = PrepareObject(obj);
+                    placedSquare[obj] = objectSquare[obj];
+                    Transform piece = pieces[obj];
+                    bool snap = snapNext[obj] || !animateMoves;
+                    if (!snap && animating[obj] && (animationTo[obj] - target).sqrMagnitude < 1e-10f) continue;
+                    if (!snap && animate && (piece.localPosition - target).sqrMagnitude > 1e-10f) {
+                        AnimateObject(obj, target, pass == 1 && landing ? moveSeconds : 0);
+                        if (pass == 0) landing = true;
+                    } else {
+                        StopAnimation(obj);
+                        piece.localPosition = target;
+                    }
+                }
+            }
+            for (int obj = 0; obj < PieceCount; obj++) snapNext[obj] = false;
+        }
+
+        // Whether a change may animate the pieces it moves: anything but a reset, a load, entering, leaving or
+        // continuing replay (whose pieces jump to another position), and nothing yet.
+        public static bool ChangeAnimates(int change) {
+            return change != ChessBoard.ChangeNone && change != ChessBoard.ChangeReset
+                && change != ChessBoard.ChangeLoaded && change != ChessBoard.ChangeContinued
+                && change != ChessBoard.ChangeEnteredReplay && change != ChessBoard.ChangeLeftReplay;
+        }
+
+        // Starts obj travelling from where it is to target (local space), after delay seconds.
+        void AnimateObject(int obj, Vector3 target, float delay) {
+            Vector3 from = pieces[obj].localPosition;
+            animationFrom[obj] = from;
+            animationTo[obj] = target;
+            animationStart[obj] = Time.time + delay;
+            float distance = Vector3.Distance(from, target);
+            animationLift[obj] = MoveLift * squareSize * Mathf.Clamp01(distance / (2 * squareSize));
+            if (!animating[obj]) {
+                animating[obj] = true;
+                animatingCount++;
+            }
+        }
+
+        // Leaves obj where it is (the caller places it, or a hand holds it).
+        void StopAnimation(int obj) {
+            if (!animating[obj]) return;
+            animating[obj] = false;
+            animatingCount--;
+        }
+
+        // Moves the travelling objects on (every frame while any travels): eased along the straight line, lifted in an
+        // arc over it, landing exactly on their place.
+        void StepAnimations() {
+            float now = Time.time;
+            for (int obj = 0; obj < PieceCount; obj++) {
+                if (!animating[obj]) continue;
+                Transform piece = pieces[obj];
+                if (obj == heldObject || !Utilities.IsValid(piece)) {
+                    StopAnimation(obj);
+                    continue;
+                }
+                float t = moveSeconds > 0 ? (now - animationStart[obj]) / moveSeconds : 1;
+                if (t >= 1) {
+                    piece.localPosition = animationTo[obj];
+                    StopAnimation(obj);
+                    continue;
+                }
+                // Still waiting for the others to land.
+                if (t <= 0) continue;
+                float s = t * t * (3 - 2 * t);
+                piece.localPosition = Vector3.Lerp(animationFrom[obj], animationTo[obj], s)
+                    + new Vector3(0, animationLift[obj] * 4 * s * (1 - s), 0);
+            }
+        }
+
+        // Brings obj's mesh (and collider) and turn up to the mapping, and returns where it belongs: on its square, or
+        // beside the board when it's off it. Black's pieces face the other way, for the knights.
+        Vector3 PrepareObject(int obj) {
             Transform piece = pieces[obj];
-            if (!Utilities.IsValid(piece)) return;
             int type = objectType[obj];
             if (type != objectMeshType[obj] && type != ChessRules.NoPieceType && Utilities.IsValid(pieceFilters[obj])) {
                 Mesh mesh = meshes[type];
@@ -1202,11 +1327,12 @@ namespace SiggiChessBoard {
             int square = objectSquare[obj];
             // A pawn waiting for its promotion piece stands where it was dropped.
             if (obj == promotionObject) square = promotionTo;
-            piece.localPosition = square != ChessRules.NoSquare ? SquarePosition(square) : SparePosition(obj);
+            Vector3 position = square != ChessRules.NoSquare ? SquarePosition(square) : SparePosition(obj);
             // A selected piece (desktop mode) stands lifted over its square.
-            if (obj == selectedObject) piece.localPosition += new Vector3(0, SelectLift * squareSize, 0);
+            if (obj == selectedObject) position += new Vector3(0, SelectLift * squareSize, 0);
             piece.localRotation = ObjectColor(obj) == ChessRules.White
                 ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
+            return position;
         }
 
         // The centre of a square on the playing surface, in the view's local space.
