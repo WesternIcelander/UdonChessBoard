@@ -6,8 +6,9 @@ using VRC.SDKBase;
 namespace SiggiChessBoard {
     // The logical board (docs/architecture.md): one board's game state, its lifecycle (docs/board-lifecycle.md) and
     // the rules applied to it. It never touches the world; ChessBoardView (step 9) owns the world objects and forwards
-    // input here. Its state fields are the synced fields of docs/networking.md, kept as plain fields until they are
-    // synced in step 8.3.
+    // input here. Its state fields are the synced fields of docs/networking.md: each change made here takes ownership
+    // and sends them, packed into the synced* fields (PackState), and a client receiving them unpacks them
+    // (ReceiveState) and tells its listeners.
     [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
     public class ChessBoard : UdonSharpBehaviour {
         // Lifecycle states (docs/board-lifecycle.md).
@@ -156,9 +157,66 @@ namespace SiggiChessBoard {
         [NonSerialized] public int gameSettings;
         [NonSerialized] public int[] gameNumbers = new int[ChessArbiter.NumberCount];
 
-        // What the last change was, a Change* value, for listeners. ChangeRejected is local: a rejection changes
-        // nothing to send.
+        // What the last change was, a Change* value, for listeners, and whether it arrived from another client
+        // (ReceiveState) rather than being made here: a view animates a received move, but a local drop has already
+        // put the piece there. ChangeRejected is local: a rejection changes nothing to send, so the change sent is
+        // lastSentChange, the last one that wasn't a rejection.
         [NonSerialized] public int lastChange = ChangeNone;
+        [NonSerialized] public bool lastChangeReceived;
+        [NonSerialized] public int lastSentChange = ChangeNone;
+
+        // ---- Synced (docs/networking.md, Synced fields) ----
+        // The state fields above, packed just before each serialization (PackState, from OnPreSerialization) and
+        // unpacked when one arrives (ReceiveState, from OnDeserialization). Keeping them apart from the state lets a
+        // receiver compare the old state with the new one (a game is logged on its transition), sends only the moves
+        // of the game rather than the history arrays' spare room, and leaves the state untouched by an update that
+        // isn't valid. The ints are laid out by the Sync* indices below.
+
+        public const int SyncMoveNumber = 0;
+        public const int SyncStartHalfmoveClock = 1;
+        public const int SyncStartMoveNumber = 2;
+        public const int SyncMoveCount = 3;
+        public const int SyncReplayMode = 4;
+        public const int SyncReplayIndex = 5;
+        public const int SyncReplayCustom = 6;
+        public const int SyncTakebackColor = 7;
+        public const int SyncTakebackPly = 8;
+        public const int SyncDrawOfferColor = 9;
+        public const int SyncReplaySourceBaseTime = 10;
+        public const int SyncReplaySourceIncrement = 11;
+        public const int SyncEnding = 12;
+        public const int SyncWinner = 13;
+        public const int SyncLifecycle = 14;
+        public const int SyncMode = 15;
+        public const int SyncBaseTime = 16;
+        public const int SyncIncrement = 17;
+        public const int SyncWhiteTime = 18;
+        public const int SyncBlackTime = 19;
+        public const int SyncGameSettings = 20;
+        public const int SyncChange = 21;
+        // gameNumbers, then the state array.
+        public const int SyncGameNumbers = 22;
+        public const int SyncState = SyncGameNumbers + ChessArbiter.NumberCount;
+        public const int SyncLength = SyncState + ChessPosition.StateLength;
+
+        [UdonSynced] [NonSerialized] public byte[] syncedBoard = new byte[64];
+        [UdonSynced] [NonSerialized] public byte[] syncedReplayBoard = new byte[64];
+        [UdonSynced] [NonSerialized] public int[] syncedInts = new int[SyncLength];
+        // The first moveCount entries of the history arrays. A synced string[] must never hold null: one null element
+        // makes the whole serialization fail, so PackState writes "" for one.
+        [UdonSynced] [NonSerialized] public int[] syncedMoves = new int[0];
+        [UdonSynced] [NonSerialized] public int[] syncedClocks = new int[0];
+        [UdonSynced] [NonSerialized] public string[] syncedNotation = new string[0];
+        [UdonSynced] [NonSerialized] public double syncedTurnStart;
+        [UdonSynced] [NonSerialized] public double syncedLastActivity;
+        [UdonSynced] [NonSerialized] public string syncedStartFen = "";
+        [UdonSynced] [NonSerialized] public string syncedGameId = "";
+        [UdonSynced] [NonSerialized] public string syncedContinuedFrom = "";
+        [UdonSynced] [NonSerialized] public string syncedReplaySourceWhite = "";
+        [UdonSynced] [NonSerialized] public string syncedReplaySourceBlack = "";
+        [UdonSynced] [NonSerialized] public string syncedReplaySourceResult = "";
+        [UdonSynced] [NonSerialized] public string syncedWhitePlayer = "";
+        [UdonSynced] [NonSerialized] public string syncedBlackPlayer = "";
 
         // ---- Local, not synced ----
 
@@ -166,14 +224,21 @@ namespace SiggiChessBoard {
         [NonSerialized] public int loggedGames;
         [NonSerialized] public string lastLoggedPgn = "";
 
+        // Whether a serialization has arrived; Start mustn't clear it then.
+        bool received;
+
         void Start() {
             if (!Utilities.IsValid(arbiter)) {
                 Debug.LogError("[ChessBoard] " + gameObject.name + ": the Arbiter field is empty. Set it to "
                     + "the world's ChessArbiter. Until then the board plays with every setting off: no takebacks, no "
                     + "draws, nothing forced, never reset for inactivity.");
             }
+            if (received) return;
             ClearState();
-            NotifyChanged(ChangeReset);
+            // A late joiner gets the owner's synced fields even if the owner has never sent a change, so they must
+            // hold the reset state from the start, not the empty arrays they're declared with.
+            PackState();
+            TellListeners(ChangeReset, false);
         }
 
         // ---- Listeners (docs/architecture.md, Logical → physical) ----
@@ -211,9 +276,20 @@ namespace SiggiChessBoard {
             listeners = kept;
         }
 
-        // Records the change and tells every listener (empty Inspector entries are skipped).
+        // A change made on this client: sends it (unless it's a rejection, which changes nothing) and tells every
+        // listener.
         void NotifyChanged(int change) {
+            if (change != ChangeRejected) {
+                lastSentChange = change;
+                SendState();
+            }
+            TellListeners(change, false);
+        }
+
+        // Records the change and tells every listener (empty Inspector entries are skipped).
+        void TellListeners(int change, bool fromOtherClient) {
             lastChange = change;
+            lastChangeReceived = fromOtherClient;
             if (listeners == null) return;
             for (int i = 0; i < listeners.Length; i++) {
                 if (Utilities.IsValid(listeners[i])) listeners[i].OnBoardChanged();
@@ -224,6 +300,191 @@ namespace SiggiChessBoard {
         int NotifyIfRejected(int result) {
             if (result == InputRejected) NotifyChanged(ChangeRejected);
             return result;
+        }
+
+        // ---- Networking (docs/networking.md, docs/ownership.md) ----
+        // Manual sync: the client making a change takes ownership of the board and asks for a serialization; the
+        // state is packed when it's sent, so several changes in one frame go out as one update. Receivers unpack it
+        // and tell their listeners, with no move generation. Who may take ownership is step 8.4.
+
+        // Takes ownership of the board for the local player and asks VRChat to send the state.
+        void SendState() {
+            VRCPlayerApi local = Networking.LocalPlayer;
+            if (!Utilities.IsValid(local)) return;
+            if (!Networking.IsOwner(gameObject)) Networking.SetOwner(local, gameObject);
+            RequestSerialization();
+        }
+
+        public override void OnPreSerialization() {
+            PackState();
+        }
+
+        public override void OnDeserialization() {
+            ReceiveState();
+        }
+
+        // Copies the state into the synced fields. Public for tests.
+        public void PackState() {
+            Array.Copy(board, syncedBoard, 64);
+            Array.Copy(replayBoard, syncedReplayBoard, 64);
+            int[] ints = new int[SyncLength];
+            ints[SyncMoveNumber] = moveNumber;
+            ints[SyncStartHalfmoveClock] = startHalfmoveClock;
+            ints[SyncStartMoveNumber] = startMoveNumber;
+            ints[SyncMoveCount] = moveCount;
+            ints[SyncReplayMode] = replayMode ? 1 : 0;
+            ints[SyncReplayIndex] = replayIndex;
+            ints[SyncReplayCustom] = replayCustom ? 1 : 0;
+            ints[SyncTakebackColor] = takebackColor;
+            ints[SyncTakebackPly] = takebackPly;
+            ints[SyncDrawOfferColor] = drawOfferColor;
+            ints[SyncReplaySourceBaseTime] = replaySourceBaseTime;
+            ints[SyncReplaySourceIncrement] = replaySourceIncrement;
+            ints[SyncEnding] = ending;
+            ints[SyncWinner] = winner;
+            ints[SyncLifecycle] = lifecycle;
+            ints[SyncMode] = mode;
+            ints[SyncBaseTime] = baseTime;
+            ints[SyncIncrement] = increment;
+            ints[SyncWhiteTime] = whiteTime;
+            ints[SyncBlackTime] = blackTime;
+            ints[SyncGameSettings] = gameSettings;
+            ints[SyncChange] = lastSentChange;
+            Array.Copy(gameNumbers, 0, ints, SyncGameNumbers, ChessArbiter.NumberCount);
+            Array.Copy(state, 0, ints, SyncState, ChessPosition.StateLength);
+            syncedInts = ints;
+
+            int[] moves = new int[moveCount];
+            int[] clocks = new int[moveCount];
+            string[] sans = new string[moveCount];
+            Array.Copy(moveHistory, moves, moveCount);
+            Array.Copy(clockHistory, clocks, moveCount);
+            for (int i = 0; i < moveCount; i++) sans[i] = NotNull(notation[i]);
+            syncedMoves = moves;
+            syncedClocks = clocks;
+            syncedNotation = sans;
+
+            syncedTurnStart = turnStart;
+            syncedLastActivity = lastActivity;
+            syncedStartFen = NotNull(startFen);
+            syncedGameId = NotNull(gameId);
+            syncedContinuedFrom = NotNull(continuedFrom);
+            syncedReplaySourceWhite = NotNull(replaySourceWhite);
+            syncedReplaySourceBlack = NotNull(replaySourceBlack);
+            syncedReplaySourceResult = NotNull(replaySourceResult);
+            syncedWhitePlayer = NotNull(whitePlayer);
+            syncedBlackPlayer = NotNull(blackPlayer);
+        }
+
+        static string NotNull(string text) {
+            return text == null ? "" : text;
+        }
+
+        // Takes the state from the synced fields, as a client does when an update arrives, and tells the listeners of
+        // the change it carries (lastChangeReceived). An update that isn't valid is ignored. A game this client saw in
+        // progress is logged on its transition, once (docs/game-endings.md): when the update ends it, or when it's
+        // gone (a reset, or a takeback continuing it as a new game) without this client having seen it end. A late
+        // joiner's first update logs nothing. Public for tests.
+        public void ReceiveState() {
+            if (!IsSyncedStateValid()) return;
+            received = true;
+            int newLifecycle = syncedInts[SyncLifecycle];
+            bool wasInGame = lifecycle == LifecycleInGame;
+            bool sameGame = syncedGameId == gameId
+                && (newLifecycle == LifecycleInGame || newLifecycle == LifecycleEnded);
+            if (wasInGame && !sameGame) LogGoneGameAt(ServerTime());
+            UnpackState();
+            if (wasInGame && sameGame && lifecycle == LifecycleEnded) LogGame(ending, winner);
+            lastSentChange = syncedInts[SyncChange];
+            TellListeners(lastSentChange, true);
+        }
+
+        // Whether the synced fields hold a state PackState could have written: the arrays there and of the right
+        // lengths, and the strings there. Anything else would leave the board half updated.
+        bool IsSyncedStateValid() {
+            if (syncedBoard == null || syncedBoard.Length != 64) return false;
+            if (syncedReplayBoard == null || syncedReplayBoard.Length != 64) return false;
+            if (syncedInts == null || syncedInts.Length != SyncLength) return false;
+            int count = syncedInts[SyncMoveCount];
+            if (count < 0) return false;
+            if (syncedMoves == null || syncedMoves.Length != count) return false;
+            if (syncedClocks == null || syncedClocks.Length != count) return false;
+            if (syncedNotation == null || syncedNotation.Length != count) return false;
+            return syncedStartFen != null && syncedGameId != null && syncedContinuedFrom != null
+                && syncedReplaySourceWhite != null && syncedReplaySourceBlack != null
+                && syncedReplaySourceResult != null && syncedWhitePlayer != null && syncedBlackPlayer != null;
+        }
+
+        // Logs the game in progress that an update has replaced, as the client replacing it did: on time if the side
+        // to move's flag has fallen (as a reset does), otherwise as unfinished. A game with no moves isn't logged.
+        void LogGoneGameAt(double now) {
+            int flagged = FlaggedColorAt(now);
+            if (flagged == ChessRules.NoColor) LogGame(ChessGame.EndingUnterminated, ChessRules.NoColor);
+            else LogGame(ChessGame.EndingTimeForfeit, FlagFallWinner(flagged));
+        }
+
+        // Copies the synced fields into the state, and works out what isn't sent: the halfmove clocks, from the moves.
+        // The history arrays keep their room (growing if needed), with the entries past the game emptied.
+        void UnpackState() {
+            int[] ints = syncedInts;
+            Array.Copy(syncedBoard, board, 64);
+            Array.Copy(syncedReplayBoard, replayBoard, 64);
+            Array.Copy(ints, SyncState, state, 0, ChessPosition.StateLength);
+            int[] numbers = new int[ChessArbiter.NumberCount];
+            Array.Copy(ints, SyncGameNumbers, numbers, 0, ChessArbiter.NumberCount);
+            gameNumbers = numbers;
+
+            moveNumber = ints[SyncMoveNumber];
+            startHalfmoveClock = ints[SyncStartHalfmoveClock];
+            startMoveNumber = ints[SyncStartMoveNumber];
+            int count = ints[SyncMoveCount];
+            while (moveHistory.Length < count) GrowHistory();
+            halfmoveClock = startHalfmoveClock;
+            for (int i = 0; i < moveHistory.Length; i++) {
+                if (i < count) {
+                    int move = syncedMoves[i];
+                    moveHistory[i] = move;
+                    notation[i] = NotNull(syncedNotation[i]);
+                    clockHistory[i] = syncedClocks[i];
+                    halfmoveClocks[i] = halfmoveClock;
+                    halfmoveClock = ChessDraws.HalfmoveClockAfter(halfmoveClock, move);
+                } else {
+                    moveHistory[i] = 0;
+                    notation[i] = "";
+                    clockHistory[i] = -1;
+                    halfmoveClocks[i] = 0;
+                }
+            }
+            moveCount = count;
+
+            replayMode = ints[SyncReplayMode] != 0;
+            replayIndex = ints[SyncReplayIndex];
+            replayCustom = ints[SyncReplayCustom] != 0;
+            takebackColor = ints[SyncTakebackColor];
+            takebackPly = ints[SyncTakebackPly];
+            drawOfferColor = ints[SyncDrawOfferColor];
+            replaySourceBaseTime = ints[SyncReplaySourceBaseTime];
+            replaySourceIncrement = ints[SyncReplaySourceIncrement];
+            ending = ints[SyncEnding];
+            winner = ints[SyncWinner];
+            lifecycle = ints[SyncLifecycle];
+            mode = ints[SyncMode];
+            baseTime = ints[SyncBaseTime];
+            increment = ints[SyncIncrement];
+            whiteTime = ints[SyncWhiteTime];
+            blackTime = ints[SyncBlackTime];
+            gameSettings = ints[SyncGameSettings];
+
+            turnStart = syncedTurnStart;
+            lastActivity = syncedLastActivity;
+            startFen = syncedStartFen;
+            gameId = syncedGameId;
+            continuedFrom = syncedContinuedFrom;
+            replaySourceWhite = syncedReplaySourceWhite;
+            replaySourceBlack = syncedReplaySourceBlack;
+            replaySourceResult = syncedReplaySourceResult;
+            whitePlayer = syncedWhitePlayer;
+            blackPlayer = syncedBlackPlayer;
         }
 
         // ---- Getters for the view (docs/architecture.md) ----
@@ -453,7 +714,7 @@ namespace SiggiChessBoard {
 
         // Re-snapshot on request (docs/settings.md): an organizer makes a board in use take a new snapshot, e.g. after
         // fixing a mistake in the settings. Refused for anyone else and on a reset board, which has no snapshot (it
-        // takes one when it leaves the reset state). Taking ownership of the board and serializing come with step 8.
+        // takes one when it leaves the reset state). Like every change, it takes ownership of the board and sends it.
         public int ResnapshotAs(VRCPlayerApi who) {
             if (lifecycle == LifecycleReset) return InputRejected;
             if (!Utilities.IsValid(who) || !Utilities.IsValid(arbiter) || !arbiter.IsOrganizer(who)) {
@@ -765,9 +1026,9 @@ namespace SiggiChessBoard {
 
         // ---- Game endings (docs/game-endings.md) ----
 
-        // The owner watches for flag fall. Ownership comes with step 8; until then every client is the owner.
+        // The owner watches for flag fall, so the game ends on time once; every other client sees the update.
         void Update() {
-            if (lifecycle == LifecycleInGame) CheckFlagFall();
+            if (lifecycle == LifecycleInGame && Networking.IsOwner(gameObject)) CheckFlagFall();
         }
 
         // Ends the game in progress at server time now: how it ended, who won (ChessRules.NoColor for a draw), and
@@ -854,11 +1115,17 @@ namespace SiggiChessBoard {
         bool EndOnFlagFallAt(double now) {
             int flagged = FlaggedColorAt(now);
             if (flagged == ChessRules.NoColor) return false;
+            EndGameAt(ChessGame.EndingTimeForfeit, FlagFallWinner(flagged), now);
+            return true;
+        }
+
+        // Who wins when flagged's time runs out: the opponent, or nobody (a draw) when the opponent can't checkmate
+        // and the dead-position rule is on.
+        int FlagFallWinner(int flagged) {
             int opponent = ChessRules.OtherColor(flagged);
             bool draw = IsGameSettingOn(ChessArbiter.SettingDeadPosition)
                 && ChessDraws.HasNoMatingMaterial(board, opponent);
-            EndGameAt(ChessGame.EndingTimeForfeit, draw ? ChessRules.NoColor : opponent, now);
-            return true;
+            return draw ? ChessRules.NoColor : opponent;
         }
 
         // ---- Piece input (docs/player-input.md) ----
@@ -1027,7 +1294,8 @@ namespace SiggiChessBoard {
         // method, which refuses when its check doesn't. The methods themselves come with their steps: resign (with the
         // game endings), draws (below), replay 7.8a, takebacks 7.8b, loading 7.9a, continuing 7.9b, reset 7.10. The plain
         // checks are for the local player; the *As ones take any name, and an organizer flag where organizers count,
-        // for tests and the debug view. Taking ownership, and the idle-reset exception for everyone else, come with step 8.
+        // for tests and the debug view. Who may take ownership, and the idle-reset exception for everyone else, come
+        // with steps 8.4 and 8.5.
 
         // Scratch for the repetition counts of ClaimableDraw and AutomaticDraw.
         byte[] repetitionBoard = new byte[64];

@@ -3,7 +3,8 @@ using UdonSharp;
 using UnityEngine;
 using VRC.SDKBase;
 
-// Step 7 test behaviour (PLAN.md section 7): the logical board driven with no world objects.
+// Step 7 test behaviour (PLAN.md section 7): the logical board driven with no world objects, plus the single-client
+// sync checks of 8.3 (packing and receiving the synced state). Runs only with no one else in the instance.
 // Logs "[BoardTest] PASS: <check>" or "[BoardTest] FAIL: <check>: <details>" per check, then a summary line.
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
 public class BoardTest : ChessBoardListener {
@@ -37,6 +38,13 @@ public class BoardTest : ChessBoardListener {
     public void RunChecks() {
         if (ran || !started || !joined) return;
         ran = true;
+        // The board is synced (8.3): every change the checks make takes it over and is sent, so with anyone else here
+        // they would overwrite the board those players see (a game in progress, for a late joiner).
+        if (VRCPlayerApi.GetPlayerCount() > 1) {
+            Debug.Log("[BoardTest] skipped: other players are in the instance, and the checks would send their games "
+                + "to them through the synced board");
+            return;
+        }
         if (!Utilities.IsValid(board)) {
             Check(false, "board assigned", "the board field is empty");
         } else {
@@ -82,6 +90,7 @@ public class BoardTest : ChessBoardListener {
             TestSnapshot();
             TestListeners();
             TestScenarios();
+            TestSync();
             // Every [ChessPGN] entry in the log is one of these, so the two counts must agree.
             Debug.Log("[BoardTest] games logged by the board: " + board.loggedGames);
             if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
@@ -4794,5 +4803,234 @@ public class BoardTest : ChessBoardListener {
         CheckLoggedEnding(before, "1-0", "time forfeit", t);
         CheckLogHas("[TimeControl \"60\"]\n", t + ": logged TimeControl");
         ScenarioReset(t);
+    }
+
+    // ---- 8.3 sync ----
+
+    // The board's whole state as text: every field PackState sends, and the halfmove clocks worked out from them, so
+    // two states compare in one check.
+    string StateText() {
+        string text = "position " + ChessFen.WriteFen(board.board, board.state, board.halfmoveClock, board.moveNumber)
+            + "; state";
+        for (int i = 0; i < ChessPosition.StateLength; i++) text += " " + board.state[i];
+        text += "; replay board";
+        for (int i = 0; i < 64; i++) text += " " + board.replayBoard[i];
+        text += "; start " + board.startFen + " " + board.startHalfmoveClock + " " + board.startMoveNumber;
+        text += "; moves " + board.moveCount + ":";
+        for (int i = 0; i < board.moveCount; i++) {
+            text += " " + board.moveHistory[i] + "/" + board.notation[i] + "/" + board.clockHistory[i] + "/"
+                + board.halfmoveClocks[i];
+        }
+        text += "; replay " + (board.replayMode ? "on" : "off") + " " + board.replayIndex
+            + (board.replayCustom ? " custom" : "") + "; takeback " + board.takebackColor + " " + board.takebackPly
+            + "; draw offer " + board.drawOfferColor + "; ids " + board.gameId + " " + board.continuedFrom
+            + "; source " + board.replaySourceWhite + "|" + board.replaySourceBlack + "|" + board.replaySourceResult
+            + "|" + board.replaySourceBaseTime + "|" + board.replaySourceIncrement
+            + "; seats " + board.whitePlayer + "|" + board.blackPlayer + "; activity " + board.lastActivity
+            + "; result " + board.ending + " " + board.winner + "; lifecycle " + board.lifecycle
+            + "; mode " + board.mode + "; clock " + board.baseTime + "+" + board.increment + " " + board.whiteTime
+            + " " + board.blackTime + " " + board.turnStart + "; settings " + board.gameSettings;
+        for (int i = 0; i < ChessArbiter.NumberCount; i++) text += " " + board.gameNumbers[i];
+        return text;
+    }
+
+    // Ana and Bob start a game, with a clock of baseSeconds (or none), and play e4 e5.
+    void SyncGame(int baseSeconds, string name) {
+        board.ClearState();
+        board.JoinAs(ChessRules.White, "Ana");
+        board.JoinAs(ChessRules.Black, "Bob");
+        if (baseSeconds != ChessArbiter.NoClock) board.SetClockAs("Ana", baseSeconds, 0);
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, name + ": started");
+        Drop("Ana", ChessRules.E2, ChessRules.E4, name);
+        Drop("Bob", ChessRules.E7, ChessRules.E5, name);
+    }
+
+    // The synced fields as an update replacing the game with another (a reset or a takeback elsewhere): only the
+    // game ID matters to the receiver's logging.
+    void SyncReplaceGame() {
+        board.PackState();
+        board.syncedGameId = "";
+        board.syncedInts[ChessBoard.SyncLifecycle] = ChessBoard.LifecycleReset;
+    }
+
+    void TestSync() {
+        NothingForced();
+        board.AddListener(this);
+
+        // The reset state, as a late joiner gets it when nobody has played yet.
+        string r = "sync reset";
+        board.ClearState();
+        board.PackState();
+        string sent = StateText();
+        board.JoinAs(ChessRules.White, "Ana");
+        board.ReceiveState();
+        CheckText(StateText(), sent, r + ": received as sent");
+        CheckCleared(r);
+
+        // A game in progress with a clock, a draw offer, and replay showing ply 1 with a takeback request.
+        string s = "sync";
+        board.ClearState();
+        board.JoinAs(ChessRules.White, "Ana");
+        board.JoinAs(ChessRules.Black, "Bob");
+        board.SetClockAs("Ana", 300, 2);
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, s + ": started");
+        board.gameSettings = ChessArbiter.SettingDrawAgreement | ChessArbiter.SettingTakebacks;
+        Drop("Ana", ChessRules.E2, ChessRules.E4, s);
+        Drop("Bob", ChessRules.E7, ChessRules.E5, s);
+        Drop("Ana", ChessRules.G1, ChessRules.F3, s);
+        CheckInt(board.OfferDrawAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": draw offered");
+        CheckInt(board.EnterReplayAs("Bob", false), ChessBoard.InputAccepted, s + ": replay entered");
+        CheckInt(board.StepToAs("Bob", false, 1), ChessBoard.InputAccepted, s + ": stepped to ply 1");
+        CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": takeback asked");
+        board.lastActivity = 12345.5;
+        board.PackState();
+        CheckInt(board.syncedMoves.Length * 100 + board.syncedClocks.Length * 10 + board.syncedNotation.Length, 333,
+            s + ": only the game's moves, clocks and notation sent");
+        CheckText(board.syncedNotation[0] + " " + board.syncedNotation[1] + " " + board.syncedNotation[2], "e4 e5 Nf3",
+            s + ": notation sent");
+        CheckInt(board.syncedInts[ChessBoard.SyncChange], ChessBoard.ChangeRequest, s + ": the change sent");
+        sent = StateText();
+
+        // A late joiner: a reset board receives it, with junk in the history arrays' spare room.
+        int before = board.loggedGames;
+        board.ClearState();
+        board.moveHistory[5] = 123;
+        board.notation[5] = "junk";
+        board.clockHistory[5] = 7;
+        MarkNotifications();
+        board.ReceiveState();
+        CheckTold(ChessBoard.ChangeRequest, s + ": received");
+        Check(board.lastChangeReceived, s + ": the change is marked received", "not marked");
+        CheckText(StateText(), sent, s + ": received as sent");
+        CheckInt(board.halfmoveClock, 1, s + ": the halfmove clock worked out");
+        CheckText(board.moveHistory[5] + "/" + board.notation[5] + "/" + board.clockHistory[5], "0//-1",
+            s + ": the spare room emptied");
+        CheckLogged(before, 0, s + ": a late joiner logs nothing");
+
+        // A local change isn't marked received, and a rejection isn't sent.
+        CheckInt(board.LeaveReplayAs("Bob", false), ChessBoard.InputAccepted, s + ": replay left");
+        Check(!board.lastChangeReceived, s + ": a local change isn't marked received", "marked");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.E7, ChessRules.E5), ChessBoard.InputRejected,
+            s + ": a drop from an empty square");
+        CheckInt(board.lastChange, ChessBoard.ChangeRejected, s + ": rejected");
+        board.PackState();
+        CheckInt(board.syncedInts[ChessBoard.SyncChange], ChessBoard.ChangeLeftReplay, s + ": the rejection not sent");
+
+        // A synced string[] must never hold null.
+        board.notation[1] = null;
+        board.PackState();
+        board.notation[1] = "e5";
+        string nulls = "";
+        for (int i = 0; i < board.syncedNotation.Length; i++) {
+            if (board.syncedNotation[i] == null) nulls += " " + i;
+        }
+        Check(nulls == "", s + ": no null notation sent", "null at" + nulls);
+        CheckText(board.syncedNotation[1], "", s + ": a null entry sent as empty");
+
+        // A custom replay position: a free move.
+        string c = "sync custom replay";
+        SyncGame(ChessArbiter.NoClock, c);
+        CheckInt(board.EnterReplayAs("Ana", false), ChessBoard.InputAccepted, c + ": replay entered");
+        CheckInt(board.ReplayPieceDroppedAs("Ana", false, ChessRules.D1, ChessRules.H5), ChessBoard.InputAccepted,
+            c + ": a free move");
+        board.PackState();
+        sent = StateText();
+        board.ClearState();
+        board.ReceiveState();
+        CheckText(StateText(), sent, c + ": received as sent");
+        Check(board.replayCustom, c + ": custom", "not custom");
+
+        // A history longer than the arrays' starting room: e4 e5 and 128 plies of knight shuffle, no clock.
+        string l = "sync long";
+        SyncGame(ChessArbiter.NoClock, l);
+        KnightShuffle(32, l);
+        CheckInt(board.moveCount, 130, l + ": 130 plies");
+        board.PackState();
+        sent = StateText();
+        board.ClearState();
+        board.ReceiveState();
+        CheckText(StateText(), sent, l + ": received as sent");
+        Check(board.moveHistory.Length >= 130, l + ": the history grown", "room for " + board.moveHistory.Length);
+
+        // The game ending elsewhere: logged here once, as it ended there.
+        string e = "sync ended";
+        SyncGame(ChessArbiter.NoClock, e);
+        CheckInt(board.ResignAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, e + ": Bob resigns");
+        board.PackState();
+        // As this client had it before the update.
+        board.lifecycle = ChessBoard.LifecycleInGame;
+        board.ending = ChessGame.EndingNone;
+        board.winner = ChessRules.NoColor;
+        before = board.loggedGames;
+        board.ReceiveState();
+        CheckLoggedEnding(before, "1-0", "resignation", e);
+        before = board.loggedGames;
+        board.ReceiveState();
+        CheckLogged(before, 0, e + ": the same update again logs nothing");
+        board.ClearState();
+        board.ReceiveState();
+        CheckLogged(before, 0, e + ": a late joiner logs nothing");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, e + ": a late joiner sees it ended");
+        SyncReplaceGame();
+        board.ReceiveState();
+        CheckLogged(before, 0, e + ": an ended game replaced logs nothing");
+
+        // A game in progress replaced elsewhere (a reset, a takeback), logged here as unfinished.
+        string g = "sync replaced";
+        SyncGame(ChessArbiter.NoClock, g);
+        SyncReplaceGame();
+        before = board.loggedGames;
+        board.ReceiveState();
+        CheckLoggedOnReset(before, "*", "unterminated", g);
+        CheckLogHas("1. e4 e5 *", g + ": its moves");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleReset, g + ": the update taken");
+
+        // ... on time when its flag had fallen, as the reset logged it there: White, to move, loses.
+        string f = "sync replaced on time";
+        SyncGame(60, f);
+        SyncReplaceGame();
+        board.turnStart -= 61;
+        before = board.loggedGames;
+        board.ReceiveState();
+        CheckLoggedOnReset(before, "0-1", "time forfeit", f);
+
+        // ... and not at all with no moves.
+        string n = "sync replaced, no moves";
+        board.ClearState();
+        board.JoinAs(ChessRules.White, "Ana");
+        board.JoinAs(ChessRules.Black, "Bob");
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, n + ": started");
+        SyncReplaceGame();
+        before = board.loggedGames;
+        board.ReceiveState();
+        CheckLogged(before, 0, n + ": nothing logged");
+
+        // An update that isn't valid is ignored.
+        string v = "sync invalid";
+        board.ClearState();
+        board.JoinAs(ChessRules.White, "Ana");
+        string kept = StateText();
+        board.PackState();
+        board.syncedInts = new int[3];
+        MarkNotifications();
+        board.ReceiveState();
+        CheckNotTold(v + ": ints too short");
+        board.PackState();
+        board.syncedMoves = new int[1];
+        board.ReceiveState();
+        CheckNotTold(v + ": more moves than the count");
+        board.PackState();
+        board.syncedNotation = null;
+        board.ReceiveState();
+        CheckNotTold(v + ": no notation");
+        board.PackState();
+        board.syncedBlackPlayer = null;
+        board.ReceiveState();
+        CheckNotTold(v + ": a missing string");
+        CheckText(StateText(), kept, v + ": the state kept");
+
+        board.RemoveListener(this);
+        board.ClearState();
+        board.PackState();
     }
 }

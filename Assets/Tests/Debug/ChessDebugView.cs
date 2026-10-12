@@ -59,8 +59,35 @@ public class ChessDebugView : ChessBoardListener {
         Refresh();
     }
 
+    // A change arriving from another client (8.3) is logged with the state it brought, so each client's log shows the
+    // updates reaching it.
     public override void OnBoardChanged() {
         dirty = true;
+        if (!board.lastChangeReceived) return;
+        Debug.Log("[ChessDebugView] received " + ChangeName(board.lastChange) + ": " + BoardSummary());
+        string[] sent = board.syncedNotation;
+        int nulls = 0;
+        for (int i = 0; sent != null && i < sent.Length; i++) {
+            if (sent[i] == null) nulls++;
+        }
+        if (sent == null || nulls > 0) {
+            Debug.LogError("[ChessDebugView] received notation with "
+                + (sent == null ? "no array" : nulls + " null entries"));
+        }
+    }
+
+    // The board's state in one line, for the log: lifecycle, seats, moves, position, owner.
+    string BoardSummary() {
+        string last = board.moveCount > 0 ? " (last " + board.notation[board.moveCount - 1] + ")" : "";
+        return LifecycleName(board.lifecycle) + ", White " + SeatText(board.whitePlayer) + ", Black "
+            + SeatText(board.blackPlayer) + ", " + board.moveCount + " moves" + last + ", "
+            + ChessFen.WriteFen(board.board, board.state, board.halfmoveClock, board.moveNumber) + ", game "
+            + (board.gameId.Length > 0 ? board.gameId : "none") + ", owner " + BoardOwnerName();
+    }
+
+    string BoardOwnerName() {
+        VRCPlayerApi owner = Networking.GetOwner(board.gameObject);
+        return Utilities.IsValid(owner) ? owner.displayName : "nobody";
     }
 
     // ---- Buttons ----
@@ -327,7 +354,8 @@ public class ChessDebugView : ChessBoardListener {
     void Report(string label, int result) {
         lastAction = label + ": " + (result == ChessBoard.InputAccepted ? "accepted"
             : result == ChessBoard.InputPromotionNeeded ? "promotion needed" : "REFUSED");
-        Debug.Log("[ChessDebugView] " + lastAction);
+        Debug.Log("[ChessDebugView] " + lastAction
+            + (result == ChessBoard.InputAccepted ? "; now " + BoardSummary() : ""));
         Refresh();
     }
 
@@ -393,7 +421,8 @@ public class ChessDebugView : ChessBoardListener {
         string text = "<b>" + board.gameObject.name + "</b> (board " + board.boardNumber + ")   you: " + name
             + (IsLocalOrganizer() ? " [organizer]" : "") + "\n";
         text += "Lifecycle: <b>" + LifecycleName(board.lifecycle) + "</b>   last change: " + ChangeName(board.lastChange)
-            + "   logged games: " + board.loggedGames + "\n";
+            + (board.lastChangeReceived ? " (received)" : "") + "   logged games: " + board.loggedGames
+            + "   board owner: " + BoardOwnerName() + "\n";
         text += "White: " + SeatText(board.whitePlayer) + ClockSuffix(ChessRules.White) + "   Black: "
             + SeatText(board.blackPlayer) + ClockSuffix(ChessRules.Black) + "\n";
         text += "Mode: " + ModeName(board.mode) + "   clock: " + ClockName(board.baseTime, board.increment)
