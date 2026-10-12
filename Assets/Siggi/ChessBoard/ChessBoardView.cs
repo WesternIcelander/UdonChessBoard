@@ -71,6 +71,17 @@ namespace SiggiChessBoard {
         float nextPickupCheck;
         const float PickupCheckInterval = 1;
 
+        // The object the local player holds, picked up with the board's consent (NoObject for none), and the square it
+        // was picked up from. It isn't placed while held; it's let go when the board stops showing it on that square or
+        // the local player may no longer touch the pieces.
+        [NonSerialized] public int heldObject = NoObject;
+        [NonSerialized] public int heldFrom = ChessRules.NoSquare;
+        // A promotion waiting for its piece: the pawn's object, its from and to squares (NoObject when none). The pawn
+        // stands on to meanwhile; ChoosePromotion plays it, and any change to the board (but activity) cancels it.
+        [NonSerialized] public int promotionObject = NoObject;
+        [NonSerialized] public int promotionFrom = ChessRules.NoSquare;
+        [NonSerialized] public int promotionTo = ChessRules.NoSquare;
+
         void Start() {
             for (int i = 0; i < 64; i++) squareObject[i] = NoObject;
             for (int i = 0; i < PieceCount; i++) {
@@ -99,8 +110,11 @@ namespace SiggiChessBoard {
         // (and, from step 9.5b, animates); everything is checked against the board and placed on the next frame.
         public override void OnBoardChanged() {
             dirty = true;
-            if (mappingStale || !Utilities.IsValid(board)) return;
+            if (!Utilities.IsValid(board)) return;
             int change = board.lastChange;
+            // The position the promotion was asked in may be gone; a touch from another client changed nothing.
+            if (change != ChessBoard.ChangeActivity) promotionObject = NoObject;
+            if (mappingStale) return;
             bool replay = board.replayMode;
             bool oneOn;
             if (change == ChessBoard.ChangeMove) {
@@ -133,8 +147,89 @@ namespace SiggiChessBoard {
             shownPly = replay ? board.replayIndex : board.moveCount;
             shownCustom = replay && board.replayCustom;
             mappingStale = false;
-            for (int i = 0; i < PieceCount; i++) PlaceObject(i);
+            // A held piece the board no longer shows where it was picked up is let go, and placed with the rest.
+            if (heldObject != NoObject && objectSquare[heldObject] != heldFrom) LetGo();
+            for (int i = 0; i < PieceCount; i++) {
+                if (i != heldObject) PlaceObject(i);
+            }
             UpdatePickupable();
+        }
+
+        // ---- Input (docs/player-input.md) ----
+
+        // A piece picked up by the local player (its ChessPiece's OnPickup): asks the board, and lets go of the piece
+        // when it says no; the board's rejection then puts it back. A promotion waiting for its piece is dropped.
+        public void OnPiecePickedUp(int obj) {
+            if (obj < 0 || obj >= PieceCount) return;
+            promotionObject = NoObject;
+            heldObject = NoObject;
+            int square = objectSquare[obj];
+            if (Utilities.IsValid(board) && square != ChessRules.NoSquare
+                && board.PiecePickedUp(square) == ChessBoard.InputAccepted) {
+                heldObject = obj;
+                heldFrom = square;
+                return;
+            }
+            // A piece off the board (never a pickup) is just put back; the board told its rejection itself.
+            dirty = true;
+            LetGoOf(obj);
+        }
+
+        // A piece let go by the local player (its ChessPiece's OnDrop): forwards the drop on the square under it (off
+        // the board too, which the board rejects) if the board accepted its pickup. A promotion waits for
+        // ChoosePromotion with the pawn standing on its square; anything else is placed from the board after its
+        // change, so a rejected drop goes back where it was.
+        public void OnPieceDropped(int obj) {
+            if (obj < 0 || obj >= PieceCount) return;
+            dirty = true;
+            if (obj != heldObject) return;
+            heldObject = NoObject;
+            if (!Utilities.IsValid(board) || !Utilities.IsValid(pieces[obj])) return;
+            int to = DropSquare(pieces[obj].position);
+            int from = heldFrom;
+            if (board.PieceDropped(from, to) == ChessBoard.InputPromotionNeeded) {
+                promotionObject = obj;
+                promotionFrom = from;
+                promotionTo = to;
+            }
+        }
+
+        // The promotion picker's answer (step 9.5a): plays the waiting promotion with pieceType (ChessRules.Queen, Rook,
+        // Bishop or Knight). Any other type is rejected by the board, which puts the pawn back. InputRejected with no
+        // promotion waiting.
+        public int ChoosePromotion(int pieceType) {
+            if (promotionObject == NoObject || !Utilities.IsValid(board)) return ChessBoard.InputRejected;
+            promotionObject = NoObject;
+            dirty = true;
+            return board.PromotionChosen(promotionFrom, promotionTo, pieceType);
+        }
+
+        // The picker closed without a choice: the pawn goes back.
+        public void CancelPromotion() {
+            ChoosePromotion(ChessRules.NoPieceType);
+        }
+
+        // The square under a point (world space) on the playing surface, by where it is over the board whatever its
+        // height; NoSquare outside the board.
+        public int DropSquare(Vector3 position) {
+            Vector3 local = transform.InverseTransformPoint(position);
+            int file = Mathf.FloorToInt(local.x / squareSize + 4);
+            int rank = Mathf.FloorToInt(local.z / squareSize + 4);
+            if (file < 0 || file > 7 || rank < 0 || rank > 7) return ChessRules.NoSquare;
+            return ChessRules.SquareOf(file, rank);
+        }
+
+        // Stops treating a piece as held and takes it out of the local player's hand, to be placed from the board.
+        void LetGo() {
+            int obj = heldObject;
+            heldObject = NoObject;
+            LetGoOf(obj);
+        }
+
+        void LetGoOf(int obj) {
+            VRCPickup pickup = piecePickups[obj];
+            // Its OnDrop is then ignored, since it's no longer heldObject.
+            if (Utilities.IsValid(pickup) && pickup.IsHeld) pickup.Drop();
         }
 
         // ---- Pickups (docs/physical-pieces.md) ----
@@ -157,6 +252,11 @@ namespace SiggiChessBoard {
         public void UpdatePickupable() {
             nextPickupCheck = Time.time + PickupCheckInterval;
             bool allowed = UsesPickups() && Utilities.IsValid(board) && board.MayTouchPieces();
+            // A piece the local player may no longer touch leaves their hand.
+            if (!allowed && heldObject != NoObject) {
+                LetGo();
+                dirty = true;
+            }
             for (int obj = 0; obj < PieceCount; obj++) {
                 VRCPickup pickup = piecePickups[obj];
                 if (!Utilities.IsValid(pickup)) continue;
@@ -307,6 +407,8 @@ namespace SiggiChessBoard {
                 }
             }
             int square = objectSquare[obj];
+            // A pawn waiting for its promotion piece stands where it was dropped.
+            if (obj == promotionObject) square = promotionTo;
             piece.localPosition = square != ChessRules.NoSquare ? SquarePosition(square) : SparePosition(obj);
             piece.localRotation = ObjectColor(obj) == ChessRules.White
                 ? Quaternion.identity : Quaternion.Euler(0, 180, 0);

@@ -250,8 +250,145 @@ public class ViewTest : UdonSharpBehaviour {
         board.ClearState();
         view.SetInputStyle(savedStyle);
         view.Refresh();
+        CheckView("cleared after the pickup checks");
+        SendCustomEventDelayedFrames(nameof(RunDropChecks), 1);
+    }
+
+    // ---- 9.3a: pickups and drops forwarded to the board ----
+
+    // The fifth frame: pickups and drops through the view, as the pieces' OnPickup and OnDrop make them, each piece
+    // put where it's dropped first: legal drops played, rejected ones (an illegal move, off the board, back on its
+    // own square, after the game ended, a pickup out of turn) put back, a held piece left alone until the board
+    // takes its square, free moves in replay, and a promotion waiting for its piece.
+    public void RunDropChecks() {
+        int savedStyle = view.inputStyle;
+        view.SetInputStyle(ChessBoardView.InputPickups);
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, "drop game");
+
+        CheckInt(view.DropSquare(view.transform.TransformPoint(Over("e4"))), Sq("e4"), "drop square: over e4");
+        CheckInt(view.DropSquare(view.transform.TransformPoint(Over("a1"))), Sq("a1"), "drop square: over a1");
+        CheckInt(view.DropSquare(view.transform.TransformPoint(Over("h8"))), Sq("h8"), "drop square: over h8");
+        CheckInt(view.DropSquare(view.transform.TransformPoint(OffBoard())), ChessRules.NoSquare,
+            "drop square: beside the board");
+
+        int pawn = view.squareObject[Sq("e2")];
+        view.OnPiecePickedUp(pawn);
+        CheckInt(view.heldObject, pawn, "e2 picked up: held");
+        view.pieces[pawn].localPosition = Over("e4");
+        view.Refresh();
+        Check((view.pieces[pawn].localPosition - Over("e4")).sqrMagnitude < 1e-8f, "e2 held: not placed by Refresh",
+            "at " + view.pieces[pawn].localPosition.ToString("F3"));
+        view.OnPieceDropped(pawn);
+        CheckInt(view.heldObject, ChessBoardView.NoObject, "e2 dropped: no longer held");
+        CheckDropped(1, ChessBoard.ChangeMove, "e2 dropped over e4: e4 played");
+        CheckInt(ChessRules.MoveTo(board.LastMove()), Sq("e4"), "e2 dropped over e4: the move goes to e4");
+        CheckInt(view.squareObject[Sq("e4")], pawn, "e2 dropped over e4: the pawn's object on e4");
+
+        CheckInt(ViewDrop("e7", Over("e3")), ChessBoard.InputAccepted, "e7 picked up");
+        CheckDropped(1, ChessBoard.ChangeRejected, "e7 dropped over e3: rejected, put back");
+        CheckInt(ViewDrop("d7", OffBoard()), ChessBoard.InputAccepted, "d7 picked up");
+        CheckDropped(1, ChessBoard.ChangeRejected, "d7 dropped beside the board: rejected, put back");
+        CheckInt(ViewDrop("g8", Over("g8")), ChessBoard.InputAccepted, "g8 picked up");
+        CheckDropped(1, ChessBoard.ChangeRejected, "g8 dropped back on g8: rejected, put back");
+        // Over f6, where a drop forwarded from g8 (the last pickup) would play Nf6.
+        CheckInt(ViewDrop("d2", Over("f6")), ChessBoard.InputRejected, "d2 picked up with Black to move: refused");
+        CheckDropped(1, ChessBoard.ChangeRejected, "d2 dropped over f6 after a refused pickup: not forwarded");
+        CheckInt(ViewDrop("g8", Over("f6")), ChessBoard.InputAccepted, "g8 picked up again");
+        CheckDropped(2, ChessBoard.ChangeMove, "g8 dropped over f6: Nf6 played");
+
+        // Picked up, then the game ends before the drop.
+        int d2 = view.squareObject[Sq("d2")];
+        view.OnPiecePickedUp(d2);
+        CheckInt(view.heldObject, d2, "d2 picked up");
+        CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, "White resigned while holding d2");
+        view.Refresh();
+        CheckInt(view.heldObject, d2, "d2 still held after the game ended, its square unchanged");
+        view.pieces[d2].localPosition = Over("d4");
+        view.OnPieceDropped(d2);
+        CheckDropped(2, ChessBoard.ChangeRejected, "d2 dropped over d4 after the game ended: rejected, put back");
+
+        // In replay: free moves, and a held piece whose square another free move takes.
+        CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, "entered replay");
+        view.Refresh();
+        CheckInt(ViewDrop("a1", Over("a5")), ChessBoard.InputAccepted, "replay: a1 picked up");
+        CheckDropped(2, ChessBoard.ChangeFreeMove, "replay: a1 dropped over a5, a free move");
+        CheckInt(board.replayBoard[Sq("a5")], ChessRules.PieceOf(ChessRules.White, ChessRules.Rook),
+            "replay: the rook on a5");
+        int e4 = view.squareObject[Sq("e4")];
+        view.OnPiecePickedUp(e4);
+        CheckInt(view.heldObject, e4, "replay: e4 picked up");
+        CheckInt(board.PieceDroppedAs(localName, Sq("d8"), Sq("e4")), ChessBoard.InputAccepted,
+            "replay: the queen freely to e4 while e4 is held");
+        view.Refresh();
+        CheckInt(view.heldObject, ChessBoardView.NoObject, "replay: e4 let go once the queen took its square");
+        CheckView("replay: e4 let go");
+
+        // A promotion waits for its piece, then is cancelled, then played.
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, "promotion drop game");
+        Play("a2", "a4", "a4", "a4");
+        Play("b7", "b5", "b5", "b5");
+        Play("a4", "b5", "b5", "axb5");
+        Play("a7", "a6", "a6", "a6");
+        Play("b5", "a6", "a6", "bxa6");
+        Play("c8", "b7", "b7", "Bb7");
+        Play("a6", "b7", "b7", "axb7");
+        Play("b8", "c6", "c6", "Nc6");
+        int promoting = view.squareObject[Sq("b7")];
+        CheckInt(ViewDrop("b7", Over("a8")), ChessBoard.InputAccepted, "b7 picked up");
+        CheckInt(view.promotionObject, promoting, "b7 dropped over a8: waits for a piece");
+        CheckInt(board.moveCount, 8, "b7 dropped over a8: nothing played yet");
+        view.Refresh();
+        Check((view.pieces[promoting].localPosition - view.SquarePosition(Sq("a8"))).sqrMagnitude < 1e-8f,
+            "b7 dropped over a8: the pawn stands on a8 meanwhile",
+            "at " + view.pieces[promoting].localPosition.ToString("F3"));
+        view.CancelPromotion();
+        CheckInt(view.promotionObject, ChessBoardView.NoObject, "promotion cancelled: nothing waits");
+        CheckDropped(8, ChessBoard.ChangeRejected, "promotion cancelled: the pawn back on b7");
+        CheckInt(view.ChoosePromotion(ChessRules.Queen), ChessBoard.InputRejected,
+            "a choice with no promotion waiting: refused");
+        CheckInt(ViewDrop("b7", Over("a8")), ChessBoard.InputAccepted, "b7 picked up again");
+        CheckInt(view.promotionObject, promoting, "b7 dropped over a8 again: waits for a piece");
+        CheckInt(view.ChoosePromotion(ChessRules.Knight), ChessBoard.InputAccepted, "bxa8=N chosen: played");
+        CheckDropped(9, ChessBoard.ChangeMove, "bxa8=N");
+        CheckInt(view.squareObject[Sq("a8")], promoting, "bxa8=N: the pawn's object on a8");
+        CheckInt(view.objectType[promoting], ChessRules.Knight, "bxa8=N: the object stands for a knight");
+
+        board.ClearState();
+        view.SetInputStyle(savedStyle);
+        view.Refresh();
         CheckView("cleared at the end");
         LogSummary();
+    }
+
+    // Picks up the object on from through the view and drops it at position (the view's local space), as the
+    // piece's OnPickup and OnDrop would, with it moved there in between. Answers whether the pickup was accepted.
+    int ViewDrop(string from, Vector3 position) {
+        int obj = view.squareObject[Sq(from)];
+        if (obj == ChessBoardView.NoObject) return -1;
+        view.OnPiecePickedUp(obj);
+        int result = view.heldObject == obj ? ChessBoard.InputAccepted : ChessBoard.InputRejected;
+        view.pieces[obj].localPosition = position;
+        view.OnPieceDropped(obj);
+        return result;
+    }
+
+    // Checks the board after a drop (its move count and last change), then the view once refreshed.
+    void CheckDropped(int moveCount, int change, string name) {
+        CheckInt(board.moveCount, moveCount, name + ": move count");
+        CheckInt(board.lastChange, change, name + ": the board's last change");
+        view.Refresh();
+        CheckView(name);
+    }
+
+    // Over a square, off its centre and above the surface, as a hand lets go of a piece.
+    Vector3 Over(string square) {
+        return view.SquarePosition(Sq(square)) + new Vector3(0.3f, 0.8f, -0.4f) * view.squareSize;
+    }
+
+    Vector3 OffBoard() {
+        return new Vector3(6 * view.squareSize, 0.8f * view.squareSize, 0);
     }
 
     // Whether exactly count of the pieces are pickups for the local player, all of them on the board.

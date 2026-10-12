@@ -22,5 +22,14 @@ namespace SiggiChessBoard {
             }
             return allowed;
         }
+
+        // Only on the client picking it up or letting it go; the view forwards both to the board.
+        public override void OnPickup() {
+            if (Utilities.IsValid(view)) view.OnPiecePickedUp(index);
+        }
+
+        public override void OnDrop() {
+            if (Utilities.IsValid(view)) view.OnPieceDropped(index);
+        }
     }
 }
