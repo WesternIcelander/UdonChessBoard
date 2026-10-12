@@ -8,6 +8,13 @@ Neither codebase has tests yet, and UdonSharp code only runs inside Unity, so te
 - **Networking needs real clients.** ClientSim runs a single local player, so ownership, sync, late joiners and the `VRCObjectSync` behaviour have to be tested with several clients, e.g. VRChat's Build & Test with multiple instances of the client.
 - PGN import and export are tested with the PGN test set below, comparing against the Java (on `port-reference`) where the Java can read the file.
 
+## Debug view
+
+`ChessDebugView` (`Assets/Tests/Debug/`, PLAN 8.1) is a `ChessBoardListener` that shows a board as an 8×8 grid of FEN letters (last move tinted, a checked king red) and its state as text, with a button for each of the board's input methods for the local player: join, mode, clock, start, scripted and random moves, resign, draw offers and claims, replay and stepping, takebacks, continuing, reset, and a few arbiter overrides with re-snapshot. It lets each client drive a board before `ChessBoardView` and the settings menu exist, and stays as a testing tool for networking checks.
+
+- **Setup:** select the `ChessBoard`, then **Tools > Chess Board > Create Debug View**. This builds a world-space canvas (with `VRCUiShape`, so it works in ClientSim and VRChat) in front of the board, with each button calling the view's method of the same name through `UdonBehaviour.SendCustomEvent`. Move it if needed and save the scene.
+- Each button press logs `[ChessDebugView] <action>: accepted` or `REFUSED`.
+
 ## PGN test set
 
 `Assets/Tests/PGN/`, read by test behaviours through `TextAsset` fields (Udon has no file I/O). The files are named `*.pgn.txt` because Unity only imports a fixed list of extensions as `TextAsset`, and `.pgn` isn't one of them. Every expected FEN below comes from the Java on `port-reference`, with its bugs fixed (see [Bugs found in the Java](java-bugs.md)).
