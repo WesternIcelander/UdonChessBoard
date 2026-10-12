@@ -12,10 +12,11 @@ using VRC.SDK3.Components;
 using VRC.Udon;
 
 // Builds the physical board (PLAN.md 9.1, ChessBoardView.cs) in the open scene for the selected ChessBoard, or the
-// scene's only one: a table, the board's surface and squares, the 32 piece objects and the button panels (step 9.4a),
-// wired to a ChessBoardView. An existing view for the same board is replaced, keeping its place. The piece meshes and
-// the materials are generated placeholders in Assets/Siggi/ChessBoard/Models/, made only when missing, so they can be
-// replaced there (or other meshes assigned in the view's Meshes field). Menu: Tools > Chess Board > Create Board View. Plain editor C#, not Udon.
+// scene's only one: a table, the board's surface and squares, the 32 piece objects, the button panels (steps 9.4a and
+// 9.4b), the highlights and the promotion picker (step 9.5a), wired to a ChessBoardView. An existing view for the same
+// board is replaced, keeping its place. The piece meshes, the highlight meshes and the materials are generated
+// placeholders in Assets/Siggi/ChessBoard/Models/, made only when missing, so they can be replaced there (or other
+// meshes assigned in the view's Meshes field). Menu: Tools > Chess Board > Create Board View. Plain editor C#, not Udon.
 public static class ChessBoardViewBuilder {
     const string ViewScriptPath = "Assets/Siggi/ChessBoard/ChessBoardView.cs";
     const string ViewProgramPath = "Assets/Siggi/ChessBoard/ChessBoardView.asset";
@@ -117,7 +118,9 @@ public static class ChessBoardViewBuilder {
         view.castleSpaceTargets = new ChessSquare[2];
         for (int side = 0; side < 2; side++) view.castleSpaces[side] = CastleSpace(root, view, side, castleSpace);
         AddSquareTargets(root, view);
+        AddHighlights(root, view);
         AddButtons(root, view, boardWidth * TableDepthFactor);
+        AddPromotionPicker(root, view);
         UdonSharpEditorUtility.CopyProxyToUdon(view);
         if (old != null) {
             root.transform.SetParent(old.transform.parent, false);
@@ -214,6 +217,109 @@ public static class ChessBoardViewBuilder {
             view.squareTargets[square] = behaviour;
             target.SetActive(false);
         }
+    }
+
+    // The highlights (step 9.5a), under "Highlights", all hidden and without colliders, so clicks reach the square
+    // targets and pieces: two last-move tints (whole squares, just above the squares; the view moves them onto the
+    // last move's squares) and one legal-target frame per square, a1 to h8, over its square and above the tints.
+    static void AddHighlights(GameObject root, ChessBoardView view) {
+        Material lastMove = MaterialAsset("Last Move", new Color(0.8f, 0.78f, 0.3f), 0.3f);
+        Material target = MaterialAsset("Legal Target", new Color(0.25f, 0.55f, 0.85f), 0.3f);
+        Mesh tint = FlatMesh("Last Move Tint", 0.0008f, 0);
+        Mesh frame = FlatMesh("Legal Target Frame", 0.0011f, SquareSize * 0.1f);
+        GameObject parent = new GameObject("Highlights");
+        parent.transform.SetParent(root.transform, false);
+        view.lastMoveHighlights = new GameObject[2];
+        for (int i = 0; i < 2; i++) {
+            view.lastMoveHighlights[i] = FlatObject(i == 0 ? "Last Move From" : "Last Move To", parent, tint, lastMove,
+                Vector3.zero);
+        }
+        GameObject targets = new GameObject("Legal Targets");
+        targets.transform.SetParent(parent.transform, false);
+        view.targetHighlights = new GameObject[64];
+        const string files = "abcdefgh";
+        for (int square = 0; square < 64; square++) {
+            int file = square % 8;
+            int rank = square / 8;
+            view.targetHighlights[square] = FlatObject(files[file] + (rank + 1).ToString(), targets, frame, target,
+                new Vector3((file - 3.5f) * SquareSize, 0, (rank - 3.5f) * SquareSize));
+        }
+    }
+
+    // A hidden object showing a flat mesh at a place in the view.
+    static GameObject FlatObject(string name, GameObject parent, Mesh mesh, Material material, Vector3 position) {
+        GameObject flat = new GameObject(name);
+        flat.transform.SetParent(parent.transform, false);
+        flat.transform.localPosition = position;
+        flat.AddComponent<MeshFilter>().sharedMesh = mesh;
+        MeshRenderer renderer = flat.AddComponent<MeshRenderer>();
+        renderer.sharedMaterial = material;
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        flat.SetActive(false);
+        return flat;
+    }
+
+    // The promotion picker's buttons: label and the view's event, Cancel last.
+    static readonly string[] PickerLabels = { "Queen", "Rook", "Bishop", "Knight", "Cancel" };
+    static readonly string[] PickerEvents = {
+        "PressPromoteQueen", "PressPromoteRook", "PressPromoteBishop", "PressPromoteKnight", "PressPromoteCancel",
+    };
+    static readonly Vector2 PickerCell = new Vector2(52, 30);
+
+    // The promotion picker (step 9.5a): a small world-space canvas (with VRCUiShape, like the button panels) of five
+    // buttons in a row, upright, facing -z (White's end) unturned. Built hidden; the view stands it over the promotion
+    // square, facing the promoting side, while a promotion waits for its piece.
+    static void AddPromotionPicker(GameObject root, ChessBoardView view) {
+        UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(view);
+        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        GameObject canvasObject = new GameObject("Promotion Picker", typeof(RectTransform));
+        canvasObject.layer = LayerMask.NameToLayer("Default");
+        canvasObject.transform.SetParent(root.transform, false);
+        Canvas canvas = canvasObject.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.WorldSpace;
+        RectTransform rect = canvasObject.GetComponent<RectTransform>();
+        rect.sizeDelta = new Vector2(PickerLabels.Length * (PickerCell.x + 4) + 8, PickerCell.y + 12);
+        rect.localScale = Vector3.one * 0.001f;
+        rect.localPosition = new Vector3(0, ChessBoardView.PickerHeight * SquareSize, 0);
+        canvasObject.AddComponent<CanvasScaler>();
+        canvasObject.AddComponent<GraphicRaycaster>();
+        canvasObject.AddComponent<VRCUiShape>();
+        canvasObject.AddComponent<Image>().color = new Color(0.12f, 0.12f, 0.14f, 0.9f);
+        GridLayoutGroup grid = canvasObject.AddComponent<GridLayoutGroup>();
+        grid.padding = new RectOffset(6, 6, 6, 6);
+        grid.cellSize = PickerCell;
+        grid.spacing = new Vector2(4, 4);
+        grid.childAlignment = TextAnchor.MiddleCenter;
+        grid.constraint = GridLayoutGroup.Constraint.FixedRowCount;
+        grid.constraintCount = 1;
+        for (int i = 0; i < PickerLabels.Length; i++) {
+            GameObject buttonObject = new GameObject(PickerLabels[i], typeof(RectTransform));
+            buttonObject.layer = canvasObject.layer;
+            buttonObject.transform.SetParent(canvasObject.transform, false);
+            Image image = buttonObject.AddComponent<Image>();
+            image.color = i < 4 ? new Color(0.85f, 0.85f, 0.88f) : new Color(0.7f, 0.55f, 0.55f);
+            Button button = buttonObject.AddComponent<Button>();
+            button.targetGraphic = image;
+            button.navigation = new Navigation { mode = Navigation.Mode.None };
+            UnityEventTools.AddStringPersistentListener(button.onClick,
+                new UnityAction<string>(udon.SendCustomEvent), PickerEvents[i]);
+            GameObject labelObject = new GameObject("Label", typeof(RectTransform));
+            labelObject.layer = canvasObject.layer;
+            RectTransform labelRect = labelObject.GetComponent<RectTransform>();
+            labelRect.SetParent(buttonObject.transform, false);
+            labelRect.anchorMin = Vector2.zero;
+            labelRect.anchorMax = Vector2.one;
+            Text label = labelObject.AddComponent<Text>();
+            label.font = font;
+            label.fontSize = 13;
+            label.alignment = TextAnchor.MiddleCenter;
+            label.color = Color.black;
+            label.raycastTarget = false;
+            label.text = PickerLabels[i];
+        }
+        canvasObject.SetActive(false);
+        view.promotionPicker = canvasObject;
     }
 
     // The view's Press... event for each ChessBoardView.Button* action, by action.
@@ -504,6 +610,44 @@ public static class ChessBoardViewBuilder {
         mesh.RecalculateBounds();
         AssetDatabase.CreateAsset(mesh, path);
         return mesh;
+    }
+
+    // A flat mesh asset facing up, a square's size and centred on the origin at height y, generated if missing: the
+    // whole square for frameWidth 0, otherwise a frame of that width along its edges.
+    static Mesh FlatMesh(string name, float y, float frameWidth) {
+        string path = ModelsFolder + "/" + name + ".asset";
+        Mesh mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+        if (mesh != null) return mesh;
+        EnsureModelsFolder();
+        List<Vector3> vertices = new List<Vector3>();
+        List<int> triangles = new List<int>();
+        float h = SquareSize / 2;
+        if (frameWidth <= 0) {
+            FlatQuad(vertices, triangles, -h, -h, h, h, y);
+        } else {
+            float w = frameWidth;
+            FlatQuad(vertices, triangles, -h, -h, h, -h + w, y);
+            FlatQuad(vertices, triangles, -h, h - w, h, h, y);
+            FlatQuad(vertices, triangles, -h, -h + w, -h + w, h - w, y);
+            FlatQuad(vertices, triangles, h - w, -h + w, h, h - w, y);
+        }
+        mesh = new Mesh { name = name };
+        mesh.SetVertices(vertices);
+        mesh.SetTriangles(triangles, 0);
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        AssetDatabase.CreateAsset(mesh, path);
+        return mesh;
+    }
+
+    // A rectangle from (x0, z0) to (x1, z1) at height y, facing up (wound as SquaresMesh's squares).
+    static void FlatQuad(List<Vector3> vertices, List<int> triangles, float x0, float z0, float x1, float z1, float y) {
+        int first = vertices.Count;
+        vertices.Add(new Vector3(x0, y, z0));
+        vertices.Add(new Vector3(x0, y, z1));
+        vertices.Add(new Vector3(x1, y, z1));
+        vertices.Add(new Vector3(x1, y, z0));
+        triangles.AddRange(new[] { first, first + 1, first + 2, first, first + 2, first + 3 });
     }
 
     // Collects the triangles of a generated piece. Each lathe band and each box face has its own vertices, so the

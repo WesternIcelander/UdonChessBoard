@@ -1017,7 +1017,269 @@ public class ViewTest : UdonSharpBehaviour {
         board.ClearState();
         CheckButtons("JoinWhite JoinBlack", "cleared after the game button checks");
         CheckView("cleared after the game button checks");
+        SendCustomEventDelayedFrames(nameof(RunHighlightChecks), 1);
+    }
+
+    // ---- 9.5a: the promotion picker and highlights ----
+
+    // A black pawn about to promote on e1, and a white one on a7 (the picker can't stand over the a file).
+    const string BlackPromotionFen = "k7/8/8/8/8/8/4p3/K7 b - - 0 1";
+    const string APawnPromotionFen = "4k3/P7/8/8/8/8/8/4K3 w - - 0 1";
+    // The king already on g1 with its rook on h1: castling moves only the rook.
+    const string KingStaysFen = "6k1/8/8/8/8/8/8/6KR w K - 0 1";
+
+    // The tenth frame: the picker, highlights and marks wired; the last-move highlight after moves (castling on the
+    // rook marking the king's destination, or the rook's square when the king stays), in replay and on a cleared
+    // board; the legal-target marks of a held piece (pickups) and of a selected one (clicks), none in replay, after
+    // the drop or once the game ends; the picker shown over the promotion square for a drop and for a placing click,
+    // facing the promoting side, each of its buttons playing its piece or putting the pawn back, and hidden when a
+    // piece is picked up or the board changes. The input style is put back afterwards.
+    public void RunHighlightChecks() {
+        int savedStyle = view.inputStyle;
+        Check(Utilities.IsValid(view.promotionPicker) && !view.promotionPicker.activeSelf,
+            "highlights: the promotion picker assigned, hidden", "missing or shown");
+        int lastMoves = 0;
+        for (int i = 0; i < view.lastMoveHighlights.Length; i++) {
+            if (Utilities.IsValid(view.lastMoveHighlights[i])) lastMoves++;
+        }
+        CheckInt(lastMoves, 2, "highlights: both last-move highlights assigned");
+        int marks = 0;
+        for (int square = 0; square < 64 && square < view.targetHighlights.Length; square++) {
+            GameObject mark = view.targetHighlights[square];
+            if (Utilities.IsValid(mark) && view.DropSquare(mark.transform.position) == square) marks++;
+        }
+        CheckInt(marks, 64, "highlights: every square has its target mark, over that square");
+
+        // The last move.
+        string g = "last move";
+        board.ClearState();
+        view.Refresh();
+        CheckLastMove("", "", g + ": a cleared board");
+        StartGame(ChessGame.ModeStandard, g);
+        CheckLastMove("", "", g + ": started");
+        PlayMoves("e2e4", g);
+        CheckLastMove("e2", "e4", g + ": e4");
+        PlayMoves("e7e5 g1f3 b8c6 f1c4 g8f6", g);
+        CheckLastMove("g8", "f6", g + ": Nf6");
+        PlayMoves("e1h1", g);
+        CheckLastMove("e1", "g1", g + ": O-O on the rook");
+        CheckInt(board.EnterReplayAs(localName, false), ChessBoard.InputAccepted, g + ": replay entered");
+        view.Refresh();
+        CheckLastMove("e1", "g1", g + ": replay entered");
+        CheckInt(board.StepToAs(localName, false, 1), ChessBoard.InputAccepted, g + ": stepped to ply 1");
+        view.Refresh();
+        CheckLastMove("e2", "e4", g + ": replay at ply 1");
+        CheckInt(board.StepToAs(localName, false, 0), ChessBoard.InputAccepted, g + ": stepped to the start");
+        view.Refresh();
+        CheckLastMove("", "", g + ": replay at the start");
+
+        // No target marks in replay, where every square is a target.
+        view.SetInputStyle(ChessBoardView.InputPickups);
+        int replayPawn = view.squareObject[Sq("e2")];
+        view.OnPiecePickedUp(replayPawn);
+        CheckInt(view.heldObject, replayPawn, g + ": e2 picked up in replay");
+        CheckTargets("", g + ": e2 held in replay");
+        view.OnPieceDropped(replayPawn);
+        view.SetInputStyle(ChessBoardView.InputClicks);
+        view.Refresh();
+        ClickPiece("e2");
+        CheckInt(view.selectedObject, replayPawn, g + ": e2 selected in replay");
+        CheckTargets("", g + ": e2 selected in replay");
+        ClickPiece("e2");
+
+        CastleSpaceGame(KingStaysFen, g + " (king stays)");
+        CheckInt(board.PieceDroppedAs(localName, Sq("g1"), Sq("h1")), ChessBoard.InputAccepted,
+            g + " (king stays): O-O on the rook");
+        view.Refresh();
+        CheckLastMove("g1", "h1", g + " (king stays): O-O");
+
+        // Target marks of a held piece.
+        string t = "held targets";
+        view.SetInputStyle(ChessBoardView.InputPickups);
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, t);
+        CheckTargets("", t + ": nothing held");
+        int pawn = view.squareObject[Sq("e2")];
+        view.OnPiecePickedUp(pawn);
+        CheckTargets("e3 e4", t + ": e2 held");
+        view.Refresh();
+        CheckTargets("e3 e4", t + ": e2 held, refreshed");
+        view.pieces[pawn].localPosition = Over("e4");
+        view.OnPieceDropped(pawn);
+        CheckTargets("", t + ": e2 dropped over e4");
+        view.Refresh();
+        CheckLastMove("e2", "e4", t + ": e4 by a drop");
+        int knight = view.squareObject[Sq("g8")];
+        view.OnPiecePickedUp(knight);
+        CheckTargets("f6 h6", t + ": g8 held");
+        view.OnPiecePickedUp(view.squareObject[Sq("d2")]);
+        CheckTargets("", t + ": d2 picked up out of turn instead");
+        view.Refresh();
+        view.OnPiecePickedUp(knight);
+        CheckTargets("f6 h6", t + ": g8 held again");
+        CheckInt(board.ResignAs(ChessRules.Black, localName), ChessBoard.InputAccepted, t + ": Black resigned");
+        view.Refresh();
+        CheckTargets("", t + ": the game ended while g8 was held");
+        if (view.heldObject == knight) view.OnPieceDropped(knight);
+
+        CastleSpaceGame(StandardCastlingFen, t + " (castling)");
+        int king = view.squareObject[Sq("e1")];
+        view.OnPiecePickedUp(king);
+        CheckTargets("d1 f1 d2 e2 f2 a1 c1 g1 h1", t + " (castling): e1 held");
+        view.pieces[king].localPosition = Over("h1");
+        view.OnPieceDropped(king);
+        CheckTargets("", t + " (castling): dropped over h1");
+        view.Refresh();
+        CheckLastMove("e1", "g1", t + " (castling): O-O by a drop");
+
+        // Target marks of a selected piece.
+        string s = "selected targets";
+        view.SetInputStyle(ChessBoardView.InputClicks);
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, s);
+        ClickPiece("g1");
+        CheckTargets("f3 h3", s + ": g1 selected");
+        ClickPiece("e2");
+        CheckTargets("e3 e4", s + ": e2 selected instead");
+        ClickPiece("e2");
+        CheckTargets("", s + ": e2 put back");
+        ClickPiece("b1");
+        ClickSquare("c3");
+        CheckTargets("", s + ": Nc3 placed");
+        view.Refresh();
+        CheckLastMove("b1", "c3", s + ": Nc3 by clicks");
+
+        // The promotion picker, for a drop.
+        string p = "picker";
+        view.SetInputStyle(ChessBoardView.InputPickups);
+        CastleSpaceGame(PromotionFen, p);
+        CheckPicker(false, "", p + ": set up");
+        int promoting = view.squareObject[Sq("e7")];
+        CheckInt(ViewDrop("e7", Over("e8")), ChessBoard.InputAccepted, p + ": e7 picked up");
+        CheckPicker(true, "e8", p + ": e7 dropped over e8");
+        CheckPickupable(0, p + ": e7 dropped over e8, no pickups");
+        view.Refresh();
+        CheckPicker(true, "e8", p + ": e7 dropped over e8, refreshed");
+        CheckPickupable(0, p + ": the picker shown");
+        view.PressPromoteQueen();
+        CheckPicker(false, "", p + ": Queen pressed");
+        CheckPickupable(3, p + ": the picker gone");
+        CheckDropped(1, ChessBoard.ChangeMove, p + ": e8=Q");
+        CheckInt(view.objectType[promoting], ChessRules.Queen, p + ": e8=Q: the pawn's object is a queen");
+        CheckLastMove("e7", "e8", p + ": e8=Q");
+
+        CastleSpaceGame(PromotionFen, p + " (cancel)");
+        ViewDrop("e7", Over("e8"));
+        CheckPicker(true, "e8", p + " (cancel): e7 dropped over e8");
+        view.PressPromoteCancel();
+        CheckPicker(false, "", p + " (cancel): Cancel pressed");
+        CheckDropped(0, ChessBoard.ChangeRejected, p + " (cancel): the pawn back on e7");
+        CheckPickupable(3, p + " (cancel): the picker gone");
+
+        ViewDrop("e7", Over("e8"));
+        CheckPicker(true, "e8", p + " (pickup): e7 dropped over e8");
+        int whiteKing = view.squareObject[Sq("a1")];
+        view.OnPiecePickedUp(whiteKing);
+        CheckPicker(false, "", p + " (pickup): the king picked up meanwhile");
+        CheckInt(view.promotionObject, ChessBoardView.NoObject, p + " (pickup): nothing waits");
+        view.OnPieceDropped(whiteKing);
+        CheckDropped(0, ChessBoard.ChangeRejected, p + " (pickup): the king dropped back, the pawn back on e7");
+
+        ViewDrop("e7", Over("e8"));
+        CheckPicker(true, "e8", p + " (change): e7 dropped over e8");
+        CheckInt(board.ResignAs(ChessRules.Black, localName), ChessBoard.InputAccepted, p + " (change): Black resigned");
+        CheckPicker(false, "", p + " (change): the game ended meanwhile");
+        CheckInt(view.ChoosePromotion(ChessRules.Queen), ChessBoard.InputRejected,
+            p + " (change): a choice afterwards refused");
+
+        CastleSpaceGame(BlackPromotionFen, p + " (Black)");
+        int blackPawn = view.squareObject[Sq("e2")];
+        ViewDrop("e2", Over("e1"));
+        CheckPicker(true, "e1", p + " (Black): e2 dropped over e1");
+        view.PressPromoteKnight();
+        CheckDropped(1, ChessBoard.ChangeMove, p + " (Black): e1=N");
+        CheckInt(view.objectType[blackPawn], ChessRules.Knight, p + " (Black): e1=N: the pawn's object is a knight");
+
+        // The promotion picker, for a placing click.
+        view.SetInputStyle(ChessBoardView.InputClicks);
+        CastleSpaceGame(PromotionFen, p + " (clicks)");
+        int clickPawn = view.squareObject[Sq("e7")];
+        ClickPiece("e7");
+        ClickSquare("e8");
+        CheckPicker(true, "e8", p + " (clicks): e8 clicked");
+        CheckClickables("", "", p + " (clicks): the picker shown");
+        view.PressPromoteRook();
+        CheckDropped(1, ChessBoard.ChangeMove, p + " (clicks): e8=R");
+        CheckClickables("a8", "", p + " (clicks): e8=R, the picker gone");
+        CheckInt(view.objectType[clickPawn], ChessRules.Rook, p + " (clicks): e8=R: the pawn's object is a rook");
+
+        CastleSpaceGame(APawnPromotionFen, p + " (a file)");
+        int aPawn = view.squareObject[Sq("a7")];
+        ClickPiece("a7");
+        ClickSquare("a8");
+        CheckPicker(true, "a8", p + " (a file): a8 clicked");
+        view.PressPromoteBishop();
+        CheckDropped(1, ChessBoard.ChangeMove, p + " (a file): a8=B");
+        CheckInt(view.objectType[aPawn], ChessRules.Bishop, p + " (a file): a8=B: the pawn's object is a bishop");
+
+        board.ClearState();
+        view.SetInputStyle(savedStyle);
+        view.Refresh();
+        CheckLastMove("", "", "cleared after the highlight checks");
+        CheckTargets("", "cleared after the highlight checks");
+        CheckPicker(false, "", "cleared after the highlight checks");
+        CheckView("cleared after the highlight checks");
         LogSummary();
+    }
+
+    // Whether exactly the squares in expected (names separated by spaces, in any order) have their target mark shown.
+    void CheckTargets(string expected, string name) {
+        string wrong = "";
+        for (int square = 0; square < 64; square++) {
+            bool want = (" " + expected + " ").Contains(" " + SquareText(square) + " ");
+            if (view.IsTargetHighlighted(square) != want) wrong += SquareText(square) + " ";
+        }
+        Check(wrong.Length == 0, name + ": target marks [" + expected + "]", "wrong on " + wrong);
+    }
+
+    // Whether the last-move highlights stand on from and to (both "" for hidden), and the view agrees.
+    void CheckLastMove(string from, string to, string name) {
+        string errors = "";
+        string[] squares = { from, to };
+        for (int i = 0; i < 2; i++) {
+            GameObject highlight = view.lastMoveHighlights[i];
+            if (!Utilities.IsValid(highlight)) continue;
+            bool want = squares[i].Length > 0;
+            if (highlight.activeSelf != want) {
+                errors += (i == 0 ? "from" : "to") + (want ? " hidden; " : " shown; ");
+            } else if (want && (highlight.transform.localPosition - view.SquarePosition(Sq(squares[i]))).sqrMagnitude
+                > 1e-8f) {
+                errors += (i == 0 ? "from" : "to") + " at " + highlight.transform.localPosition.ToString("F3") + "; ";
+            }
+        }
+        Check(errors.Length == 0, name + ": last move " + (from.Length > 0 ? from + " " + to : "not") + " highlighted",
+            errors);
+    }
+
+    // Whether the picker is shown (with a promotion waiting) or hidden (with none); shown, whether it stands over
+    // square (no further along the files than the view allows), PickerHeight squares up, facing the promoting side.
+    void CheckPicker(bool shown, string square, string name) {
+        GameObject picker = view.promotionPicker;
+        if (!Utilities.IsValid(picker)) return;
+        Check(picker.activeSelf == shown && (view.promotionObject != ChessBoardView.NoObject) == shown,
+            name + ": the picker " + (shown ? "shown" : "hidden"),
+            "active " + picker.activeSelf + ", waiting object " + view.promotionObject);
+        if (!shown || !picker.activeSelf) return;
+        Vector3 expected = view.SquarePosition(Sq(square));
+        float limit = ChessBoardView.PickerMaxOffset * view.squareSize;
+        expected.x = Mathf.Clamp(expected.x, -limit, limit);
+        expected.y = ChessBoardView.PickerHeight * view.squareSize;
+        Check((picker.transform.localPosition - expected).sqrMagnitude < 1e-8f, name + ": the picker over " + square,
+            "at " + picker.transform.localPosition.ToString("F3"));
+        bool white = square.Substring(1, 1) == "8";
+        Quaternion facing = white ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
+        Check(Quaternion.Angle(picker.transform.localRotation, facing) < 1, name + ": the picker facing "
+            + (white ? "White" : "Black"), "turned " + Quaternion.Angle(picker.transform.localRotation, facing));
     }
 
     // Turns takebacks, draws by agreement and threefold claims on or off in the board's snapshot (directly, as

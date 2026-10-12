@@ -97,6 +97,19 @@ namespace SiggiChessBoard {
         // The time controls the Clock button steps through, in seconds (base ChessArbiter.NoClock for none).
         public int[] clockBases = { ChessArbiter.NoClock, 60, 180, 300, 600, 900, 1800 };
         public int[] clockIncrements = { 0, 0, 2, 3, 0, 10, 0 };
+        // The promotion picker (step 9.5a): a panel of buttons (Queen, Rook, Bishop, Knight, Cancel, each calling its
+        // PressPromote... event), a child of this view, shown only to the local player while their promotion waits for
+        // its piece, standing over the promotion square and facing the promoting side.
+        public GameObject promotionPicker;
+        // How high the picker's centre stands over the board, and how far it may stand off the board's centre along
+        // the files, in squares (over the a and h files it would hang off the board).
+        public const float PickerHeight = 2.2f;
+        public const float PickerMaxOffset = 2;
+        // Highlights (step 9.5a), children of this view lying on the board: the last move's two squares (objects
+        // moved onto them, hidden for none), and one legal-target mark per square, standing over it, shown for the held
+        // or selected piece's targets.
+        public GameObject[] lastMoveHighlights = new GameObject[2];
+        public GameObject[] targetHighlights = new GameObject[64];
 
         // Which object stands on each square (NoObject for none), and the other way round (NoSquare for an object
         // off the board: captured, or not needed by the position). objectType is the piece type each object stands
@@ -149,6 +162,8 @@ namespace SiggiChessBoard {
         // The squares a click places the selected piece on: its legal moves' (a castle's rook square and, when the
         // king moves, its destination too), or in replay every other square.
         [NonSerialized] public bool[] selectedTargets = new bool[64];
+        // The same for the held piece, for its highlights.
+        [NonSerialized] public bool[] heldTargets = new bool[64];
         int[] targetMoves = new int[ChessMoves.MaxMoves];
 
         void Start() {
@@ -184,7 +199,7 @@ namespace SiggiChessBoard {
             if (!Utilities.IsValid(board)) return;
             int change = board.lastChange;
             // The position the promotion was asked in may be gone; a touch from another client changed nothing.
-            if (change != ChessBoard.ChangeActivity) promotionObject = NoObject;
+            if (change != ChessBoard.ChangeActivity) ClearPromotion();
             if (mappingStale) return;
             bool replay = board.replayMode;
             bool oneOn;
@@ -223,13 +238,17 @@ namespace SiggiChessBoard {
             // So does a selected piece that can no longer be picked up there; one that still can has its targets
             // worked out again, since the position may have changed (a takeback, another player's free move).
             CheckSelection();
-            if (selectedObject != NoObject) FindTargets();
+            if (selectedObject != NoObject) FindTargets(selectedFrom, selectedInReplay, selectedTargets);
             for (int i = 0; i < PieceCount; i++) {
                 if (i != heldObject) PlaceObject(i);
             }
             UpdatePickupable();
-            // The castle a held king could make may have changed (or the game ended, or replay began).
-            UpdateCastleSpaces();
+            // A held piece's targets, and the castle a held king could make, may have changed (or the game ended, or
+            // replay began).
+            if (heldObject != NoObject) FindTargets(heldFrom, replay, heldTargets);
+            UpdateLiftedMarks();
+            UpdateLastMoveHighlight();
+            UpdatePromotionPicker();
             UpdateButtons();
         }
 
@@ -239,19 +258,20 @@ namespace SiggiChessBoard {
         // when it says no; the board's rejection then puts it back. A promotion waiting for its piece is dropped.
         public void OnPiecePickedUp(int obj) {
             if (obj < 0 || obj >= PieceCount) return;
-            promotionObject = NoObject;
+            ClearPromotion();
             heldObject = NoObject;
             int square = objectSquare[obj];
             if (Utilities.IsValid(board) && square != ChessRules.NoSquare
                 && board.PiecePickedUp(square) == ChessBoard.InputAccepted) {
                 heldObject = obj;
                 heldFrom = square;
-                UpdateCastleSpaces();
+                FindTargets(heldFrom, board.replayMode, heldTargets);
+                UpdateLiftedMarks();
                 return;
             }
             // A piece off the board (never a pickup) is just put back; the board told its rejection itself.
             dirty = true;
-            UpdateCastleSpaces();
+            UpdateLiftedMarks();
             LetGoOf(obj);
         }
 
@@ -265,13 +285,13 @@ namespace SiggiChessBoard {
             if (obj != heldObject) return;
             if (!Utilities.IsValid(board) || !Utilities.IsValid(pieces[obj])) {
                 heldObject = NoObject;
-                UpdateCastleSpaces();
+                UpdateLiftedMarks();
                 return;
             }
             Vector3 position = pieces[obj].position;
             int castleSide = CastleSpaceUnder(position, ObjectColor(obj));
             heldObject = NoObject;
-            UpdateCastleSpaces();
+            UpdateLiftedMarks();
             if (castleSide != NoCastleSide) {
                 board.KingDroppedOnCastleSpace(castleSide);
                 return;
@@ -279,9 +299,7 @@ namespace SiggiChessBoard {
             int to = DropSquare(position);
             int from = heldFrom;
             if (board.PieceDropped(from, to) == ChessBoard.InputPromotionNeeded) {
-                promotionObject = obj;
-                promotionFrom = from;
-                promotionTo = to;
+                WaitForPromotion(obj, from, to);
             }
         }
 
@@ -290,7 +308,7 @@ namespace SiggiChessBoard {
         // promotion waiting.
         public int ChoosePromotion(int pieceType) {
             if (promotionObject == NoObject || !Utilities.IsValid(board)) return ChessBoard.InputRejected;
-            promotionObject = NoObject;
+            ClearPromotion();
             dirty = true;
             return board.PromotionChosen(promotionFrom, promotionTo, pieceType);
         }
@@ -298,6 +316,127 @@ namespace SiggiChessBoard {
         // The picker closed without a choice: the pawn goes back.
         public void CancelPromotion() {
             ChoosePromotion(ChessRules.NoPieceType);
+        }
+
+        // ---- Promotion picker (step 9.5a) ----
+
+        // The picker's buttons.
+        public void PressPromoteQueen() {
+            ChoosePromotion(ChessRules.Queen);
+        }
+
+        public void PressPromoteRook() {
+            ChoosePromotion(ChessRules.Rook);
+        }
+
+        public void PressPromoteBishop() {
+            ChoosePromotion(ChessRules.Bishop);
+        }
+
+        public void PressPromoteKnight() {
+            ChoosePromotion(ChessRules.Knight);
+        }
+
+        public void PressPromoteCancel() {
+            CancelPromotion();
+        }
+
+        // The board asked for a promotion's piece: obj, the pawn, stands on to while the picker asks. Meanwhile no piece
+        // is a pickup or a click target, so a hand near a piece reaches the picker's buttons rather than the piece.
+        void WaitForPromotion(int obj, int from, int to) {
+            promotionObject = obj;
+            promotionFrom = from;
+            promotionTo = to;
+            dirty = true;
+            UpdatePromotionPicker();
+            UpdatePickupable();
+        }
+
+        // No promotion waits any more (chosen, cancelled, or dropped by a pickup or a change to the board); the pawn
+        // is placed from the board on the next frame.
+        void ClearPromotion() {
+            if (promotionObject == NoObject) return;
+            promotionObject = NoObject;
+            dirty = true;
+            UpdatePromotionPicker();
+            UpdatePickupable();
+        }
+
+        // Shows the picker while a promotion waits, over the promotion square (no further off the board's centre than
+        // PickerMaxOffset squares along the files, PickerHeight squares up), facing the promoting side's end of the
+        // table; hides it otherwise.
+        public void UpdatePromotionPicker() {
+            if (!Utilities.IsValid(promotionPicker)) return;
+            bool shown = promotionObject != NoObject && promotionTo != ChessRules.NoSquare;
+            if (shown) {
+                Transform picker = promotionPicker.transform;
+                Vector3 position = SquarePosition(promotionTo);
+                float limit = PickerMaxOffset * squareSize;
+                position.x = Mathf.Clamp(position.x, -limit, limit);
+                position.y = PickerHeight * squareSize;
+                picker.localPosition = position;
+                picker.localRotation = ObjectColor(promotionObject) == ChessRules.White
+                    ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
+            }
+            if (promotionPicker.activeSelf != shown) promotionPicker.SetActive(shown);
+        }
+
+        // ---- Highlights (step 9.5a) ----
+
+        // The two squares the last-move highlight marks for move (NoSquare for none): where the piece came from and
+        // where it stands now (a castle's king destination; when the king doesn't move, its rook's square instead).
+        public static int LastMoveSquare(int move, int which) {
+            if (move == 0) return ChessRules.NoSquare;
+            int from = ChessRules.MoveFrom(move);
+            if (which == 0) return from;
+            int to = ChessRules.MoveTo(move);
+            if (!ChessRules.MoveIsCastle(move)) return to;
+            int destination = ChessRules.SquareOf(
+                ChessRules.FileOf(to) > ChessRules.FileOf(from) ? ChessRules.FileG : ChessRules.FileC,
+                ChessRules.RankOf(from));
+            return destination != from ? destination : to;
+        }
+
+        // Puts the last-move highlights on the squares of the move that led to the position shown (in replay too),
+        // hidden when there's none. Called on every Refresh.
+        public void UpdateLastMoveHighlight() {
+            int move = Utilities.IsValid(board) ? board.LastMove() : 0;
+            for (int i = 0; i < 2 && i < lastMoveHighlights.Length; i++) {
+                GameObject highlight = lastMoveHighlights[i];
+                if (!Utilities.IsValid(highlight)) continue;
+                int square = LastMoveSquare(move, i);
+                bool shown = square != ChessRules.NoSquare;
+                if (shown) highlight.transform.localPosition = SquarePosition(square);
+                if (highlight.activeSelf != shown) highlight.SetActive(shown);
+            }
+        }
+
+        // Marks the held or selected piece's legal targets (heldTargets or selectedTargets); none in replay, where
+        // every square is one, and none with nothing lifted. Called with the castle drop spaces, on every lift change.
+        public void UpdateTargetHighlights() {
+            bool[] targets = null;
+            if (heldObject != NoObject) targets = heldTargets;
+            else if (selectedObject != NoObject) targets = selectedTargets;
+            bool replay = !Utilities.IsValid(board) || board.replayMode;
+            for (int square = 0; square < 64 && square < targetHighlights.Length; square++) {
+                GameObject highlight = targetHighlights[square];
+                if (!Utilities.IsValid(highlight)) continue;
+                bool shown = targets != null && !replay && targets[square];
+                if (highlight.activeSelf != shown) highlight.SetActive(shown);
+            }
+        }
+
+        // Whether square's legal-target mark is shown, for tests.
+        public bool IsTargetHighlighted(int square) {
+            GameObject highlight = targetHighlights[square];
+            return Utilities.IsValid(highlight) && highlight.activeSelf;
+        }
+
+        // Everything shown for the piece the local player has lifted (held or selected): the castle drop spaces and the
+        // legal-target marks.
+        public void UpdateLiftedMarks() {
+            UpdateCastleSpaces();
+            UpdateTargetHighlights();
         }
 
         // The square under a point (world space) on the playing surface, by where it is over the board whatever its
@@ -398,7 +537,7 @@ namespace SiggiChessBoard {
             if (side < 0 || side > 1 || selectedObject == NoObject || !castleSpaceShown[side]) return;
             if (!Utilities.IsValid(board)) return;
             ClearSelection();
-            UpdateCastleSpaces();
+            UpdateLiftedMarks();
             board.KingDroppedOnCastleSpace(side);
         }
 
@@ -406,14 +545,14 @@ namespace SiggiChessBoard {
         // ownership as a grab would, so its VRCObjectSync shows the lift to everyone. A refused pickup leaves nothing
         // selected; the board's rejection puts everything back.
         void Select(int obj) {
-            promotionObject = NoObject;
+            ClearPromotion();
             ClearSelection();
             int square = objectSquare[obj];
             if (board.PiecePickedUp(square) == ChessBoard.InputAccepted) {
                 selectedObject = obj;
                 selectedFrom = square;
                 selectedInReplay = board.replayMode;
-                FindTargets();
+                FindTargets(selectedFrom, selectedInReplay, selectedTargets);
                 dirty = true;
                 VRCPlayerApi local = Networking.LocalPlayer;
                 GameObject piece = Utilities.IsValid(pieces[obj]) ? pieces[obj].gameObject : null;
@@ -421,14 +560,14 @@ namespace SiggiChessBoard {
                     Networking.SetOwner(local, piece);
                 }
             }
-            UpdateCastleSpaces();
+            UpdateLiftedMarks();
             UpdateClickables();
         }
 
         // Puts the selected piece back down where it was, unselected; the board isn't asked.
         void Unselect() {
             ClearSelection();
-            UpdateCastleSpaces();
+            UpdateLiftedMarks();
             UpdateClickables();
         }
 
@@ -439,11 +578,9 @@ namespace SiggiChessBoard {
             int obj = selectedObject;
             int from = selectedFrom;
             ClearSelection();
-            UpdateCastleSpaces();
+            UpdateLiftedMarks();
             if (board.PieceDropped(from, square) == ChessBoard.InputPromotionNeeded) {
-                promotionObject = obj;
-                promotionFrom = from;
-                promotionTo = square;
+                WaitForPromotion(obj, from, square);
             }
             UpdateClickables();
         }
@@ -467,7 +604,7 @@ namespace SiggiChessBoard {
                 return;
             }
             ClearSelection();
-            UpdateCastleSpaces();
+            UpdateLiftedMarks();
         }
 
         // Whether a click on obj places the selected piece on its square rather than selecting obj: the square is a
@@ -479,33 +616,34 @@ namespace SiggiChessBoard {
             return !selectedInReplay || ObjectColor(obj) != ObjectColor(selectedObject);
         }
 
-        // Works out selectedTargets for the selected piece from the board's legal moves (every other square in replay,
-        // where moves are free).
-        void FindTargets() {
-            for (int i = 0; i < 64; i++) selectedTargets[i] = selectedInReplay && i != selectedFrom;
-            if (selectedInReplay) return;
-            int count = board.LegalMovesFrom(selectedFrom, targetMoves);
+        // Works out targets (selectedTargets or heldTargets) for the piece lifted from from, from the board's legal
+        // moves (every other square in replay, where moves are free).
+        void FindTargets(int from, bool replay, bool[] targets) {
+            for (int i = 0; i < 64; i++) targets[i] = replay && i != from;
+            if (replay) return;
+            int count = board.LegalMovesFrom(from, targetMoves);
             for (int i = 0; i < count; i++) {
                 int move = targetMoves[i];
                 int to = ChessRules.MoveTo(move);
-                selectedTargets[to] = true;
+                targets[to] = true;
                 if (!ChessRules.MoveIsCastle(move)) continue;
                 // A castle stores its rook's square; the board also castles on a drop on the king's destination,
                 // unless a normal move ends there (which is then a target anyway) or the king doesn't move.
                 int destination = ChessRules.SquareOf(
-                    ChessRules.FileOf(to) > ChessRules.FileOf(selectedFrom) ? ChessRules.FileG : ChessRules.FileC,
-                    ChessRules.RankOf(selectedFrom));
-                if (destination != selectedFrom) selectedTargets[destination] = true;
+                    ChessRules.FileOf(to) > ChessRules.FileOf(from) ? ChessRules.FileG : ChessRules.FileC,
+                    ChessRules.RankOf(from));
+                if (destination != from) targets[destination] = true;
             }
         }
 
         // Makes the pieces and squares click targets exactly where a click does something for the local player in
         // desktop mode, with interact text saying what: with nothing selected, the pieces the board would let them
         // pick up; with one selected, that piece and its square (put back), its targets (pieces to capture or castle
-        // with, squares to place on) and the other pieces they could select instead. Players using pickups get none.
+        // with, squares to place on) and the other pieces they could select instead. Players using pickups get none, and
+        // nobody does while the promotion picker shows.
         // Called after every change, once a second and on every click.
         public void UpdateClickables() {
-            bool clicks = !UsesPickups() && Utilities.IsValid(board);
+            bool clicks = !UsesPickups() && Utilities.IsValid(board) && promotionObject == NoObject;
             for (int obj = 0; obj < PieceCount; obj++) {
                 ChessPiece behaviour = pieceBehaviours[obj];
                 if (!Utilities.IsValid(behaviour)) continue;
@@ -550,7 +688,7 @@ namespace SiggiChessBoard {
         void LetGo() {
             int obj = heldObject;
             heldObject = NoObject;
-            UpdateCastleSpaces();
+            UpdateLiftedMarks();
             LetGoOf(obj);
         }
 
@@ -883,10 +1021,12 @@ namespace SiggiChessBoard {
         }
 
         // Makes the pieces on the board pickups for the local player while they use pickups and may touch the pieces;
-        // pieces off the board never are. Called after every change and once a second.
+        // pieces off the board never are, and none while the promotion picker shows. Called after every change, once a
+        // second and when a promotion starts or stops waiting.
         public void UpdatePickupable() {
             nextPickupCheck = Time.time + PickupCheckInterval;
-            bool allowed = UsesPickups() && Utilities.IsValid(board) && board.MayTouchPieces();
+            bool allowed = UsesPickups() && Utilities.IsValid(board) && board.MayTouchPieces()
+                && promotionObject == NoObject;
             // A piece the local player may no longer touch leaves their hand.
             if (!allowed && heldObject != NoObject) {
                 LetGo();
