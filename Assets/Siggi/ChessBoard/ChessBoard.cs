@@ -600,16 +600,21 @@ namespace SiggiChessBoard {
         // pawn move, EndingInsufficientMaterial when neither side can checkmate, each only while the snapshot has that
         // rule on; otherwise EndingNone (always under "No draws").
         public int AutomaticDraw() {
+            return AutomaticDrawOf(board, state, moveCount, halfmoveClock);
+        }
+
+        // AutomaticDraw for the position in squares and positionState, reached by the first count moves of the
+        // history, with this halfmove clock (an earlier position of the game, for CanContinueAs).
+        int AutomaticDrawOf(byte[] squares, int[] positionState, int count, int clock) {
             if (IsGameSettingOn(ChessArbiter.SettingFivefoldRepetition)) {
-                int count = ChessDraws.CountRepetitions(board, state, moveHistory, moveCount, halfmoveClock,
+                int repetitions = ChessDraws.CountRepetitions(squares, positionState, moveHistory, count, clock,
                     repetitionBoard, repetitionState, legalMoves, true);
-                if (ChessDraws.IsFivefoldRepetition(count)) return ChessGame.EndingFivefoldRepetition;
+                if (ChessDraws.IsFivefoldRepetition(repetitions)) return ChessGame.EndingFivefoldRepetition;
             }
-            if (IsGameSettingOn(ChessArbiter.SettingSeventyFiveMoveRule)
-                && ChessDraws.IsSeventyFiveMoveRule(halfmoveClock)) {
+            if (IsGameSettingOn(ChessArbiter.SettingSeventyFiveMoveRule) && ChessDraws.IsSeventyFiveMoveRule(clock)) {
                 return ChessGame.EndingSeventyFiveMoveRule;
             }
-            if (IsGameSettingOn(ChessArbiter.SettingDeadPosition) && ChessDraws.IsInsufficientMaterial(board)) {
+            if (IsGameSettingOn(ChessArbiter.SettingDeadPosition) && ChessDraws.IsInsufficientMaterial(squares)) {
                 return ChessGame.EndingInsufficientMaterial;
             }
             return ChessGame.EndingNone;
@@ -1103,12 +1108,29 @@ namespace SiggiChessBoard {
         }
 
         // Whether name may press "Continue from here" on a loaded game (docs/replay.md): both seats filled, name
-        // seated, and the replay showing a position of the game's history (not custom). Unlike a takeback it can
-        // continue from the last position too, since nobody has played the loaded game on.
+        // seated, and the replay showing a position of the game's history (not custom) that isn't over already. Unlike
+        // a takeback it can continue from the last position too, since nobody has played the loaded game on.
         public bool CanContinueAs(string name) {
             if (lifecycle != LifecycleLoaded || !replayMode || replayCustom) return false;
             if (replayIndex < 0 || replayIndex > moveCount) return false;
-            return whitePlayer.Length != 0 && blackPlayer.Length != 0 && IsPlayer(name);
+            if (whitePlayer.Length == 0 || blackPlayer.Length == 0 || !IsPlayer(name)) return false;
+            return !IsOverAtPly(replayIndex);
+        }
+
+        // Scratch for IsOverAtPly: the game's position at the ply.
+        byte[] plyBoard = new byte[64];
+        int[] plyState = new int[ChessPosition.StateLength];
+
+        // Whether a game continued from ply would be over at once: the position before move ply has no legal moves
+        // (checkmate or stalemate, as at the end of a loaded game won by mate), or one of the automatic draws the
+        // snapshot has on applies to it. Only a loaded game's positions can be: a played game ends on such a position.
+        bool IsOverAtPly(int ply) {
+            Array.Copy(board, plyBoard, 64);
+            Array.Copy(state, plyState, ChessPosition.StateLength);
+            for (int i = moveCount - 1; i >= ply; i--) ChessPosition.UnmakeMove(plyBoard, plyState, moveHistory[i]);
+            if (ChessMoves.GenerateLegalMoves(plyBoard, plyState, legalMoves, true) == 0) return true;
+            int clock = ply < moveCount ? halfmoveClocks[ply] : halfmoveClock;
+            return AutomaticDrawOf(plyBoard, plyState, ply, clock) != ChessGame.EndingNone;
         }
 
         public bool CanReset() {
@@ -1415,6 +1437,43 @@ namespace SiggiChessBoard {
             replayMode = true;
             ShowPly(moveCount);
             TakeSnapshot();
+            return InputAccepted;
+        }
+
+        public int ContinueGame() {
+            return ContinueGameAs(LocalName());
+        }
+
+        // The "Continue from here" button (CanContinueAs): the seated players play the loaded game on from the ply the
+        // replay shows, as a new game. Nothing is logged (the loaded game wasn't played here). The clock is the one
+        // chosen (a forced one was applied by the snapshot, and can't be changed); the mode stays the loaded game's.
+        // The game gets a new ID
+        // referencing the loaded one at that ply (none when it had no ID), the history is cut there, and the clock
+        // history before it is emptied, since the loaded game's clocks aren't this game's: a takeback to a ply before
+        // it gives both sides the base time, as they had when continuing. Both clocks get the base time with the turn
+        // starting now, and the game is in progress, out of replay, with no result and the loaded game's White,
+        // Black, Result and time control dropped.
+        public int ContinueGameAs(string name) {
+            if (!CanContinueAs(name)) return InputRejected;
+            int ply = replayIndex;
+            ContinueGameIdAt(ply, NetworkDateTime());
+            TruncateHistory(ply);
+            for (int i = 0; i < ply; i++) clockHistory[i] = -1;
+            int startTime = baseTime == ChessArbiter.NoClock ? 0 : baseTime * 1000;
+            whiteTime = startTime;
+            blackTime = startTime;
+            turnStart = ServerTime();
+            ending = ChessGame.EndingNone;
+            winner = ChessRules.NoColor;
+            replaySourceWhite = "";
+            replaySourceBlack = "";
+            replaySourceResult = "";
+            replaySourceBaseTime = ChessArbiter.NoClock;
+            replaySourceIncrement = 0;
+            drawOfferColor = ChessRules.NoColor;
+            lifecycle = LifecycleInGame;
+            ShowPly(moveCount);
+            replayMode = false;
             return InputAccepted;
         }
 

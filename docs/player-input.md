@@ -44,7 +44,7 @@ Like the input methods, each check has a plain form for the local player and an 
 | `CanStepToAs(name, organizer, ply)` | in replay, `name` may work the replay controls, `ply` from 0 to `moveCount` and not the position shown (unless that's custom) |
 | `CanRequestTakebackAs(color, name)` | takebacks on, no request pending, `name` seated as `color`, and the game can continue from the replay position |
 | `CanAcceptTakebackAs` / `CanDeclineTakebackAs(color, name)` | the other colour's request pending for the ply still shown, takebacks still on, `name` seated as `color`, and the game can continue from the replay position |
-| `CanContinueAs(name)` | a loaded board in replay on a game position (not custom, the last one included), both seats filled, `name` seated |
+| `CanContinueAs(name)` | a loaded board in replay on a game position (not custom, the last one included) that isn't over already (it has legal moves, and no automatic draw the snapshot has on applies to it), both seats filled, `name` seated |
 | `CanResetAs(name, organizer)` | the board isn't reset, and `name` is seated or an organizer |
 | `CanLoadGame()` | the board is reset |
 

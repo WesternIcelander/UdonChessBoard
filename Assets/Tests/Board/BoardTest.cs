@@ -77,6 +77,7 @@ public class BoardTest : UdonSharpBehaviour {
             TestReplay();
             TestTakeback();
             TestLoadGame();
+            TestContinueLoaded();
             TestSnapshot();
             // Every [ChessPGN] entry in the log is one of these, so the two counts must agree.
             Debug.Log("[BoardTest] games logged by the board: " + board.loggedGames);
@@ -3407,6 +3408,248 @@ public class BoardTest : UdonSharpBehaviour {
             CheckInt(board.GameNumber(ChessArbiter.NumberAutoResetTime), ChessArbiter.Never,
                 "load: no arbiter, never reset");
         }
+
+        board.ClearState();
+    }
+
+    // ---- 7.9b continuing a loaded game ----
+
+    // The FEN after the first count of moves from fen, with its counters.
+    string FenAfter(string fen, int[] moves, int count) {
+        byte[] squares = new byte[64];
+        int[] scratchState = new int[ChessPosition.StateLength];
+        int clock;
+        int number;
+        ChessFen.ParseFen(fen, squares, scratchState, out clock, out number);
+        for (int i = 0; i < count; i++) {
+            if (scratchState[ChessPosition.StateSideToMove] == ChessRules.Black) number++;
+            clock = ChessDraws.HalfmoveClockAfter(clock, moves[i]);
+            ChessPosition.MakeMove(squares, scratchState, moves[i]);
+        }
+        return ChessFen.WriteFen(squares, scratchState, clock, number);
+    }
+
+    // Loads text, seats Ana as White and Bob as Black, and steps to ply (by Ana).
+    void LoadSeated(string text, int ply, string name) {
+        LoadText(text, name);
+        board.JoinAs(ChessRules.White, "Ana");
+        board.JoinAs(ChessRules.Black, "Bob");
+        if (board.replayIndex != ply) board.StepToAs("Ana", false, ply);
+        CheckInt(board.replayIndex, ply, name + ": showing ply " + ply);
+    }
+
+    // The board after continuing a loaded game from ply: in game, out of replay, the position at ply with that side
+    // to move, both clocks at the base time, no result or loaded tags, the moves before ply kept without their
+    // clocks and nothing after, and the replay fields on the position.
+    void CheckContinuedLoaded(int ply, string fen, int startMs, string name) {
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, name + ": in game");
+        Check(!board.replayMode && !board.replayCustom, name + ": out of replay", "replay flags set");
+        CheckText(Fen(), fen, name + ": the position at that ply");
+        CheckInt(board.moveCount, ply, name + ": move count");
+        CheckInt(board.whiteTime, startMs, name + ": white's fresh clock");
+        CheckInt(board.blackTime, startMs, name + ": black's fresh clock");
+        CheckInt(board.ending, ChessGame.EndingNone, name + ": no ending");
+        CheckInt(board.winner, ChessRules.NoColor, name + ": no winner");
+        CheckText(board.replaySourceWhite + "|" + board.replaySourceBlack + "|" + board.replaySourceResult, "||",
+            name + ": the loaded tags dropped");
+        CheckInt(board.replaySourceBaseTime * 1000 + board.replaySourceIncrement, ChessArbiter.NoClock * 1000,
+            name + ": the loaded time control dropped");
+        CheckSeats("Ana", "Bob", name + ": the seated players");
+        CheckInt(board.takebackColor * 10 + board.drawOfferColor, ChessRules.NoColor * 11, name + ": nothing pending");
+        string errors = "";
+        for (int i = 0; i < board.moveHistory.Length; i++) {
+            bool kept = i < ply;
+            if ((board.moveHistory[i] == 0) == kept || (board.notation[i] == "") == kept
+                || board.clockHistory[i] != -1 || (!kept && board.halfmoveClocks[i] != 0)) {
+                errors += " ply " + (i + 1) + ": " + board.moveHistory[i] + " " + board.notation[i] + " "
+                    + board.clockHistory[i] + " " + board.halfmoveClocks[i];
+            }
+        }
+        Check(errors == "", name + ": the moves before the ply kept without clocks, nothing after", errors);
+        CheckShows(ply, BoardText(board.board), name + ": replay fields");
+    }
+
+    void TestContinueLoaded() {
+        if (!Utilities.IsValid(importer) || siggiVsNuka == null) return;
+        NothingForced();
+        string nuka = siggiVsNuka.text;
+        int takebacks = ChessArbiter.SettingTakebacks;
+
+        // Siggi-vs-Nuka continued from ply 20 (White to move) with a 300+3 clock: the seated players, fresh clocks,
+        // a new ID referencing the PGN's at ply 20. Nothing is logged.
+        LoadText(nuka, "continue");
+        int[] nukaMoves = new int[54];
+        System.Array.Copy(board.moveHistory, nukaMoves, 54);
+        string[] nukaSans = new string[54];
+        System.Array.Copy(board.notation, nukaSans, 54);
+        int[] nukaHalfmove = new int[54];
+        System.Array.Copy(board.halfmoveClocks, nukaHalfmove, 54);
+        board.StepToAs("Cleo", false, 20);
+        CheckInt(board.ContinueGameAs("Cleo"), ChessBoard.InputRejected, "continue: refused with nobody seated");
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputRejected, "continue: refused with one seat");
+        board.JoinAs(ChessRules.Black, "Bob");
+        CheckInt(board.SetClockAs("Ana", 300, 3), ChessBoard.InputAccepted, "continue: clock chosen");
+        CheckInt(board.ContinueGameAs("Cleo"), ChessBoard.InputRejected, "continue: refused for a non-player");
+        board.ReplayPieceDroppedAs("Ana", false, ChessRules.A1, ChessRules.A3);
+        string custom = GameText();
+        CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputRejected, "continue: refused from a custom position");
+        CheckText(GameText(), custom, "continue: refused, nothing changed");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "continue: refused, still loaded");
+        board.StepToAs("Ana", false, 20);
+        int logged = board.loggedGames;
+        double before = board.ServerTime();
+        CheckInt(board.ContinueGameAs("Bob"), ChessBoard.InputAccepted, "continue: from ply 20 by Black");
+        double after = board.ServerTime();
+        string fen20 = FenAfter(ChessFen.StartFen, nukaMoves, 20);
+        CheckContinuedLoaded(20, fen20, 300000, "continue: ply 20");
+        CheckInt(board.state[ChessPosition.StateSideToMove], ChessRules.White, "continue: ply 20, White to move");
+        CheckText(board.notation[19], nukaSans[19], "continue: ply 20, the last SAN kept");
+        CheckInt(board.halfmoveClocks[19], nukaHalfmove[19], "continue: ply 20, the halfmove clocks kept");
+        CheckInt(board.baseTime * 1000 + board.increment, 300003, "continue: the chosen clock");
+        Check(board.turnStart >= before && board.turnStart <= after, "continue: the turn starts now",
+            board.turnStart + " not between " + before + " and " + after);
+        Check(board.IsClockRunning(), "continue: the clock runs", "not running");
+        CheckGameId(board.gameId, "continue: a new Game ID");
+        CheckText(board.continuedFrom, "20250710001921/20", "continue: ContinuedFrom the PGN's ID at ply 20");
+        CheckLogged(logged, 0, "continue: nothing logged");
+        CheckInt(board.mode, ChessGame.ModeStandard, "continue: the game's mode");
+        CheckPgnHas("[White \"Ana\"]", true, "continue: export White is the seat");
+        CheckPgnHas("[Black \"Bob\"]", true, "continue: export Black is the seat");
+        CheckPgnHas("[TimeControl \"300+3\"]", true, "continue: export the chosen clock");
+        CheckPgnHas("[Result \"*\"]", true, "continue: export no result");
+        CheckPgnHas("[ContinuedFrom \"20250710001921/20\"]", true, "continue: export ContinuedFrom");
+        Check(!board.GamePgn().Contains("%clk"), "continue: the loaded clocks not exported", board.GamePgn());
+        Check(!board.CanContinueAs("Ana"), "continue: not again in game", "allowed");
+        CheckInt(board.JoinAs(ChessRules.White, "Cleo"), ChessBoard.InputRejected, "continue: seats closed");
+
+        // Played on, then taken back: to ply 21 (White's clock from its move after continuing, Black's base time),
+        // and past the continuation point to ply 18 (both the base time).
+        board.gameSettings = takebacks;
+        int[] legal = new int[ChessMoves.MaxMoves];
+        ChessMoves.GenerateLegalMoves(board.board, board.state, legal, true);
+        CheckInt(board.PlayMove(legal[0]), ChessBoard.InputAccepted, "continue: White plays on");
+        ChessMoves.GenerateLegalMoves(board.board, board.state, legal, true);
+        CheckInt(board.PlayMove(legal[0]), ChessBoard.InputAccepted, "continue: Black plays on");
+        int whiteAfter = board.clockHistory[20];
+        Check(whiteAfter > 300000 && whiteAfter <= 303000, "continue: White's clock after its move",
+            "" + whiteAfter);
+        string continuedId = board.gameId;
+        Takeback(21, ChessRules.Black, "continue: takeback to ply 21");
+        CheckInt(board.whiteTime, whiteAfter, "continue: takeback to ply 21, White's clock from its move");
+        CheckInt(board.blackTime, 300000, "continue: takeback to ply 21, Black's base time");
+        CheckText(board.continuedFrom, continuedId + "/21", "continue: takeback to ply 21, ContinuedFrom");
+        Takeback(18, ChessRules.White, "continue: takeback to ply 18");
+        CheckText(Fen(), FenAfter(ChessFen.StartFen, nukaMoves, 18), "continue: takeback to ply 18, the position");
+        CheckTimes(300000, 300000, board.turnStart, "continue: takeback to ply 18, both the base time");
+        logged = board.loggedGames;
+        board.ResignAs(ChessRules.White, "Ana");
+        CheckLogged(logged, 1, "continue: the continued game logged when it ends");
+        CheckLogHas("[White \"Ana\"]\n", "continue: logged with the seat's name");
+        Check(board.lastLoggedPgn.Contains("1. e4 c5 2. Nf3") && !board.lastLoggedPgn.Contains("%clk"),
+            "continue: logged with the moves before, no clocks", board.lastLoggedPgn);
+
+        // From ply 21: Black to move, with the move number.
+        LoadSeated(nuka, 21, "continue ply 21");
+        CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputAccepted, "continue ply 21: accepted");
+        CheckContinuedLoaded(21, FenAfter(ChessFen.StartFen, nukaMoves, 21), 600000, "continue ply 21");
+        CheckInt(board.state[ChessPosition.StateSideToMove], ChessRules.Black, "continue ply 21: Black to move");
+        CheckInt(board.moveNumber, 11, "continue ply 21: move 11");
+        CheckText(board.continuedFrom, "20250710001921/21", "continue ply 21: ContinuedFrom");
+
+        // From the start: ply 0, nothing kept.
+        LoadSeated(nuka, 0, "continue ply 0");
+        CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputAccepted, "continue ply 0: accepted");
+        CheckContinuedLoaded(0, ChessFen.StartFen, 600000, "continue ply 0");
+        CheckText(board.continuedFrom, "20250710001921/0", "continue ply 0: ContinuedFrom");
+
+        // Not from the last position, which is checkmate: nothing changes.
+        LoadSeated(nuka, 54, "continue mate");
+        string mate = GameText();
+        Check(!board.CanContinueAs("Ana"), "continue mate: no button on the checkmate", "allowed");
+        CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputRejected, "continue mate: refused");
+        CheckText(GameText(), mate, "continue mate: nothing changed");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "continue mate: still loaded");
+        board.StepToAs("Ana", false, 53);
+        Check(board.CanContinueAs("Ana"), "continue mate: from the ply before", "refused");
+
+        // A game without a GameID: no ContinuedFrom. From its last position, Black to move, with no clock.
+        LoadSeated("1. e4 e5 2. Nf3 *", 3, "continue no ID");
+        CheckInt(board.ContinueGameAs("Bob"), ChessBoard.InputAccepted, "continue no ID: accepted");
+        CheckContinuedLoaded(3, "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2", 0,
+            "continue no ID");
+        CheckText(board.continuedFrom, "", "continue no ID: no ContinuedFrom");
+        CheckGameId(board.gameId, "continue no ID: a new Game ID");
+        CheckPgnHas("[TimeControl \"-\"]", true, "continue no ID: no clock");
+        Check(!board.GamePgn().Contains("ContinuedFrom"), "continue no ID: no ContinuedFrom tag", board.GamePgn());
+        Check(!board.IsClockRunning(), "continue no ID: no clock running", "running");
+        Drop("Bob", ChessRules.B8, ChessRules.C6, "continue no ID: Black plays on");
+
+        // Chess960 keeps its mode and starting position.
+        string chess960 = "[Variant \"Chess960\"]\n[SetUp \"1\"]\n"
+            + "[FEN \"qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w GBgb - 0 1\"]\n\n1. e4 e5 2. Bf3 *";
+        LoadSeated(chess960, 2, "continue Chess960");
+        CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputAccepted, "continue Chess960: accepted");
+        CheckInt(board.mode, ChessGame.ModeChess960, "continue Chess960: Chess960");
+        CheckText(board.startFen, "qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w GBgb - 0 1",
+            "continue Chess960: the starting position kept");
+        CheckText(Fen(), "qrkbbnrn/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/QRKBBNRN w GBgb e6 0 2", "continue Chess960: the position");
+        CheckPgnHas("[Variant \"Chess960\"]", true, "continue Chess960: Variant exported");
+
+        // Positions already over: refused with their rule on, allowed with it off, and one ply earlier.
+        LoadSeated("[SetUp \"1\"]\n[FEN \"8/8/4k3/8/8/4K3/3r4/8 w - - 0 1\"]\n\n1. Kxd2 *", 1, "continue dead");
+        board.gameSettings = ChessArbiter.SettingDeadPosition;
+        Check(!board.CanContinueAs("Ana"), "continue dead: refused with insufficient material", "allowed");
+        board.StepToAs("Ana", false, 0);
+        Check(board.CanContinueAs("Ana"), "continue dead: allowed before the capture", "refused");
+        board.StepToAs("Ana", false, 1);
+        board.gameSettings = 0;
+        Check(board.CanContinueAs("Ana"), "continue dead: allowed with the rule off", "refused");
+        string shuffle = "";
+        for (int i = 0; i < 4; i++) shuffle += "Nf3 Nf6 Ng1 Ng8 ";
+        LoadSeated(shuffle + "*", 16, "continue fivefold");
+        board.gameSettings = ChessArbiter.SettingFivefoldRepetition;
+        Check(!board.CanContinueAs("Ana"), "continue fivefold: refused on the fifth occurrence", "allowed");
+        board.StepToAs("Ana", false, 15);
+        Check(board.CanContinueAs("Ana"), "continue fivefold: allowed a ply before", "refused");
+        board.StepToAs("Ana", false, 16);
+        board.gameSettings = ChessArbiter.SettingThreefoldRepetition;
+        Check(board.CanContinueAs("Ana"), "continue fivefold: allowed with only threefold on", "refused");
+        LoadSeated("[SetUp \"1\"]\n[FEN \"k7/8/8/8/8/8/8/K6R w - - 149 80\"]\n\n80. Rh2 *", 1, "continue 75-move");
+        board.gameSettings = ChessArbiter.SettingSeventyFiveMoveRule;
+        Check(!board.CanContinueAs("Ana"), "continue 75-move: refused at 150 halfmoves", "allowed");
+        board.StepToAs("Ana", false, 0);
+        Check(board.CanContinueAs("Ana"), "continue 75-move: allowed at 149 halfmoves", "refused");
+        board.StepToAs("Ana", false, 1);
+        board.gameSettings = ChessArbiter.SettingFiftyMoveRule;
+        Check(board.CanContinueAs("Ana"), "continue 75-move: allowed with only the fifty-move claim on", "refused");
+        LoadSeated("[SetUp \"1\"]\n[FEN \"7k/5Q2/6K1/8/8/8/8/8 b - - 0 1\"]\n\n*", 0, "continue stalemate");
+        Check(!board.CanContinueAs("Ana"), "continue stalemate: refused", "allowed");
+
+        // A forced clock replaces the players' choice and the game's own; a forced mode doesn't change the game's.
+        if (Utilities.IsValid(board.arbiter)) {
+            OverrideAll(ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced, 30, 300,
+                ChessGame.ModeStandard, 120, 1);
+            LoadSeated("[TimeControl \"600\"]\n" + chess960, 1, "continue forced");
+            CheckInt(board.SetClockAs("Ana", 60, 0), ChessBoard.InputRejected, "continue forced: no choosing");
+            CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputAccepted, "continue forced: accepted");
+            CheckInt(board.baseTime * 1000 + board.increment, 120001, "continue forced: the forced clock");
+            CheckTimes(120000, 120000, board.turnStart, "continue forced: fresh forced clocks");
+            CheckInt(board.mode, ChessGame.ModeChess960, "continue forced: the game's mode");
+            CheckPgnHas("[TimeControl \"120+1\"]", true, "continue forced: the forced clock exported");
+            NothingForced();
+        }
+
+        // The local player's method, seated in both seats.
+        LoadText(nuka, "continue local");
+        board.JoinWhite();
+        board.JoinBlack();
+        board.StepTo(10);
+        Check(board.CanContinue(), "continue local: the button applies", "refused");
+        CheckInt(board.ContinueGame(), ChessBoard.InputAccepted, "continue local: accepted");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "continue local: in game");
+        CheckText(board.whitePlayer + "|" + board.blackPlayer, localName + "|" + localName,
+            "continue local: the local player in both seats");
 
         board.ClearState();
     }
