@@ -5585,6 +5585,9 @@ public class BoardTest : ChessBoardListener {
         CheckInt(importTold - told, 2, s + ": a second done event: nobody told");
         CheckNotTold(s + ": a second done event: OnBoardChanged");
         CheckInt(board.importStatus, ChessBoard.ImportLoaded, s + ": a second done event: still loaded");
+        board.ClearState();
+        board.PackState();
+        CheckInt(board.syncedInts[ChessBoard.SyncChange], ChessBoard.ChangeReset, s + ": cleared: sent as reset");
 
         // A failed import: the reason, nothing changed or sent.
         string f = "import failed";

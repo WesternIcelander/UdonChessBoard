@@ -716,6 +716,9 @@ namespace SiggiChessBoard {
 
             gameSettings = 0;
             gameNumbers = new int[ChessArbiter.NumberCount];
+            // The state is now a reset one, so it goes out as a reset if it's sent before the next change (a late
+            // joiner's update after a test cleared the board would otherwise carry the change from before it).
+            lastSentChange = ChangeReset;
         }
 
         // Makes the position in board and state the game's starting position, with these FEN counters, and shows it
