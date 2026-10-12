@@ -385,8 +385,10 @@ Taking a board's snapshot of these settings depends on the board's lifecycle, so
 
 **Read:** [architecture](docs/architecture.md), [physical-pieces](docs/physical-pieces.md), [player-input](docs/player-input.md), [board-lifecycle](docs/board-lifecycle.md) (lobby controls), [clocks](docs/clocks.md) (clock display), [replay](docs/replay.md) (replay controls, takeback requests, replay source names), [game-endings](docs/game-endings.md) (draw offers and claims, status display), [testing](docs/testing.md)
 
-- [ ] **9.1** 32 piece objects with mesh swapping; square ↔ object mapping; placing pieces from board state.
+- [x] **9.1** 32 piece objects with mesh swapping; square ↔ object mapping; placing pieces from board state.
   - Verify: in Play Mode the pieces match the board after a reset, a sequence of moves, a promotion, and loading a Chess960 game.
+  - Setup: **Tools > Chess Board > Create Board View** builds `ChessBoardView` with generated placeholder meshes ([Physical pieces](docs/physical-pieces.md#implementation)); **Create View Test** adds `ViewTest`, which runs after `BoardTest` ([Testing](docs/testing.md#view-test)).
+  - First run (2026-10-12): all 148 `ViewTest` checks pass in Play Mode, after `BoardTest`'s 4112.
 - [ ] **9.2** `VRCPickup` + `VRCObjectSync`; per-player `pickupable` from the board; pieces' ownership check.
   - Verify (several clients): players can grab pieces during their game and bystanders can't; anyone can on a reset board; the pieces' `OnOwnershipRequest` agrees with the board.
 - [ ] **9.3a** Forwarding pickups and drops to the board; snapping back on rejection.

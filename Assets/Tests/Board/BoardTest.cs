@@ -22,6 +22,8 @@ public class BoardTest : ChessBoardListener {
     bool started;
     bool joined;
     bool ran;
+    // Set once the checks are over (or skipped), so ViewTest (step 9) can use the board after them.
+    [System.NonSerialized] public bool finished;
 
     // The checks run a frame after both this Start and the local player joining: the board clears itself in its own
     // Start, which may run after this one, and the join buttons use the local player's name.
@@ -47,6 +49,7 @@ public class BoardTest : ChessBoardListener {
         if (VRCPlayerApi.GetPlayerCount() > 1) {
             Debug.Log("[BoardTest] skipped: other players are in the instance, and the checks would send their games "
                 + "to them through the synced board");
+            finished = true;
             return;
         }
         if (!Utilities.IsValid(board)) {
@@ -126,6 +129,7 @@ public class BoardTest : ChessBoardListener {
     }
 
     void LogSummary() {
+        finished = true;
         Debug.Log("[BoardTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
