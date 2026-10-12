@@ -366,126 +366,87 @@ public class ViewTest : UdonSharpBehaviour {
         view.SetInputStyle(savedStyle);
         view.Refresh();
         CheckView("cleared after the drop checks");
-        SendCustomEventDelayedFrames(nameof(RunCastleSpaceChecks), 1);
+        SendCustomEventDelayedFrames(nameof(RunCastleDropChecks), 1);
     }
 
-    // ---- 9.3b: the castle drop space ----
+    // ---- 9.3b: castling by drop ----
 
-    // King f1, rook h1 (and the same for Black): castling and Kg1 both put the king on g1, so the king side castle
-    // needs the space; the queen side one (the king three squares to c1) doesn't. The f pawns keep a castled rook
-    // from giving check.
+    // King f1, rook h1 (and the same for Black): castling and Kg1 both put the king on g1, so a drop on g1 is Kg1 and
+    // the castle is a drop on the rook. The f pawns keep a castled rook from giving check.
     const string OneSquareFen = "1r3k1r/5p2/8/8/8/8/5P2/1R3K1R w KQkq - 0 1";
     // King d1, rook a1: the queen side castle moves the king one square, to c1.
     const string QueenOneSquareFen = "r2k3r/3p4/8/8/8/8/3P4/R2K3R w KQkq - 0 1";
     const string StandardCastlingFen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
 
-    // The sixth frame: the castle drop space shown only while a king whose castle needs it is held (where the view
-    // puts it), hidden on the drop, for other pieces, standard castles, once the game ended and in replay; a drop on
-    // it castling, and a drop where no space is shown, or on the destination, not.
-    public void RunCastleSpaceChecks() {
+    // The sixth frame (the castle drop space was removed in step 9.6): in Chess960 positions where castling is
+    // ambiguous, a king dropped on its rook castles and one dropped on the destination makes the normal king move;
+    // a king dropped beyond the back rank, where the space stood, is put back.
+    public void RunCastleDropChecks() {
         int savedStyle = view.inputStyle;
         view.SetInputStyle(ChessBoardView.InputPickups);
-        Check(Utilities.IsValid(view.castleSpaces[ChessBoard.CastleKingSide])
-            && Utilities.IsValid(view.castleSpaces[ChessBoard.CastleQueenSide]), "both castle spaces assigned",
-            "run Tools > Chess Board > Create Board View again");
 
-        CastleSpaceGame(OneSquareFen, "f1 game");
-        CheckSpaces(false, false, "f1 game: nothing held");
+        CastleGame(OneSquareFen, "f1 game");
         int king = view.squareObject[Sq("f1")];
         int rook = view.squareObject[Sq("h1")];
         view.OnPiecePickedUp(king);
         CheckInt(view.heldObject, king, "f1 picked up");
-        CheckSpaces(true, false, "f1 held");
-        CheckSpacePlace(ChessRules.White, ChessBoard.CastleKingSide, "f1 held");
-        view.Refresh();
-        CheckSpaces(true, false, "f1 held, after Refresh");
-        view.pieces[king].localPosition = OverSpace(ChessRules.White, ChessBoard.CastleKingSide);
+        view.pieces[king].localPosition = Over("h1");
         view.OnPieceDropped(king);
-        CheckSpaces(false, false, "f1 dropped on the space");
-        CheckDropped(1, ChessBoard.ChangeMove, "f1 dropped on the space: castled");
-        Check(ChessRules.MoveIsCastle(board.LastMove()), "f1 dropped on the space: the move is a castle", "it isn't");
-        CheckInt(view.squareObject[Sq("g1")], king, "f1 dropped on the space: the king's object on g1");
-        CheckInt(view.squareObject[Sq("f1")], rook, "f1 dropped on the space: the rook's object on f1");
+        CheckDropped(1, ChessBoard.ChangeMove, "f1 dropped on h1: castled");
+        Check(ChessRules.MoveIsCastle(board.LastMove()), "f1 dropped on h1: the move is a castle", "it isn't");
+        CheckInt(view.squareObject[Sq("g1")], king, "f1 dropped on h1: the king's object on g1");
+        CheckInt(view.squareObject[Sq("f1")], rook, "f1 dropped on h1: the rook's object on f1");
 
-        // Black: shown beyond rank 8; a drop on the destination is Kg8, not a castle.
+        // Black: a drop on the destination is Kg8, not a castle.
         int blackKing = view.squareObject[Sq("f8")];
         view.OnPiecePickedUp(blackKing);
-        CheckSpaces(true, false, "f8 held");
-        CheckSpacePlace(ChessRules.Black, ChessBoard.CastleKingSide, "f8 held");
         view.pieces[blackKing].localPosition = Over("g8");
         view.OnPieceDropped(blackKing);
-        CheckSpaces(false, false, "f8 dropped over g8");
         CheckDropped(2, ChessBoard.ChangeMove, "f8 dropped over g8: played");
         Check(!ChessRules.MoveIsCastle(board.LastMove()), "f8 dropped over g8: Kg8, not a castle", "it castled");
         CheckInt(board.PieceAt(Sq("h8")), ChessRules.PieceOf(ChessRules.Black, ChessRules.Rook),
             "f8 dropped over g8: the rook still on h8");
 
-        // Other pieces show nothing; a king dropped where no space is shown is put back.
-        CastleSpaceGame(OneSquareFen, "f1 game again");
-        int whiteRook = view.squareObject[Sq("h1")];
-        view.OnPiecePickedUp(whiteRook);
-        CheckSpaces(false, false, "h1 rook held");
-        view.OnPieceDropped(whiteRook);
-        CheckDropped(0, ChessBoard.ChangeRejected, "h1 rook dropped back: put back");
+        // A king dropped beyond the back rank, where the space stood, is put back; over g1 it plays Kg1.
+        CastleGame(OneSquareFen, "f1 game again");
         king = view.squareObject[Sq("f1")];
         view.OnPiecePickedUp(king);
-        view.pieces[king].localPosition = OverSpace(ChessRules.White, ChessBoard.CastleQueenSide);
+        view.pieces[king].localPosition = Over("g1") + new Vector3(0, 0, -view.squareSize);
         view.OnPieceDropped(king);
-        CheckDropped(0, ChessBoard.ChangeRejected, "f1 dropped where the queen side space would be: put back");
+        CheckDropped(0, ChessBoard.ChangeRejected, "f1 dropped beyond g1: put back");
         view.OnPiecePickedUp(king);
         view.pieces[king].localPosition = Over("g1");
         view.OnPieceDropped(king);
         CheckDropped(1, ChessBoard.ChangeMove, "f1 dropped over g1: played");
         Check(!ChessRules.MoveIsCastle(board.LastMove()), "f1 dropped over g1: Kg1, not a castle", "it castled");
 
-        // King d1, rook a1: the queen side space, beside c1.
-        CastleSpaceGame(QueenOneSquareFen, "d1 game");
+        // King d1, rook a1: dropped on a1, it castles queen side.
+        CastleGame(QueenOneSquareFen, "d1 game");
         king = view.squareObject[Sq("d1")];
         rook = view.squareObject[Sq("a1")];
         view.OnPiecePickedUp(king);
-        CheckSpaces(false, true, "d1 held");
-        CheckSpacePlace(ChessRules.White, ChessBoard.CastleQueenSide, "d1 held");
-        view.pieces[king].localPosition = OverSpace(ChessRules.White, ChessBoard.CastleQueenSide);
+        view.pieces[king].localPosition = Over("a1");
         view.OnPieceDropped(king);
-        CheckSpaces(false, false, "d1 dropped on the space");
-        CheckDropped(1, ChessBoard.ChangeMove, "d1 dropped on the space: castled");
-        Check(ChessRules.MoveIsCastle(board.LastMove()), "d1 dropped on the space: the move is a castle", "it isn't");
-        CheckInt(view.squareObject[Sq("c1")], king, "d1 dropped on the space: the king's object on c1");
-        CheckInt(view.squareObject[Sq("d1")], rook, "d1 dropped on the space: the rook's object on d1");
+        CheckDropped(1, ChessBoard.ChangeMove, "d1 dropped on a1: castled");
+        Check(ChessRules.MoveIsCastle(board.LastMove()), "d1 dropped on a1: the move is a castle", "it isn't");
+        CheckInt(view.squareObject[Sq("c1")], king, "d1 dropped on a1: the king's object on c1");
+        CheckInt(view.squareObject[Sq("d1")], rook, "d1 dropped on a1: the rook's object on d1");
 
-        // A standard position needs no space.
-        CastleSpaceGame(StandardCastlingFen, "standard game");
-        king = view.squareObject[Sq("e1")];
+        // King already on g1: castling doesn't move it; dropped on h1 it castles, the rook's object going to f1.
+        CastleGame(KingStaysFen, "g1 game");
+        king = view.squareObject[Sq("g1")];
+        rook = view.squareObject[Sq("h1")];
         view.OnPiecePickedUp(king);
-        CheckSpaces(false, false, "e1 held in a standard position");
+        view.pieces[king].localPosition = Over("h1");
         view.OnPieceDropped(king);
-
-        // Hidden once the game ends while the king is held, and in replay.
-        CastleSpaceGame(OneSquareFen, "f1 game, ended");
-        king = view.squareObject[Sq("f1")];
-        view.OnPiecePickedUp(king);
-        CheckSpaces(true, false, "f1 held before resigning");
-        CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, "resigned while holding f1");
-        view.Refresh();
-        CheckInt(view.heldObject, king, "f1 still held after the game ended");
-        CheckSpaces(false, false, "f1 held after the game ended");
-        view.pieces[king].localPosition = OverSpace(ChessRules.White, ChessBoard.CastleKingSide);
-        view.OnPieceDropped(king);
-        CheckDropped(0, ChessBoard.ChangeRejected, "f1 dropped on the hidden space after the game ended: put back");
-        // Replay shows the game's start, wherever its king stands.
-        CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, "entered replay");
-        view.Refresh();
-        king = NoObjectOr(KingSquare(board.replayBoard, ChessRules.White));
-        if (king != ChessBoardView.NoObject) view.OnPiecePickedUp(king);
-        Check(king != ChessBoardView.NoObject && view.heldObject == king, "replay: the white king picked up",
-            "held " + view.heldObject);
-        CheckSpaces(false, false, "replay: the white king held");
-        if (king != ChessBoardView.NoObject) view.OnPieceDropped(king);
+        CheckDropped(1, ChessBoard.ChangeMove, "g1 dropped on h1: castled");
+        Check(ChessRules.MoveIsCastle(board.LastMove()), "g1 dropped on h1: the move is a castle", "it isn't");
+        CheckInt(view.squareObject[Sq("g1")], king, "g1 dropped on h1: the king's object on g1");
+        CheckInt(view.squareObject[Sq("f1")], rook, "g1 dropped on h1: the rook's object on f1");
 
         board.ClearState();
         view.SetInputStyle(savedStyle);
         view.Refresh();
-        CheckSpaces(false, false, "cleared at the end");
         CheckView("cleared at the end");
         SendCustomEventDelayedFrames(nameof(RunClickChecks), 1);
     }
@@ -497,7 +458,7 @@ public class ViewTest : UdonSharpBehaviour {
 
     // The seventh frame, with Clicks: selecting by clicking a piece (lifted, its ownership taken), putting it back by
     // clicking it or its square, switching to another piece, placing on a square, capturing by clicking a piece,
-    // castling on the rook, on the destination and on the castle drop space, promoting, illegal placings put back
+    // castling on the rook (in Chess960 too) and on the destination, promoting, illegal placings put back
     // unselected, a selection put back when the game ends or replay is left, free moves in replay, and exactly the
     // pieces and squares where a click does something interactive, with the right text. Then with Pickups: no
     // interacts at all.
@@ -513,22 +474,12 @@ public class ViewTest : UdonSharpBehaviour {
         for (int square = 0; square < 64; square++) {
             ChessSquare target = view.squareTargets[square];
             if (Utilities.IsValid(target) && target.view == view && target.square == square
-                && target.castleSide == ChessBoardView.NoCastleSide && Utilities.IsValid(target.GetComponent<Collider>())
+                && Utilities.IsValid(target.GetComponent<Collider>())
                 && view.DropSquare(target.transform.position) == square) {
                 squares++;
             }
         }
         CheckInt(squares, 64, "clicks: every square has its target, over that square");
-        int spaces = 0;
-        for (int side = 0; side < 2; side++) {
-            ChessSquare target = view.castleSpaceTargets[side];
-            if (Utilities.IsValid(target) && target.view == view && target.castleSide == side
-                && Utilities.IsValid(view.castleSpaces[side]) && target.gameObject == view.castleSpaces[side]
-                && Utilities.IsValid(target.GetComponent<Collider>())) {
-                spaces++;
-            }
-        }
-        CheckInt(spaces, 2, "clicks: both castle spaces have their target");
 
         // Nobody's game: nothing to click.
         board.ClearState();
@@ -642,15 +593,14 @@ public class ViewTest : UdonSharpBehaviour {
         view.Refresh();
         CheckUnselected(3, c + ": left replay: c1 put back");
 
-        // Castling on the rook (labelled Castle), on the destination, and on the castle drop space (Chess960).
-        CastleSpaceGame(StandardCastlingFen, "click castling");
+        // Castling on the rook (labelled Castle) and on the destination.
+        CastleGame(StandardCastlingFen, "click castling");
         int king = view.squareObject[Sq("e1")];
         int rook = view.squareObject[Sq("h1")];
         ClickPiece("e1");
         view.Refresh();
         CheckClickables("a1 e1 h1", "a1 c1 d1 e1 f1 g1 h1 d2 e2 f2", "click castling: e1 selected");
         CheckText(Sq("h1"), "Castle", "click castling: e1 selected, h1");
-        CheckSpaces(false, false, "click castling: e1 selected");
         ClickPiece("h1");
         CheckUnselected(1, "click castling: h1 clicked with e1 selected: castled");
         Check(ChessRules.MoveIsCastle(board.LastMove()), "click castling: on the rook, a castle", "it isn't");
@@ -661,33 +611,26 @@ public class ViewTest : UdonSharpBehaviour {
         CheckUnselected(2, "click castling: e8 then c8 clicked: castled");
         Check(ChessRules.MoveIsCastle(board.LastMove()), "click castling: on the destination, a castle", "it isn't");
 
-        CastleSpaceGame(OneSquareFen, "click space");
+        // Chess960, king f1 and rook h1: a click on the rook castles, a click on g1 is Kg1.
+        CastleGame(OneSquareFen, "click chess960");
         king = view.squareObject[Sq("f1")];
         rook = view.squareObject[Sq("h1")];
-        ChessSquare space = view.castleSpaceTargets[ChessBoard.CastleKingSide];
-        Check(Utilities.IsValid(space) && space.DisableInteractive, "click space: nothing selected, the space not "
-            + "clickable", "clickable");
         ClickPiece("f1");
-        CheckSpaces(true, false, "click space: f1 selected");
-        Check(Utilities.IsValid(space) && !space.DisableInteractive && space.InteractionText == "Castle",
-            "click space: the space clickable, labelled Castle", "not clickable or wrong text");
-        CheckSquareText("g1", "Place", "click space: f1 selected, g1");
-        ClickPiece("f2");
-        CheckSpaces(false, false, "click space: f2 selected instead");
-        ClickPiece("f1");
-        if (Utilities.IsValid(space)) space.Interact();
-        CheckSpaces(false, false, "click space: the space clicked");
-        CheckUnselected(1, "click space: the space clicked: castled");
-        Check(ChessRules.MoveIsCastle(board.LastMove()), "click space: a castle", "it isn't");
-        CheckInt(view.squareObject[Sq("g1")], king, "click space: the king's object on g1");
-        CheckInt(view.squareObject[Sq("f1")], rook, "click space: the rook's object on f1");
+        CheckText(Sq("h1"), "Castle", "click chess960: f1 selected, h1");
+        CheckSquareText("g1", "Place", "click chess960: f1 selected, g1");
+        ClickPiece("h1");
+        CheckUnselected(1, "click chess960: h1 clicked with f1 selected: castled");
+        Check(ChessRules.MoveIsCastle(board.LastMove()), "click chess960: on the rook, a castle", "it isn't");
+        CheckInt(view.squareObject[Sq("g1")], king, "click chess960: the king's object on g1");
+        CheckInt(view.squareObject[Sq("f1")], rook, "click chess960: the rook's object on f1");
         ClickPiece("f8");
         ClickSquare("g8");
-        CheckUnselected(2, "click space: f8 then g8 clicked: played");
-        Check(!ChessRules.MoveIsCastle(board.LastMove()), "click space: g8 clicked: Kg8, not a castle", "it castled");
+        CheckUnselected(2, "click chess960: f8 then g8 clicked: played");
+        Check(!ChessRules.MoveIsCastle(board.LastMove()), "click chess960: g8 clicked: Kg8, not a castle",
+            "it castled");
 
         // Promoting by clicking: the pawn waits on e8 for its piece.
-        CastleSpaceGame(PromotionFen, "click promotion");
+        CastleGame(PromotionFen, "click promotion");
         int promoting = view.squareObject[Sq("e7")];
         ClickPiece("e7");
         ClickSquare("e8");
@@ -713,13 +656,6 @@ public class ViewTest : UdonSharpBehaviour {
         CheckPickupable(32, "pickups, no clicks: Pickups");
         view.OnPieceClicked(view.squareObject[Sq("e2")]);
         CheckInt(view.selectedObject, ChessBoardView.NoObject, "pickups, no clicks: a click selects nothing");
-        CastleSpaceGame(OneSquareFen, "pickups, no clicks: f1 game");
-        int heldKing = view.squareObject[Sq("f1")];
-        view.OnPiecePickedUp(heldKing);
-        CheckSpaces(true, false, "pickups, no clicks: f1 held");
-        Check(Utilities.IsValid(space) && space.DisableInteractive, "pickups, no clicks: the space shown, not clickable",
-            "clickable");
-        view.OnPieceDropped(heldKing);
 
         board.ClearState();
         view.SetInputStyle(savedStyle);
@@ -1094,7 +1030,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckTargets("", g + ": e2 selected in replay");
         ClickPiece("e2");
 
-        CastleSpaceGame(KingStaysFen, g + " (king stays)");
+        CastleGame(KingStaysFen, g + " (king stays)");
         CheckInt(board.PieceDroppedAs(localName, Sq("g1"), Sq("h1")), ChessBoard.InputAccepted,
             g + " (king stays): O-O on the rook");
         view.Refresh();
@@ -1129,7 +1065,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckTargets("", t + ": the game ended while g8 was held");
         if (view.heldObject == knight) view.OnPieceDropped(knight);
 
-        CastleSpaceGame(StandardCastlingFen, t + " (castling)");
+        CastleGame(StandardCastlingFen, t + " (castling)");
         int king = view.squareObject[Sq("e1")];
         view.OnPiecePickedUp(king);
         CheckTargets("d1 f1 d2 e2 f2 a1 c1 g1 h1", t + " (castling): e1 held");
@@ -1159,7 +1095,7 @@ public class ViewTest : UdonSharpBehaviour {
         // The promotion picker, for a drop.
         string p = "picker";
         view.SetInputStyle(ChessBoardView.InputPickups);
-        CastleSpaceGame(PromotionFen, p);
+        CastleGame(PromotionFen, p);
         CheckPicker(false, "", p + ": set up");
         int promoting = view.squareObject[Sq("e7")];
         CheckInt(ViewDrop("e7", Over("e8")), ChessBoard.InputAccepted, p + ": e7 picked up");
@@ -1175,7 +1111,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(view.objectType[promoting], ChessRules.Queen, p + ": e8=Q: the pawn's object is a queen");
         CheckLastMove("e7", "e8", p + ": e8=Q");
 
-        CastleSpaceGame(PromotionFen, p + " (cancel)");
+        CastleGame(PromotionFen, p + " (cancel)");
         ViewDrop("e7", Over("e8"));
         CheckPicker(true, "e8", p + " (cancel): e7 dropped over e8");
         view.PressPromoteCancel();
@@ -1199,7 +1135,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(view.ChoosePromotion(ChessRules.Queen), ChessBoard.InputRejected,
             p + " (change): a choice afterwards refused");
 
-        CastleSpaceGame(BlackPromotionFen, p + " (Black)");
+        CastleGame(BlackPromotionFen, p + " (Black)");
         int blackPawn = view.squareObject[Sq("e2")];
         ViewDrop("e2", Over("e1"));
         CheckPicker(true, "e1", p + " (Black): e2 dropped over e1");
@@ -1209,7 +1145,7 @@ public class ViewTest : UdonSharpBehaviour {
 
         // The promotion picker, for a placing click.
         view.SetInputStyle(ChessBoardView.InputClicks);
-        CastleSpaceGame(PromotionFen, p + " (clicks)");
+        CastleGame(PromotionFen, p + " (clicks)");
         int clickPawn = view.squareObject[Sq("e7")];
         ClickPiece("e7");
         ClickSquare("e8");
@@ -1220,7 +1156,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckClickables("a8", "", p + " (clicks): e8=R, the picker gone");
         CheckInt(view.objectType[clickPawn], ChessRules.Rook, p + " (clicks): e8=R: the pawn's object is a rook");
 
-        CastleSpaceGame(APawnPromotionFen, p + " (a file)");
+        CastleGame(APawnPromotionFen, p + " (a file)");
         int aPawn = view.squareObject[Sq("a7")];
         ClickPiece("a7");
         ClickSquare("a8");
@@ -1253,11 +1189,7 @@ public class ViewTest : UdonSharpBehaviour {
             ChessSquare target = view.squareTargets[square];
             if (!Utilities.IsValid(target) || !IsTrigger(target.transform)) solid++;
         }
-        for (int side = 0; side < 2; side++) {
-            ChessSquare space = view.castleSpaceTargets[side];
-            if (!Utilities.IsValid(space) || !IsTrigger(space.transform)) solid++;
-        }
-        CheckInt(solid, 0, "the square targets and castle spaces are triggers: solid ones");
+        CheckInt(solid, 0, "the square targets are triggers: solid ones");
         solid = 0;
         for (int i = 0; i < view.buttons.Length; i++) {
             if (Utilities.IsValid(view.buttons[i]) && !IsTrigger(view.buttons[i].transform.parent)) solid++;
@@ -1938,7 +1870,7 @@ public class ViewTest : UdonSharpBehaviour {
     }
 
     // A game of the local player against themselves, from fen.
-    void CastleSpaceGame(string fen, string name) {
+    void CastleGame(string fen, string name) {
         board.ClearState();
         StartGame(ChessGame.ModeStandard, name);
         int clock;
@@ -1948,54 +1880,6 @@ public class ViewTest : UdonSharpBehaviour {
         board.moveNumber = number;
         view.Refresh();
         CheckView(name + ": set up");
-    }
-
-    // Whether exactly the king side and queen side spaces wanted are shown, as the view says and in the scene.
-    void CheckSpaces(bool kingSide, bool queenSide, string name) {
-        string errors = "";
-        for (int side = 0; side < 2; side++) {
-            bool wanted = side == ChessBoard.CastleKingSide ? kingSide : queenSide;
-            GameObject space = view.castleSpaces[side];
-            bool active = Utilities.IsValid(space) && space.activeSelf;
-            if (view.castleSpaceShown[side] != wanted || active != wanted) {
-                errors += (side == ChessBoard.CastleKingSide ? "king side" : "queen side") + " shown "
-                    + view.castleSpaceShown[side] + ", active " + active + "; ";
-            }
-        }
-        Check(errors.Length == 0, name + ": castle space " + (kingSide ? "king side" : queenSide ? "queen side" : "none"),
-            errors);
-    }
-
-    // Whether color's space for side stands off the board, beside the castling destination on the outer side of the
-    // back rank.
-    void CheckSpacePlace(int color, int side, string name) {
-        GameObject space = view.castleSpaces[side];
-        if (!Utilities.IsValid(space)) return;
-        string destination = (side == ChessBoard.CastleKingSide ? "g" : "c") + (color == ChessRules.White ? "1" : "8");
-        Vector3 expected = view.SquarePosition(Sq(destination))
-            + new Vector3(0, 0, color == ChessRules.White ? -view.squareSize : view.squareSize);
-        Check((space.transform.localPosition - expected).sqrMagnitude < 1e-8f,
-            name + ": the space beyond " + destination, "at " + space.transform.localPosition.ToString("F3"));
-        CheckInt(view.DropSquare(space.transform.position), ChessRules.NoSquare, name + ": the space is off the board");
-    }
-
-    // The square of color's king on pieces, NoSquare for none.
-    int KingSquare(byte[] pieces, int color) {
-        int king = ChessRules.PieceOf(color, ChessRules.King);
-        for (int square = 0; square < 64; square++) {
-            if (pieces[square] == king) return square;
-        }
-        return ChessRules.NoSquare;
-    }
-
-    // The object on square, NoObject for none or no square.
-    int NoObjectOr(int square) {
-        return square == ChessRules.NoSquare ? ChessBoardView.NoObject : view.squareObject[square];
-    }
-
-    // Over color's castle drop space for side, off its centre and above it, as a hand lets go of a piece.
-    Vector3 OverSpace(int color, int side) {
-        return view.CastleSpacePosition(color, side) + new Vector3(-0.3f, 0.8f, 0.4f) * view.squareSize;
     }
 
     // Picks up the object on from through the view and drops it at position (the view's local space), as the

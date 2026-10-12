@@ -36,7 +36,7 @@ public static class ChessDebugViewBuilder {
         { "Default auto-reset time", "CycleDefaultAutoResetTime" }, { "Take arbiter", "TakeArbiter" },
         { "Take board", "TakeBoard" }, { "Fidget", "Fidget" }, { "Forget notation", "ForgetNotation" },
         { "Import PGN", "ImportPgn" }, { "Import PGN (paused)", "ImportPaused" }, { "Resume import", "ResumeImport" },
-        { "Input style", "CycleInputStyle" }, { "Take piece", "TakePiece" },
+        { "Input style", "CycleInputStyle" }, { "Take piece", "TakePiece" }, { "Check pieces", "CheckPieces" },
     };
     const int ButtonColumns = 7;
 

@@ -62,14 +62,22 @@ public class ChessDebugView : ChessBoardListener {
     // claimable draw, every Can… check), so a change only marks it: a test making thousands of changes in one frame
     // would otherwise run past Udon's time limit.
     void Update() {
+        if (settleCheckAt >= 0 && Time.time >= settleCheckAt) {
+            settleCheckAt = -1;
+            LogPlacement("settled after " + settleChange, false);
+        }
         if (!dirty && Time.time < nextRefresh) return;
         Refresh();
     }
 
     // A change arriving from another client (8.3) is logged with the state it brought, so each client's log shows the
-    // updates reaching it.
+    // updates reaching it. Every change but activity has the pieces checked once they've settled (9.6).
     public override void OnBoardChanged() {
         dirty = true;
+        if (board.lastChange != ChessBoard.ChangeActivity) {
+            settleCheckAt = Time.time + SettleSeconds;
+            settleChange = ChangeName(board.lastChange) + (board.lastChangeReceived ? " (received)" : "");
+        }
         if (!board.lastChangeReceived) return;
         Debug.Log("[ChessDebugView] received " + ChangeName(board.lastChange) + ": " + BoardSummary());
         string[] sent = board.syncedNotation;
@@ -656,6 +664,118 @@ public class ChessDebugView : ChessBoardListener {
         return value ? "yes" : "no";
     }
 
+    // ---- Piece watch (9.6) ----
+
+    // Each piece object's distance from where this client's view puts it (ChessBoardView.ObjectPlace), so a piece
+    // held here, and one that doesn't end up where the board puts it (moved by anything but the view: the pieces have
+    // no VRCObjectSync since step 9.6), show in the log. Objects still travelling are left alone until they land.
+    const float AwaySquares = 0.05f;
+    // How long after a board change the pieces are checked as settled: animations have finished.
+    const float SettleSeconds = 2;
+    bool[] pieceAway = new bool[ChessBoardView.PieceCount];
+    float[] awaySince = new float[ChessBoardView.PieceCount];
+    float[] awayFurthest = new float[ChessBoardView.PieceCount];
+    float settleCheckAt = -1;
+    string settleChange = "";
+
+    // Logs each object leaving its place and coming back (with how long and how far), with its owner.
+    void WatchPieces() {
+        if (!Utilities.IsValid(boardView)) return;
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            Transform piece = boardView.pieces[obj];
+            if (!Utilities.IsValid(piece) || boardView.animating[obj]) continue;
+            float squares = AwayBy(obj).magnitude;
+            if (squares > AwaySquares) {
+                if (!pieceAway[obj]) {
+                    pieceAway[obj] = true;
+                    awaySince[obj] = Time.time;
+                    awayFurthest[obj] = 0;
+                    Debug.Log("[ChessDebugView] piece " + piece.name + " left its place (" + PlaceName(obj) + "): "
+                        + PieceState(obj));
+                }
+                if (squares > awayFurthest[obj]) awayFurthest[obj] = squares;
+            } else if (pieceAway[obj]) {
+                pieceAway[obj] = false;
+                Debug.Log("[ChessDebugView] piece " + piece.name + " in place (" + PlaceName(obj) + ") after "
+                    + (Time.time - awaySince[obj]).ToString("F1") + " s away, furthest "
+                    + awayFurthest[obj].ToString("F2") + " squares; owner " + OwnerName(piece.gameObject));
+            }
+        }
+    }
+
+    // How far obj stands from its place, in squares (view space).
+    Vector3 AwayBy(int obj) {
+        Vector3 offset = boardView.pieces[obj].localPosition - boardView.ObjectPlace(obj);
+        return offset / boardView.squareSize;
+    }
+
+    string PlaceName(int obj) {
+        int square = boardView.objectSquare[obj];
+        if (obj == boardView.promotionObject) return "promoting on " + ChessRules.SquareName(boardView.promotionTo);
+        return square == ChessRules.NoSquare ? "beside the board" : ChessRules.SquareName(square);
+    }
+
+    // The owner, and whether this client holds, has selected or is animating obj.
+    string PieceState(int obj) {
+        Vector3 away = AwayBy(obj);
+        string text = "off by (" + away.x.ToString("F2") + ", " + away.y.ToString("F2") + ", " + away.z.ToString("F2")
+            + ") squares, owner " + OwnerName(boardView.pieces[obj].gameObject);
+        if (obj == boardView.heldObject) text += ", held here";
+        if (obj == boardView.selectedObject) text += ", selected here";
+        if (boardView.animating[obj]) text += ", travelling";
+        return text;
+    }
+
+    // Logs how many objects stand away from their place (each with its state) and who owns the pieces; with full,
+    // also every object's place and owner, so clients' logs can be compared object by object.
+    void LogPlacement(string label, bool full) {
+        if (!Utilities.IsValid(boardView)) return;
+        int away = 0;
+        string awayText = "";
+        string placesText = "";
+        string[] owners = new string[ChessBoardView.PieceCount];
+        int[] ownerCounts = new int[ChessBoardView.PieceCount];
+        int ownerCount = 0;
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            Transform piece = boardView.pieces[obj];
+            if (!Utilities.IsValid(piece)) continue;
+            string owner = OwnerName(piece.gameObject);
+            int found = -1;
+            for (int i = 0; i < ownerCount; i++) {
+                if (owners[i] == owner) found = i;
+            }
+            if (found < 0) {
+                found = ownerCount++;
+                owners[found] = owner;
+            }
+            ownerCounts[found]++;
+            if (AwayBy(obj).magnitude > AwaySquares) {
+                away++;
+                awayText += "; " + piece.name + " (" + PlaceName(obj) + ") " + PieceState(obj);
+            }
+            if (full) placesText += "; " + piece.name + " " + PlaceName(obj) + " " + owner;
+        }
+        string ownersText = "";
+        for (int i = 0; i < ownerCount; i++) {
+            ownersText += (i > 0 ? ", " : "") + owners[i] + " " + ownerCounts[i];
+        }
+        Debug.Log("[ChessDebugView] pieces " + label + ": " + (away == 0 ? "all in place" : away + " AWAY") + awayText
+            + " (owners: " + ownersText + "; " + board.moveCount + " moves"
+            + (board.replayMode ? ", replay at ply " + board.replayIndex : "") + ", "
+            + ChessFen.WriteFen(board.board, board.state, board.halfmoveClock, board.moveNumber) + ")");
+        if (full) Debug.Log("[ChessDebugView] places" + placesText);
+    }
+
+    // Logs every object's place and owner, and any standing away from its place.
+    public void CheckPieces() {
+        if (!Utilities.IsValid(boardView)) {
+            ReportDone("Check pieces (the Board View field is empty)", false);
+            return;
+        }
+        LogPlacement("checked", true);
+        ReportDone("Check pieces", true);
+    }
+
     // ---- Display ----
 
     void Refresh() {
@@ -667,6 +787,7 @@ public class ChessDebugView : ChessBoardListener {
         LogArbiterSettings();
         LogBoardOwner();
         LogPieces();
+        WatchPieces();
     }
 
     // Logs the arbiter's settings when they differ from the last logged ones (and once at the start), so each client's

@@ -3,10 +3,11 @@ using UnityEngine;
 using VRC.SDKBase;
 
 namespace SiggiChessBoard {
-    // One of a board view's 32 piece objects (docs/physical-pieces.md), next to its VRCPickup and VRCObjectSync.
+    // One of a board view's 32 piece objects (docs/physical-pieces.md), next to its VRCPickup.
     // Grabbing a piece takes ownership of the piece, which the board's own ownership rule doesn't cover, so the piece
     // asks the board who may touch the pieces, as a second check behind the view's pickupable. Built by
-    // Tools > Chess Board > Create Board View. No synced variables of its own: VRCObjectSync carries the piece.
+    // Tools > Chess Board > Create Board View. Nothing synced: every client places the pieces from the board, and a
+    // carried piece is seen only by its carrier (no VRCObjectSync, step 9.6).
     [UdonBehaviourSyncMode(BehaviourSyncMode.NoVariableSync)]
     public class ChessPiece : UdonSharpBehaviour {
         // The view this piece belongs to, and its index there (0 to 15 White's, 16 to 31 Black's).

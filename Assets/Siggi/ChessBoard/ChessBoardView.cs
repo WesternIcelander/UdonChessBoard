@@ -24,8 +24,6 @@ namespace SiggiChessBoard {
         public const int InputAuto = 0;
         public const int InputPickups = 1;
         public const int InputClicks = 2;
-        // No castle drop space (ChessBoard.CastleKingSide and CastleQueenSide are the others).
-        public const int NoCastleSide = -1;
 
         // The board shown; the view adds itself as a listener on Start.
         public ChessBoard board;
@@ -43,16 +41,10 @@ namespace SiggiChessBoard {
         // one client.
         [Tooltip("Auto: pickups in VR, clicks on desktop and mobile. Pickups or Clicks: that for everyone, for testing.")]
         public int inputStyle = InputAuto;
-        // The castle drop spaces (docs/player-input.md), by side (ChessBoard.CastleKingSide, CastleQueenSide): pads
-        // the size of a square just off the board, beside the king's castling destination on the outer side of its
-        // back rank. Shown only while the local player holds a king whose castle on that side needs one.
-        public GameObject[] castleSpaces = new GameObject[2];
         // Desktop mode's click targets (step 9.3c): each piece's ChessPiece (the same index as pieces), and the
-        // ChessSquare of each square (by square, each its own collider, active only while a click on it does something)
-        // and of each castle drop space (by side, on the space's object).
+        // ChessSquare of each square (by square, each its own collider, active only while a click on it does something).
         public ChessPiece[] pieceBehaviours = new ChessPiece[PieceCount];
         public ChessSquare[] squareTargets = new ChessSquare[64];
-        public ChessSquare[] castleSpaceTargets = new ChessSquare[2];
         // How far a selected piece is lifted above its square, in squares.
         public const float SelectLift = 0.5f;
         // The board's buttons (docs/player-input.md, Buttons; steps 9.4a and 9.4b), by what they do. Each is shown only
@@ -191,8 +183,6 @@ namespace SiggiChessBoard {
         [NonSerialized] public int promotionObject = NoObject;
         [NonSerialized] public int promotionFrom = ChessRules.NoSquare;
         [NonSerialized] public int promotionTo = ChessRules.NoSquare;
-        // Which castle drop spaces are shown (by side), for the held or selected king's colour.
-        [NonSerialized] public bool[] castleSpaceShown = new bool[2];
         // Desktop mode: the object the local player has selected by clicking, with the board's consent (NoObject for
         // none), the square it was selected on and whether that was in replay. It stands lifted over its square until
         // a click places it or puts it back, or the board changes so that it can no longer be picked up there.
@@ -293,8 +283,7 @@ namespace SiggiChessBoard {
             if (selectedObject != NoObject) FindTargets(selectedFrom, selectedInReplay, selectedTargets);
             PlaceObjects();
             UpdatePickupable();
-            // A held piece's targets, and the castle a held king could make, may have changed (or the game ended, or
-            // replay began).
+            // A held piece's targets may have changed (or the game ended, or replay began).
             if (heldObject != NoObject) FindTargets(heldFrom, replay, heldTargets);
             UpdateLiftedMarks();
             UpdateLastMoveHighlight();
@@ -339,9 +328,9 @@ namespace SiggiChessBoard {
         }
 
         // A piece let go by the local player (its ChessPiece's OnDrop): forwards the drop on the square under it (off
-        // the board too, which the board rejects) if the board accepted its pickup, or a king's drop on a castle drop
-        // space shown for it as that castle. A promotion waits for ChoosePromotion with the pawn standing on its
-        // square; anything else is placed from the board after its change, so a rejected drop goes back where it was.
+        // the board too, which the board rejects) if the board accepted its pickup; a king castles by being dropped on
+        // its rook. A promotion waits for ChoosePromotion with the pawn standing on its square; anything else is placed
+        // from the board after its change, so a rejected drop goes back where it was.
         public void OnPieceDropped(int obj) {
             if (obj < 0 || obj >= PieceCount) return;
             dirty = true;
@@ -352,15 +341,9 @@ namespace SiggiChessBoard {
                 UpdateLiftedMarks();
                 return;
             }
-            Vector3 position = pieces[obj].position;
-            int castleSide = CastleSpaceUnder(position, ObjectColor(obj));
             heldObject = NoObject;
             UpdateLiftedMarks();
-            if (castleSide != NoCastleSide) {
-                board.KingDroppedOnCastleSpace(castleSide);
-                return;
-            }
-            int to = DropSquare(position);
+            int to = DropSquare(pieces[obj].position);
             int from = heldFrom;
             if (board.PieceDropped(from, to) == ChessBoard.InputPromotionNeeded) {
                 WaitForPromotion(obj, from, to);
@@ -476,7 +459,7 @@ namespace SiggiChessBoard {
         }
 
         // Marks the held or selected piece's legal targets (heldTargets or selectedTargets); none in replay, where
-        // every square is one, and none with nothing lifted. Called with the castle drop spaces, on every lift change.
+        // every square is one, and none with nothing lifted. Called on every lift change.
         public void UpdateTargetHighlights() {
             bool[] targets = null;
             if (heldObject != NoObject) targets = heldTargets;
@@ -496,10 +479,8 @@ namespace SiggiChessBoard {
             return Utilities.IsValid(highlight) && highlight.activeSelf;
         }
 
-        // Everything shown for the piece the local player has lifted (held or selected): the castle drop spaces and the
-        // legal-target marks.
+        // Everything shown for the piece the local player has lifted (held or selected): the legal-target marks.
         public void UpdateLiftedMarks() {
-            UpdateCastleSpaces();
             UpdateTargetHighlights();
         }
 
@@ -513,55 +494,9 @@ namespace SiggiChessBoard {
             return ChessRules.SquareOf(file, rank);
         }
 
-        // ---- Castle drop space (docs/player-input.md) ----
-
-        // Shows each castle drop space while the local player holds the side to move's king and the board says that
-        // castle needs one (it's legal, and a drop on its destination wouldn't castle), beside the destination on the
-        // outer side of the king's back rank; hides it otherwise. Called on every pickup, drop and change.
-        // A selected king (desktop mode) shows them the same way, and they're then click targets.
-        public void UpdateCastleSpaces() {
-            int lifted = heldObject != NoObject ? heldObject : selectedObject;
-            bool king = lifted != NoObject && objectType[lifted] == ChessRules.King && Utilities.IsValid(board);
-            for (int side = 0; side < 2; side++) {
-                bool shown = king && board.IsCastleDropSpaceNeeded(side);
-                castleSpaceShown[side] = shown;
-                GameObject space = castleSpaces[side];
-                if (!Utilities.IsValid(space)) continue;
-                if (shown) space.transform.localPosition = CastleSpacePosition(ObjectColor(lifted), side);
-                if (space.activeSelf != shown) space.SetActive(shown);
-                ChessSquare target = castleSpaceTargets[side];
-                if (!Utilities.IsValid(target)) continue;
-                bool clickable = shown && lifted == selectedObject;
-                if (target.DisableInteractive == clickable) target.DisableInteractive = !clickable;
-                if (clickable) target.InteractionText = "Castle";
-            }
-        }
-
-        // The centre of color's castle drop space for side (ChessBoard.CastleKingSide or CastleQueenSide), in the
-        // view's local space: the square off the board next to the castling destination (g or c) on the back rank.
-        public Vector3 CastleSpacePosition(int color, int side) {
-            int file = side == ChessBoard.CastleKingSide ? ChessRules.FileG : ChessRules.FileC;
-            int rank = color == ChessRules.White ? -1 : 8;
-            return new Vector3((file - 3.5f) * squareSize, 0, (rank - 3.5f) * squareSize);
-        }
-
-        // The side of the castle drop space shown for color's king under a point (world space), by where it is over
-        // the space whatever its height; NoCastleSide when there's none.
-        public int CastleSpaceUnder(Vector3 position, int color) {
-            Vector3 local = transform.InverseTransformPoint(position);
-            for (int side = 0; side < 2; side++) {
-                if (!castleSpaceShown[side]) continue;
-                Vector3 centre = CastleSpacePosition(color, side);
-                if (Mathf.Abs(local.x - centre.x) <= squareSize / 2 && Mathf.Abs(local.z - centre.z) <= squareSize / 2) {
-                    return side;
-                }
-            }
-            return NoCastleSide;
-        }
-
         // ---- Desktop mode (docs/player-input.md, step 9.3c) ----
         // Clicks instead of carrying, for players not using pickups: selecting is PiecePickedUp and placing is
-        // PieceDropped (or KingDroppedOnCastleSpace), so the board treats both input styles alike.
+        // PieceDropped, so the board treats both input styles alike.
 
         // A click on a piece (its ChessPiece's Interact). With nothing selected it selects the piece; on the selected
         // piece it puts it back; on a square the selected piece can go to it places it there (a capture, or a castle on
@@ -596,18 +531,9 @@ namespace SiggiChessBoard {
             }
         }
 
-        // A click on a castle drop space shown for the selected king: castles on that side, as a drop on it would.
-        public void OnCastleSpaceClicked(int side) {
-            if (side < 0 || side > 1 || selectedObject == NoObject || !castleSpaceShown[side]) return;
-            if (!Utilities.IsValid(board)) return;
-            ClearSelection();
-            UpdateLiftedMarks();
-            board.KingDroppedOnCastleSpace(side);
-        }
-
         // Selects obj if the board accepts its pickup (the previous selection going back down), taking the piece's
-        // ownership as a grab would, so its VRCObjectSync shows the lift to everyone. A refused pickup leaves nothing
-        // selected; the board's rejection puts everything back.
+        // ownership as a grab would. The lift is seen only here (the pieces have no VRCObjectSync, step 9.6). A refused
+        // pickup leaves nothing selected; the board's rejection puts everything back.
         void Select(int obj) {
             ClearPromotion();
             ClearSelection();
@@ -1493,14 +1419,20 @@ namespace SiggiChessBoard {
                     box.size = mesh.bounds.size;
                 }
             }
+            piece.localRotation = ObjectColor(obj) == ChessRules.White
+                ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
+            return ObjectPlace(obj);
+        }
+
+        // Where obj belongs now (local space), changing nothing: on its square, or beside the board when it's off it.
+        // Public for the debug view's placement check (step 9.6).
+        public Vector3 ObjectPlace(int obj) {
             int square = objectSquare[obj];
             // A pawn waiting for its promotion piece stands where it was dropped.
             if (obj == promotionObject) square = promotionTo;
             Vector3 position = square != ChessRules.NoSquare ? SquarePosition(square) : SparePosition(obj);
             // A selected piece (desktop mode) stands lifted over its square.
             if (obj == selectedObject) position += new Vector3(0, SelectLift * squareSize, 0);
-            piece.localRotation = ObjectColor(obj) == ChessRules.White
-                ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
             return position;
         }
 

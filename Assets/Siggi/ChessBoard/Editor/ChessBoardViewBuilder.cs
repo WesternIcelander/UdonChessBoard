@@ -32,9 +32,9 @@ public static class ChessBoardViewBuilder {
     const float Border = 0.02f;
     const float BoardThickness = 0.02f;
     const float TableHeight = 0.8f;
-    // The table's depth (along z), in board widths: room at each end for the castle drop space, the status panel and
-    // the button panel.
-    const float TableDepthFactor = 2.4f;
+    // The table's depth (along z), in board widths: room at each end for the status panel and the button panel, the
+    // status panel's near edge about 2 cm clear of the board.
+    const float TableDepthFactor = 2.25f;
 
     static readonly string[] TypeNames = { "", "Pawn", "Knight", "Bishop", "Rook", "Queen", "King" };
     // The back rank from a to h, by piece type, for the pieces' places in the editor.
@@ -56,7 +56,6 @@ public static class ChessBoardViewBuilder {
         Material lightSquares = MaterialAsset("Light Squares", new Color(0.93f, 0.85f, 0.71f), 0.3f);
         Material darkSquares = MaterialAsset("Dark Squares", new Color(0.55f, 0.37f, 0.24f), 0.3f);
         Material frame = MaterialAsset("Board Frame", new Color(0.3f, 0.19f, 0.11f), 0.35f);
-        Material castleSpace = MaterialAsset("Castle Space", new Color(0.35f, 0.62f, 0.4f), 0.3f);
         Mesh squares = SquaresMesh();
 
         GameObject root = new GameObject("ChessBoardView (" + board.gameObject.name + ")");
@@ -65,7 +64,7 @@ public static class ChessBoardViewBuilder {
         root.transform.position = board.transform.position + new Vector3(0, TableHeight, 0);
 
         float boardWidth = 8 * SquareSize + 2 * Border;
-        // Deep enough for the castle drop spaces, a square beyond each back rank, and the button panels beyond them.
+        // Deep enough for the status and button panels beyond each end of the board.
         GameObject table = GameObject.CreatePrimitive(PrimitiveType.Cube);
         table.name = "Table";
         table.transform.SetParent(root.transform, false);
@@ -127,9 +126,6 @@ public static class ChessBoardViewBuilder {
             view.pieceFilters[obj] = filter;
             AddPickup(piece, view, obj, meshes[type]);
         }
-        view.castleSpaces = new GameObject[2];
-        view.castleSpaceTargets = new ChessSquare[2];
-        for (int side = 0; side < 2; side++) view.castleSpaces[side] = CastleSpace(root, view, side, castleSpace);
         AddSquareTargets(root, view);
         AddHighlights(root, view);
         AddButtons(root, view, boardWidth * TableDepthFactor);
@@ -152,9 +148,10 @@ public static class ChessBoardViewBuilder {
 
     // Makes a piece object something to carry (PLAN.md 9.2, docs/physical-pieces.md): a kinematic rigidbody (the
     // board, not physics, puts pieces down), a box collider fitted to its mesh (the view refits it when the mesh
-    // changes), a VRCPickup that the view makes pickupable only for players who may touch the pieces, a VRCObjectSync
-    // so others see it carried, and a ChessPiece asking the board about ownership. On the Pickup layer, so carried
-    // pieces don't push players around.
+    // changes), a VRCPickup that the view makes pickupable only for players who may touch the pieces, and a ChessPiece
+    // asking the board about ownership. No VRCObjectSync: it fought each client placing the pieces itself (step 9.6),
+    // so others don't see a piece carried, only the move it makes. On the Pickup layer, so carried pieces don't push
+    // players around.
     static void AddPickup(GameObject piece, ChessBoardView view, int obj, Mesh mesh) {
         int pickupLayer = LayerMask.NameToLayer("Pickup");
         if (pickupLayer >= 0) piece.layer = pickupLayer;
@@ -168,7 +165,6 @@ public static class ChessBoardViewBuilder {
         pickup.pickupable = false;
         pickup.DisallowTheft = true;
         pickup.InteractionText = "Move";
-        piece.AddComponent<VRCObjectSync>();
         ChessPiece behaviour = UdonSharpUndo.AddComponent<ChessPiece>(piece);
         behaviour.view = view;
         behaviour.index = obj;
@@ -176,35 +172,6 @@ public static class ChessBoardViewBuilder {
         view.piecePickups[obj] = pickup;
         view.pieceColliders[obj] = box;
         view.pieceBehaviours[obj] = behaviour;
-    }
-
-    // A castle drop space (docs/player-input.md): a pad the size of a square, as thick as the board and just above
-    // its surface. A held king's drop on it is found by position; for desktop clicks (step 9.3c) the space has a
-    // collider over the pad and a ChessSquare, which the view makes interactive only while a selected king needs it.
-    // Built hidden; the view places and shows it while a held or selected king needs it.
-    static GameObject CastleSpace(GameObject root, ChessBoardView view, int side, Material material) {
-        GameObject space = new GameObject(side == ChessBoard.CastleKingSide
-            ? "Castle Space (king side)" : "Castle Space (queen side)");
-        space.transform.SetParent(root.transform, false);
-        GameObject pad = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        pad.name = "Pad";
-        Object.DestroyImmediate(pad.GetComponent<BoxCollider>());
-        pad.transform.SetParent(space.transform, false);
-        pad.transform.localPosition = new Vector3(0, -BoardThickness / 2 + 0.001f, 0);
-        pad.transform.localScale = new Vector3(SquareSize * 0.92f, BoardThickness, SquareSize * 0.92f);
-        pad.GetComponent<MeshRenderer>().sharedMaterial = material;
-        BoxCollider box = space.AddComponent<BoxCollider>();
-        box.center = pad.transform.localPosition;
-        box.size = pad.transform.localScale;
-        box.isTrigger = true;
-        ChessSquare target = UdonSharpUndo.AddComponent<ChessSquare>(space);
-        target.view = view;
-        target.square = ChessRules.NoSquare;
-        target.castleSide = side;
-        UdonSharpEditorUtility.CopyProxyToUdon(target);
-        view.castleSpaceTargets[side] = target;
-        space.SetActive(false);
-        return space;
     }
 
     // Desktop mode's square targets (step 9.3c): one object per square, a1 to h8, under "Square Targets", each a thin
@@ -228,7 +195,6 @@ public static class ChessBoardViewBuilder {
             ChessSquare behaviour = UdonSharpUndo.AddComponent<ChessSquare>(target);
             behaviour.view = view;
             behaviour.square = square;
-            behaviour.castleSide = ChessBoardView.NoCastleSide;
             UdonSharpEditorUtility.CopyProxyToUdon(behaviour);
             view.squareTargets[square] = behaviour;
             target.SetActive(false);
@@ -478,7 +444,7 @@ public static class ChessBoardViewBuilder {
         view.statusPlayerLabels = new Text[2];
         view.statusLabels = new Text[2];
         // Nearer the board than the buttons, the gap measured along the leaning panels; its near edge stays clear of
-        // the castle drop spaces.
+        // the board.
         float z = ButtonPanelZ(tableDepth) - (PanelHeight + StatusHeight) * 0.001f / 2 - 0.008f;
         for (int panel = 0; panel < 2; panel++) {
             bool white = panel == 0;
