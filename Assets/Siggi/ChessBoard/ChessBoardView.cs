@@ -55,8 +55,8 @@ namespace SiggiChessBoard {
         public ChessSquare[] castleSpaceTargets = new ChessSquare[2];
         // How far a selected piece is lifted above its square, in squares.
         public const float SelectLift = 0.5f;
-        // The board's buttons (docs/player-input.md, Buttons; step 9.4a), by what they do. Each is shown only while
-        // the board's Can... check for it holds for the local player.
+        // The board's buttons (docs/player-input.md, Buttons; steps 9.4a and 9.4b), by what they do. Each is shown only
+        // while the board's Can... check for it holds for the local player.
         public const int ButtonJoinWhite = 0;
         public const int ButtonJoinBlack = 1;
         public const int ButtonMode = 2;
@@ -64,7 +64,30 @@ namespace SiggiChessBoard {
         public const int ButtonStart = 4;
         public const int ButtonContinue = 5;
         public const int ButtonReset = 6;
-        public const int ButtonCount = 7;
+        // Step 9.4b. The actions taken for one colour come in pairs, as Join does: a panel at each end of the table
+        // acts for its own colour (ButtonColor).
+        public const int ButtonResignWhite = 7;
+        public const int ButtonResignBlack = 8;
+        public const int ButtonOfferDrawWhite = 9;
+        public const int ButtonOfferDrawBlack = 10;
+        public const int ButtonAcceptDrawWhite = 11;
+        public const int ButtonAcceptDrawBlack = 12;
+        public const int ButtonDeclineDrawWhite = 13;
+        public const int ButtonDeclineDrawBlack = 14;
+        public const int ButtonClaimDraw = 15;
+        public const int ButtonEnterReplay = 16;
+        public const int ButtonLeaveReplay = 17;
+        public const int ButtonStepFirst = 18;
+        public const int ButtonStepBack = 19;
+        public const int ButtonStepForward = 20;
+        public const int ButtonStepLast = 21;
+        public const int ButtonRequestTakebackWhite = 22;
+        public const int ButtonRequestTakebackBlack = 23;
+        public const int ButtonAcceptTakebackWhite = 24;
+        public const int ButtonAcceptTakebackBlack = 25;
+        public const int ButtonDeclineTakebackWhite = 26;
+        public const int ButtonDeclineTakebackBlack = 27;
+        public const int ButtonCount = 28;
         // The button objects in the world (any number: the builder puts a panel at each end of the table), with the
         // Button* action of each and its label at the same index. A button's UI Button calls the view's Press...
         // event for its action.
@@ -537,7 +560,7 @@ namespace SiggiChessBoard {
             if (Utilities.IsValid(pickup) && pickup.IsHeld) pickup.Drop();
         }
 
-        // ---- Buttons (docs/player-input.md, Buttons; step 9.4a) ----
+        // ---- Buttons (docs/player-input.md, Buttons; steps 9.4a and 9.4b) ----
         // Each button is shown only while its action applies to the local player (the board's Can... check), and
         // pressing it calls the board's method, which refuses whenever the check doesn't hold.
 
@@ -570,13 +593,150 @@ namespace SiggiChessBoard {
             PressButton(ButtonReset);
         }
 
+        public void PressResignWhite() {
+            PressButton(ButtonResignWhite);
+        }
+
+        public void PressResignBlack() {
+            PressButton(ButtonResignBlack);
+        }
+
+        public void PressOfferDrawWhite() {
+            PressButton(ButtonOfferDrawWhite);
+        }
+
+        public void PressOfferDrawBlack() {
+            PressButton(ButtonOfferDrawBlack);
+        }
+
+        public void PressAcceptDrawWhite() {
+            PressButton(ButtonAcceptDrawWhite);
+        }
+
+        public void PressAcceptDrawBlack() {
+            PressButton(ButtonAcceptDrawBlack);
+        }
+
+        public void PressDeclineDrawWhite() {
+            PressButton(ButtonDeclineDrawWhite);
+        }
+
+        public void PressDeclineDrawBlack() {
+            PressButton(ButtonDeclineDrawBlack);
+        }
+
+        public void PressClaimDraw() {
+            PressButton(ButtonClaimDraw);
+        }
+
+        public void PressEnterReplay() {
+            PressButton(ButtonEnterReplay);
+        }
+
+        public void PressLeaveReplay() {
+            PressButton(ButtonLeaveReplay);
+        }
+
+        public void PressStepFirst() {
+            PressButton(ButtonStepFirst);
+        }
+
+        public void PressStepBack() {
+            PressButton(ButtonStepBack);
+        }
+
+        public void PressStepForward() {
+            PressButton(ButtonStepForward);
+        }
+
+        public void PressStepLast() {
+            PressButton(ButtonStepLast);
+        }
+
+        public void PressRequestTakebackWhite() {
+            PressButton(ButtonRequestTakebackWhite);
+        }
+
+        public void PressRequestTakebackBlack() {
+            PressButton(ButtonRequestTakebackBlack);
+        }
+
+        public void PressAcceptTakebackWhite() {
+            PressButton(ButtonAcceptTakebackWhite);
+        }
+
+        public void PressAcceptTakebackBlack() {
+            PressButton(ButtonAcceptTakebackBlack);
+        }
+
+        public void PressDeclineTakebackWhite() {
+            PressButton(ButtonDeclineTakebackWhite);
+        }
+
+        public void PressDeclineTakebackBlack() {
+            PressButton(ButtonDeclineTakebackBlack);
+        }
+
+        // The colour the button for action acts for (ChessRules.White or Black), or ChessRules.NoColor for one that
+        // acts for no colour (Claim draw is the side to move's).
+        public static int ButtonColor(int action) {
+            if (action == ButtonJoinWhite || action == ButtonResignWhite || action == ButtonOfferDrawWhite
+                || action == ButtonAcceptDrawWhite || action == ButtonDeclineDrawWhite
+                || action == ButtonRequestTakebackWhite || action == ButtonAcceptTakebackWhite
+                || action == ButtonDeclineTakebackWhite) {
+                return ChessRules.White;
+            }
+            if (action == ButtonJoinBlack || action == ButtonResignBlack || action == ButtonOfferDrawBlack
+                || action == ButtonAcceptDrawBlack || action == ButtonDeclineDrawBlack
+                || action == ButtonRequestTakebackBlack || action == ButtonAcceptTakebackBlack
+                || action == ButtonDeclineTakebackBlack) {
+                return ChessRules.Black;
+            }
+            return ChessRules.NoColor;
+        }
+
+        // The ply a step button for action steps the replay to: the start, one back, one on, or the game's current
+        // position. -1 for any other action (and for one back from the start).
+        int StepTarget(int action) {
+            if (action == ButtonStepFirst) return 0;
+            if (action == ButtonStepBack) return board.replayIndex - 1;
+            if (action == ButtonStepForward) return board.replayIndex + 1;
+            if (action == ButtonStepLast) return board.moveCount;
+            return -1;
+        }
+
         // Does what the button for action does, for the local player: the board's answer (InputRejected for an
         // unknown action). Mode switches between Standard and Chess960; Clock picks the next of clockBases and
-        // clockIncrements after the board's time control (the first when it isn't one of them).
+        // clockIncrements after the board's time control (the first when it isn't one of them); the step buttons
+        // step the replay to StepTarget; the others call the board's method for their colour.
         public int PressButton(int action) {
             if (!Utilities.IsValid(board)) return ChessBoard.InputRejected;
             int result = ChessBoard.InputRejected;
-            if (action == ButtonJoinWhite) {
+            int color = ButtonColor(action);
+            int step = StepTarget(action);
+            if (step >= 0) {
+                result = board.StepTo(step);
+            } else if (action == ButtonResignWhite || action == ButtonResignBlack) {
+                result = board.Resign(color);
+            } else if (action == ButtonOfferDrawWhite || action == ButtonOfferDrawBlack) {
+                result = board.OfferDraw(color);
+            } else if (action == ButtonAcceptDrawWhite || action == ButtonAcceptDrawBlack) {
+                result = board.AcceptDraw(color);
+            } else if (action == ButtonDeclineDrawWhite || action == ButtonDeclineDrawBlack) {
+                result = board.DeclineDraw(color);
+            } else if (action == ButtonClaimDraw) {
+                result = board.ClaimDraw();
+            } else if (action == ButtonEnterReplay) {
+                result = board.EnterReplay();
+            } else if (action == ButtonLeaveReplay) {
+                result = board.LeaveReplay();
+            } else if (action == ButtonRequestTakebackWhite || action == ButtonRequestTakebackBlack) {
+                result = board.RequestTakeback(color);
+            } else if (action == ButtonAcceptTakebackWhite || action == ButtonAcceptTakebackBlack) {
+                result = board.AcceptTakeback(color);
+            } else if (action == ButtonDeclineTakebackWhite || action == ButtonDeclineTakebackBlack) {
+                result = board.DeclineTakeback(color);
+            } else if (action == ButtonJoinWhite) {
                 result = board.JoinWhite();
             } else if (action == ButtonJoinBlack) {
                 result = board.JoinBlack();
@@ -618,10 +778,32 @@ namespace SiggiChessBoard {
             if (action == ButtonStart) return board.CanStartGame();
             if (action == ButtonContinue) return board.CanContinue();
             if (action == ButtonReset) return board.CanReset();
+            int color = ButtonColor(action);
+            int step = StepTarget(action);
+            if (step >= 0) return board.CanStepTo(step);
+            if (action == ButtonResignWhite || action == ButtonResignBlack) return board.CanResign(color);
+            if (action == ButtonOfferDrawWhite || action == ButtonOfferDrawBlack) return board.CanOfferDraw(color);
+            if (action == ButtonAcceptDrawWhite || action == ButtonAcceptDrawBlack) return board.CanAcceptDraw(color);
+            if (action == ButtonDeclineDrawWhite || action == ButtonDeclineDrawBlack) {
+                return board.CanDeclineDraw(color);
+            }
+            if (action == ButtonClaimDraw) return board.CanClaimDraw();
+            if (action == ButtonEnterReplay) return board.CanEnterReplay();
+            if (action == ButtonLeaveReplay) return board.CanLeaveReplay();
+            if (action == ButtonRequestTakebackWhite || action == ButtonRequestTakebackBlack) {
+                return board.CanRequestTakeback(color);
+            }
+            if (action == ButtonAcceptTakebackWhite || action == ButtonAcceptTakebackBlack) {
+                return board.CanAcceptTakeback(color);
+            }
+            if (action == ButtonDeclineTakebackWhite || action == ButtonDeclineTakebackBlack) {
+                return board.CanDeclineTakeback(color);
+            }
             return false;
         }
 
-        // The label of the button for action: Mode and Clock show the board's current choice.
+        // The label of the button for action: Mode and Clock show the board's current choice, Claim draw the draw
+        // claimed.
         public string ButtonText(int action) {
             if (action == ButtonJoinWhite) return "Join White";
             if (action == ButtonJoinBlack) return "Join Black";
@@ -636,6 +818,29 @@ namespace SiggiChessBoard {
             if (action == ButtonStart) return "Start";
             if (action == ButtonContinue) return "Continue from here";
             if (action == ButtonReset) return "Reset";
+            if (action == ButtonResignWhite || action == ButtonResignBlack) return "Resign";
+            if (action == ButtonOfferDrawWhite || action == ButtonOfferDrawBlack) return "Offer draw";
+            if (action == ButtonAcceptDrawWhite || action == ButtonAcceptDrawBlack) return "Accept draw";
+            if (action == ButtonDeclineDrawWhite || action == ButtonDeclineDrawBlack) return "Decline draw";
+            if (action == ButtonClaimDraw) {
+                int claim = Utilities.IsValid(board) ? board.ClaimableDraw() : ChessGame.EndingNone;
+                if (claim == ChessGame.EndingThreefoldRepetition) return "Claim draw (threefold)";
+                if (claim == ChessGame.EndingFiftyMoveRule) return "Claim draw (50 moves)";
+                return "Claim draw";
+            }
+            if (action == ButtonEnterReplay) return "Replay";
+            if (action == ButtonLeaveReplay) return "Back to game";
+            if (action == ButtonStepFirst) return "<<";
+            if (action == ButtonStepBack) return "<";
+            if (action == ButtonStepForward) return ">";
+            if (action == ButtonStepLast) return ">>";
+            if (action == ButtonRequestTakebackWhite || action == ButtonRequestTakebackBlack) {
+                return "Take back to here";
+            }
+            if (action == ButtonAcceptTakebackWhite || action == ButtonAcceptTakebackBlack) return "Accept takeback";
+            if (action == ButtonDeclineTakebackWhite || action == ButtonDeclineTakebackBlack) {
+                return "Decline takeback";
+            }
             return "";
         }
 

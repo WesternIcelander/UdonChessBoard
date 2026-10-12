@@ -724,7 +724,12 @@ public class ViewTest : UdonSharpBehaviour {
     // ---- 9.4a: board buttons ----
 
     // The Button* actions' names, as CheckButtons lists them.
-    string[] buttonNames = { "JoinWhite", "JoinBlack", "Mode", "Clock", "Start", "Continue", "Reset" };
+    string[] buttonNames = {
+        "JoinWhite", "JoinBlack", "Mode", "Clock", "Start", "Continue", "Reset", "ResignWhite", "ResignBlack",
+        "OfferDrawWhite", "OfferDrawBlack", "AcceptDrawWhite", "AcceptDrawBlack", "DeclineDrawWhite", "DeclineDrawBlack",
+        "ClaimDraw", "Replay", "Leave", "First", "Back", "Forward", "Last", "TakebackWhite", "TakebackBlack",
+        "AcceptTakebackWhite", "AcceptTakebackBlack", "DeclineTakebackWhite", "DeclineTakebackBlack",
+    };
 
     // The eighth frame: every action has its buttons, each with a label; in each state (a reset board, the local
     // player's lobby and game, someone else's lobby and game, an ended game, a loaded game joined and continued) the
@@ -787,11 +792,11 @@ public class ViewTest : UdonSharpBehaviour {
         view.PressStart();
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Start: in game");
         CheckInt(board.baseTime, baseTime, "Start: with the clock chosen");
-        CheckButtons("Reset", "own game");
+        CheckButtons(OwnGame, "own game");
         CheckInt(view.PressButton(ChessBoardView.ButtonJoinWhite), ChessBoard.InputRejected,
             "own game: Join White refused");
         CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, "own game: resigned");
-        CheckButtons("Reset", "own game ended");
+        CheckButtons("Replay Reset", "own game ended");
         view.PressReset();
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, "Reset: the board is reset");
         CheckButtons("JoinWhite JoinBlack", "after Reset");
@@ -807,7 +812,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(view.PressButton(ChessBoardView.ButtonStart), ChessBoard.InputRejected,
             "others' lobby: Start refused");
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, "others: Ana started");
-        CheckButtons("Reset?", "others' game");
+        CheckButtons("Replay? Reset?", "others' game");
 
         // A loaded game: both seats joined, the clock chosen, continued from ply 3.
         board.ClearState();
@@ -817,14 +822,14 @@ public class ViewTest : UdonSharpBehaviour {
             importer.StartImport(chess960Pgn.text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
             CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, "loaded game: imported");
             CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, "loaded game: loaded");
-            CheckButtons("JoinWhite JoinBlack Reset?", "loaded game");
+            CheckButtons("JoinWhite JoinBlack First Back Reset?", "loaded game");
             view.PressJoinWhite();
-            CheckButtons("JoinBlack Clock Reset", "loaded game, White joined");
+            CheckButtons("JoinBlack Clock First Back Reset", "loaded game, White joined");
             CheckInt(view.PressButton(ChessBoardView.ButtonContinue), ChessBoard.InputRejected,
                 "loaded game, White joined: Continue refused");
             view.PressJoinBlack();
             CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "loaded game, both seats: still loaded");
-            CheckButtons("Clock Continue Reset", "loaded game, both seats");
+            CheckButtons("Clock Continue First Back Reset", "loaded game, both seats");
             CheckInt(view.PressButton(ChessBoardView.ButtonMode), ChessBoard.InputRejected,
                 "loaded game: Mode refused");
             if (!board.IsClockForced()) {
@@ -834,23 +839,233 @@ public class ViewTest : UdonSharpBehaviour {
                     board.increment), "loaded game: Clock pressed");
             }
             CheckInt(board.StepToAs(localName, true, 3), ChessBoard.InputAccepted, "loaded game: stepped to ply 3");
-            CheckButtons("Clock Continue Reset", "loaded game at ply 3");
+            CheckButtons("Clock Continue First Back Forward Last Reset", "loaded game at ply 3");
             view.PressContinue();
             CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Continue: in game");
             CheckInt(board.moveCount, 3, "Continue: from ply 3");
-            CheckButtons("Reset", "continued game");
+            CheckButtons(OwnGame, "continued game");
         }
 
         board.ClearState();
         CheckButtons("JoinWhite JoinBlack", "cleared after the button checks");
         CheckView("cleared after the button checks");
+        SendCustomEventDelayedFrames(nameof(RunGameButtonChecks), 1);
+    }
+
+    // ---- 9.4b: game and replay buttons ----
+
+    // The buttons a seated player in both seats sees during their game, outside replay with nothing pending.
+    const string OwnGame = "ResignWhite ResignBlack OfferDrawWhite? OfferDrawBlack? Replay Reset";
+    // The same in replay, before the step buttons and takeback requests that apply.
+    const string OwnReplay = "ResignWhite ResignBlack OfferDrawWhite? OfferDrawBlack? Leave Reset";
+
+    // The ninth frame: on games of the local player against themselves, with takebacks, draws by agreement and
+    // threefold claims on in the snapshot (SetRequestRules), resigning, draw offers (offered, declined, accepted), a
+    // threefold claim, replay with each step button, and takeback requests (requested, declined, accepted), each button
+    // shown exactly when it applies and pressing it doing what the board's method does, a hidden one refused; then the
+    // same offers, requests and claim with those rules off, hidden and refused; then someone else's game.
+    public void RunGameButtonChecks() {
+        // Resigning.
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, "resign button");
+        SetRequestRules(true);
+        CheckButtons(OwnGame, "resign button: own game");
+        CheckRefused(ChessBoardView.ButtonAcceptDrawBlack, "no offer");
+        CheckRefused(ChessBoardView.ButtonDeclineDrawWhite, "no offer");
+        CheckRefused(ChessBoardView.ButtonClaimDraw, "nothing to claim");
+        CheckRefused(ChessBoardView.ButtonLeaveReplay, "not in replay");
+        CheckRefused(ChessBoardView.ButtonStepBack, "not in replay");
+        CheckRefused(ChessBoardView.ButtonRequestTakebackWhite, "not in replay");
+        CheckRefused(ChessBoardView.ButtonAcceptTakebackBlack, "no request");
+        view.PressResignBlack();
+        CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "Resign (Black): the game ended");
+        CheckInt(board.ending, ChessGame.EndingResignation, "Resign (Black): by resignation");
+        CheckInt(board.winner, ChessRules.White, "Resign (Black): White won");
+        CheckButtons("Replay Reset", "resigned");
+        CheckRefused(ChessBoardView.ButtonResignWhite, "resigned");
+        CheckRefused(ChessBoardView.ButtonOfferDrawWhite, "resigned");
+
+        // Draw offers.
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, "draw buttons");
+        SetRequestRules(true);
+        view.PressOfferDrawWhite();
+        CheckInt(board.drawOfferColor, ChessRules.White, "Offer draw (White): offered");
+        CheckButtons("ResignWhite ResignBlack AcceptDrawBlack DeclineDrawBlack Replay Reset", "White's offer");
+        CheckRefused(ChessBoardView.ButtonOfferDrawBlack, "White's offer");
+        CheckRefused(ChessBoardView.ButtonAcceptDrawWhite, "White's offer");
+        view.PressDeclineDrawBlack();
+        CheckInt(board.drawOfferColor, ChessRules.NoColor, "Decline draw (Black): no offer");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Decline draw (Black): still in game");
+        CheckButtons(OwnGame, "offer declined");
+        view.PressOfferDrawBlack();
+        CheckButtons("ResignWhite ResignBlack AcceptDrawWhite DeclineDrawWhite Replay Reset", "Black's offer");
+        CheckLabel(ChessBoardView.ButtonAcceptDrawWhite, "Accept draw", "Black's offer");
+        view.PressAcceptDrawWhite();
+        CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "Accept draw (White): the game ended");
+        CheckInt(board.ending, ChessGame.EndingDrawAgreement, "Accept draw (White): drawn by agreement");
+        CheckButtons("Replay Reset", "draw accepted");
+
+        // Replay and its steps, on 1. e4 e5 2. Nf3 Nc6.
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, "replay buttons");
+        SetRequestRules(true);
+        PlayMoves("e2e4 e7e5 g1f3 b8c6", "replay buttons");
+        view.PressEnterReplay();
+        Check(board.replayMode, "Replay: in replay", "not in replay");
+        CheckInt(board.replayIndex, 4, "Replay: at the current position");
+        CheckButtons(OwnReplay + " First Back", "replay at ply 4");
+        CheckRefused(ChessBoardView.ButtonStepForward, "replay at ply 4");
+        CheckRefused(ChessBoardView.ButtonStepLast, "replay at ply 4");
+        CheckRefused(ChessBoardView.ButtonEnterReplay, "in replay");
+        view.PressStepBack();
+        CheckInt(board.replayIndex, 3, "< : ply 3");
+        view.Refresh();
+        CheckView("< : ply 3");
+        CheckButtons(OwnReplay + " First Back Forward Last TakebackWhite TakebackBlack", "replay at ply 3");
+        view.PressStepFirst();
+        CheckInt(board.replayIndex, 0, "<< : ply 0");
+        view.Refresh();
+        CheckView("<< : ply 0");
+        CheckButtons(OwnReplay + " Forward Last TakebackWhite TakebackBlack", "replay at ply 0");
+        CheckRefused(ChessBoardView.ButtonStepBack, "replay at ply 0");
+        view.PressStepForward();
+        CheckInt(board.replayIndex, 1, "> : ply 1");
+        view.PressStepLast();
+        CheckInt(board.replayIndex, 4, ">> : ply 4");
+        view.Refresh();
+        CheckView(">> : ply 4");
+        view.PressStepBack();
+        view.PressStepBack();
+        CheckInt(board.replayIndex, 2, "< twice: ply 2");
+
+        // Takeback requests, from ply 2.
+        CheckLabel(ChessBoardView.ButtonRequestTakebackWhite, "Take back to here", "replay at ply 2");
+        view.PressRequestTakebackWhite();
+        CheckInt(board.takebackColor, ChessRules.White, "Take back (White): requested");
+        CheckInt(board.takebackPly, 2, "Take back (White): for ply 2");
+        CheckButtons(OwnReplay + " First Back Forward Last AcceptTakebackBlack DeclineTakebackBlack",
+            "White's request");
+        CheckRefused(ChessBoardView.ButtonRequestTakebackBlack, "White's request");
+        CheckRefused(ChessBoardView.ButtonAcceptTakebackWhite, "White's request");
+        view.PressDeclineTakebackBlack();
+        CheckInt(board.takebackColor, ChessRules.NoColor, "Decline takeback (Black): no request");
+        CheckInt(board.moveCount, 4, "Decline takeback (Black): the game unchanged");
+        CheckButtons(OwnReplay + " First Back Forward Last TakebackWhite TakebackBlack", "request declined");
+        view.PressRequestTakebackBlack();
+        CheckButtons(OwnReplay + " First Back Forward Last AcceptTakebackWhite DeclineTakebackWhite",
+            "Black's request");
+        view.PressAcceptTakebackWhite();
+        CheckInt(board.moveCount, 2, "Accept takeback (White): back to ply 2");
+        Check(!board.replayMode, "Accept takeback (White): out of replay", "in replay");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Accept takeback (White): in game");
+        view.Refresh();
+        CheckView("takeback accepted");
+        CheckButtons(OwnGame, "takeback accepted");
+        view.PressEnterReplay();
+        view.PressStepFirst();
+        view.PressLeaveReplay();
+        Check(!board.replayMode, "Back to game: out of replay", "in replay");
+        CheckInt(board.moveCount, 2, "Back to game: the game unchanged");
+        view.Refresh();
+        CheckView("back to game");
+        CheckButtons(OwnGame, "back to game");
+
+        // A threefold repetition claim: the knights out and back twice.
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, "claim button");
+        SetRequestRules(true);
+        PlayMoves("g1f3 g8f6 f3g1 f6g8 g1f3 g8f6 f3g1", "claim button");
+        CheckButtons(OwnGame, "claim button: twice repeated");
+        PlayMoves("f6g8", "claim button");
+        CheckButtons("ResignWhite ResignBlack OfferDrawWhite OfferDrawBlack ClaimDraw Replay Reset",
+            "claim button: three times");
+        CheckLabel(ChessBoardView.ButtonClaimDraw, "Claim draw (threefold)", "claim button: three times");
+        view.PressClaimDraw();
+        CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "Claim draw: the game ended");
+        CheckInt(board.ending, ChessGame.EndingThreefoldRepetition, "Claim draw: by threefold repetition");
+        CheckButtons("Replay Reset", "draw claimed");
+
+        // The same with takebacks, draws by agreement and threefold claims off.
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, "rules off");
+        SetRequestRules(false);
+        CheckButtons("ResignWhite ResignBlack Replay Reset", "rules off: own game");
+        CheckRefused(ChessBoardView.ButtonOfferDrawWhite, "rules off");
+        PlayMoves("g1f3 g8f6 f3g1 f6g8 g1f3 g8f6 f3g1 f6g8", "rules off");
+        CheckButtons("ResignWhite ResignBlack Replay Reset", "rules off: three times");
+        CheckRefused(ChessBoardView.ButtonClaimDraw, "rules off");
+        view.PressEnterReplay();
+        view.PressStepBack();
+        CheckButtons("ResignWhite ResignBlack Leave First Back Forward Last Reset", "rules off: replay at ply 7");
+        CheckRefused(ChessBoardView.ButtonRequestTakebackWhite, "rules off");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "rules off: still in game");
+
+        // Someone else's game: none of the players' buttons.
+        board.ClearState();
+        CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "others: Ana joined White");
+        CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "others: Bob joined Black");
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, "others: Ana started");
+        SetRequestRules(true);
+        CheckButtons("Replay? Reset?", "others' game");
+        CheckRefused(ChessBoardView.ButtonResignWhite, "others' game");
+        CheckRefused(ChessBoardView.ButtonOfferDrawBlack, "others' game");
+        CheckInt(board.OfferDrawAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "others: Ana offered");
+        CheckButtons("Replay? Reset?", "others' game, Ana's offer");
+        CheckRefused(ChessBoardView.ButtonAcceptDrawBlack, "others' game, Ana's offer");
+
+        board.ClearState();
+        CheckButtons("JoinWhite JoinBlack", "cleared after the game button checks");
+        CheckView("cleared after the game button checks");
         LogSummary();
     }
 
+    // Turns takebacks, draws by agreement and threefold claims on or off in the board's snapshot (directly, as
+    // BoardTest does), whatever the arbiter's defaults, with the other draw rules off. A reset clears the snapshot.
+    void SetRequestRules(bool on) {
+        int rules = ChessArbiter.SettingTakebacks | ChessArbiter.SettingDrawAgreement
+            | ChessArbiter.SettingThreefoldRepetition;
+        board.gameSettings &= ~(ChessArbiter.SettingsDrawRules | ChessArbiter.SettingTakebacks);
+        if (on) board.gameSettings |= rules;
+    }
+
+    // Plays moves (from and to squares, "e2e4 e7e5"), each of which must be played, by the local player.
+    void PlayMoves(string moves, string name) {
+        for (int i = 0; i + 4 <= moves.Length; i += 5) {
+            string move = moves.Substring(i, 4);
+            CheckInt(board.PieceDroppedAs(localName, Sq(move.Substring(0, 2)), Sq(move.Substring(2, 2))),
+                ChessBoard.InputAccepted, name + ": " + move + " played");
+        }
+        view.Refresh();
+    }
+
+    // Whether a button listed with "?" (CheckButtons) should be shown: Reset and Replay when the board lets the local
+    // player reset or enter replay (an organizer, or an idle board for Reset), the draw offers, takeback requests and
+    // the claim when the snapshot allows them.
+    bool OptionalShown(int action) {
+        if (action == ChessBoardView.ButtonReset) return board.CanReset();
+        if (action == ChessBoardView.ButtonEnterReplay) return board.CanEnterReplay();
+        if (action == ChessBoardView.ButtonOfferDrawWhite || action == ChessBoardView.ButtonOfferDrawBlack) {
+            return board.IsGameSettingOn(ChessArbiter.SettingDrawAgreement);
+        }
+        if (action == ChessBoardView.ButtonRequestTakebackWhite
+            || action == ChessBoardView.ButtonRequestTakebackBlack) {
+            return board.IsGameSettingOn(ChessArbiter.SettingTakebacks);
+        }
+        if (action == ChessBoardView.ButtonClaimDraw) {
+            return board.IsGameSettingOn(ChessArbiter.SettingThreefoldRepetition);
+        }
+        return false;
+    }
+
+    // Pressing the button for action is refused.
+    void CheckRefused(int action, string name) {
+        CheckInt(view.PressButton(action), ChessBoard.InputRejected, name + ": " + buttonNames[action] + " refused");
+    }
+
     // After a Refresh, the buttons shown are exactly the actions in expected (names from buttonNames, separated by
-    // spaces), each shown one labelled as the view says; "Reset?" means Reset is shown when the board lets the local
-    // player reset (an organizer, or an idle board), and Mode and Clock are hidden when the snapshot forces them. The
-    // view's ButtonApplies agrees.
+    // spaces), each shown one labelled as the view says; a name followed by "?" is shown as OptionalShown says, and
+    // Mode and Clock are hidden when the snapshot forces them. The view's ButtonApplies agrees.
     void CheckButtons(string expected, string name) {
         view.Refresh();
         string padded = " " + expected + " ";
@@ -862,7 +1077,7 @@ public class ViewTest : UdonSharpBehaviour {
             if (action < 0 || action >= ChessBoardView.ButtonCount) continue;
             string actionName = buttonNames[action];
             bool want = padded.Contains(" " + actionName + " ");
-            if (action == ChessBoardView.ButtonReset && padded.Contains(" Reset? ")) want = board.CanReset();
+            if (padded.Contains(" " + actionName + "? ")) want = OptionalShown(action);
             if (action == ChessBoardView.ButtonMode && board.IsModeForced()) want = false;
             if (action == ChessBoardView.ButtonClock && board.IsClockForced()) want = false;
             if (button.activeSelf != want) {

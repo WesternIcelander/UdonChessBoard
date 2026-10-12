@@ -30,7 +30,7 @@ public static class ChessBoardViewBuilder {
     const float BoardThickness = 0.02f;
     const float TableHeight = 0.8f;
     // The table's depth (along z), in board widths.
-    const float TableDepthFactor = 1.8f;
+    const float TableDepthFactor = 2.0f;
 
     static readonly string[] TypeNames = { "", "Pawn", "Knight", "Bishop", "Rook", "Queen", "King" };
     // The back rank from a to h, by piece type, for the pieces' places in the editor.
@@ -219,27 +219,53 @@ public static class ChessBoardViewBuilder {
     // The view's Press... event for each ChessBoardView.Button* action, by action.
     static readonly string[] ButtonEvents = {
         "PressJoinWhite", "PressJoinBlack", "PressMode", "PressClock", "PressStart", "PressContinue", "PressReset",
+        "PressResignWhite", "PressResignBlack", "PressOfferDrawWhite", "PressOfferDrawBlack", "PressAcceptDrawWhite",
+        "PressAcceptDrawBlack", "PressDeclineDrawWhite", "PressDeclineDrawBlack", "PressClaimDraw", "PressEnterReplay",
+        "PressLeaveReplay", "PressStepFirst", "PressStepBack", "PressStepForward", "PressStepLast",
+        "PressRequestTakebackWhite", "PressRequestTakebackBlack", "PressAcceptTakebackWhite",
+        "PressAcceptTakebackBlack", "PressDeclineTakebackWhite", "PressDeclineTakebackBlack",
     };
-    // A button panel's size in canvas pixels (a millimetre each), its grid cells and how far it leans back from
-    // upright.
-    const float PanelWidth = 440;
-    const float PanelHeight = 110;
+    // The order of the buttons on a panel (the grid packs the shown ones in this order): the lobby's, replay's and
+    // the game's, Reset last. Each panel leaves out the other colour's.
+    static readonly int[] ButtonOrder = {
+        ChessBoardView.ButtonJoinWhite, ChessBoardView.ButtonJoinBlack, ChessBoardView.ButtonMode,
+        ChessBoardView.ButtonClock, ChessBoardView.ButtonStart, ChessBoardView.ButtonContinue,
+        ChessBoardView.ButtonEnterReplay, ChessBoardView.ButtonLeaveReplay, ChessBoardView.ButtonStepFirst,
+        ChessBoardView.ButtonStepBack, ChessBoardView.ButtonStepForward, ChessBoardView.ButtonStepLast,
+        ChessBoardView.ButtonRequestTakebackWhite, ChessBoardView.ButtonRequestTakebackBlack,
+        ChessBoardView.ButtonAcceptTakebackWhite, ChessBoardView.ButtonAcceptTakebackBlack,
+        ChessBoardView.ButtonDeclineTakebackWhite, ChessBoardView.ButtonDeclineTakebackBlack,
+        ChessBoardView.ButtonResignWhite, ChessBoardView.ButtonResignBlack, ChessBoardView.ButtonOfferDrawWhite,
+        ChessBoardView.ButtonOfferDrawBlack, ChessBoardView.ButtonAcceptDrawWhite, ChessBoardView.ButtonAcceptDrawBlack,
+        ChessBoardView.ButtonDeclineDrawWhite, ChessBoardView.ButtonDeclineDrawBlack, ChessBoardView.ButtonClaimDraw,
+        ChessBoardView.ButtonReset,
+    };
+    // A button panel's size in canvas pixels (a millimetre each), its grid cells and columns and how far it leans
+    // back from upright. Five columns by three rows fit the most buttons one player sees at once (12: in replay of
+    // their game, with an offer and a takeback request pending).
+    const float PanelWidth = 544;
+    const float PanelHeight = 160;
     const float PanelTilt = 70;
+    const int PanelColumns = 5;
     static readonly Vector2 ButtonCell = new Vector2(100, 44);
 
-    // The board's buttons (step 9.4a): a world-space canvas at each end of the table, leaning back towards that
-    // side's player, each with one button per action but the other colour's Join. Every button calls the view's
-    // Press... event for its action; the view shows only those whose action applies, and the grid packs the shown
-    // ones together.
+    // The board's buttons (steps 9.4a, 9.4b): a world-space canvas at each end of the table, leaning back towards
+    // that side's player, each with one button per action but the other colour's (ChessBoardView.ButtonColor), so
+    // each end joins, resigns, offers and answers for its own colour. Every button calls the view's Press... event for
+    // its action; the view shows only those whose action applies, and the grid packs the shown ones together.
     static void AddButtons(GameObject root, ChessBoardView view, float tableDepth) {
         UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(view);
         Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        int actions = ChessBoardView.ButtonCount;
-        view.buttons = new GameObject[2 * (actions - 1)];
-        view.buttonActions = new int[2 * (actions - 1)];
-        view.buttonLabels = new Text[2 * (actions - 1)];
+        int perPanel = 0;
+        foreach (int action in ButtonOrder) {
+            if (ChessBoardView.ButtonColor(action) != ChessRules.Black) perPanel++;
+        }
+        view.buttons = new GameObject[2 * perPanel];
+        view.buttonActions = new int[2 * perPanel];
+        view.buttonLabels = new Text[2 * perPanel];
         int next = 0;
+        // The panel's near edge, raised towards the board, stays clear of the castle drop spaces.
         float z = tableDepth / 2 - PanelHeight * 0.001f / 2 - 0.004f;
         for (int panel = 0; panel < 2; panel++) {
             bool white = panel == 0;
@@ -251,7 +277,7 @@ public static class ChessBoardViewBuilder {
             RectTransform rect = canvasObject.GetComponent<RectTransform>();
             rect.sizeDelta = new Vector2(PanelWidth, PanelHeight);
             rect.localScale = Vector3.one * 0.001f;
-            rect.localPosition = new Vector3(0, 0.012f, white ? -z : z);
+            rect.localPosition = new Vector3(0, 0.016f, white ? -z : z);
             rect.localRotation = Quaternion.Euler(PanelTilt, white ? 0 : 180, 0);
             canvasObject.AddComponent<CanvasScaler>();
             canvasObject.AddComponent<GraphicRaycaster>();
@@ -263,10 +289,10 @@ public static class ChessBoardViewBuilder {
             grid.spacing = new Vector2(8, 8);
             grid.childAlignment = TextAnchor.MiddleCenter;
             grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-            grid.constraintCount = 4;
-            for (int action = 0; action < actions; action++) {
-                // Each end joins only its own colour.
-                if (action == (white ? ChessBoardView.ButtonJoinBlack : ChessBoardView.ButtonJoinWhite)) continue;
+            grid.constraintCount = PanelColumns;
+            foreach (int action in ButtonOrder) {
+                // Each end acts only for its own colour.
+                if (ChessBoardView.ButtonColor(action) == (white ? ChessRules.Black : ChessRules.White)) continue;
                 int index = next++;
                 GameObject buttonObject = new GameObject(ButtonEvents[action].Substring(5), typeof(RectTransform));
                 buttonObject.layer = canvasObject.layer;
