@@ -1229,7 +1229,68 @@ public class ViewTest : UdonSharpBehaviour {
         CheckTargets("", "cleared after the highlight checks");
         CheckPicker(false, "", "cleared after the highlight checks");
         CheckView("cleared after the highlight checks");
+        RunBlockerChecks();
         LogSummary();
+    }
+
+    // ---- 9.5a2: walking through the board ----
+
+    // Run straight after the highlight checks: nothing a player walks into is solid but the blocker (the click
+    // targets and the UI canvases are triggers), which is enabled exactly while the local player has no seat.
+    void RunBlockerChecks() {
+        Collider blocker = view.blocker;
+        Check(Utilities.IsValid(blocker) && !blocker.isTrigger, "the blocker assigned and solid",
+            Utilities.IsValid(blocker) ? "it's a trigger" : "none");
+        int solid = 0;
+        for (int square = 0; square < 64; square++) {
+            ChessSquare target = view.squareTargets[square];
+            if (!Utilities.IsValid(target) || !IsTrigger(target.transform)) solid++;
+        }
+        for (int side = 0; side < 2; side++) {
+            ChessSquare space = view.castleSpaceTargets[side];
+            if (!Utilities.IsValid(space) || !IsTrigger(space.transform)) solid++;
+        }
+        CheckInt(solid, 0, "the square targets and castle spaces are triggers: solid ones");
+        solid = 0;
+        for (int i = 0; i < view.buttons.Length; i++) {
+            if (Utilities.IsValid(view.buttons[i]) && !IsTrigger(view.buttons[i].transform.parent)) solid++;
+        }
+        if (!Utilities.IsValid(view.promotionPicker) || !IsTrigger(view.promotionPicker.transform)) solid++;
+        CheckInt(solid, 0, "the button panels and the picker have trigger colliders: solid or missing");
+        if (!Utilities.IsValid(blocker)) return;
+
+        board.ClearState();
+        view.Refresh();
+        Check(blocker.enabled, "blocker: enabled on a reset board", "disabled");
+        CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "blocker: Ana joined White");
+        CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "blocker: Bob joined Black");
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, "blocker: Ana and Bob started");
+        view.Refresh();
+        Check(blocker.enabled, "blocker: enabled in others' game", "disabled");
+
+        board.ClearState();
+        CheckInt(board.JoinAs(ChessRules.Black, localName), ChessBoard.InputAccepted, "blocker: joined Black");
+        view.Refresh();
+        Check(!blocker.enabled, "blocker: disabled once seated (Black, lobby)", "enabled");
+        CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "blocker: Ana joined White");
+        CheckInt(board.StartGameAs(localName), ChessBoard.InputAccepted, "blocker: started");
+        view.Refresh();
+        Check(!blocker.enabled, "blocker: disabled in own game", "enabled");
+        CheckInt(board.ResignAs(ChessRules.Black, localName), ChessBoard.InputAccepted, "blocker: resigned");
+        view.Refresh();
+        Check(!blocker.enabled, "blocker: disabled in own ended game", "enabled");
+
+        board.ClearState();
+        view.Refresh();
+        Check(blocker.enabled, "blocker: enabled again once cleared", "disabled");
+        CheckView("cleared after the blocker checks");
+    }
+
+    // Whether the object has a collider and it's a trigger.
+    bool IsTrigger(Transform obj) {
+        if (!Utilities.IsValid(obj)) return false;
+        Collider collider = obj.GetComponent<Collider>();
+        return Utilities.IsValid(collider) && collider.isTrigger;
     }
 
     // Whether exactly the squares in expected (names separated by spaces, in any order) have their target mark shown.

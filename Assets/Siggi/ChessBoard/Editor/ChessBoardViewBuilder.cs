@@ -13,7 +13,9 @@ using VRC.Udon;
 
 // Builds the physical board (PLAN.md 9.1, ChessBoardView.cs) in the open scene for the selected ChessBoard, or the
 // scene's only one: a table, the board's surface and squares, the 32 piece objects, the button panels (steps 9.4a and
-// 9.4b), the highlights and the promotion picker (step 9.5a), wired to a ChessBoardView. An existing view for the same
+// 9.4b), the highlights and the promotion picker (step 9.5a), wired to a ChessBoardView. Players walk through all of it
+// (no solid colliders but the pieces', on the Pickup layer); the view's blocker keeps out those without a seat
+// (step 9.5a2). An existing view for the same
 // board is replaced, keeping its place. The piece meshes, the highlight meshes and the materials are generated
 // placeholders in Assets/Siggi/ChessBoard/Models/, made only when missing, so they can be replaced there (or other
 // meshes assigned in the view's Meshes field). Menu: Tools > Chess Board > Create Board View. Plain editor C#, not Udon.
@@ -70,6 +72,14 @@ public static class ChessBoardViewBuilder {
         table.transform.localScale = new Vector3(boardWidth * 1.6f, TableHeight - BoardThickness,
             boardWidth * TableDepthFactor);
         table.GetComponent<MeshRenderer>().sharedMaterial = frame;
+        // Players walk through the table and the board; the blocker stops those without a seat.
+        Object.DestroyImmediate(table.GetComponent<BoxCollider>());
+
+        GameObject blocker = new GameObject("Player Blocker");
+        blocker.transform.SetParent(root.transform, false);
+        BoxCollider blockerBox = blocker.AddComponent<BoxCollider>();
+        blockerBox.center = table.transform.localPosition;
+        blockerBox.size = table.transform.localScale;
 
         GameObject boardBase = GameObject.CreatePrimitive(PrimitiveType.Cube);
         boardBase.name = "Board";
@@ -77,6 +87,7 @@ public static class ChessBoardViewBuilder {
         boardBase.transform.localPosition = new Vector3(0, -BoardThickness / 2, 0);
         boardBase.transform.localScale = new Vector3(boardWidth, BoardThickness, boardWidth);
         boardBase.GetComponent<MeshRenderer>().sharedMaterial = frame;
+        Object.DestroyImmediate(boardBase.GetComponent<BoxCollider>());
 
         GameObject squaresObject = new GameObject("Squares");
         squaresObject.transform.SetParent(root.transform, false);
@@ -87,6 +98,7 @@ public static class ChessBoardViewBuilder {
         view.board = board;
         view.squareSize = SquareSize;
         view.meshes = meshes;
+        view.blocker = blockerBox;
         view.pieces = new Transform[ChessBoardView.PieceCount];
         view.pieceFilters = new MeshFilter[ChessBoardView.PieceCount];
         view.piecePickups = new VRCPickup[ChessBoardView.PieceCount];
@@ -182,6 +194,7 @@ public static class ChessBoardViewBuilder {
         BoxCollider box = space.AddComponent<BoxCollider>();
         box.center = pad.transform.localPosition;
         box.size = pad.transform.localScale;
+        box.isTrigger = true;
         ChessSquare target = UdonSharpUndo.AddComponent<ChessSquare>(space);
         target.view = view;
         target.square = ChessRules.NoSquare;
@@ -209,6 +222,7 @@ public static class ChessBoardViewBuilder {
             BoxCollider box = target.AddComponent<BoxCollider>();
             box.center = new Vector3(0, 0.001f, 0);
             box.size = new Vector3(SquareSize, 0.002f, SquareSize);
+            box.isTrigger = true;
             ChessSquare behaviour = UdonSharpUndo.AddComponent<ChessSquare>(target);
             behaviour.view = view;
             behaviour.square = square;
@@ -285,6 +299,7 @@ public static class ChessBoardViewBuilder {
         canvasObject.AddComponent<CanvasScaler>();
         canvasObject.AddComponent<GraphicRaycaster>();
         canvasObject.AddComponent<VRCUiShape>();
+        AddTriggerCollider(canvasObject);
         canvasObject.AddComponent<Image>().color = new Color(0.12f, 0.12f, 0.14f, 0.9f);
         GridLayoutGroup grid = canvasObject.AddComponent<GridLayoutGroup>();
         grid.padding = new RectOffset(6, 6, 6, 6);
@@ -320,6 +335,17 @@ public static class ChessBoardViewBuilder {
         }
         canvasObject.SetActive(false);
         view.promotionPicker = canvasObject;
+    }
+
+    // A UI canvas's collider: a trigger box over the whole canvas, so players walk through it. VRCUiShape uses a box
+    // collider the canvas already has (and adds a solid one when there's none); a trigger still takes the pointer.
+    static void AddTriggerCollider(GameObject canvasObject) {
+        BoxCollider box = canvasObject.GetComponent<BoxCollider>();
+        if (box == null) box = canvasObject.AddComponent<BoxCollider>();
+        Vector2 size = canvasObject.GetComponent<RectTransform>().sizeDelta;
+        box.center = Vector3.zero;
+        box.size = new Vector3(size.x, size.y, 1);
+        box.isTrigger = true;
     }
 
     // The view's Press... event for each ChessBoardView.Button* action, by action.
@@ -388,6 +414,7 @@ public static class ChessBoardViewBuilder {
             canvasObject.AddComponent<CanvasScaler>();
             canvasObject.AddComponent<GraphicRaycaster>();
             canvasObject.AddComponent<VRCUiShape>();
+            AddTriggerCollider(canvasObject);
             canvasObject.AddComponent<Image>().color = new Color(0.12f, 0.12f, 0.14f, 0.9f);
             GridLayoutGroup grid = canvasObject.AddComponent<GridLayoutGroup>();
             grid.padding = new RectOffset(6, 6, 6, 6);

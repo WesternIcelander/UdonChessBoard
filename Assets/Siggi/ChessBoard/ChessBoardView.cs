@@ -110,6 +110,11 @@ namespace SiggiChessBoard {
         // or selected piece's targets.
         public GameObject[] lastMoveHighlights = new GameObject[2];
         public GameObject[] targetHighlights = new GameObject[64];
+        // The table, the board and the buttons have no solid colliders, so the players can walk up to and into the
+        // board. The blocker, a solid box filling the table up to its top, keeps everyone else out: enabled on each
+        // client unless the local player has a seat (UpdateBlocker). Players collide only on their own client, so
+        // each client's blocker stops only its own player. Below the surface, so it doesn't catch pointing or clicks.
+        public Collider blocker;
 
         // Which object stands on each square (NoObject for none), and the other way round (NoSquare for an object
         // off the board: captured, or not needed by the position). objectType is the piece type each object stands
@@ -250,6 +255,16 @@ namespace SiggiChessBoard {
             UpdateLastMoveHighlight();
             UpdatePromotionPicker();
             UpdateButtons();
+            UpdateBlocker();
+        }
+
+        // Enables the blocker unless the local player has a seat (either colour), so only the seated players can walk
+        // into the table. Called on every Refresh: seats change only with the board.
+        public void UpdateBlocker() {
+            if (!Utilities.IsValid(blocker)) return;
+            VRCPlayerApi local = Networking.LocalPlayer;
+            bool seated = Utilities.IsValid(board) && Utilities.IsValid(local) && board.IsPlayer(local.displayName);
+            if (blocker.enabled == seated) blocker.enabled = !seated;
         }
 
         // ---- Input (docs/player-input.md) ----
