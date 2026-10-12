@@ -44,6 +44,7 @@ public static class ChessBoardViewBuilder {
         Material lightSquares = MaterialAsset("Light Squares", new Color(0.93f, 0.85f, 0.71f), 0.3f);
         Material darkSquares = MaterialAsset("Dark Squares", new Color(0.55f, 0.37f, 0.24f), 0.3f);
         Material frame = MaterialAsset("Board Frame", new Color(0.3f, 0.19f, 0.11f), 0.35f);
+        Material castleSpace = MaterialAsset("Castle Space", new Color(0.35f, 0.62f, 0.4f), 0.3f);
         Mesh squares = SquaresMesh();
 
         GameObject root = new GameObject("ChessBoardView (" + board.gameObject.name + ")");
@@ -52,11 +53,12 @@ public static class ChessBoardViewBuilder {
         root.transform.position = board.transform.position + new Vector3(0, TableHeight, 0);
 
         float boardWidth = 8 * SquareSize + 2 * Border;
+        // Deep enough for the castle drop spaces, a square beyond each back rank.
         GameObject table = GameObject.CreatePrimitive(PrimitiveType.Cube);
         table.name = "Table";
         table.transform.SetParent(root.transform, false);
         table.transform.localPosition = new Vector3(0, -(TableHeight + BoardThickness) / 2, 0);
-        table.transform.localScale = new Vector3(boardWidth * 1.6f, TableHeight - BoardThickness, boardWidth * 1.1f);
+        table.transform.localScale = new Vector3(boardWidth * 1.6f, TableHeight - BoardThickness, boardWidth * 1.3f);
         table.GetComponent<MeshRenderer>().sharedMaterial = frame;
 
         GameObject boardBase = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -101,6 +103,8 @@ public static class ChessBoardViewBuilder {
             view.pieceFilters[obj] = filter;
             AddPickup(piece, view, obj, meshes[type]);
         }
+        view.castleSpaces = new GameObject[2];
+        for (int side = 0; side < 2; side++) view.castleSpaces[side] = CastleSpace(root, side, castleSpace);
         UdonSharpEditorUtility.CopyProxyToUdon(view);
         if (old != null) {
             root.transform.SetParent(old.transform.parent, false);
@@ -141,6 +145,24 @@ public static class ChessBoardViewBuilder {
         UdonSharpEditorUtility.CopyProxyToUdon(behaviour);
         view.piecePickups[obj] = pickup;
         view.pieceColliders[obj] = box;
+    }
+
+    // A castle drop space (docs/player-input.md): a pad the size of a square, as thick as the board and just above
+    // its surface, with no collider (the view finds a drop on it by position). Built hidden; the view places and shows
+    // it while a held king needs it.
+    static GameObject CastleSpace(GameObject root, int side, Material material) {
+        GameObject space = new GameObject(side == ChessBoard.CastleKingSide
+            ? "Castle Space (king side)" : "Castle Space (queen side)");
+        space.transform.SetParent(root.transform, false);
+        GameObject pad = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        pad.name = "Pad";
+        Object.DestroyImmediate(pad.GetComponent<BoxCollider>());
+        pad.transform.SetParent(space.transform, false);
+        pad.transform.localPosition = new Vector3(0, -BoardThickness / 2 + 0.001f, 0);
+        pad.transform.localScale = new Vector3(SquareSize * 0.92f, BoardThickness, SquareSize * 0.92f);
+        pad.GetComponent<MeshRenderer>().sharedMaterial = material;
+        space.SetActive(false);
+        return space;
     }
 
     // The scene's board view for a board (built earlier), or null.

@@ -358,8 +358,190 @@ public class ViewTest : UdonSharpBehaviour {
         board.ClearState();
         view.SetInputStyle(savedStyle);
         view.Refresh();
+        CheckView("cleared after the drop checks");
+        SendCustomEventDelayedFrames(nameof(RunCastleSpaceChecks), 1);
+    }
+
+    // ---- 9.3b: the castle drop space ----
+
+    // King f1, rook h1 (and the same for Black): castling and Kg1 both put the king on g1, so the king side castle
+    // needs the space; the queen side one (the king three squares to c1) doesn't. The f pawns keep a castled rook
+    // from giving check.
+    const string OneSquareFen = "1r3k1r/5p2/8/8/8/8/5P2/1R3K1R w KQkq - 0 1";
+    // King d1, rook a1: the queen side castle moves the king one square, to c1.
+    const string QueenOneSquareFen = "r2k3r/3p4/8/8/8/8/3P4/R2K3R w KQkq - 0 1";
+    const string StandardCastlingFen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
+
+    // The sixth frame: the castle drop space shown only while a king whose castle needs it is held (where the view
+    // puts it), hidden on the drop, for other pieces, standard castles, once the game ended and in replay; a drop on
+    // it castling, and a drop where no space is shown, or on the destination, not.
+    public void RunCastleSpaceChecks() {
+        int savedStyle = view.inputStyle;
+        view.SetInputStyle(ChessBoardView.InputPickups);
+        Check(Utilities.IsValid(view.castleSpaces[ChessBoard.CastleKingSide])
+            && Utilities.IsValid(view.castleSpaces[ChessBoard.CastleQueenSide]), "both castle spaces assigned",
+            "run Tools > Chess Board > Create Board View again");
+
+        CastleSpaceGame(OneSquareFen, "f1 game");
+        CheckSpaces(false, false, "f1 game: nothing held");
+        int king = view.squareObject[Sq("f1")];
+        int rook = view.squareObject[Sq("h1")];
+        view.OnPiecePickedUp(king);
+        CheckInt(view.heldObject, king, "f1 picked up");
+        CheckSpaces(true, false, "f1 held");
+        CheckSpacePlace(ChessRules.White, ChessBoard.CastleKingSide, "f1 held");
+        view.Refresh();
+        CheckSpaces(true, false, "f1 held, after Refresh");
+        view.pieces[king].localPosition = OverSpace(ChessRules.White, ChessBoard.CastleKingSide);
+        view.OnPieceDropped(king);
+        CheckSpaces(false, false, "f1 dropped on the space");
+        CheckDropped(1, ChessBoard.ChangeMove, "f1 dropped on the space: castled");
+        Check(ChessRules.MoveIsCastle(board.LastMove()), "f1 dropped on the space: the move is a castle", "it isn't");
+        CheckInt(view.squareObject[Sq("g1")], king, "f1 dropped on the space: the king's object on g1");
+        CheckInt(view.squareObject[Sq("f1")], rook, "f1 dropped on the space: the rook's object on f1");
+
+        // Black: shown beyond rank 8; a drop on the destination is Kg8, not a castle.
+        int blackKing = view.squareObject[Sq("f8")];
+        view.OnPiecePickedUp(blackKing);
+        CheckSpaces(true, false, "f8 held");
+        CheckSpacePlace(ChessRules.Black, ChessBoard.CastleKingSide, "f8 held");
+        view.pieces[blackKing].localPosition = Over("g8");
+        view.OnPieceDropped(blackKing);
+        CheckSpaces(false, false, "f8 dropped over g8");
+        CheckDropped(2, ChessBoard.ChangeMove, "f8 dropped over g8: played");
+        Check(!ChessRules.MoveIsCastle(board.LastMove()), "f8 dropped over g8: Kg8, not a castle", "it castled");
+        CheckInt(board.PieceAt(Sq("h8")), ChessRules.PieceOf(ChessRules.Black, ChessRules.Rook),
+            "f8 dropped over g8: the rook still on h8");
+
+        // Other pieces show nothing; a king dropped where no space is shown is put back.
+        CastleSpaceGame(OneSquareFen, "f1 game again");
+        int whiteRook = view.squareObject[Sq("h1")];
+        view.OnPiecePickedUp(whiteRook);
+        CheckSpaces(false, false, "h1 rook held");
+        view.OnPieceDropped(whiteRook);
+        CheckDropped(0, ChessBoard.ChangeRejected, "h1 rook dropped back: put back");
+        king = view.squareObject[Sq("f1")];
+        view.OnPiecePickedUp(king);
+        view.pieces[king].localPosition = OverSpace(ChessRules.White, ChessBoard.CastleQueenSide);
+        view.OnPieceDropped(king);
+        CheckDropped(0, ChessBoard.ChangeRejected, "f1 dropped where the queen side space would be: put back");
+        view.OnPiecePickedUp(king);
+        view.pieces[king].localPosition = Over("g1");
+        view.OnPieceDropped(king);
+        CheckDropped(1, ChessBoard.ChangeMove, "f1 dropped over g1: played");
+        Check(!ChessRules.MoveIsCastle(board.LastMove()), "f1 dropped over g1: Kg1, not a castle", "it castled");
+
+        // King d1, rook a1: the queen side space, beside c1.
+        CastleSpaceGame(QueenOneSquareFen, "d1 game");
+        king = view.squareObject[Sq("d1")];
+        rook = view.squareObject[Sq("a1")];
+        view.OnPiecePickedUp(king);
+        CheckSpaces(false, true, "d1 held");
+        CheckSpacePlace(ChessRules.White, ChessBoard.CastleQueenSide, "d1 held");
+        view.pieces[king].localPosition = OverSpace(ChessRules.White, ChessBoard.CastleQueenSide);
+        view.OnPieceDropped(king);
+        CheckSpaces(false, false, "d1 dropped on the space");
+        CheckDropped(1, ChessBoard.ChangeMove, "d1 dropped on the space: castled");
+        Check(ChessRules.MoveIsCastle(board.LastMove()), "d1 dropped on the space: the move is a castle", "it isn't");
+        CheckInt(view.squareObject[Sq("c1")], king, "d1 dropped on the space: the king's object on c1");
+        CheckInt(view.squareObject[Sq("d1")], rook, "d1 dropped on the space: the rook's object on d1");
+
+        // A standard position needs no space.
+        CastleSpaceGame(StandardCastlingFen, "standard game");
+        king = view.squareObject[Sq("e1")];
+        view.OnPiecePickedUp(king);
+        CheckSpaces(false, false, "e1 held in a standard position");
+        view.OnPieceDropped(king);
+
+        // Hidden once the game ends while the king is held, and in replay.
+        CastleSpaceGame(OneSquareFen, "f1 game, ended");
+        king = view.squareObject[Sq("f1")];
+        view.OnPiecePickedUp(king);
+        CheckSpaces(true, false, "f1 held before resigning");
+        CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, "resigned while holding f1");
+        view.Refresh();
+        CheckInt(view.heldObject, king, "f1 still held after the game ended");
+        CheckSpaces(false, false, "f1 held after the game ended");
+        view.pieces[king].localPosition = OverSpace(ChessRules.White, ChessBoard.CastleKingSide);
+        view.OnPieceDropped(king);
+        CheckDropped(0, ChessBoard.ChangeRejected, "f1 dropped on the hidden space after the game ended: put back");
+        // Replay shows the game's start, wherever its king stands.
+        CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, "entered replay");
+        view.Refresh();
+        king = NoObjectOr(KingSquare(board.replayBoard, ChessRules.White));
+        if (king != ChessBoardView.NoObject) view.OnPiecePickedUp(king);
+        Check(king != ChessBoardView.NoObject && view.heldObject == king, "replay: the white king picked up",
+            "held " + view.heldObject);
+        CheckSpaces(false, false, "replay: the white king held");
+        if (king != ChessBoardView.NoObject) view.OnPieceDropped(king);
+
+        board.ClearState();
+        view.SetInputStyle(savedStyle);
+        view.Refresh();
+        CheckSpaces(false, false, "cleared at the end");
         CheckView("cleared at the end");
         LogSummary();
+    }
+
+    // A game of the local player against themselves, from fen.
+    void CastleSpaceGame(string fen, string name) {
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, name);
+        int clock;
+        int number;
+        ChessFen.ParseFen(fen, board.board, board.state, out clock, out number);
+        board.halfmoveClock = clock;
+        board.moveNumber = number;
+        view.Refresh();
+        CheckView(name + ": set up");
+    }
+
+    // Whether exactly the king side and queen side spaces wanted are shown, as the view says and in the scene.
+    void CheckSpaces(bool kingSide, bool queenSide, string name) {
+        string errors = "";
+        for (int side = 0; side < 2; side++) {
+            bool wanted = side == ChessBoard.CastleKingSide ? kingSide : queenSide;
+            GameObject space = view.castleSpaces[side];
+            bool active = Utilities.IsValid(space) && space.activeSelf;
+            if (view.castleSpaceShown[side] != wanted || active != wanted) {
+                errors += (side == ChessBoard.CastleKingSide ? "king side" : "queen side") + " shown "
+                    + view.castleSpaceShown[side] + ", active " + active + "; ";
+            }
+        }
+        Check(errors.Length == 0, name + ": castle space " + (kingSide ? "king side" : queenSide ? "queen side" : "none"),
+            errors);
+    }
+
+    // Whether color's space for side stands off the board, beside the castling destination on the outer side of the
+    // back rank.
+    void CheckSpacePlace(int color, int side, string name) {
+        GameObject space = view.castleSpaces[side];
+        if (!Utilities.IsValid(space)) return;
+        string destination = (side == ChessBoard.CastleKingSide ? "g" : "c") + (color == ChessRules.White ? "1" : "8");
+        Vector3 expected = view.SquarePosition(Sq(destination))
+            + new Vector3(0, 0, color == ChessRules.White ? -view.squareSize : view.squareSize);
+        Check((space.transform.localPosition - expected).sqrMagnitude < 1e-8f,
+            name + ": the space beyond " + destination, "at " + space.transform.localPosition.ToString("F3"));
+        CheckInt(view.DropSquare(space.transform.position), ChessRules.NoSquare, name + ": the space is off the board");
+    }
+
+    // The square of color's king on pieces, NoSquare for none.
+    int KingSquare(byte[] pieces, int color) {
+        int king = ChessRules.PieceOf(color, ChessRules.King);
+        for (int square = 0; square < 64; square++) {
+            if (pieces[square] == king) return square;
+        }
+        return ChessRules.NoSquare;
+    }
+
+    // The object on square, NoObject for none or no square.
+    int NoObjectOr(int square) {
+        return square == ChessRules.NoSquare ? ChessBoardView.NoObject : view.squareObject[square];
+    }
+
+    // Over color's castle drop space for side, off its centre and above it, as a hand lets go of a piece.
+    Vector3 OverSpace(int color, int side) {
+        return view.CastleSpacePosition(color, side) + new Vector3(-0.3f, 0.8f, 0.4f) * view.squareSize;
     }
 
     // Picks up the object on from through the view and drops it at position (the view's local space), as the

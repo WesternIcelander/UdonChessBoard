@@ -23,6 +23,8 @@ namespace SiggiChessBoard {
         public const int InputAuto = 0;
         public const int InputPickups = 1;
         public const int InputClicks = 2;
+        // No castle drop space (ChessBoard.CastleKingSide and CastleQueenSide are the others).
+        public const int NoCastleSide = -1;
 
         // The board shown; the view adds itself as a listener on Start.
         public ChessBoard board;
@@ -40,6 +42,10 @@ namespace SiggiChessBoard {
         // one client.
         [Tooltip("Auto: pickups in VR, clicks on desktop and mobile. Pickups or Clicks: that for everyone, for testing.")]
         public int inputStyle = InputAuto;
+        // The castle drop spaces (docs/player-input.md), by side (ChessBoard.CastleKingSide, CastleQueenSide): pads
+        // the size of a square just off the board, beside the king's castling destination on the outer side of its
+        // back rank. Shown only while the local player holds a king whose castle on that side needs one.
+        public GameObject[] castleSpaces = new GameObject[2];
 
         // Which object stands on each square (NoObject for none), and the other way round (NoSquare for an object
         // off the board: captured, or not needed by the position). objectType is the piece type each object stands
@@ -81,6 +87,8 @@ namespace SiggiChessBoard {
         [NonSerialized] public int promotionObject = NoObject;
         [NonSerialized] public int promotionFrom = ChessRules.NoSquare;
         [NonSerialized] public int promotionTo = ChessRules.NoSquare;
+        // Which castle drop spaces are shown (by side), for the held king's colour.
+        [NonSerialized] public bool[] castleSpaceShown = new bool[2];
 
         void Start() {
             for (int i = 0; i < 64; i++) squareObject[i] = NoObject;
@@ -153,6 +161,8 @@ namespace SiggiChessBoard {
                 if (i != heldObject) PlaceObject(i);
             }
             UpdatePickupable();
+            // The castle a held king could make may have changed (or the game ended, or replay began).
+            UpdateCastleSpaces();
         }
 
         // ---- Input (docs/player-input.md) ----
@@ -168,24 +178,37 @@ namespace SiggiChessBoard {
                 && board.PiecePickedUp(square) == ChessBoard.InputAccepted) {
                 heldObject = obj;
                 heldFrom = square;
+                UpdateCastleSpaces();
                 return;
             }
             // A piece off the board (never a pickup) is just put back; the board told its rejection itself.
             dirty = true;
+            UpdateCastleSpaces();
             LetGoOf(obj);
         }
 
         // A piece let go by the local player (its ChessPiece's OnDrop): forwards the drop on the square under it (off
-        // the board too, which the board rejects) if the board accepted its pickup. A promotion waits for
-        // ChoosePromotion with the pawn standing on its square; anything else is placed from the board after its
-        // change, so a rejected drop goes back where it was.
+        // the board too, which the board rejects) if the board accepted its pickup, or a king's drop on a castle drop
+        // space shown for it as that castle. A promotion waits for ChoosePromotion with the pawn standing on its
+        // square; anything else is placed from the board after its change, so a rejected drop goes back where it was.
         public void OnPieceDropped(int obj) {
             if (obj < 0 || obj >= PieceCount) return;
             dirty = true;
             if (obj != heldObject) return;
+            if (!Utilities.IsValid(board) || !Utilities.IsValid(pieces[obj])) {
+                heldObject = NoObject;
+                UpdateCastleSpaces();
+                return;
+            }
+            Vector3 position = pieces[obj].position;
+            int castleSide = CastleSpaceUnder(position, ObjectColor(obj));
             heldObject = NoObject;
-            if (!Utilities.IsValid(board) || !Utilities.IsValid(pieces[obj])) return;
-            int to = DropSquare(pieces[obj].position);
+            UpdateCastleSpaces();
+            if (castleSide != NoCastleSide) {
+                board.KingDroppedOnCastleSpace(castleSide);
+                return;
+            }
+            int to = DropSquare(position);
             int from = heldFrom;
             if (board.PieceDropped(from, to) == ChessBoard.InputPromotionNeeded) {
                 promotionObject = obj;
@@ -219,10 +242,50 @@ namespace SiggiChessBoard {
             return ChessRules.SquareOf(file, rank);
         }
 
+        // ---- Castle drop space (docs/player-input.md) ----
+
+        // Shows each castle drop space while the local player holds the side to move's king and the board says that
+        // castle needs one (it's legal, and a drop on its destination wouldn't castle), beside the destination on the
+        // outer side of the king's back rank; hides it otherwise. Called on every pickup, drop and change.
+        public void UpdateCastleSpaces() {
+            bool king = heldObject != NoObject && objectType[heldObject] == ChessRules.King && Utilities.IsValid(board);
+            for (int side = 0; side < 2; side++) {
+                bool shown = king && board.IsCastleDropSpaceNeeded(side);
+                castleSpaceShown[side] = shown;
+                GameObject space = castleSpaces[side];
+                if (!Utilities.IsValid(space)) continue;
+                if (shown) space.transform.localPosition = CastleSpacePosition(ObjectColor(heldObject), side);
+                if (space.activeSelf != shown) space.SetActive(shown);
+            }
+        }
+
+        // The centre of color's castle drop space for side (ChessBoard.CastleKingSide or CastleQueenSide), in the
+        // view's local space: the square off the board next to the castling destination (g or c) on the back rank.
+        public Vector3 CastleSpacePosition(int color, int side) {
+            int file = side == ChessBoard.CastleKingSide ? ChessRules.FileG : ChessRules.FileC;
+            int rank = color == ChessRules.White ? -1 : 8;
+            return new Vector3((file - 3.5f) * squareSize, 0, (rank - 3.5f) * squareSize);
+        }
+
+        // The side of the castle drop space shown for color's king under a point (world space), by where it is over
+        // the space whatever its height; NoCastleSide when there's none.
+        public int CastleSpaceUnder(Vector3 position, int color) {
+            Vector3 local = transform.InverseTransformPoint(position);
+            for (int side = 0; side < 2; side++) {
+                if (!castleSpaceShown[side]) continue;
+                Vector3 centre = CastleSpacePosition(color, side);
+                if (Mathf.Abs(local.x - centre.x) <= squareSize / 2 && Mathf.Abs(local.z - centre.z) <= squareSize / 2) {
+                    return side;
+                }
+            }
+            return NoCastleSide;
+        }
+
         // Stops treating a piece as held and takes it out of the local player's hand, to be placed from the board.
         void LetGo() {
             int obj = heldObject;
             heldObject = NoObject;
+            UpdateCastleSpaces();
             LetGoOf(obj);
         }
 
