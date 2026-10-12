@@ -4,9 +4,9 @@ using UnityEngine;
 using VRC.SDKBase;
 
 // Step 7 test behaviour (PLAN.md section 7): the logical board driven with no world objects, plus the single-client
-// sync checks of 8.3 (packing and receiving the synced state), the ownership rules of 8.4 and the inactivity rules of
-// 8.5. Runs only with no one else in the instance. Logs "[BoardTest] PASS: <check>" or "[BoardTest] FAIL: <check>:
-// <details>" per check, then a summary line.
+// sync checks of 8.3 (packing and receiving the synced state), the ownership rules of 8.4, the inactivity rules of 8.5
+// and the notation fill-in of 8.6. Runs only with no one else in the instance. Logs "[BoardTest] PASS: <check>" or
+// "[BoardTest] FAIL: <check>: <details>" per check, then a summary line.
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
 public class BoardTest : ChessBoardListener {
     // The board under test; its checks fail if it isn't assigned. The checks clear it and leave it in the reset state.
@@ -36,6 +36,8 @@ public class BoardTest : ChessBoardListener {
         SendCustomEventDelayedFrames(nameof(RunChecks), 1);
     }
 
+    // The checks run over three frames (RunChecks, RunSyncChecks, RunFillChecks), each ending with the board reset:
+    // Udon halts a behaviour whose event runs past 10 s, and all of them in one frame take longer than that.
     public void RunChecks() {
         if (ran || !started || !joined) return;
         ran = true;
@@ -48,57 +50,75 @@ public class BoardTest : ChessBoardListener {
         }
         if (!Utilities.IsValid(board)) {
             Check(false, "board assigned", "the board field is empty");
-        } else {
-            localName = Networking.LocalPlayer.displayName;
-            NothingForced();
-            TestResetState();
-            TestJoin();
-            TestJoinBothSeats();
-            TestSeatTaken();
-            TestJoinInvalid();
-            TestJoinByLifecycle();
-            TestSetMode();
-            TestSetClock();
-            TestForcedSettings();
-            TestStart();
-            TestChess960Positions();
-            TestChess960Random();
-            TestChess960Start();
-            TestClocks();
-            TestPieceInput();
-            TestPromotion();
-            TestCastling();
-            TestLobbyButtons();
-            TestResignAndDrawButtons();
-            TestReplayButtons();
-            TestTakebackButtons();
-            TestContinueResetLoadButtons();
-            TestLocalButtons();
-            TestMateAndStalemate();
-            TestResign();
-            TestTimeForfeit();
-            TestDrawAgreement();
-            TestDrawClaims();
-            TestAutomaticDraws();
-            TestGameIdFormat();
-            TestGameIds();
-            TestPgnLog();
-            TestReplay();
-            TestTakeback();
-            TestLoadGame();
-            TestContinueLoaded();
-            TestReset();
-            TestSnapshot();
-            TestListeners();
-            TestScenarios();
-            TestSync();
-            TestOwnership();
-            TestInactivity();
-            // Every [ChessPGN] entry in the log is one of these, so the two counts must agree.
-            Debug.Log("[BoardTest] games logged by the board: " + board.loggedGames);
-            if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
-            board.ClearState();
+            LogSummary();
+            return;
         }
+        localName = Networking.LocalPlayer.displayName;
+        NothingForced();
+        TestResetState();
+        TestJoin();
+        TestJoinBothSeats();
+        TestSeatTaken();
+        TestJoinInvalid();
+        TestJoinByLifecycle();
+        TestSetMode();
+        TestSetClock();
+        TestForcedSettings();
+        TestStart();
+        TestChess960Positions();
+        TestChess960Random();
+        TestChess960Start();
+        TestClocks();
+        TestPieceInput();
+        TestPromotion();
+        TestCastling();
+        TestLobbyButtons();
+        TestResignAndDrawButtons();
+        TestReplayButtons();
+        TestTakebackButtons();
+        TestContinueResetLoadButtons();
+        TestLocalButtons();
+        TestMateAndStalemate();
+        TestResign();
+        TestTimeForfeit();
+        TestDrawAgreement();
+        TestDrawClaims();
+        TestAutomaticDraws();
+        TestGameIdFormat();
+        TestGameIds();
+        TestPgnLog();
+        TestReplay();
+        TestTakeback();
+        TestLoadGame();
+        TestContinueLoaded();
+        TestReset();
+        board.ClearState();
+        SendCustomEventDelayedFrames(nameof(RunSyncChecks), 1);
+    }
+
+    // The second frame: snapshots, listeners and scenarios (7.9 to 7.12), sync, ownership and inactivity (8.3 to 8.5).
+    public void RunSyncChecks() {
+        TestSnapshot();
+        TestListeners();
+        TestScenarios();
+        TestSync();
+        TestOwnership();
+        TestInactivity();
+        board.ClearState();
+        SendCustomEventDelayedFrames(nameof(RunFillChecks), 1);
+    }
+
+    // The third frame: the notation fill-in (8.6), then the summary.
+    public void RunFillChecks() {
+        TestNotationFill();
+        // Every [ChessPGN] entry in the log is one of these, so the two counts must agree.
+        Debug.Log("[BoardTest] games logged by the board: " + board.loggedGames);
+        if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
+        board.ClearState();
+        LogSummary();
+    }
+
+    void LogSummary() {
         Debug.Log("[BoardTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
@@ -5303,5 +5323,193 @@ public class BoardTest : ChessBoardListener {
         } else {
             Check(board.lastActivity == old, label + " doesn't touch", "activity " + board.lastActivity);
         }
+    }
+
+    // ---- 8.6 notation fill-in ----
+
+    int notationTold;
+
+    public override void OnNotationFilled() {
+        notationTold++;
+    }
+
+    void TestNotationFill() {
+        NothingForced();
+        string s = "fill";
+        board.AddListener(this);
+
+        // Loaded games with every entry forgotten (as the archive will load them) are filled in as imported: check
+        // and mate, promotions with and without capture, underpromotion, disambiguation, castling (Chess960), a FEN
+        // with Black to move.
+        if (Utilities.IsValid(importer) && siggiVsNuka != null) {
+            CheckFillLoaded(siggiVsNuka.text, "", s + ": Siggi-vs-Nuka");
+            Check(board.notation[53].EndsWith("#"), s + ": Siggi-vs-Nuka ends in mate", "last " + board.notation[53]);
+            CheckFillLoaded("[SetUp \"1\"]\n[FEN \"r3k3/1P4P1/8/8/8/8/1p4p1/R3K2R b KQq - 3 40\"]\n\n40...gxh1=Q+ "
+                + "41.Kd2 bxa1=N 42.bxa8=Q+ Kf7 43.g8=Q+ Kf6 44.Qgf8+ Ke5 *",
+                "gxh1=Q+ Kd2 bxa1=N bxa8=Q+ Kf7 g8=Q+ Kf6 Qgf8+ Ke5", s + ": promotions");
+            CheckFillLoaded("[SetUp \"1\"]\n[FEN \"7k/8/8/RN3N2/8/1N3N2/8/R5RK w - - 0 1\"]\n\n1.Nb5d4 Kh7 2.R1a3 Kh8 "
+                + "3.Nbd2 Kh7 *", "Nb5d4 Kh7 R1a3 Kh8 Nbd2 Kh7", s + ": disambiguation");
+            CheckFillLoaded("[Variant \"Chess960\"]\n[SetUp \"1\"]\n[FEN \"qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN "
+                + "w GBgb - 0 1\"]\n\n1.e4 e5 2.Bf3 Bf6 3.O-O-O O-O-O *", "e4 e5 Bf3 Bf6 O-O-O O-O-O",
+                s + ": Chess960 castling");
+        } else {
+            Check(false, s + ": importer and Siggi-vs-Nuka assigned", "assign them in the Inspector");
+        }
+
+        // Filling in tells the listeners once, through OnNotationFilled only, on the next frame (FillNotationFrame, as
+        // Update calls it), and sends nothing.
+        SyncGame(ChessArbiter.NoClock, s);
+        Drop("Ana", ChessRules.G1, ChessRules.F3, s);
+        board.FillNotationFrame();
+        string full = NotationText();
+        CheckText(full, "e4 e5 Nf3", s + ": the game's notation");
+        ForgetNotation(1);
+        CheckInt(board.FirstMissingNotation(), 0, s + ": the first missing entry");
+        int filled = board.filledNotation;
+        int told = notationTold;
+        MarkNotifications();
+        Check(board.FillNotationFor(float.MaxValue), s + ": filled in", "still missing from ply "
+            + board.FirstMissingNotation());
+        CheckText(NotationText(), full, s + ": filled in as played");
+        CheckInt(board.filledNotation - filled, 3, s + ": three entries filled in");
+        CheckInt(notationTold - told, 0, s + ": listeners not told at once");
+        board.FillNotationFrame();
+        CheckInt(notationTold - told, 1, s + ": listeners told on the next frame");
+        board.FillNotationFrame();
+        CheckInt(notationTold - told, 1, s + ": listeners told once");
+        CheckNotTold(s + ": OnBoardChanged");
+        CheckInt(board.lastChange, ChessBoard.ChangeMove, s + ": lastChange kept");
+        board.PackState();
+        CheckInt(board.syncedInts[ChessBoard.SyncChange], ChessBoard.ChangeMove, s + ": nothing new to send");
+        ForgetNotation(1);
+        CheckInt(FillFrames(ChessBoard.DefaultFillBudgetMs), 1, s + ": filled in in a frame");
+        CheckText(NotationText(), full, s + ": filled in as played in a frame");
+        CheckInt(notationTold - told, 2, s + ": listeners told after the frame");
+        board.FillNotationFrame();
+        CheckInt(notationTold - told, 2, s + ": nothing more filled, nobody told");
+
+        // A long gap over frames: with no budget, one entry per frame (passing the entries known), with the normal
+        // budget fewer.
+        string l = "fill long";
+        SyncGame(ChessArbiter.NoClock, l);
+        KnightShuffle(32, l);
+        full = NotationText();
+        ForgetNotation(4);
+        CheckInt(board.FirstMissingNotation(), 0, l + ": the first missing entry");
+        told = notationTold;
+        board.fillBudgetMs = 0f;
+        board.FillNotationFrame();
+        board.fillBudgetMs = ChessBoard.DefaultFillBudgetMs;
+        CheckInt(notationTold - told, 0, l + ": nobody told during the walk");
+        CheckInt(FillFrames(0f), 97, l + ": one frame per missing entry with no budget");
+        CheckInt(notationTold - told, 1, l + ": listeners told once, at the end of the walk");
+        CheckInt(board.lastFillFrames, 98, l + ": the walk's frames");
+        CheckText(NotationText(), full, l + ": filled in as played");
+        ForgetNotation(1);
+        int frames = FillFrames(ChessBoard.DefaultFillBudgetMs);
+        Check(frames >= 1 && frames <= 130, l + ": the normal budget", frames + " frames");
+        CheckText(NotationText(), full, l + ": filled in as played with the normal budget");
+        Debug.Log("[BoardTest] fill timing: 130 plies with a " + ChessBoard.DefaultFillBudgetMs + " ms budget: "
+            + frames + " frames");
+
+        // An update arriving with gaps of its own drops a walk under way here, and its gaps are filled in.
+        string c = "fill received";
+        SyncGame(ChessArbiter.NoClock, c);
+        Drop("Ana", ChessRules.G1, ChessRules.F3, c);
+        Drop("Bob", ChessRules.B8, ChessRules.C6, c);
+        Drop("Ana", ChessRules.F1, ChessRules.B5, c);
+        Drop("Bob", ChessRules.A7, ChessRules.A6, c);
+        Drop("Ana", ChessRules.B5, ChessRules.C6, c);
+        full = NotationText();
+        CheckText(full, "e4 e5 Nf3 Nc6 Bb5 a6 Bxc6", c + ": the game's notation");
+        board.PackState();
+        string[] sent = board.syncedNotation;
+        for (int i = 0; i < sent.Length; i++) {
+            if (i % 2 == 0) sent[i] = "";
+        }
+        // Another game here, ended (so it isn't logged, which would finish the walk), partly walked.
+        SyncGame(ChessArbiter.NoClock, c);
+        KnightShuffle(4, c);
+        CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, c + ": the game here ended");
+        ForgetNotation(1);
+        board.fillBudgetMs = 0f;
+        board.FillNotationFrame();
+        board.FillNotationFrame();
+        board.fillBudgetMs = ChessBoard.DefaultFillBudgetMs;
+        CheckInt(board.FirstMissingNotation(), 2, c + ": a walk under way");
+        board.ReceiveState();
+        CheckInt(board.FirstMissingNotation(), 0, c + ": the update's gaps");
+        FillFrames(ChessBoard.DefaultFillBudgetMs);
+        CheckInt(board.FirstMissingNotation(), -1, c + ": the update filled in");
+        CheckText(NotationText(), full, c + ": the update filled in as played there");
+
+        // A reset drops a walk under way.
+        ForgetNotation(1);
+        board.fillBudgetMs = 0f;
+        board.FillNotationFrame();
+        board.fillBudgetMs = ChessBoard.DefaultFillBudgetMs;
+        filled = board.filledNotation;
+        board.ClearState();
+        CheckInt(FillFrames(ChessBoard.DefaultFillBudgetMs), 0, c + ": nothing to fill after a reset");
+        board.FillNotationFrame();
+        CheckInt(board.filledNotation - filled, 0, c + ": nothing filled after a reset");
+
+        // A game's PGN fills in its gaps first: logging and export.
+        string p = "fill pgn";
+        SyncGame(ChessArbiter.NoClock, p);
+        Drop("Ana", ChessRules.G1, ChessRules.F3, p);
+        ForgetNotation(1);
+        Check(board.GamePgn().Contains("1. e4 e5 2. Nf3 *"), p + ": exported", board.GamePgn());
+        ForgetNotation(1);
+        int before = board.loggedGames;
+        CheckInt(board.ResignAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, p + ": Bob resigns");
+        CheckLogged(before, 1, p + ": logged once");
+        CheckLogHas("1. e4 e5 2. Nf3 1-0", p + ": logged");
+
+        board.FillNotationFrame();
+        board.RemoveListener(this);
+        board.ClearState();
+    }
+
+    // Loads pgn with every notation entry forgotten, fills it in, and checks it's as the import had it (and
+    // expected, unless that's "").
+    void CheckFillLoaded(string pgn, string expected, string name) {
+        LoadText(pgn, name);
+        string imported = NotationText();
+        if (expected != "") CheckText(imported, expected, name + ": imported");
+        ForgetNotation(1);
+        CheckInt(board.FirstMissingNotation(), 0, name + ": forgotten");
+        Check(board.FillNotationFor(float.MaxValue), name + ": filled in", "still missing from ply "
+            + board.FirstMissingNotation());
+        CheckText(NotationText(), imported, name + ": filled in as imported");
+    }
+
+    // The game's notation, the entries separated by spaces.
+    string NotationText() {
+        string text = "";
+        for (int i = 0; i < board.moveCount; i++) text += (i > 0 ? " " : "") + board.notation[i];
+        return text;
+    }
+
+    // Forgets the game's notation but every keep-th entry (all of it for 1), and has the board look again.
+    void ForgetNotation(int keep) {
+        for (int i = 0; i < board.moveCount; i++) {
+            if (keep > 1 && i % keep == keep - 1) continue;
+            board.notation[i] = "";
+        }
+        board.RecheckNotation();
+    }
+
+    // Runs frames of filling in (FillNotationFrame) with this budget until no notation is missing, and returns how
+    // many it took (at most 1000).
+    int FillFrames(float budget) {
+        board.fillBudgetMs = budget;
+        int frames = 0;
+        while (board.FirstMissingNotation() >= 0 && frames < 1000) {
+            board.FillNotationFrame();
+            frames++;
+        }
+        board.fillBudgetMs = ChessBoard.DefaultFillBudgetMs;
+        return frames;
     }
 }

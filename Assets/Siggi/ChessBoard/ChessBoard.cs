@@ -574,6 +574,7 @@ namespace SiggiChessBoard {
                 }
             }
             moveCount = count;
+            RecheckNotation();
 
             replayMode = ints[SyncReplayMode] != 0;
             replayIndex = ints[SyncReplayIndex];
@@ -673,6 +674,7 @@ namespace SiggiChessBoard {
                 clockHistory[i] = -1;
             }
             moveCount = 0;
+            RecheckNotation();
 
             replayMode = false;
             replayIndex = 0;
@@ -1144,9 +1146,10 @@ namespace SiggiChessBoard {
 
         // ---- Game endings (docs/game-endings.md) ----
 
-        // The owner watches for flag fall and the auto-reset time, so the game ends on time once and the board resets
-        // itself once; every other client sees the update.
+        // Every client fills in missing notation (below). The owner watches for flag fall and the auto-reset time, so
+        // the game ends on time once and the board resets itself once; every other client sees the update.
         void Update() {
+            FillNotationFrame();
             if (lifecycle == LifecycleReset || !Networking.IsOwner(gameObject)) return;
             double now = ServerTime();
             if (lifecycle == LifecycleInGame) CheckFlagFallAt(now);
@@ -1172,6 +1175,119 @@ namespace SiggiChessBoard {
             if (wasInGame) LogGame(ending, winner);
         }
 
+        // ---- Notation fill-in (docs/networking.md, Filling in missing notation) ----
+        // Notation arrives with the moves, but an entry can be missing ("": a sender that didn't have it, or a game
+        // loaded without it). Every client fills the gaps in by itself and sends nothing: a walk from the position
+        // before the first gap through the rest of the history computes each missing SAN as the mover's client would
+        // have (ChessNotation.MoveToSan). That costs a legal-move list per entry, so Update walks for about
+        // fillBudgetMs each frame and a long gap takes several frames. A change to the history drops the walk and
+        // starts a new one (RecheckNotation). A game's PGN (logging, export) fills every gap first, in one go.
+
+        // The default walking time per frame in milliseconds, as the PGN import's (docs/pgn.md). At least one entry is
+        // filled in per frame, whatever the budget.
+        public const float DefaultFillBudgetMs = ChessPgnImporter.DefaultBudgetMs;
+        [NonSerialized] public float fillBudgetMs = DefaultFillBudgetMs;
+        // How many entries this client has filled in, and the frames (calls to FillNotationFor) the last walk took
+        // from finding a gap to the end of the history, for tests and the debug view.
+        [NonSerialized] public int filledNotation;
+        [NonSerialized] public int lastFillFrames;
+
+        // Whether the notation may have gaps (Update looks), and whether entries were filled in since the listeners
+        // were last told.
+        bool fillPending = true;
+        bool fillTell;
+        // The walk: the ply whose position fillBoard and fillState hold (-1 for no walk), and the frames it has taken.
+        int fillPly = -1;
+        int fillFrames;
+        byte[] fillBoard = new byte[64];
+        int[] fillState = new int[ChessPosition.StateLength];
+        int[] fillLegalMoves = new int[ChessMoves.MaxMoves];
+        int[] fillScratch = new int[ChessMoves.MaxMoves];
+        System.Diagnostics.Stopwatch fillWatch;
+
+        // The history or its notation has changed: a walk under way is dropped, and the next Update looks for gaps
+        // again. The board calls it on every change to the history; public for code that edits the notation itself
+        // (tests, the debug view).
+        public void RecheckNotation() {
+            fillPly = -1;
+            fillPending = true;
+        }
+
+        // The first ply of the game whose notation is missing, -1 if none is.
+        public int FirstMissingNotation() {
+            for (int i = 0; i < moveCount; i++) {
+                if (IsMissing(notation[i])) return i;
+            }
+            return -1;
+        }
+
+        static bool IsMissing(string san) {
+            return san == null || san.Length == 0;
+        }
+
+        // Fills in missing notation for about budgetMs milliseconds (at least one entry, and float.MaxValue for all of
+        // it), counting it as one frame, and returns whether none is missing now. The listeners are told by the next
+        // FillNotationFrame once none is.
+        public bool FillNotationFor(float budgetMs) {
+            if (fillPly < 0) {
+                int first = FirstMissingNotation();
+                if (first < 0) {
+                    fillPending = false;
+                    return true;
+                }
+                Array.Copy(board, fillBoard, 64);
+                Array.Copy(state, fillState, ChessPosition.StateLength);
+                for (int i = moveCount - 1; i >= first; i--) {
+                    ChessPosition.UnmakeMove(fillBoard, fillState, moveHistory[i]);
+                }
+                fillPly = first;
+                fillFrames = 0;
+            }
+            fillFrames++;
+            if (fillWatch == null) fillWatch = new System.Diagnostics.Stopwatch();
+            fillWatch.Reset();
+            fillWatch.Start();
+            int filled = 0;
+            while (true) {
+                while (fillPly < moveCount && !IsMissing(notation[fillPly])) {
+                    ChessPosition.MakeMove(fillBoard, fillState, moveHistory[fillPly]);
+                    fillPly++;
+                }
+                if (fillPly >= moveCount) break;
+                if (filled > 0 && fillWatch.Elapsed.TotalMilliseconds >= budgetMs) {
+                    fillWatch.Stop();
+                    return false;
+                }
+                int move = moveHistory[fillPly];
+                int legalCount = ChessMoves.GenerateLegalMoves(fillBoard, fillState, fillLegalMoves, true);
+                notation[fillPly] = ChessNotation.MoveToSan(fillBoard, fillState, move, fillLegalMoves, legalCount,
+                    fillScratch, true);
+                ChessPosition.MakeMove(fillBoard, fillState, move);
+                fillPly++;
+                filled++;
+                filledNotation++;
+                fillTell = true;
+            }
+            fillWatch.Stop();
+            fillPly = -1;
+            fillPending = false;
+            lastFillFrames = fillFrames;
+            return true;
+        }
+
+        // One frame of filling in, as Update does it: a walk for about fillBudgetMs while the notation may have gaps,
+        // then, once none is missing, telling the listeners (OnNotationFilled) if entries were filled in (by walks or by
+        // a PGN) since they were last told. A walk over several frames is told once, at its end. Public for tests.
+        public void FillNotationFrame() {
+            if (fillPending) FillNotationFor(fillBudgetMs);
+            if (!fillTell || fillPending) return;
+            fillTell = false;
+            if (listeners == null) return;
+            for (int i = 0; i < listeners.Length; i++) {
+                if (Utilities.IsValid(listeners[i])) listeners[i].OnNotationFilled();
+            }
+        }
+
         // ---- PGN (docs/pgn.md, Export and Logging) ----
 
         // The game's PGN as it stands: its tags (ChessPgn.WriteTags), a blank line and its move text.
@@ -1183,7 +1299,9 @@ namespace SiggiChessBoard {
         // logged as ChessGame.EndingUnterminated (a reset, 7.10, or a takeback, 7.8b) without ending it. The Date is
         // the start date in the Game ID; the first move's number and side come from the starting position. A loaded
         // game is written with its own players and time control, not the seats and the clock chosen for continuing.
+        // Missing notation is filled in first.
         string PgnWith(int pgnEnding, int pgnWinner) {
+            FillNotationFor(float.MaxValue);
             int firstSide = state[ChessPosition.StateSideToMove];
             if (moveCount % 2 == 1) firstSide = ChessRules.OtherColor(firstSide);
             bool loaded = lifecycle == LifecycleLoaded;
@@ -1890,6 +2008,7 @@ namespace SiggiChessBoard {
                 halfmoveClocks[i] = 0;
             }
             moveCount = ply;
+            RecheckNotation();
         }
 
         // Puts both clocks back to what they were after the last move each side made (the clock history), or the base
@@ -1984,6 +2103,7 @@ namespace SiggiChessBoard {
                 if (mover == ChessRules.Black) moveNumber++;
             }
             moveCount = count;
+            RecheckNotation();
 
             mode = loadedMode;
             replaySourceWhite = white == null ? "" : white;

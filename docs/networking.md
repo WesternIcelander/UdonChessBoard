@@ -78,6 +78,17 @@ No FEN or PGN goes over the network, so no client parses anything to stay in syn
 - Notation is synced, but every client also has code to compute it locally if any is missing (the string has fewer entries than the move history, or an entry is empty). It walks back to the position before each missing move and computes it as described under [Legality checking](legality-checking.md), using the time-budgeted processing for long gaps.
 - This keeps open the option of not syncing notation at all and having every client compute its own.
 
+### Implementation
+
+`ChessBoard` (8.6). Notation arrives with the moves as the synced `string[]` (8.3); the fill-in is local and sends nothing.
+
+- **Gaps:** an entry is missing when it's `""` (or `null`). `FirstMissingNotation()` gives the first, `-1` for none.
+- **The walk:** `FillNotationFor(budgetMs)` copies the game position, undoes the moves back to the first gap, then walks forward through the history: a known entry is just played, a missing one gets its SAN from `ChessNotation.MoveToSan` (a legal-move list on the walk's position, its own scratch arrays) and is played. It runs for about `budgetMs` (at least one entry, `float.MaxValue` for all of it), keeps the walk's position for the next call, and returns whether nothing is missing any more. `filledNotation` counts the entries this client has filled in and `lastFillFrames` the calls the last walk took, for tests and the debug view.
+- **Each frame:** `Update` calls `FillNotationFrame()` on every client (not only the owner): while gaps may exist it walks for `fillBudgetMs` (`DefaultFillBudgetMs`, the PGN import's 10 ms, see [PGN import](pgn.md#import-local-rare)), so a long gap takes several frames. Once there are no gaps it stops looking until the history changes.
+- **Changes:** every change to the history (unpacking an update, clearing, cutting it for a takeback or continuing, loading a game) calls `RecheckNotation()`, which drops a walk under way (its position may no longer be the game's) and has the next frame look for gaps again. Code that blanks entries itself (tests, the debug view) calls it too. A move played locally doesn't: it appends its own SAN, and a walk under way is still on the game's history.
+- **PGN:** `GamePgn` and logging fill every gap first, in one go, so a logged or exported game never has an empty move.
+- **Listeners:** entries filled in (by walks or by a PGN) are told through `OnNotationFilled()` on the first `FillNotationFrame` that finds nothing missing, so a walk over several frames is told once, at its end ([Architecture](architecture.md#implementation)); `lastChange` is untouched and nothing is sent. The owner sends whatever its notation holds, gaps included; each receiver fills them in on its own.
+
 ## Imported games
 
 The importing player parses the PGN locally, then writes the resulting state (pieces, move history, notation, starting FEN, replay index) to the synced fields like any other update. Everyone else, including late joiners, can step through the replay. (Syncing only the final FEN was the original idea; it shows the end position but loses the game.)

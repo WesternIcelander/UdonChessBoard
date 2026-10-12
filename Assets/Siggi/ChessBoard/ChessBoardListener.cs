@@ -9,5 +9,10 @@ namespace SiggiChessBoard {
         // Called once per change to a board this listens to, after the change.
         public virtual void OnBoardChanged() {
         }
+
+        // Called after the board has filled in missing notation by itself (ChessBoard.FillNotationFor), which changes
+        // nothing but the move list's text, so lastChange stays as it was.
+        public virtual void OnNotationFilled() {
+        }
     }
 }

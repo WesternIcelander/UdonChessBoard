@@ -74,6 +74,33 @@ public class ChessDebugView : ChessBoardListener {
             Debug.LogError("[ChessDebugView] received notation with "
                 + (sent == null ? "no array" : nulls + " null entries"));
         }
+        // Missing entries are filled in by the board over the next frames (OnNotationFilled).
+        int missing = board.FirstMissingNotation();
+        if (missing >= 0) Debug.Log("[ChessDebugView] received notation missing from ply " + missing);
+    }
+
+    // The board filled in missing notation (8.6): logged with how many entries it has filled in, how many frames the
+    // walk took, and, after Forget notation, whether it filled them in as they were.
+    public override void OnNotationFilled() {
+        dirty = true;
+        string text = "[ChessDebugView] notation filled in: " + board.filledNotation + " entries so far, the last walk "
+            + "took " + board.lastFillFrames + " frames";
+        if (forgottenCount > 0) {
+            int compared = forgottenCount < board.moveCount ? forgottenCount : board.moveCount;
+            int differ = 0;
+            string firstDiffer = "";
+            for (int ply = 0; ply < compared; ply++) {
+                if (board.notation[ply] == forgotten[ply]) continue;
+                if (differ == 0) {
+                    firstDiffer = "; first at ply " + ply + ": " + board.notation[ply] + " for " + forgotten[ply];
+                }
+                differ++;
+            }
+            text += "; the " + compared + " entries before forgetting "
+                + (differ == 0 ? "all match" : differ + " DIFFER" + firstDiffer);
+            forgottenCount = 0;
+        }
+        Debug.Log(text);
     }
 
     // The board's state in one line, for the log: lifecycle, seats, moves, position, owner.
@@ -362,6 +389,34 @@ public class ChessDebugView : ChessBoardListener {
 
     public void Resnapshot() {
         Report("Re-snapshot", board.Resnapshot());
+    }
+
+    // ---- Notation fill-in (8.6) ----
+
+    // The notation as it was before Forget notation, compared with what the board fills in.
+    string[] forgotten = new string[0];
+    int forgottenCount;
+
+    // Forgets this client's notation of the game, locally (nothing is sent): every entry but every fourth, so the
+    // board's walk both computes entries and passes known ones. The board fills them in over the next frames, and
+    // OnNotationFilled logs whether they match.
+    public void ForgetNotation() {
+        int count = board.moveCount;
+        if (count == 0) {
+            ReportDone("Forget notation: no moves", false);
+            return;
+        }
+        forgotten = new string[count];
+        int forgot = 0;
+        for (int ply = 0; ply < count; ply++) {
+            forgotten[ply] = board.notation[ply];
+            if (ply % 4 == 3) continue;
+            board.notation[ply] = "";
+            forgot++;
+        }
+        forgottenCount = count;
+        board.RecheckNotation();
+        ReportDone("Forget notation: " + forgot + " of " + count + " entries forgotten", true);
     }
 
     // ---- Helpers ----
