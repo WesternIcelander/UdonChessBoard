@@ -33,6 +33,8 @@ public class ChessDebugView : ChessBoardListener {
 
     int[] legalMoves = new int[ChessMoves.MaxMoves];
     string lastAction = "";
+    // The arbiter's settings as last logged, so a change (made here or arriving from another client) is logged once.
+    string lastArbiterSettings = "";
     float nextRefresh;
     bool dirty;
 
@@ -174,39 +176,73 @@ public class ChessDebugView : ChessBoardListener {
         Report("Reset", board.ResetBoard());
     }
 
-    // ---- Settings buttons: the arbiter's overrides for this board, which only a re-snapshot (or the next first
-    // join) brings onto the board. Ownership of the arbiter and syncing come with step 8.2. ----
+    // ---- Settings buttons: the arbiter's settings, changed as an organizer (taking ownership of the arbiter and
+    // syncing them to every client; refused for anyone else). Overrides are for this board; the board only takes them
+    // on a re-snapshot (or the next first join). ----
 
     public void ToggleTakebacks() {
-        if (!HasArbiter("Takebacks")) return;
+        if (!BeginArbiterChange("Takebacks")) return;
         bool on = !board.arbiter.IsEffectiveOn(board.boardNumber, ChessArbiter.SettingTakebacks);
-        ReportDone("Arbiter takebacks " + OnOff(on),
+        EndArbiterChange("Arbiter takebacks " + OnOff(on),
             board.arbiter.SetSettingOverride(board.boardNumber, ChessArbiter.SettingTakebacks, on));
     }
 
     // All draw rules on, or "No draws" when any is on.
     public void ToggleDraws() {
-        if (!HasArbiter("Draws")) return;
+        if (!BeginArbiterChange("Draws")) return;
         bool on = (board.arbiter.EffectiveSettings(board.boardNumber) & ChessArbiter.SettingsDrawRules) == 0;
-        ReportDone("Arbiter draw rules " + (on ? "all on" : "No draws"),
+        EndArbiterChange("Arbiter draw rules " + (on ? "all on" : "No draws"),
             board.arbiter.SetSettingOverride(board.boardNumber, ChessArbiter.SettingsDrawRules, on));
     }
 
     // Clock forced to 3+2, or not forced.
     public void ToggleClockForced() {
-        if (!HasArbiter("Clock forced")) return;
+        if (!BeginArbiterChange("Clock forced")) return;
         bool on = !board.arbiter.IsEffectiveOn(board.boardNumber, ChessArbiter.SettingClockForced);
         bool done = board.arbiter.SetSettingOverride(board.boardNumber, ChessArbiter.SettingClockForced, on);
         if (on) {
             board.arbiter.SetNumberOverride(board.boardNumber, ChessArbiter.NumberForcedBaseTime, 180);
             board.arbiter.SetNumberOverride(board.boardNumber, ChessArbiter.NumberForcedIncrement, 2);
         }
-        ReportDone("Arbiter clock forced " + (on ? "3+2" : "off"), done);
+        EndArbiterChange("Arbiter clock forced " + (on ? "3+2" : "off"), done);
     }
 
     public void ClearOverrides() {
-        if (!HasArbiter("Clear overrides")) return;
-        ReportDone("Arbiter overrides cleared", board.arbiter.ClearOverrides(board.boardNumber));
+        if (!BeginArbiterChange("Clear overrides")) return;
+        EndArbiterChange("Arbiter overrides cleared", board.arbiter.ClearOverrides(board.boardNumber));
+    }
+
+    // The instance default for takebacks (what boards without an override get).
+    public void ToggleDefaultTakebacks() {
+        if (!BeginArbiterChange("Default takebacks")) return;
+        bool on = !board.arbiter.IsDefaultOn(ChessArbiter.SettingTakebacks);
+        board.arbiter.SetDefaultSetting(ChessArbiter.SettingTakebacks, on);
+        EndArbiterChange("Arbiter default takebacks " + OnOff(on), true);
+    }
+
+    // The instance default reset-available time, cycled through 30 s, 120 s and never.
+    public void CycleDefaultResetTime() {
+        if (!BeginArbiterChange("Default reset time")) return;
+        int current = board.arbiter.DefaultNumber(ChessArbiter.NumberResetAvailableTime);
+        int next = current == 30 ? 120 : current == 120 ? ChessArbiter.Never : 30;
+        bool done = board.arbiter.SetDefaultNumber(ChessArbiter.NumberResetAvailableTime, next);
+        EndArbiterChange("Arbiter default reset-available time "
+            + board.arbiter.DefaultNumber(ChessArbiter.NumberResetAvailableTime), done);
+    }
+
+    // Asks VRChat for ownership of the arbiter directly, without BeginChange's organizer check, to see that the
+    // arbiter refuses a non-organizer. The owner is reported now and again after a few seconds, once the current
+    // owner has answered.
+    public void TakeArbiter() {
+        if (!HasArbiter("Take arbiter")) return;
+        Networking.SetOwner(Networking.LocalPlayer, board.arbiter.gameObject);
+        ReportDone("Take arbiter (owner now " + ArbiterOwnerName() + ")", Networking.IsOwner(board.arbiter.gameObject));
+        SendCustomEventDelayedSeconds(nameof(ReportArbiterOwner), 3);
+    }
+
+    public void ReportArbiterOwner() {
+        ReportDone("Take arbiter, 3 s later (owner " + ArbiterOwnerName() + ")",
+            Networking.IsOwner(board.arbiter.gameObject));
     }
 
     public void Resnapshot() {
@@ -269,6 +305,25 @@ public class ChessDebugView : ChessBoardListener {
         return false;
     }
 
+    // Takes ownership of the arbiter for a change, reporting a refusal (no arbiter, or not an organizer).
+    bool BeginArbiterChange(string label) {
+        if (!HasArbiter(label)) return false;
+        if (board.arbiter.BeginChange()) return true;
+        ReportDone(label + " (not an organizer)", false);
+        return false;
+    }
+
+    // Syncs the change and reports it.
+    void EndArbiterChange(string label, bool done) {
+        bool sent = board.arbiter.EndChange();
+        ReportDone(label + (sent ? "" : " (not sent: not the owner)"), done && sent);
+    }
+
+    string ArbiterOwnerName() {
+        VRCPlayerApi owner = Networking.GetOwner(board.arbiter.gameObject);
+        return Utilities.IsValid(owner) ? owner.displayName : "nobody";
+    }
+
     void Report(string label, int result) {
         lastAction = label + ": " + (result == ChessBoard.InputAccepted ? "accepted"
             : result == ChessBoard.InputPromotionNeeded ? "promotion needed" : "REFUSED");
@@ -288,6 +343,23 @@ public class ChessDebugView : ChessBoardListener {
         if (!Utilities.IsValid(board)) return;
         RefreshSquares();
         if (Utilities.IsValid(statusText)) statusText.text = StatusText();
+        LogArbiterSettings();
+    }
+
+    // Logs the arbiter's settings when they differ from the last logged ones (and once at the start), so each client's
+    // log shows when a change reached it.
+    void LogArbiterSettings() {
+        if (!Utilities.IsValid(board.arbiter)) return;
+        int[] numbers = new int[ChessArbiter.NumberCount];
+        board.arbiter.EffectiveNumbers(board.boardNumber, numbers);
+        string text = "board " + board.boardNumber + ": "
+            + ChessArbiter.SettingsToString(board.arbiter.EffectiveSettings(board.boardNumber)) + " | "
+            + ChessArbiter.NumbersToString(numbers) + "; defaults: "
+            + ChessArbiter.SettingsToString(board.arbiter.defaultSettings) + " | "
+            + ChessArbiter.NumbersToString(board.arbiter.defaultNumbers) + "; owner " + ArbiterOwnerName();
+        if (text == lastArbiterSettings) return;
+        lastArbiterSettings = text;
+        Debug.Log("[ChessDebugView] arbiter settings: " + text);
     }
 
     void RefreshSquares() {
@@ -348,6 +420,9 @@ public class ChessDebugView : ChessBoardListener {
             board.arbiter.EffectiveNumbers(board.boardNumber, numbers);
             text += "Arbiter now:" + ChessArbiter.SettingsToString(board.arbiter.EffectiveSettings(board.boardNumber))
                 + " | " + ChessArbiter.NumbersToString(numbers) + "\n";
+            text += "Arbiter defaults: " + ChessArbiter.SettingsToString(board.arbiter.defaultSettings) + " | "
+                + ChessArbiter.NumbersToString(board.arbiter.defaultNumbers) + "\n";
+            text += "Arbiter owner: " + ArbiterOwnerName() + "   first joiner: " + FirstJoinerText() + "\n";
         } else {
             text += "Arbiter: none\n";
         }
@@ -409,6 +484,13 @@ public class ChessDebugView : ChessBoardListener {
 
     bool IsLocalOrganizer() {
         return Utilities.IsValid(board.arbiter) && board.arbiter.IsOrganizer(Networking.LocalPlayer);
+    }
+
+    // The arbiter's FirstJoinerAuth name, if that's its authorization.
+    string FirstJoinerText() {
+        FirstJoinerAuth auth = board.arbiter.GetComponent<FirstJoinerAuth>();
+        if (!Utilities.IsValid(auth) || board.arbiter.simpleAuth != auth) return "(not FirstJoinerAuth)";
+        return auth.firstJoiner.Length > 0 ? auth.firstJoiner : "(not known yet)";
     }
 
     static string LocalName() {

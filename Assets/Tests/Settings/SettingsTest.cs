@@ -4,7 +4,8 @@ using UdonSharp;
 using UnityEngine;
 using VRC.SDKBase;
 
-// Step 6 test behaviour (PLAN.md section 6): the arbiter's settings, with no world objects.
+// Step 6 test behaviour (PLAN.md section 6, and 8.2's single-client checks): the arbiter's settings, with no world
+// objects.
 // Logs "[SettingsTest] PASS: <check>" or "[SettingsTest] FAIL: <check>: <details>" per check, then a summary line.
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
 public class SettingsTest : UdonSharpBehaviour {
@@ -48,6 +49,7 @@ public class SettingsTest : UdonSharpBehaviour {
         TestAuth();
         TestAuthFallback();
         TestCombinations();
+        TestChanging();
         Debug.Log("[SettingsTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
@@ -413,6 +415,74 @@ public class SettingsTest : UdonSharpBehaviour {
         Check(!noneWhileEmpty, "auth fallback: field emptied, no player isn't an organizer", "");
         Check(arbiter.simpleAuth == auth && arbiter.IsOrganizer(local),
             "auth fallback: field restored, the local player is an organizer again", "");
+    }
+
+    // ---- 8.2 ----
+
+    // Changing settings as an organizer, as far as one client can check it: BeginChange makes the local player (an
+    // organizer) the owner, EndChange sends, and the ownership check allows organizers only. The default setters
+    // change the defaults (numbers corrected). Swapping NoOneAuth in for a moment makes the local player a
+    // non-organizer. Syncing to other clients needs several clients (PLAN 8.2's Verify, with the debug view).
+    void TestChanging() {
+        VRCPlayerApi local = Networking.LocalPlayer;
+        if (!Utilities.IsValid(arbiter)) {
+            Check(false, "changing", "arbiter not assigned");
+            return;
+        }
+        SimpleAuth auth = arbiter.simpleAuth;
+        if (!Utilities.IsValid(auth) || !arbiter.IsOrganizer(local)) {
+            Check(false, "changing", "the local player isn't an organizer");
+            return;
+        }
+        Check(arbiter.BeginChange() && Networking.IsOwner(arbiter.gameObject),
+            "changing: an organizer's BeginChange makes them the owner", "");
+        Check(arbiter.EndChange(), "changing: the owner's EndChange sends", "");
+        Check(arbiter.MayOwn(local), "changing: ownership allowed to an organizer", "");
+        Check(!arbiter.MayOwn(null), "changing: ownership refused to no player", "");
+        if (Utilities.IsValid(noOneAuth)) {
+            arbiter.simpleAuth = noOneAuth;
+            bool begun = arbiter.BeginChange();
+            bool allowed = arbiter.MayOwn(local);
+            arbiter.simpleAuth = auth;
+            Check(!begun, "changing: a non-organizer's BeginChange is refused", "");
+            Check(!allowed, "changing: ownership refused to a non-organizer", "");
+        } else {
+            Check(false, "changing: non-organizer", "no NoOneAuth on the test object");
+        }
+
+        int savedSettings = arbiter.defaultSettings;
+        int[] savedNumbers = Copy(arbiter.defaultNumbers);
+        int t = ChessArbiter.SettingTakebacks;
+        bool takebacks = arbiter.IsDefaultOn(t);
+        arbiter.SetDefaultSetting(t, !takebacks);
+        Check(arbiter.IsDefaultOn(t) != takebacks
+                && (arbiter.defaultSettings & ~t) == (savedSettings & ~t),
+            "changing: default takebacks flipped, the rest kept", ChessArbiter.SettingsToString(arbiter.defaultSettings));
+        arbiter.SetDefaultSetting(ChessArbiter.SettingsDrawRules, true);
+        CheckInt(arbiter.defaultSettings & ChessArbiter.SettingsDrawRules, ChessArbiter.SettingsDrawRules,
+            "changing: default draw rules all on");
+        arbiter.SetDefaultSetting(ChessArbiter.SettingsDrawRules | (1 << ChessArbiter.SettingCount), false);
+        CheckInt(arbiter.defaultSettings & ChessArbiter.SettingsDrawRules, 0, "changing: default draw rules all off");
+        arbiter.SetDefaultSetting(1 << ChessArbiter.SettingCount, true);
+        CheckInt(arbiter.defaultSettings & ~ChessArbiter.OverrideSettingsMask, 0,
+            "changing: no default bits outside the settings");
+        Check(arbiter.SetDefaultNumber(ChessArbiter.NumberAutoResetTime, 600)
+                && arbiter.SetDefaultNumber(ChessArbiter.NumberResetAvailableTime, 30),
+            "changing: default times set", "");
+        Check(arbiter.DefaultNumber(ChessArbiter.NumberResetAvailableTime) == 30
+                && arbiter.DefaultNumber(ChessArbiter.NumberAutoResetTime) == 600,
+            "changing: default times", ChessArbiter.NumbersToString(arbiter.defaultNumbers));
+        arbiter.SetDefaultNumber(ChessArbiter.NumberAutoResetTime, 10);
+        CheckInt(arbiter.DefaultNumber(ChessArbiter.NumberResetAvailableTime), 10,
+            "changing: default auto-reset below reset-available clamps it");
+        arbiter.SetDefaultNumber(ChessArbiter.NumberForcedMode, 7);
+        CheckInt(arbiter.DefaultNumber(ChessArbiter.NumberForcedMode), ChessGame.ModeStandard,
+            "changing: unknown default mode corrected");
+        Check(!arbiter.SetDefaultNumber(ChessArbiter.NumberCount, 5) && !arbiter.SetDefaultNumber(-1, 5),
+            "changing: unknown number refused", "");
+        arbiter.defaultSettings = savedSettings;
+        arbiter.defaultNumbers = savedNumbers;
+        arbiter.EndChange();
     }
 
     // ---- 6.3 ----

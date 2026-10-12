@@ -12,6 +12,7 @@ using VRC.Udon;
 
 // Builds the debug view (PLAN.md 8.1, ChessDebugView.cs) in the open scene for the selected ChessBoard, or the scene's
 // only one: a world-space canvas with the 8x8 board, the status text and one button per public method of the view.
+// An existing debug view for the same board is replaced, keeping its place, so it can be rebuilt when buttons change.
 // Menu: Tools > Chess Board > Create Debug View. Plain editor C#, not Udon.
 public static class ChessDebugViewBuilder {
     const string ViewScriptPath = "Assets/Tests/Debug/ChessDebugView.cs";
@@ -30,6 +31,8 @@ public static class ChessDebugViewBuilder {
         { "Continue from here", "ContinueGame" }, { "Arbiter: takebacks", "ToggleTakebacks" },
         { "Arbiter: draws", "ToggleDraws" }, { "Arbiter: clock forced", "ToggleClockForced" },
         { "Arbiter: clear overrides", "ClearOverrides" }, { "Re-snapshot", "Resnapshot" },
+        { "Default takebacks", "ToggleDefaultTakebacks" }, { "Default reset time", "CycleDefaultResetTime" },
+        { "Take arbiter", "TakeArbiter" },
     };
     const int ButtonColumns = 7;
 
@@ -49,6 +52,7 @@ public static class ChessDebugViewBuilder {
         Font font = BuiltinFont();
         GameObject root = new GameObject("ChessDebugView (" + board.gameObject.name + ")");
         Undo.RegisterCreatedObjectUndo(root, "Create Debug View");
+        GameObject old = ExistingView(board);
         root.layer = LayerMask.NameToLayer("Default");
         Canvas canvas = root.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
@@ -86,7 +90,7 @@ public static class ChessDebugViewBuilder {
         float statusLeft = Margin * 2 + 8 * SquareSize;
         GameObject status = NewChild(root, "Status", new Vector2(statusLeft, Margin),
             new Vector2(CanvasWidth - statusLeft - Margin, 8 * SquareSize + 100));
-        view.statusText = NewText(status, "Text", font, 22, TextAnchor.UpperLeft);
+        view.statusText = NewText(status, "Text", font, 20, TextAnchor.UpperLeft);
         view.statusText.supportRichText = true;
         view.statusText.horizontalOverflow = HorizontalWrapMode.Wrap;
         view.statusText.verticalOverflow = VerticalWrapMode.Overflow;
@@ -112,10 +116,27 @@ public static class ChessDebugViewBuilder {
         }
 
         UdonSharpEditorUtility.CopyProxyToUdon(view);
+        if (old != null) {
+            root.transform.SetParent(old.transform.parent, false);
+            root.transform.SetSiblingIndex(old.transform.GetSiblingIndex());
+            rootRect.position = old.transform.position;
+            rootRect.rotation = old.transform.rotation;
+            rootRect.localScale = old.transform.localScale;
+            Undo.DestroyObjectImmediate(old);
+        }
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
-        Debug.Log("[ChessDebugViewBuilder] Created " + root.name + " for " + board.gameObject.name
-            + ". Move it where you like and save the scene.");
+        Debug.Log("[ChessDebugViewBuilder] " + (old != null ? "Replaced " : "Created ") + root.name + " for "
+            + board.gameObject.name + ". Move it where you like and save the scene.");
+    }
+
+    // The scene's debug view for a board (built earlier), or null.
+    static GameObject ExistingView(ChessBoard board) {
+        ChessDebugView[] views = Object.FindObjectsOfType<ChessDebugView>(true);
+        for (int i = 0; i < views.Length; i++) {
+            if (views[i].board == board) return views[i].gameObject;
+        }
+        return null;
     }
 
     // The selected ChessBoard, or the scene's only one.

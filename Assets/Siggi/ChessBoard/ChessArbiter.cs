@@ -7,7 +7,8 @@ using VRC.SDKBase;
 namespace SiggiChessBoard {
     // The instance's rules settings (docs/settings.md): which rules apply to the boards, as one int of setting bits
     // plus five numeric settings. The instance defaults come from the fields set in the editor; organizers change
-    // them in-world through the settings menu (a view of this behaviour, step 11). Boards read their effective
+    // them in-world through the settings menu (a view of this behaviour, step 11), taking ownership of this object to
+    // sync them (only organizers may own it; see BeginChange). Boards read their effective
     // settings from here when they take a snapshot (step 7). Holds no game and touches no world objects.
     [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
     public class ChessArbiter : UdonSharpBehaviour {
@@ -178,9 +179,60 @@ namespace SiggiChessBoard {
             return simpleAuth.IsAuthorized(who);
         }
 
+        // ---- Changing settings (docs/organizers.md) ----
+        // The setters below only change this client's copy. An organizer's change goes through BeginChange (taking
+        // ownership), the setters, then EndChange (serializing), so every client gets it:
+        //     if (!arbiter.BeginChange()) return;   // not an organizer
+        //     arbiter.SetSettingOverride(board, ChessArbiter.SettingTakebacks, false);
+        //     arbiter.EndChange();
+
+        // Makes the local player the owner, if they're an organizer, and returns whether they now own the arbiter.
+        // OnOwnershipRequest refuses anyone else on every client, so a non-organizer can't take it.
+        public bool BeginChange() {
+            VRCPlayerApi local = Networking.LocalPlayer;
+            if (!IsOrganizer(local)) return false;
+            if (!Networking.IsOwner(gameObject)) Networking.SetOwner(local, gameObject);
+            return Networking.IsOwner(gameObject);
+        }
+
+        // Sends the settings to every client (late joiners get the last ones sent). Only the owner can.
+        public bool EndChange() {
+            if (!Networking.IsOwner(gameObject)) return false;
+            RequestSerialization();
+            return true;
+        }
+
+        // Only organizers may own the arbiter, so only they can change the synced settings. Checked on the requesting
+        // client and on the owner. VRChat doesn't ask when the owner leaves: the next owner can be anyone, who then
+        // owns the settings but can't change them (BeginChange refuses), and an organizer can still take it.
+        public override bool OnOwnershipRequest(VRCPlayerApi requestingPlayer, VRCPlayerApi requestedOwner) {
+            return MayOwn(requestedOwner);
+        }
+
+        // Whether a player may own the arbiter: organizers only.
+        public bool MayOwn(VRCPlayerApi who) {
+            return IsOrganizer(who);
+        }
+
+        // Turns the given setting bits (one or several) on or off in the instance defaults.
+        public void SetDefaultSetting(int settings, bool on) {
+            settings &= OverrideSettingsMask;
+            if (on) defaultSettings |= settings;
+            else defaultSettings &= ~settings;
+        }
+
+        // Sets a numeric setting's instance default, corrected by FixNumbers (which can change another one: an
+        // auto-reset time below the reset-available time clamps the latter). False for an unknown number.
+        public bool SetDefaultNumber(int number, int value) {
+            if (number < 0 || number >= NumberCount) return false;
+            defaultNumbers[number] = value;
+            FixNumbers(defaultNumbers);
+            return true;
+        }
+
         // ---- Per-board overrides ----
-        // The setters only change this client's copy; taking ownership and serializing comes with step 8.2. They
-        // return false for a board number without overrides (out of range), which then always has the defaults.
+        // The setters only change this client's copy (see Changing settings). They return false for a board number
+        // without overrides (out of range), which then always has the defaults.
 
         // How many boards can have overrides (as synced, so a late joiner agrees with the owner).
         public int BoardCount() {
