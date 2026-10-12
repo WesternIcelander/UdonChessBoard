@@ -132,6 +132,15 @@ namespace SiggiChessBoard {
         [NonSerialized] public float[] animationStart = new float[PieceCount];
         float[] animationLift = new float[PieceCount];
         int animatingCount;
+        // The status display (step 9.5c): any number of panels (the builder puts one at each end of the table), each
+        // with a players text (both seats, with their clocks during and after a game) and a status text (whose turn,
+        // check, the result, pending offers and requests, a loaded game's names, the replay position), at the same
+        // index. Brought up to date on every Refresh, every StatusInterval while a clock runs and once a second
+        // otherwise.
+        public Text[] statusPlayerLabels = new Text[0];
+        public Text[] statusLabels = new Text[0];
+        public const float StatusInterval = 0.1f;
+        float nextStatusUpdate;
 
         // Which object stands on each square (NoObject for none), and the other way round (NoSquare for an object
         // off the board: captured, or not needed by the position). objectType is the piece type each object stands
@@ -223,6 +232,13 @@ namespace SiggiChessBoard {
                 UpdateButtons();
             }
             if (animatingCount > 0) StepAnimations();
+            // The clocks run without the board changing.
+            if (Time.time >= nextStatusUpdate) UpdateStatus();
+        }
+
+        // Only the move list's text changed: the replay line may name a move it didn't know before.
+        public override void OnNotationFilled() {
+            UpdateStatus();
         }
 
         // A move one ply on from the position the mapping shows moves its objects now, so the right object travels
@@ -285,6 +301,7 @@ namespace SiggiChessBoard {
             UpdatePromotionPicker();
             UpdateButtons();
             UpdateBlocker();
+            UpdateStatus();
         }
 
         // Enables the blocker unless the local player has a seat (either colour), so only the seated players can walk
@@ -994,8 +1011,7 @@ namespace SiggiChessBoard {
             if (action == ButtonJoinWhite) return "Join White";
             if (action == ButtonJoinBlack) return "Join Black";
             if (action == ButtonMode) {
-                bool chess960 = Utilities.IsValid(board) && board.mode == ChessGame.ModeChess960;
-                return "Mode: " + (chess960 ? "Chess960" : "Standard");
+                return "Mode: " + ModeText(Utilities.IsValid(board) ? board.mode : ChessGame.ModeStandard);
             }
             if (action == ButtonClock) {
                 if (!Utilities.IsValid(board)) return "Clock";
@@ -1051,6 +1067,159 @@ namespace SiggiChessBoard {
                 string text = ButtonText(action);
                 if (buttonLabels[i].text != text) buttonLabels[i].text = text;
             }
+        }
+
+        // ---- Status display (step 9.5c) ----
+
+        // Brings every status panel up to the board at the server time now, and schedules the next update: soon while
+        // a clock runs (the side to move's time counts down, and its flag can fall), once a second otherwise.
+        public void UpdateStatus() {
+            bool valid = Utilities.IsValid(board);
+            nextStatusUpdate = Time.time + (valid && board.IsClockRunning() ? StatusInterval : 1);
+            double now = valid ? board.ServerTime() : 0;
+            string players = PlayersTextAt(now);
+            string status = StatusTextAt(now);
+            for (int i = 0; i < statusPlayerLabels.Length; i++) {
+                Text label = statusPlayerLabels[i];
+                if (Utilities.IsValid(label) && label.text != players) label.text = players;
+            }
+            for (int i = 0; i < statusLabels.Length; i++) {
+                Text label = statusLabels[i];
+                if (Utilities.IsValid(label) && label.text != status) label.text = status;
+            }
+        }
+
+        // Both seats at server time now, White's line first (PlayerTextAt).
+        public string PlayersTextAt(double now) {
+            return PlayerTextAt(ChessRules.White, now) + "\n" + PlayerTextAt(ChessRules.Black, now);
+        }
+
+        // A seat's line: "White: Ana", "(open)" for an empty seat, with the side's remaining time at server time now
+        // during and after a game with a clock ("White: Ana  4:58").
+        public string PlayerTextAt(int color, double now) {
+            if (!Utilities.IsValid(board)) return "";
+            string name = color == ChessRules.White ? board.whitePlayer : board.blackPlayer;
+            string text = ColorText(color) + ": " + (name != null && name.Length > 0 ? name : "(open)");
+            bool played = board.lifecycle == ChessBoard.LifecycleInGame || board.lifecycle == ChessBoard.LifecycleEnded;
+            if (played && board.HasClock()) text += "  " + ClockDisplay(board.RemainingTimeAt(color, now));
+            return text;
+        }
+
+        // The board's state at server time now, a line each: a reset board's invitation; the lobby's mode and clock; a
+        // loaded game's names (and mode, for Chess960); in a game, whose turn it is and whether they're in check, or that
+        // their time is up; the result of an ended or loaded game (EndingText); a pending draw offer and takeback
+        // request; the replay position (ReplayText).
+        public string StatusTextAt(double now) {
+            if (!Utilities.IsValid(board)) return "";
+            int lifecycle = board.lifecycle;
+            if (lifecycle == ChessBoard.LifecycleReset) return "Join White or Black to play";
+            string text = "";
+            if (lifecycle == ChessBoard.LifecycleLobby) {
+                text = "Lobby: " + ModeText(board.mode) + ", " + ClockText(board.baseTime, board.increment);
+            } else if (lifecycle == ChessBoard.LifecycleLoaded) {
+                text = "Loaded game: " + TagText(board.replaySourceWhite) + " vs " + TagText(board.replaySourceBlack);
+                if (board.mode == ChessGame.ModeChess960) text += " (Chess960)";
+            } else if (lifecycle == ChessBoard.LifecycleInGame) {
+                int flagged = board.FlaggedColorAt(now);
+                if (flagged != ChessRules.NoColor) {
+                    text = ColorText(flagged) + "'s time is up";
+                } else {
+                    text = ColorText(board.SideToMove()) + " to move";
+                    if (board.IsInCheck()) text += ", in check";
+                }
+            }
+            text = AddLine(text, EndingText());
+            if (board.drawOfferColor != ChessRules.NoColor) {
+                text = AddLine(text, ColorText(board.drawOfferColor) + " offers a draw");
+            }
+            if (board.takebackColor != ChessRules.NoColor) {
+                text = AddLine(text, ColorText(board.takebackColor) + " asks to take back to here");
+            }
+            if (board.replayMode) text = AddLine(text, ReplayText());
+            return text;
+        }
+
+        // How an ended or loaded game ended, with its PGN result: "White wins by checkmate (1-0)", "Draw by agreement
+        // (1/2-1/2)"; "Unfinished game (*)" for a loaded game without a result; "" otherwise.
+        public string EndingText() {
+            if (!Utilities.IsValid(board)) return "";
+            int lifecycle = board.lifecycle;
+            if (lifecycle != ChessBoard.LifecycleEnded && lifecycle != ChessBoard.LifecycleLoaded) return "";
+            int ending = board.ending;
+            int winner = board.winner;
+            if (ending == ChessGame.EndingNone || ending == ChessGame.EndingUnterminated) {
+                return lifecycle == ChessBoard.LifecycleLoaded ? "Unfinished game (*)" : "";
+            }
+            string result = " (" + board.ResultText() + ")";
+            string wins = winner == ChessRules.NoColor ? "Draw" : ColorText(winner) + " wins";
+            // A time forfeit drawn: the side out of time is the one that was to move, and its opponent couldn't mate.
+            int flagged = board.SideToMove();
+            switch (ending) {
+                case ChessGame.EndingCheckmate: return wins + " by checkmate" + result;
+                case ChessGame.EndingResignation: return wins + " by resignation" + result;
+                case ChessGame.EndingKingCaptured: return wins + " by capturing the king" + result;
+                case ChessGame.EndingTimeForfeit:
+                    if (winner != ChessRules.NoColor) return wins + " on time" + result;
+                    return "Draw: " + ColorText(flagged) + " ran out of time, "
+                        + ColorText(ChessRules.OtherColor(flagged)) + " can't checkmate" + result;
+                case ChessGame.EndingStalemate: return "Draw by stalemate" + result;
+                case ChessGame.EndingDrawAgreement: return "Draw by agreement" + result;
+                case ChessGame.EndingThreefoldRepetition: return "Draw by threefold repetition" + result;
+                case ChessGame.EndingFivefoldRepetition: return "Draw by fivefold repetition" + result;
+                case ChessGame.EndingFiftyMoveRule: return "Draw by the fifty-move rule" + result;
+                case ChessGame.EndingSeventyFiveMoveRule: return "Draw by the seventy-five-move rule" + result;
+                case ChessGame.EndingInsufficientMaterial: return "Draw: insufficient material" + result;
+            }
+            // A loaded game's result tag (EndingUnknown).
+            return wins + result;
+        }
+
+        // The replay position: "Replay: 2. Nf3 (3 of 4)" (the move that led to it, numbered as PGN numbers it, "?"
+        // while its notation is missing), "Replay: start (0 of 4)", or "Replay: custom position" after free moves.
+        public string ReplayText() {
+            if (board.replayCustom) return "Replay: custom position";
+            int ply = board.replayIndex;
+            string of = " (" + ply + " of " + board.moveCount + ")";
+            if (ply <= 0 || ply > board.moveCount) return "Replay: start" + of;
+            // The side that made the first move: the side to move now, or the other after an odd number of moves.
+            int firstSide = board.SideToMove();
+            if (board.moveCount % 2 == 1) firstSide = ChessRules.OtherColor(firstSide);
+            string san = board.notation[ply - 1];
+            if (san == null || san.Length == 0) san = "?";
+            return "Replay: " + ChessPgn.MoveLabel(board.startMoveNumber, firstSide, ply - 1) + " " + san + of;
+        }
+
+        // A clock as players read it: "4:58", "1:02:05" from an hour, tenths under ten seconds ("0:09.8").
+        public static string ClockDisplay(int milliseconds) {
+            if (milliseconds < 0) milliseconds = 0;
+            int seconds = milliseconds / 1000;
+            int minutes = seconds / 60;
+            if (minutes >= 60) return (minutes / 60) + ":" + TwoDigits(minutes % 60) + ":" + TwoDigits(seconds % 60);
+            string text = minutes + ":" + TwoDigits(seconds % 60);
+            if (milliseconds < 10000) text += "." + (milliseconds / 100 % 10);
+            return text;
+        }
+
+        static string TwoDigits(int value) {
+            return value < 10 ? "0" + value : value.ToString();
+        }
+
+        public static string ColorText(int color) {
+            return color == ChessRules.White ? "White" : "Black";
+        }
+
+        public static string ModeText(int mode) {
+            return mode == ChessGame.ModeChess960 ? "Chess960" : "Standard";
+        }
+
+        // A loaded game's name tag, "?" when it had none.
+        static string TagText(string value) {
+            return value != null && value.Length > 0 ? value : "?";
+        }
+
+        static string AddLine(string text, string line) {
+            if (line.Length == 0) return text;
+            return text.Length == 0 ? line : text + "\n" + line;
         }
 
         // ---- Pickups (docs/physical-pieces.md) ----

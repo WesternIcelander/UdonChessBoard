@@ -1,6 +1,7 @@
 using SiggiChessBoard;
 using UdonSharp;
 using UnityEngine;
+using UnityEngine.UI;
 using VRC.SDKBase;
 
 // Step 9 test behaviour (PLAN.md section 9): the physical board (ChessBoardView) checked against the logical one it
@@ -1424,7 +1425,198 @@ public class ViewTest : UdonSharpBehaviour {
         view.animateMoves = savedAnimate;
         view.Refresh();
         CheckView("cleared after the animation checks");
+        SendCustomEventDelayedFrames(nameof(RunStatusChecks), 1);
+    }
+
+    // ---- 9.5c: the status display ----
+
+    // Sam Loyd's ten-move stalemate (docs/testing.md, stalemate.pgn.txt) and the fool's mate.
+    const string LoydStalemate = "e2e3 a7a5 d1h5 a8a6 h5a5 h7h5 h2h4 a6h6 a5c7 f7f6 c7d7 e8f7 d7b7 d8d3 b7b8 d3h7 "
+        + "b8c8 f7g6 c8e6";
+    const string FoolsMate = "f2f3 e7e5 g2g4 d8h4";
+
+    // The twelfth frame: the status panels wired; ClockDisplay; the players' and status texts (and the panels showing
+    // them) on a reset board, in a lobby, in a game of two others with a clock (at the turn start, a minute on, the
+    // flag fallen), in check, with a draw offer, in replay with a takeback request and after a free move, resigned;
+    // every ending's text; a stalemate and a checkmate played, the mate in replay; a loaded game at its last ply, its
+    // start and with seats taken, and one starting with Black to move.
+    public void RunStatusChecks() {
+        string s = "status";
+        int panels = view.statusLabels.Length;
+        Check(panels > 0 && view.statusPlayerLabels.Length == panels, s + ": panels assigned",
+            panels + " status texts, " + view.statusPlayerLabels.Length + " players texts");
+        int missing = 0;
+        for (int i = 0; i < panels; i++) {
+            if (!Utilities.IsValid(view.statusLabels[i])) missing++;
+            if (i < view.statusPlayerLabels.Length && !Utilities.IsValid(view.statusPlayerLabels[i])) missing++;
+        }
+        CheckInt(missing, 0, s + ": every panel's texts assigned: missing");
+        CheckString(ChessBoardView.ClockDisplay(300000), "5:00", s + ": clock 5:00");
+        CheckString(ChessBoardView.ClockDisplay(299999), "4:59", s + ": clock 4:59.999");
+        CheckString(ChessBoardView.ClockDisplay(61000), "1:01", s + ": clock 1:01");
+        CheckString(ChessBoardView.ClockDisplay(10000), "0:10", s + ": clock 0:10");
+        CheckString(ChessBoardView.ClockDisplay(9876), "0:09.8", s + ": clock 0:09.876");
+        CheckString(ChessBoardView.ClockDisplay(0), "0:00.0", s + ": clock 0");
+        CheckString(ChessBoardView.ClockDisplay(3600000), "1:00:00", s + ": clock an hour");
+        CheckString(ChessBoardView.ClockDisplay(3725000), "1:02:05", s + ": clock 1:02:05");
+
+        // Two others' lobby and game, with a clock.
+        board.ClearState();
+        CheckStatus("White: (open)\nBlack: (open)", "Join White or Black to play", s + ": reset board");
+        CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana joined White");
+        Unforce();
+        CheckStatus("White: Ana\nBlack: (open)", "Lobby: Standard, No clock", s + ": lobby");
+        CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob joined Black");
+        CheckInt(board.SetClockAs("Ana", 300, 3), ChessBoard.InputAccepted, s + ": 5+3 chosen");
+        CheckInt(board.SetModeAs("Bob", ChessGame.ModeChess960), ChessBoard.InputAccepted, s + ": Chess960 chosen");
+        CheckStatus("White: Ana\nBlack: Bob", "Lobby: Chess960, 5+3", s + ": lobby, both seats");
+        CheckInt(board.SetModeAs("Bob", ChessGame.ModeStandard), ChessBoard.InputAccepted, s + ": Standard chosen");
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, s + ": started");
+        CheckStatus("White: Ana  5:00\nBlack: Bob  5:00", "White to move", s + ": game started");
+        double start = board.turnStart;
+        CheckString(view.PlayersTextAt(start + 61.5), "White: Ana  3:58\nBlack: Bob  5:00", s + ": a minute on");
+        CheckString(view.StatusTextAt(start + 295.1), "White to move", s + ": 4.9 s left");
+        CheckString(view.PlayersTextAt(start + 295.1), "White: Ana  0:04.9\nBlack: Bob  5:00", s + ": 4.9 s left");
+        CheckString(view.StatusTextAt(start + 301), "White's time is up", s + ": flag fallen");
+        CheckString(view.PlayersTextAt(start + 301), "White: Ana  0:00.0\nBlack: Bob  5:00", s + ": flag fallen");
+        CheckInt(board.PieceDroppedAs("Ana", Sq("e2"), Sq("e4")), ChessBoard.InputAccepted, s + ": e4");
+        CheckInt(board.PieceDroppedAs("Bob", Sq("f7"), Sq("f6")), ChessBoard.InputAccepted, s + ": f6");
+        CheckInt(board.PieceDroppedAs("Ana", Sq("d1"), Sq("h5")), ChessBoard.InputAccepted, s + ": Qh5+");
+        CheckStatus(null, "Black to move, in check", s + ": check");
+        SetRequestRules(true);
+        CheckInt(board.OfferDrawAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob offered a draw");
+        CheckStatus(null, "Black to move, in check\nBlack offers a draw", s + ": draw offer");
+        CheckInt(board.EnterReplayAs("Ana", false), ChessBoard.InputAccepted, s + ": replay");
+        CheckStatus(null, "Black to move, in check\nBlack offers a draw\nReplay: 2. Qh5+ (3 of 3)", s + ": replay");
+        CheckInt(board.StepToAs("Ana", false, 1), ChessBoard.InputAccepted, s + ": stepped to ply 1");
+        CheckInt(board.RequestTakebackAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana asked");
+        CheckStatus(null, "Black to move, in check\nBlack offers a draw\nWhite asks to take back to here\n"
+            + "Replay: 1. e4 (1 of 3)", s + ": takeback request");
+        CheckInt(board.StepToAs("Ana", false, 0), ChessBoard.InputAccepted, s + ": stepped to the start");
+        CheckStatus(null, "Black to move, in check\nBlack offers a draw\nReplay: start (0 of 3)",
+            s + ": request cancelled by stepping");
+        CheckInt(board.PieceDroppedAs("Ana", Sq("a2"), Sq("a4")), ChessBoard.InputAccepted, s + ": a free move");
+        CheckStatus(null, "Black to move, in check\nBlack offers a draw\nReplay: custom position", s + ": free move");
+        CheckInt(board.LeaveReplayAs("Ana", false), ChessBoard.InputAccepted, s + ": back to the game");
+        CheckInt(board.ResignAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob resigned");
+        CheckStatus(null, "White wins by resignation (1-0)", s + ": resigned");
+        CheckString(view.PlayerTextAt(ChessRules.Black, board.ServerTime() + 60),
+            view.PlayerTextAt(ChessRules.Black, board.ServerTime()), s + ": the clocks stopped");
+
+        // Every ending's text, set on the ended game (Black was to move).
+        CheckEnding(ChessGame.EndingCheckmate, ChessRules.White, "White wins by checkmate (1-0)");
+        CheckEnding(ChessGame.EndingCheckmate, ChessRules.Black, "Black wins by checkmate (0-1)");
+        CheckEnding(ChessGame.EndingResignation, ChessRules.Black, "Black wins by resignation (0-1)");
+        CheckEnding(ChessGame.EndingTimeForfeit, ChessRules.White, "White wins on time (1-0)");
+        CheckEnding(ChessGame.EndingTimeForfeit, ChessRules.NoColor,
+            "Draw: Black ran out of time, White can't checkmate (1/2-1/2)");
+        CheckEnding(ChessGame.EndingStalemate, ChessRules.NoColor, "Draw by stalemate (1/2-1/2)");
+        CheckEnding(ChessGame.EndingDrawAgreement, ChessRules.NoColor, "Draw by agreement (1/2-1/2)");
+        CheckEnding(ChessGame.EndingThreefoldRepetition, ChessRules.NoColor, "Draw by threefold repetition (1/2-1/2)");
+        CheckEnding(ChessGame.EndingFivefoldRepetition, ChessRules.NoColor, "Draw by fivefold repetition (1/2-1/2)");
+        CheckEnding(ChessGame.EndingFiftyMoveRule, ChessRules.NoColor, "Draw by the fifty-move rule (1/2-1/2)");
+        CheckEnding(ChessGame.EndingSeventyFiveMoveRule, ChessRules.NoColor,
+            "Draw by the seventy-five-move rule (1/2-1/2)");
+        CheckEnding(ChessGame.EndingInsufficientMaterial, ChessRules.NoColor, "Draw: insufficient material (1/2-1/2)");
+        CheckEnding(ChessGame.EndingKingCaptured, ChessRules.Black, "Black wins by capturing the king (0-1)");
+        CheckEnding(ChessGame.EndingUnknown, ChessRules.White, "White wins (1-0)");
+        CheckEnding(ChessGame.EndingUnknown, ChessRules.NoColor, "Draw (1/2-1/2)");
+        CheckEnding(ChessGame.EndingNone, ChessRules.NoColor, "");
+
+        // A stalemate and a checkmate played on the local player's games, with no clock.
+        board.ClearState();
+        StartUnforced(s + ": stalemate game");
+        PlayMoves(LoydStalemate, s + ": stalemate game");
+        CheckInt(board.ending, ChessGame.EndingStalemate, s + ": stalemated");
+        CheckStatus("White: " + localName + "\nBlack: " + localName, "Draw by stalemate (1/2-1/2)",
+            s + ": stalemate");
+        board.ClearState();
+        StartUnforced(s + ": checkmate game");
+        PlayMoves(FoolsMate, s + ": checkmate game");
+        CheckStatus("White: " + localName + "\nBlack: " + localName, "Black wins by checkmate (0-1)",
+            s + ": checkmate");
+        CheckInt(board.EnterReplayAs(localName, false), ChessBoard.InputAccepted, s + ": the mate in replay");
+        CheckInt(board.StepToAs(localName, false, 2), ChessBoard.InputAccepted, s + ": stepped to ply 2");
+        CheckStatus(null, "Black wins by checkmate (0-1)\nReplay: 1... e5 (2 of 4)", s + ": the mate in replay");
+
+        // Loaded games.
+        if (LoadPgn(chess960Pgn, s + ": chess960.pgn")) {
+            string loaded = "Loaded game: White vs Black (Chess960)\nUnfinished game (*)\n";
+            CheckStatus("White: (open)\nBlack: (open)", loaded + "Replay: 3... O-O-O (6 of 6)",
+                s + ": chess960.pgn loaded");
+            CheckInt(board.StepToAs(localName, true, 0), ChessBoard.InputAccepted, s + ": chess960.pgn at the start");
+            CheckStatus(null, loaded + "Replay: start (0 of 6)", s + ": chess960.pgn at the start");
+            CheckInt(board.JoinAs(ChessRules.White, localName), ChessBoard.InputAccepted, s + ": joined the loaded game");
+            CheckStatus("White: " + localName + "\nBlack: (open)", loaded + "Replay: start (0 of 6)",
+                s + ": the loaded game joined");
+        }
+        if (LoadPgn(promotionsPgn, s + ": promotions.pgn")) {
+            CheckInt(board.StepToAs(localName, true, 1), ChessBoard.InputAccepted, s + ": promotions.pgn at ply 1");
+            CheckStatus(null, "Loaded game: White vs Black\nUnfinished game (*)\nReplay: 40... gxh1=Q+ (1 of 9)",
+                s + ": promotions.pgn at ply 1");
+        }
+
+        board.ClearState();
+        CheckStatus("White: (open)\nBlack: (open)", "Join White or Black to play", s + ": cleared");
+        view.Refresh();
+        CheckView("cleared after the status checks");
         LogSummary();
+    }
+
+    // After a Refresh, the view's players text (unless null) and status text at the turn start are as expected, and
+    // every panel shows the view's texts for now.
+    void CheckStatus(string players, string status, string name) {
+        view.Refresh();
+        double now = board.turnStart;
+        if (players != null) CheckString(view.PlayersTextAt(now), players, name + ": players");
+        CheckString(view.StatusTextAt(now), status, name + ": status");
+        double server = board.ServerTime();
+        string shownPlayers = view.PlayersTextAt(server);
+        string shownStatus = view.StatusTextAt(server);
+        string errors = "";
+        for (int i = 0; i < view.statusLabels.Length; i++) {
+            Text label = view.statusLabels[i];
+            if (Utilities.IsValid(label) && label.text != shownStatus) errors += "status " + i + ": " + label.text + "; ";
+            if (i >= view.statusPlayerLabels.Length) continue;
+            label = view.statusPlayerLabels[i];
+            if (Utilities.IsValid(label) && label.text != shownPlayers) errors += "players " + i + ": " + label.text + "; ";
+        }
+        Check(errors.Length == 0, name + ": the panels show it", errors);
+    }
+
+    // The ended game's text with ending and winner set on it.
+    void CheckEnding(int ending, int winner, string expected) {
+        board.ending = ending;
+        board.winner = winner;
+        CheckString(view.EndingText(), expected, "status: ending " + ending + ", winner " + winner);
+    }
+
+    // No mode or clock forced in the snapshot, and no clock chosen, whatever the arbiter's defaults.
+    void Unforce() {
+        board.gameSettings &= ~(ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced);
+        board.baseTime = ChessArbiter.NoClock;
+        board.increment = 0;
+    }
+
+    // Seats the local player on both sides and starts a Standard game with no clock.
+    void StartUnforced(string name) {
+        CheckInt(board.JoinAs(ChessRules.White, localName), ChessBoard.InputAccepted, name + ": joined White");
+        CheckInt(board.JoinAs(ChessRules.Black, localName), ChessBoard.InputAccepted, name + ": joined Black");
+        Unforce();
+        board.mode = ChessGame.ModeStandard;
+        CheckInt(board.StartGameAs(localName), ChessBoard.InputAccepted, name + ": started");
+        view.Refresh();
+    }
+
+    // Clears the board and loads pgn; whether it did.
+    bool LoadPgn(TextAsset pgn, string name) {
+        Check(Utilities.IsValid(importer) && pgn != null, name + ": importer and PGN assigned",
+            "assign ViewTest's Importer and PGNs in the Inspector");
+        if (!Utilities.IsValid(importer) || pgn == null) return false;
+        board.ClearState();
+        importer.StartImport(pgn.text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
+        CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, name + ": imported");
+        return board.LoadImport(importer) == ChessBoard.InputAccepted;
     }
 
     // Records where every object stands and returns the object on square, about to move.

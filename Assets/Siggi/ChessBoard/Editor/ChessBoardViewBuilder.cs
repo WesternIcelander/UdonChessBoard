@@ -13,10 +13,10 @@ using VRC.Udon;
 
 // Builds the physical board (PLAN.md 9.1, ChessBoardView.cs) in the open scene for the selected ChessBoard, or the
 // scene's only one: a table, the board's surface and squares, the 32 piece objects, the button panels (steps 9.4a and
-// 9.4b), the highlights and the promotion picker (step 9.5a), wired to a ChessBoardView. Players walk through all of it
-// (no solid colliders but the pieces', on the Pickup layer); the view's blocker keeps out those without a seat
-// (step 9.5a2). An existing view for the same
-// board is replaced, keeping its place. The piece meshes, the highlight meshes and the materials are generated
+// 9.4b), the highlights and the promotion picker (step 9.5a) and the status panels (step 9.5c), wired to a
+// ChessBoardView. Players walk through all of it (no solid colliders but the pieces', on the Pickup layer); the view's
+// blocker keeps out those without a seat (step 9.5a2). An existing view for the same board is replaced, keeping its
+// place. The piece meshes, the highlight meshes and the materials are generated
 // placeholders in Assets/Siggi/ChessBoard/Models/, made only when missing, so they can be replaced there (or other
 // meshes assigned in the view's Meshes field). Menu: Tools > Chess Board > Create Board View. Plain editor C#, not Udon.
 public static class ChessBoardViewBuilder {
@@ -32,8 +32,9 @@ public static class ChessBoardViewBuilder {
     const float Border = 0.02f;
     const float BoardThickness = 0.02f;
     const float TableHeight = 0.8f;
-    // The table's depth (along z), in board widths.
-    const float TableDepthFactor = 2.0f;
+    // The table's depth (along z), in board widths: room at each end for the castle drop space, the status panel and
+    // the button panel.
+    const float TableDepthFactor = 2.4f;
 
     static readonly string[] TypeNames = { "", "Pawn", "Knight", "Bishop", "Rook", "Queen", "King" };
     // The back rank from a to h, by piece type, for the pieces' places in the editor.
@@ -132,6 +133,7 @@ public static class ChessBoardViewBuilder {
         AddSquareTargets(root, view);
         AddHighlights(root, view);
         AddButtons(root, view, boardWidth * TableDepthFactor);
+        AddStatusPanels(root, view, boardWidth * TableDepthFactor);
         AddPromotionPicker(root, view);
         UdonSharpEditorUtility.CopyProxyToUdon(view);
         if (old != null) {
@@ -397,8 +399,7 @@ public static class ChessBoardViewBuilder {
         view.buttonActions = new int[2 * perPanel];
         view.buttonLabels = new Text[2 * perPanel];
         int next = 0;
-        // The panel's near edge, raised towards the board, stays clear of the castle drop spaces.
-        float z = tableDepth / 2 - PanelHeight * 0.001f / 2 - 0.004f;
+        float z = ButtonPanelZ(tableDepth);
         for (int panel = 0; panel < 2; panel++) {
             bool white = panel == 0;
             GameObject canvasObject = new GameObject(white ? "Buttons (White)" : "Buttons (Black)", typeof(RectTransform));
@@ -457,6 +458,73 @@ public static class ChessBoardViewBuilder {
                 view.buttonLabels[index] = label;
             }
         }
+    }
+
+    // How far from the board's centre (along z) each end's button panel stands: at the table's edge.
+    static float ButtonPanelZ(float tableDepth) {
+        return tableDepth / 2 - PanelHeight * 0.001f / 2 - 0.004f;
+    }
+
+    // A status panel's size in canvas pixels, and how much of its width the players' column takes.
+    const float StatusHeight = 84;
+    const float PlayersWidth = 0.4f;
+
+    // The status display (step 9.5c): a world-space canvas at each end of the table, between the board and that end's
+    // buttons, leaning back as they do, with the players' names and clocks on the left and the board's status on the
+    // right. Nothing on it is clickable, so it has no collider and no VRCUiShape. The view writes both texts.
+    static void AddStatusPanels(GameObject root, ChessBoardView view, float tableDepth) {
+        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        view.statusPlayerLabels = new Text[2];
+        view.statusLabels = new Text[2];
+        // Nearer the board than the buttons, the gap measured along the leaning panels; its near edge stays clear of
+        // the castle drop spaces.
+        float z = ButtonPanelZ(tableDepth) - (PanelHeight + StatusHeight) * 0.001f / 2 - 0.008f;
+        for (int panel = 0; panel < 2; panel++) {
+            bool white = panel == 0;
+            GameObject canvasObject = new GameObject(white ? "Status (White)" : "Status (Black)", typeof(RectTransform));
+            canvasObject.layer = LayerMask.NameToLayer("Default");
+            canvasObject.transform.SetParent(root.transform, false);
+            Canvas canvas = canvasObject.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            RectTransform rect = canvasObject.GetComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(PanelWidth, StatusHeight);
+            rect.localScale = Vector3.one * 0.001f;
+            rect.localPosition = new Vector3(0, 0.016f, white ? -z : z);
+            rect.localRotation = Quaternion.Euler(PanelTilt, white ? 0 : 180, 0);
+            canvasObject.AddComponent<CanvasScaler>();
+            Image background = canvasObject.AddComponent<Image>();
+            background.color = new Color(0.12f, 0.12f, 0.14f, 0.9f);
+            background.raycastTarget = false;
+            view.statusPlayerLabels[panel] = StatusText(canvasObject, "Players", font, 0, PlayersWidth, 17,
+                view.PlayersTextAt(0));
+            view.statusLabels[panel] = StatusText(canvasObject, "Status", font, PlayersWidth, 1, 14,
+                view.StatusTextAt(0));
+        }
+    }
+
+    // A column of a status panel, from xMin to xMax of its width, left-aligned and shrinking its text to fit.
+    static Text StatusText(GameObject canvasObject, string name, Font font, float xMin, float xMax, int size,
+        string text) {
+        GameObject labelObject = new GameObject(name, typeof(RectTransform));
+        labelObject.layer = canvasObject.layer;
+        RectTransform labelRect = labelObject.GetComponent<RectTransform>();
+        labelRect.SetParent(canvasObject.transform, false);
+        labelRect.anchorMin = new Vector2(xMin, 0);
+        labelRect.anchorMax = new Vector2(xMax, 1);
+        labelRect.offsetMin = new Vector2(10, 6);
+        labelRect.offsetMax = new Vector2(-10, -6);
+        Text label = labelObject.AddComponent<Text>();
+        label.font = font;
+        label.fontSize = size;
+        label.resizeTextForBestFit = true;
+        label.resizeTextMinSize = 8;
+        label.resizeTextMaxSize = size;
+        label.alignment = TextAnchor.MiddleLeft;
+        label.color = new Color(0.95f, 0.95f, 0.95f);
+        label.raycastTarget = false;
+        label.text = text;
+        return label;
     }
 
     // The scene's board view for a board (built earlier), or null.
