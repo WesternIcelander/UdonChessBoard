@@ -389,8 +389,8 @@ Taking a board's snapshot of these settings depends on the board's lifecycle, so
   - Verify: in Play Mode the pieces match the board after a reset, a sequence of moves, a promotion, and loading a Chess960 game.
   - Setup: **Tools > Chess Board > Create Board View** builds `ChessBoardView` with generated placeholder meshes ([Physical pieces](docs/physical-pieces.md#implementation)); **Create View Test** adds `ViewTest`, which runs after `BoardTest` ([Testing](docs/testing.md#view-test)).
   - First run (2026-10-12): all 148 `ViewTest` checks pass in Play Mode, after `BoardTest`'s 4112.
-- [ ] **9.2** `VRCPickup` + `VRCObjectSync`; per-player `pickupable` from the board (VR players only; see 9.3c); pieces' ownership check.
-  - Verify (several clients): players in VR can grab pieces during their game and bystanders can't; anyone in VR can on a reset board; desktop players get no pickups; the pieces' `OnOwnershipRequest` agrees with the board.
+- [ ] **9.2** `VRCPickup` + `VRCObjectSync`; per-player `pickupable` from the board (VR players only; see 9.3c); pieces' ownership check; the view's `inputStyle` override (Auto / Pickups / Clicks) and a debug view button cycling it locally, so pickups can be tested on desktop clients.
+  - Verify (several clients, at most one in VR; the others with the view's `inputStyle` set to pickups, see [Testing](docs/testing.md#one-vr-client)): players can grab pieces during their game and bystanders can't; anyone can on a reset board; a desktop client on the default `inputStyle` gets no pickups; the pieces' `OnOwnershipRequest` agrees with the board.
 - [ ] **9.3a** Forwarding pickups and drops to the board; snapping back on rejection.
   - Verify: legal drops are played; illegal drops snap the piece back; promotion drops ask for a piece.
 - [ ] **9.3b** The castle drop space (shown only while that king is held and the castle is legal; `IsCastleDropSpaceNeeded` from 7.4b).
@@ -407,8 +407,8 @@ Taking a board's snapshot of these settings depends on the board's lifecycle, so
   - Verify: a move, a capture, castling and en passant animate rather than snap; a reset or load places pieces without odd animations.
 - [ ] **9.5c** Status display (turn, clocks, check, result, stalemate, pending offers and requests, replay source names).
   - Verify: each item shows correctly in a game and in replay of a loaded game.
-- [ ] **9.6** **Test with several clients:** carrying is visible to others, dropped pieces stay where the board puts them on every client (if `VRCObjectSync` fights the snap, remove it from the pieces), rejected moves snap back everywhere, bystanders can't grab during a game, castling by drop (including the castle drop space in Chess960), a desktop player's selected piece lifting on every client and a desktop player playing a VR player.
-  - Verify: every scenario listed behaves as described on every client.
+- [ ] **9.6** **Test with several clients** (at most one in VR, the others on desktop, with `inputStyle` set to pickups where a check needs pickups; see [Testing](docs/testing.md#one-vr-client)): carrying is visible to others, dropped pieces stay where the board puts them on every client (if `VRCObjectSync` fights the snap, remove it from the pieces), rejected moves snap back everywhere, bystanders can't grab during a game, castling by drop (including the castle drop space in Chess960), a desktop player's selected piece lifting on every client and a desktop player playing a VR player.
+  - Verify: every scenario listed behaves as described on every client, and carrying and snapping back are seen once with the VR client carrying.
 
 ### 10. Archive and history wall (`GameArchive`)
 
@@ -442,7 +442,7 @@ Taking a board's snapshot of these settings depends on the board's lifecycle, so
 
 **Read:** [testing](docs/testing.md), [pgn](docs/pgn.md) (Logging), [game-endings](docs/game-endings.md) (`Termination` values), [udon-constraints](docs/udon-constraints.md) (performance)
 
-- [ ] **12.1** Full multi-client session covering every feature, with a few boards at once.
+- [ ] **12.1** Full multi-client session covering every feature, with a few boards at once (one client in VR, the rest on desktop).
   - Verify: every feature works with several clients and boards at once; note any problems found as new items.
 - [ ] **12.2** Check the output log with a logging bot (or a script reading the log): one PGN per completed game, correct tags.
   - Verify: the script finds exactly one PGN per completed game in each client's log, and every one parses with the right tags.

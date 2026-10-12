@@ -41,7 +41,7 @@ On `ChessBoard` (`Assets/Siggi/ChessBoard/ChessBoard.cs`). Each method has an `*
 
 - **Click targets:** each piece's behaviour (already there for 9.2's pickup events and `OnOwnershipRequest`) gets `Interact`, and the board gets 64 square targets, one collider each with a small behaviour that forwards its square index to the view (`Interact` doesn't say where the collider was hit, so one collider for the whole board can't tell the squares apart). The interact text says what a click does ("Select", "Place", "Capture", "Put back").
 - **What's clickable:** pieces with `DisableInteractive` off only where a click does something for the local player: their own pieces while `PiecePickedUp` would accept them, and while one is selected, every square it could move to plus the selected piece and its square. The square targets are switched off while nothing is selected, so the board doesn't outline on hover.
-- **VR players** never get interacts on pieces or squares; desktop players never get pickups. To check in 9.3c: `Interact` works on an object whose `VRCPickup` has `pickupable` off (if not, desktop clicks go through a separate collider on the piece).
+- **VR players** never get interacts on pieces or squares; desktop players never get pickups. The view's `inputStyle` (Auto, Pickups or Clicks) overrides this for testing with one VR headset (see [Testing](testing.md#one-vr-client)). To check in 9.3c: `Interact` works on an object whose `VRCPickup` has `pickupable` off (if not, desktop clicks go through a separate collider on the piece).
 
 ## Buttons
 

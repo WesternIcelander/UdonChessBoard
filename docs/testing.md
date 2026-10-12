@@ -8,6 +8,14 @@ Neither codebase has tests yet, and UdonSharp code only runs inside Unity, so te
 - **Networking needs real clients.** ClientSim runs a single local player, so ownership, sync, late joiners and the `VRCObjectSync` behaviour have to be tested with several clients, e.g. VRChat's Build & Test with multiple instances of the client.
 - PGN import and export are tested with the PGN test set below, comparing against the Java (on `port-reference`) where the Java can read the file.
 
+## One VR client
+
+Only one VR headset is available, so a check may need at most one client in VR; every other client is on desktop. Checks written for VR players (pickups, carrying, snapping back, the castle drop space while a king is held) run on desktop clients through the view's `inputStyle` override, and are seen once more with the one VR client where the hand matters.
+
+- **`inputStyle`** on `ChessBoardView` (step 9.2): **Auto** (the default: pickups in VR, clicks on desktop and mobile), **Pickups** or **Clicks** for every client. Desktop VRChat picks a `VRCPickup` up by clicking and holds it in front of the player, so with **Pickups** a desktop client exercises the same pickup and drop events, `pickupable` gating, ownership and `VRCObjectSync` carrying as a VR client. **Clicks** lets the one VR client try desktop mode.
+- It's an Inspector field, so it's set before the build and is the same on every client of that build. A test needing both styles at once uses **Auto** with the one VR client, or two builds; the debug view also gets a button to cycle it locally (step 9.2), which needs no rebuild.
+- A test is never written to need two clients in VR at once.
+
 ## Debug view
 
 `ChessDebugView` (`Assets/Tests/Debug/`, PLAN 8.1) is a `ChessBoardListener` that shows a board as an 8×8 grid of FEN letters (last move tinted, a checked king red) and its state as text, with a button for each of the board's input methods for the local player: join, mode, clock, start, scripted and random moves, resign, draw offers and claims, replay and stepping, takebacks, continuing, reset, and a few arbiter overrides with re-snapshot. It lets each client drive a board before `ChessBoardView` and the settings menu exist, and stays as a testing tool for networking checks.
