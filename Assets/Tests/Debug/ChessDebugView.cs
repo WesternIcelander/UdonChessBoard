@@ -2,6 +2,7 @@ using SiggiChessBoard;
 using UdonSharp;
 using UnityEngine;
 using UnityEngine.UI;
+using VRC.SDK3.Components;
 using VRC.SDKBase;
 
 // Debug view (PLAN.md 8.1): a minimal ChessBoardListener that shows a board's state as text and has a button for each
@@ -19,6 +20,8 @@ public class ChessDebugView : ChessBoardListener {
     public Text statusText;
     // The PGN the import buttons import (8.7): Assets/Tests/PGN/Siggi-vs-Nuka.pgn.txt, set by the builder.
     public TextAsset importPgn;
+    // The board's physical view, for the pieces' buttons and lines (9.2); found by the builder.
+    public ChessBoardView boardView;
 
     // Clock choices cycled by CycleClock (base seconds, increment): none, 15 s (to see a flag fall), 1+1, 3+2.
     int[] clockBases = { ChessArbiter.NoClock, 15, 60, 180 };
@@ -572,6 +575,87 @@ public class ChessDebugView : ChessBoardListener {
         Report(label, done ? ChessBoard.InputAccepted : ChessBoard.InputRejected);
     }
 
+    // ---- Pieces (9.2) ----
+
+    // The pieces' state as last logged, so each change of the local player's pickups is logged once.
+    string lastPiecesText = "";
+
+    // Cycles the board view's input style on this client only (Auto, Pickups, Clicks), so a desktop client can try
+    // pickups without a rebuild (docs/testing.md, One VR client).
+    public void CycleInputStyle() {
+        if (!Utilities.IsValid(boardView)) {
+            ReportDone("Input style (the Board View field is empty)", false);
+            return;
+        }
+        boardView.CycleInputStyle();
+        ReportDone("Input style: " + boardView.InputStyleName(), true);
+    }
+
+    // Asks VRChat for ownership of a piece on the board directly, as a grab does but past pickupable, to see the
+    // piece's OnOwnershipRequest agree with the board (it logs a refusal). The owner is reported now and again after
+    // a few seconds, once the current owner has answered.
+    public void TakePiece() {
+        GameObject piece = PieceToTake();
+        if (piece == null) {
+            ReportDone("Take piece (no board view, or no piece on the board)", false);
+            return;
+        }
+        Networking.SetOwner(Networking.LocalPlayer, piece);
+        ReportDone("Take piece " + piece.name + " (owner now " + OwnerName(piece) + "; the board says you may touch "
+            + "pieces: " + YesNo(board.MayTouchPieces()) + ")", Networking.IsOwner(piece));
+        SendCustomEventDelayedSeconds(nameof(ReportPieceOwner), 3);
+    }
+
+    public void ReportPieceOwner() {
+        GameObject piece = PieceToTake();
+        if (piece == null) return;
+        ReportDone("Take piece " + piece.name + ", 3 s later (owner " + OwnerName(piece) + ")",
+            Networking.IsOwner(piece));
+    }
+
+    // The first piece object standing on a square.
+    GameObject PieceToTake() {
+        if (!Utilities.IsValid(boardView)) return null;
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            if (boardView.objectSquare[obj] != ChessRules.NoSquare && Utilities.IsValid(boardView.pieces[obj])) {
+                return boardView.pieces[obj].gameObject;
+            }
+        }
+        return null;
+    }
+
+    string OwnerName(GameObject target) {
+        VRCPlayerApi owner = Networking.GetOwner(target);
+        return Utilities.IsValid(owner) ? owner.displayName : "nobody";
+    }
+
+    // The local player's pieces in one line: the input style, whether they use pickups, whether the board lets them
+    // touch the pieces, and how many pieces are pickups for them.
+    string PiecesText() {
+        if (!Utilities.IsValid(boardView)) return "no board view";
+        int pickupable = 0;
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            VRCPickup pickup = boardView.piecePickups[obj];
+            if (Utilities.IsValid(pickup) && pickup.pickupable) pickupable++;
+        }
+        VRCPlayerApi local = Networking.LocalPlayer;
+        return "input style " + boardView.InputStyleName() + ", in VR " + YesNo(Utilities.IsValid(local)
+            && local.IsUserInVR()) + ", pickups " + YesNo(boardView.UsesPickups()) + ", may touch "
+            + YesNo(board.MayTouchPieces()) + ", " + pickupable + " pickupable";
+    }
+
+    // Logs the pieces' line when it changes, so each client's log shows who could grab when.
+    void LogPieces() {
+        string text = PiecesText();
+        if (text == lastPiecesText) return;
+        lastPiecesText = text;
+        Debug.Log("[ChessDebugView] pieces: " + text);
+    }
+
+    static string YesNo(bool value) {
+        return value ? "yes" : "no";
+    }
+
     // ---- Display ----
 
     void Refresh() {
@@ -582,6 +666,7 @@ public class ChessDebugView : ChessBoardListener {
         if (Utilities.IsValid(statusText)) statusText.text = StatusText();
         LogArbiterSettings();
         LogBoardOwner();
+        LogPieces();
     }
 
     // Logs the arbiter's settings when they differ from the last logged ones (and once at the start), so each client's
@@ -644,6 +729,7 @@ public class ChessDebugView : ChessBoardListener {
         text += "Ownership: both players here: " + (board.BothPlayersPresent() ? "yes" : "no") + "   idle: " + idle
             + "   you may take it: " + (board.MayOwn(Networking.LocalPlayer) ? "yes" : "no") + "   sends: "
             + board.serializations + "\n";
+        text += "Pieces: " + PiecesText() + "\n";
         text += "White: " + SeatText(board.whitePlayer) + ClockSuffix(ChessRules.White) + "   Black: "
             + SeatText(board.blackPlayer) + ClockSuffix(ChessRules.Black) + "\n";
         text += "Mode: " + ModeName(board.mode) + "   clock: " + ClockName(board.baseTime, board.increment)

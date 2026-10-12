@@ -5,6 +5,7 @@ using UdonSharpEditor;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using VRC.SDK3.Components;
 
 // Builds the physical board (PLAN.md 9.1, ChessBoardView.cs) in the open scene for the selected ChessBoard, or the
 // scene's only one: a table, the board's surface and squares, and the 32 piece objects, wired to a ChessBoardView. An
@@ -14,6 +15,8 @@ using UnityEngine;
 public static class ChessBoardViewBuilder {
     const string ViewScriptPath = "Assets/Siggi/ChessBoard/ChessBoardView.cs";
     const string ViewProgramPath = "Assets/Siggi/ChessBoard/ChessBoardView.asset";
+    const string PieceScriptPath = "Assets/Siggi/ChessBoard/ChessPiece.cs";
+    const string PieceProgramPath = "Assets/Siggi/ChessBoard/ChessPiece.asset";
     const string ModelsFolder = "Assets/Siggi/ChessBoard/Models";
 
     const float SquareSize = 0.05f;
@@ -32,7 +35,7 @@ public static class ChessBoardViewBuilder {
     static void Create() {
         ChessBoard board = FindBoard();
         if (board == null) return;
-        if (!EnsureProgramAsset()) return;
+        if (!EnsureProgramAssets()) return;
 
         Mesh[] meshes = new Mesh[7];
         for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) meshes[type] = PieceMesh(type);
@@ -74,6 +77,8 @@ public static class ChessBoardViewBuilder {
         view.meshes = meshes;
         view.pieces = new Transform[ChessBoardView.PieceCount];
         view.pieceFilters = new MeshFilter[ChessBoardView.PieceCount];
+        view.piecePickups = new VRCPickup[ChessBoardView.PieceCount];
+        view.pieceColliders = new BoxCollider[ChessBoardView.PieceCount];
         GameObject piecesParent = new GameObject("Pieces");
         piecesParent.transform.SetParent(root.transform, false);
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
@@ -94,6 +99,7 @@ public static class ChessBoardViewBuilder {
             piece.AddComponent<MeshRenderer>().sharedMaterial = white ? whitePieces : blackPieces;
             view.pieces[obj] = piece.transform;
             view.pieceFilters[obj] = filter;
+            AddPickup(piece, view, obj, meshes[type]);
         }
         UdonSharpEditorUtility.CopyProxyToUdon(view);
         if (old != null) {
@@ -108,6 +114,33 @@ public static class ChessBoardViewBuilder {
         Selection.activeGameObject = root;
         Debug.Log("[ChessBoardViewBuilder] " + (old != null ? "Replaced " : "Created ") + root.name + " for "
             + board.gameObject.name + ". Move it where you like and save the scene.");
+    }
+
+    // Makes a piece object something to carry (PLAN.md 9.2, docs/physical-pieces.md): a kinematic rigidbody (the
+    // board, not physics, puts pieces down), a box collider fitted to its mesh (the view refits it when the mesh
+    // changes), a VRCPickup that the view makes pickupable only for players who may touch the pieces, a VRCObjectSync
+    // so others see it carried, and a ChessPiece asking the board about ownership. On the Pickup layer, so carried
+    // pieces don't push players around.
+    static void AddPickup(GameObject piece, ChessBoardView view, int obj, Mesh mesh) {
+        int pickupLayer = LayerMask.NameToLayer("Pickup");
+        if (pickupLayer >= 0) piece.layer = pickupLayer;
+        Rigidbody body = piece.AddComponent<Rigidbody>();
+        body.isKinematic = true;
+        body.useGravity = false;
+        BoxCollider box = piece.AddComponent<BoxCollider>();
+        box.center = mesh.bounds.center;
+        box.size = mesh.bounds.size;
+        VRCPickup pickup = piece.AddComponent<VRCPickup>();
+        pickup.pickupable = false;
+        pickup.DisallowTheft = true;
+        pickup.InteractionText = "Move";
+        piece.AddComponent<VRCObjectSync>();
+        ChessPiece behaviour = UdonSharpUndo.AddComponent<ChessPiece>(piece);
+        behaviour.view = view;
+        behaviour.index = obj;
+        UdonSharpEditorUtility.CopyProxyToUdon(behaviour);
+        view.piecePickups[obj] = pickup;
+        view.pieceColliders[obj] = box;
     }
 
     // The scene's board view for a board (built earlier), or null.
@@ -133,23 +166,34 @@ public static class ChessBoardViewBuilder {
         return null;
     }
 
-    // UdonSharp needs a compiled program asset next to the script before the behaviour can be added. The repository
-    // has one; if it's missing it's created and compiled, and the menu item has to be run again afterwards.
-    static bool EnsureProgramAsset() {
-        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(ViewProgramPath) != null) return true;
-        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(ViewScriptPath);
+    // UdonSharp needs a compiled program asset next to a script before its behaviour can be added. The repository
+    // has them (the view's and the pieces'); any that's missing is created and compiled, and the menu item has to be
+    // run again afterwards.
+    static bool EnsureProgramAssets() {
+        bool created = CreateProgramAssetIfMissing(ViewScriptPath, ViewProgramPath);
+        created |= CreateProgramAssetIfMissing(PieceScriptPath, PieceProgramPath);
+        if (!created) return true;
+        AssetDatabase.SaveAssets();
+        UdonSharpProgramAsset.CompileAllCsPrograms(true);
+        EditorUtility.DisplayDialog("Create Board View", "Created the program assets next to " + ViewScriptPath
+            + " and " + PieceScriptPath + ". Once UdonSharp has finished compiling, run Tools > Chess Board > "
+            + "Create Board View again.", "OK");
+        return false;
+    }
+
+    // Creates the program asset for a script if it's missing; whether it did (also logged when the script is missing,
+    // which stops the build the same way).
+    static bool CreateProgramAssetIfMissing(string scriptPath, string programPath) {
+        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(programPath) != null) return false;
+        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(scriptPath);
         if (script == null) {
-            Debug.LogError("[ChessBoardViewBuilder] " + ViewScriptPath + " not found.");
-            return false;
+            Debug.LogError("[ChessBoardViewBuilder] " + scriptPath + " not found.");
+            return true;
         }
         UdonSharpProgramAsset program = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();
         program.sourceCsScript = script;
-        AssetDatabase.CreateAsset(program, ViewProgramPath);
-        AssetDatabase.SaveAssets();
-        UdonSharpProgramAsset.CompileAllCsPrograms(true);
-        EditorUtility.DisplayDialog("Create Board View", "Created the view's program asset (" + ViewProgramPath
-            + "). Once UdonSharp has finished compiling, run Tools > Chess Board > Create Board View again.", "OK");
-        return false;
+        AssetDatabase.CreateAsset(program, programPath);
+        return true;
     }
 
     // ---- Generated assets ----

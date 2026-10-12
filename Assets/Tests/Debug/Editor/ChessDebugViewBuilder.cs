@@ -36,6 +36,7 @@ public static class ChessDebugViewBuilder {
         { "Default auto-reset time", "CycleDefaultAutoResetTime" }, { "Take arbiter", "TakeArbiter" },
         { "Take board", "TakeBoard" }, { "Fidget", "Fidget" }, { "Forget notation", "ForgetNotation" },
         { "Import PGN", "ImportPgn" }, { "Import PGN (paused)", "ImportPaused" }, { "Resume import", "ResumeImport" },
+        { "Input style", "CycleInputStyle" }, { "Take piece", "TakePiece" },
     };
     const int ButtonColumns = 7;
 
@@ -73,6 +74,7 @@ public static class ChessDebugViewBuilder {
 
         ChessDebugView view = UdonSharpUndo.AddComponent<ChessDebugView>(root);
         view.board = board;
+        view.boardView = BoardView(board);
         view.importPgn = AssetDatabase.LoadAssetAtPath<TextAsset>(ImportPgnPath);
         if (view.importPgn == null) {
             Debug.LogWarning("[ChessDebugViewBuilder] " + ImportPgnPath + " not found; the import buttons need a PGN "
@@ -154,6 +156,17 @@ public static class ChessDebugViewBuilder {
         UdonSharpEditorUtility.CopyProxyToUdon(board);
         PrefabUtility.RecordPrefabInstancePropertyModifications(UdonSharpEditorUtility.GetBackingUdonBehaviour(board));
         Debug.Log("[ChessDebugViewBuilder] Added a ChessPgnImporter to " + board.gameObject.name + " for its imports.");
+    }
+
+    // The scene's ChessBoardView for a board, for the pieces' buttons (9.2), or null with a warning.
+    static ChessBoardView BoardView(ChessBoard board) {
+        ChessBoardView[] views = Object.FindObjectsOfType<ChessBoardView>(true);
+        for (int i = 0; i < views.Length; i++) {
+            if (views[i].board == board) return views[i];
+        }
+        Debug.LogWarning("[ChessDebugViewBuilder] No ChessBoardView for " + board.gameObject.name + "; the Input style "
+            + "and Take piece buttons need one in the debug view's Board View field.");
+        return null;
     }
 
     // The scene's debug view for a board (built earlier), or null.

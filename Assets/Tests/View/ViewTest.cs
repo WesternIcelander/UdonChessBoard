@@ -143,8 +143,8 @@ public class ViewTest : UdonSharpBehaviour {
         CheckReplay(promotionsPgn, "promotions.pgn", 9);
         board.ClearState();
         view.Refresh();
-        CheckView("cleared at the end");
-        LogSummary();
+        CheckView("cleared after the loaded games");
+        SendCustomEventDelayedFrames(nameof(RunPickupChecks), 1);
     }
 
     // Loads pgn (plies moves) and checks the view on its last position, then at the start, each ply stepping forward
@@ -175,6 +175,113 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(board.StepToAs(localName, true, 0), ChessBoard.InputAccepted, name + ": back to the start");
         view.Refresh();
         CheckView(name + ": back to the start");
+    }
+
+    // ---- 9.2: pickups ----
+
+    // The fourth frame: each piece wired to the view, then who gets pickups with each input style, and the pieces'
+    // OnOwnershipRequest agreeing with the board. The view's input style is put back as it was.
+    public void RunPickupChecks() {
+        int savedStyle = view.inputStyle;
+        VRCPlayerApi local = Networking.LocalPlayer;
+        int wired = 0;
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            ChessPiece piece = PieceBehaviour(obj);
+            if (Utilities.IsValid(piece) && piece.view == view && piece.index == obj
+                && Utilities.IsValid(view.piecePickups[obj]) && Utilities.IsValid(view.pieceColliders[obj])
+                && view.piecePickups[obj].gameObject == view.pieces[obj].gameObject) {
+                wired++;
+            }
+        }
+        CheckInt(wired, ChessBoardView.PieceCount, "every piece has its pickup, collider and ChessPiece");
+
+        board.ClearState();
+        view.SetInputStyle(ChessBoardView.InputClicks);
+        view.Refresh();
+        Check(!view.UsesPickups(), "Clicks: no pickups", "uses pickups");
+        CheckPickupable(0, "Clicks: a reset board");
+        view.SetInputStyle(ChessBoardView.InputAuto);
+        bool inVR = local.IsUserInVR();
+        Check(view.UsesPickups() == inVR, "Auto: pickups exactly in VR (in VR: " + inVR + ")",
+            "uses pickups: " + view.UsesPickups());
+        CheckPickupable(inVR ? 32 : 0, "Auto: a reset board");
+
+        view.SetInputStyle(ChessBoardView.InputPickups);
+        Check(view.UsesPickups(), "Pickups: pickups", "no pickups");
+        CheckPickupable(32, "Pickups: a reset board, anyone");
+        CheckOwnership(true, "a reset board");
+
+        CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "Ana joined White");
+        CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "Bob joined Black");
+        view.Refresh();
+        CheckPickupable(0, "Pickups: the lobby of others");
+        CheckOwnership(false, "the lobby of others");
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, "Ana and Bob started");
+        view.Refresh();
+        CheckPickupable(0, "Pickups: others' game");
+        CheckOwnership(false, "others' game");
+        CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "Ana resigned");
+        view.Refresh();
+        CheckPickupable(0, "Pickups: others' ended game");
+
+        board.ClearState();
+        CheckInt(board.JoinAs(ChessRules.White, localName), ChessBoard.InputAccepted, "pickups game: joined White");
+        CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "pickups game: Bob joined Black");
+        CheckInt(board.StartGameAs(localName), ChessBoard.InputAccepted, "pickups game: started");
+        view.Refresh();
+        CheckPickupable(32, "Pickups: own game");
+        CheckOwnership(true, "own game");
+        CheckInt(board.PieceDroppedAs(localName, Sq("e2"), Sq("e4")), ChessBoard.InputAccepted, "e4: played");
+        view.Refresh();
+        CheckPickupable(32, "Pickups: own game, the other side to move");
+        CheckInt(board.PieceDroppedAs("Bob", Sq("d7"), Sq("d5")), ChessBoard.InputAccepted, "d5: played");
+        CheckInt(board.PieceDroppedAs(localName, Sq("e4"), Sq("d5")), ChessBoard.InputAccepted, "exd5: played");
+        view.Refresh();
+        CheckPickupable(31, "Pickups: the captured pawn isn't a pickup");
+        CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, "pickups game: resigned");
+        view.Refresh();
+        CheckPickupable(31, "Pickups: own ended game");
+        CheckOwnership(true, "own ended game");
+        view.SetInputStyle(ChessBoardView.InputClicks);
+        CheckPickupable(0, "Clicks: own ended game");
+        view.SetInputStyle(ChessBoardView.InputPickups);
+        CheckPickupable(31, "Pickups again: own ended game");
+
+        board.ClearState();
+        view.SetInputStyle(savedStyle);
+        view.Refresh();
+        CheckView("cleared at the end");
+        LogSummary();
+    }
+
+    // Whether exactly count of the pieces are pickups for the local player, all of them on the board.
+    void CheckPickupable(int count, string name) {
+        int pickupable = 0;
+        int offBoard = 0;
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            if (!Utilities.IsValid(view.piecePickups[obj]) || !view.piecePickups[obj].pickupable) continue;
+            pickupable++;
+            if (view.objectSquare[obj] == ChessRules.NoSquare) offBoard++;
+        }
+        Check(pickupable == count && offBoard == 0, name + ": " + count + " pickupable",
+            pickupable + " pickupable, " + offBoard + " of them off the board");
+    }
+
+    // Whether a piece's OnOwnershipRequest gives the local player ownership exactly when the board lets them touch
+    // the pieces, and that's allowed.
+    void CheckOwnership(bool allowed, string name) {
+        VRCPlayerApi local = Networking.LocalPlayer;
+        ChessPiece piece = PieceBehaviour(0);
+        if (!Utilities.IsValid(piece)) return;
+        bool answer = piece.OnOwnershipRequest(local, local);
+        Check(answer == allowed && board.PlayerMayTouchPieces(local) == allowed,
+            name + ": a piece's ownership " + (allowed ? "given" : "refused") + ", as the board says",
+            "piece " + answer + ", board " + board.PlayerMayTouchPieces(local));
+    }
+
+    ChessPiece PieceBehaviour(int obj) {
+        if (!Utilities.IsValid(view.pieces[obj])) return null;
+        return view.pieces[obj].GetComponent<ChessPiece>();
     }
 
     // ---- Helpers ----

@@ -1390,6 +1390,29 @@ namespace SiggiChessBoard {
         // even one that changes nothing keeps the board from going idle. The *As methods take any name, for tests and
         // the debug view; in replay they don't count name as an organizer.
 
+        // Whether the local player may touch the pieces (docs/physical-pieces.md): the view makes the pieces pickups
+        // for them only while this holds, and the pieces' OnOwnershipRequest asks PlayerMayTouchPieces.
+        public bool MayTouchPieces() {
+            return MayTouchPiecesAs(LocalName(), LocalIsOrganizer());
+        }
+
+        public bool PlayerMayTouchPieces(VRCPlayerApi who) {
+            if (!Utilities.IsValid(who)) return false;
+            bool organizer = Utilities.IsValid(arbiter) && arbiter.IsOrganizer(who);
+            return MayTouchPiecesAs(who.displayName, organizer);
+        }
+
+        // Whether name may touch the pieces: anyone on a reset board, in replay whoever may make free moves
+        // (MayControlReplay), and otherwise (the lobby, a game in progress or ended) the seated players, whether it's
+        // their turn or not. Touching isn't moving: the input methods still decide what a pickup or drop does, and
+        // the view puts back a piece they reject.
+        public bool MayTouchPiecesAs(string name, bool organizer) {
+            if (name == null || name.Length == 0) return false;
+            if (replayMode) return MayControlReplay(name, organizer);
+            if (lifecycle == LifecycleReset) return true;
+            return IsPlayer(name);
+        }
+
         public int PiecePickedUp(int square) {
             if (replayMode) return ReplayPiecePickedUpAs(LocalName(), LocalIsOrganizer(), square);
             return PiecePickedUpAs(LocalName(), square);

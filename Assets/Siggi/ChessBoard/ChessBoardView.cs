@@ -1,6 +1,7 @@
 using System;
 using UdonSharp;
 using UnityEngine;
+using VRC.SDK3.Components;
 using VRC.SDKBase;
 
 namespace SiggiChessBoard {
@@ -17,6 +18,11 @@ namespace SiggiChessBoard {
         // a pawn into another piece. Each object swaps its mesh to the piece it stands for.
         public const int PiecesPerColor = 16;
         public const int NoObject = -1;
+        // How the local player handles the pieces (inputStyle): Auto is pickups in VR and clicks otherwise; the other
+        // two force one style, for testing pickups on desktop clients (docs/testing.md, One VR client).
+        public const int InputAuto = 0;
+        public const int InputPickups = 1;
+        public const int InputClicks = 2;
 
         // The board shown; the view adds itself as a listener on Start.
         public ChessBoard board;
@@ -25,8 +31,15 @@ namespace SiggiChessBoard {
         public MeshFilter[] pieceFilters = new MeshFilter[PieceCount];
         // The mesh for each piece type, by ChessRules type (Pawn = 1 ... King = 6; entry 0 unused).
         public Mesh[] meshes = new Mesh[7];
+        // Each piece object's pickup and collider (the same index). The collider is fitted to the piece's mesh.
+        public VRCPickup[] piecePickups = new VRCPickup[PieceCount];
+        public BoxCollider[] pieceColliders = new BoxCollider[PieceCount];
         // The width of a square, in the view's local units.
         public float squareSize = 0.05f;
+        // InputAuto, InputPickups or InputClicks, the same for every client of a build; CycleInputStyle changes it on
+        // one client.
+        [Tooltip("Auto: pickups in VR, clicks on desktop and mobile. Pickups or Clicks: that for everyone, for testing.")]
+        public int inputStyle = InputAuto;
 
         // Which object stands on each square (NoObject for none), and the other way round (NoSquare for an object
         // off the board: captured, or not needed by the position). objectType is the piece type each object stands
@@ -53,6 +66,10 @@ namespace SiggiChessBoard {
         // otherwise run past Udon's time limit.
         bool dirty;
         bool warnedShort;
+        // When the pieces' pickupable is next brought up to date without a change: who may touch the pieces also
+        // depends on whether the local player is an organizer, which the arbiter can change without telling the board.
+        float nextPickupCheck;
+        const float PickupCheckInterval = 1;
 
         void Start() {
             for (int i = 0; i < 64; i++) squareObject[i] = NoObject;
@@ -71,7 +88,11 @@ namespace SiggiChessBoard {
         }
 
         void Update() {
-            if (dirty) Refresh();
+            if (dirty) {
+                Refresh();
+            } else if (Time.time >= nextPickupCheck) {
+                UpdatePickupable();
+            }
         }
 
         // A move one ply on from the position the mapping shows moves its objects now, so the right object travels
@@ -113,6 +134,51 @@ namespace SiggiChessBoard {
             shownCustom = replay && board.replayCustom;
             mappingStale = false;
             for (int i = 0; i < PieceCount; i++) PlaceObject(i);
+            UpdatePickupable();
+        }
+
+        // ---- Pickups (docs/physical-pieces.md) ----
+
+        // Whether the local player handles the pieces as pickups (otherwise by clicking, step 9.3c).
+        public bool UsesPickups() {
+            if (inputStyle == InputPickups) return true;
+            if (inputStyle == InputClicks) return false;
+            VRCPlayerApi local = Networking.LocalPlayer;
+            return Utilities.IsValid(local) && local.IsUserInVR();
+        }
+
+        // Whether player may touch the pieces (the board decides); asked by each piece's OnOwnershipRequest.
+        public bool PlayerMayTouchPieces(VRCPlayerApi player) {
+            return Utilities.IsValid(board) && board.PlayerMayTouchPieces(player);
+        }
+
+        // Makes the pieces on the board pickups for the local player while they use pickups and may touch the pieces;
+        // pieces off the board never are. Called after every change and once a second.
+        public void UpdatePickupable() {
+            nextPickupCheck = Time.time + PickupCheckInterval;
+            bool allowed = UsesPickups() && Utilities.IsValid(board) && board.MayTouchPieces();
+            for (int obj = 0; obj < PieceCount; obj++) {
+                VRCPickup pickup = piecePickups[obj];
+                if (!Utilities.IsValid(pickup)) continue;
+                bool pickupable = allowed && objectSquare[obj] != ChessRules.NoSquare;
+                if (pickup.pickupable != pickupable) pickup.pickupable = pickupable;
+            }
+        }
+
+        // The debug view's button: Auto, then Pickups, then Clicks, on this client only.
+        public void CycleInputStyle() {
+            SetInputStyle((inputStyle + 1) % 3);
+        }
+
+        public void SetInputStyle(int style) {
+            inputStyle = style;
+            UpdatePickupable();
+        }
+
+        public string InputStyleName() {
+            if (inputStyle == InputPickups) return "Pickups";
+            if (inputStyle == InputClicks) return "Clicks";
+            return "Auto";
         }
 
         // ---- Mapping ----
@@ -231,8 +297,14 @@ namespace SiggiChessBoard {
             if (!Utilities.IsValid(piece)) return;
             int type = objectType[obj];
             if (type != objectMeshType[obj] && type != ChessRules.NoPieceType && Utilities.IsValid(pieceFilters[obj])) {
-                pieceFilters[obj].sharedMesh = meshes[type];
+                Mesh mesh = meshes[type];
+                pieceFilters[obj].sharedMesh = mesh;
                 objectMeshType[obj] = type;
+                BoxCollider box = pieceColliders[obj];
+                if (Utilities.IsValid(box) && Utilities.IsValid(mesh)) {
+                    box.center = mesh.bounds.center;
+                    box.size = mesh.bounds.size;
+                }
             }
             int square = objectSquare[obj];
             piece.localPosition = square != ChessRules.NoSquare ? SquarePosition(square) : SparePosition(obj);

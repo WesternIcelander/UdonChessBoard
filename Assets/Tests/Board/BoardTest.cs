@@ -100,7 +100,8 @@ public class BoardTest : ChessBoardListener {
         SendCustomEventDelayedFrames(nameof(RunSyncChecks), 1);
     }
 
-    // The second frame: snapshots, listeners and scenarios (7.9 to 7.12), sync, ownership and inactivity (8.3 to 8.5).
+    // The second frame: snapshots, listeners and scenarios (7.9 to 7.12), sync, ownership and inactivity (8.3 to 8.5),
+    // and who may touch the pieces (9.2).
     public void RunSyncChecks() {
         TestSnapshot();
         TestListeners();
@@ -108,6 +109,7 @@ public class BoardTest : ChessBoardListener {
         TestSync();
         TestOwnership();
         TestInactivity();
+        TestTouchPieces();
         board.ClearState();
         SendCustomEventDelayedFrames(nameof(RunFillChecks), 1);
     }
@@ -5158,7 +5160,6 @@ public class BoardTest : ChessBoardListener {
         Check(!board.MayOwnAs(null, false, true, now) && !board.MayOwnAs("", false, true, now),
             name + ": no name refused", "allowed");
     }
-
     // ---- 8.5 inactivity ----
 
     void TestInactivity() {
@@ -5334,6 +5335,69 @@ public class BoardTest : ChessBoardListener {
         } else {
             Check(board.lastActivity == old, label + " doesn't touch", "activity " + board.lastActivity);
         }
+    }
+
+    // ---- 9.2 touching the pieces ----
+
+    void TestTouchPieces() {
+        NothingForced();
+        string t = "touch";
+        board.ClearState();
+        CheckTouch(true, true, true, t + ": a reset board, anyone");
+        Check(!board.MayTouchPiecesAs("", false) && !board.MayTouchPiecesAs(null, true), t + ": no name refused",
+            "allowed");
+
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckTouch(true, false, false, t + ": lobby with one seat");
+        Check(!board.MayTouchPiecesAs("Cleo", true), t + ": lobby: an organizer isn't a player", "allowed");
+        board.JoinAs(ChessRules.Black, "Bob");
+        CheckTouch(true, true, false, t + ": lobby");
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, t + ": started");
+        CheckTouch(true, true, false, t + ": in game, White to move");
+        Drop("Ana", ChessRules.E2, ChessRules.E4, t);
+        CheckTouch(true, true, false, t + ": in game, Black to move");
+        Check(!board.MayTouchPiecesAs("Cleo", true), t + ": in game: an organizer isn't a player", "allowed");
+        Check(!board.MayTouchPiecesAs("ana", false) && !board.MayTouchPiecesAs("Ana ", false),
+            t + ": names compared exactly", "allowed");
+
+        // Replay: whoever may make free moves, organizers included.
+        CheckInt(board.EnterReplayAs("Bob", false), ChessBoard.InputAccepted, t + ": replay entered");
+        CheckTouch(true, true, false, t + ": in replay");
+        Check(board.MayTouchPiecesAs("Cleo", true), t + ": in replay: an organizer", "refused");
+        CheckInt(board.LeaveReplayAs("Bob", false), ChessBoard.InputAccepted, t + ": replay left");
+        CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, t + ": resigned");
+        CheckTouch(true, true, false, t + ": ended");
+
+        // A loaded game nobody has joined: in replay, so anyone; once seated, the players and organizers.
+        LoadText(siggiVsNuka.text, t + ": Siggi-vs-Nuka");
+        CheckTouch(true, true, true, t + ": loaded, nobody seated");
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckTouch(true, false, false, t + ": loaded, Ana seated");
+        Check(board.MayTouchPiecesAs("Cleo", true), t + ": loaded, Ana seated: an organizer", "refused");
+
+        // The local player, alone: through the player forms.
+        VRCPlayerApi local = Networking.LocalPlayer;
+        board.ClearState();
+        Check(board.MayTouchPieces() && board.PlayerMayTouchPieces(local), t + ": the local player on a reset board",
+            "refused");
+        Check(!board.PlayerMayTouchPieces(null), t + ": no player refused", "allowed");
+        LobbyWithTwoPlayers();
+        Check(!board.MayTouchPieces() && !board.PlayerMayTouchPieces(local),
+            t + ": the local player, not seated, in the lobby", "allowed");
+        board.ClearState();
+        board.JoinAs(ChessRules.Black, localName);
+        Check(board.MayTouchPieces() && board.PlayerMayTouchPieces(local), t + ": the local player seated", "refused");
+        board.ClearState();
+    }
+
+    // Whether Ana (White, if seated), Bob (Black, if seated) and the bystander Cleo may touch the pieces.
+    void CheckTouch(bool ana, bool bob, bool cleo, string name) {
+        Check(board.MayTouchPiecesAs("Ana", false) == ana, name + ": Ana " + (ana ? "may" : "may not"),
+            ana ? "refused" : "allowed");
+        Check(board.MayTouchPiecesAs("Bob", false) == bob, name + ": Bob " + (bob ? "may" : "may not"),
+            bob ? "refused" : "allowed");
+        Check(board.MayTouchPiecesAs("Cleo", false) == cleo, name + ": the bystander Cleo " + (cleo ? "may" : "may not"),
+            cleo ? "refused" : "allowed");
     }
 
     // ---- 8.6 notation fill-in ----
