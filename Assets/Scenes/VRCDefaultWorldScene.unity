@@ -9688,6 +9688,8 @@ MonoBehaviour:
   - {fileID: 899414202}
   - {fileID: 1444601349}
   blocker: {fileID: 712327542}
+  animateMoves: 1
+  moveSeconds: 0.35
 --- !u!1 &402562504
 GameObject:
   m_ObjectHideFlags: 0
@@ -52819,12 +52821,12 @@ MonoBehaviour:
   useAssignedLayers: 0
   DynamicPrefabs: []
   DynamicMaterials:
-  - {fileID: 2100000, guid: d912ce52e8877c14cbb33beb608596a0, type: 2}
   - {fileID: 2100000, guid: 8b6fc93608a057e498b7b333d290cd85, type: 2}
-  - {fileID: 2100000, guid: 8605909be53d14648b8a82bdb4ff5fcc, type: 2}
-  - {fileID: 2100000, guid: 309d3f19a92e4824d8b15a1f0a44fee1, type: 2}
+  - {fileID: 2100000, guid: d912ce52e8877c14cbb33beb608596a0, type: 2}
   - {fileID: 2100000, guid: a38a7001e90a38b4abab485ff9a501d8, type: 2}
   - {fileID: 2100000, guid: 08939c395f7d3f44cacc2cecba418cda, type: 2}
+  - {fileID: 2100000, guid: 8605909be53d14648b8a82bdb4ff5fcc, type: 2}
+  - {fileID: 2100000, guid: 309d3f19a92e4824d8b15a1f0a44fee1, type: 2}
   LightMapsNear: []
   LightMapsFar: []
   LightMode: 0
