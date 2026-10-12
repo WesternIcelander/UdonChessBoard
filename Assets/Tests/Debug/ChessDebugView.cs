@@ -37,6 +37,8 @@ public class ChessDebugView : ChessBoardListener {
     string lastAction = "";
     // The arbiter's settings as last logged, so a change (made here or arriving from another client) is logged once.
     string lastArbiterSettings = "";
+    // The board's owner as last logged (8.8).
+    string lastBoardOwner = "";
     float nextRefresh;
     bool dirty;
 
@@ -105,13 +107,30 @@ public class ChessDebugView : ChessBoardListener {
         Debug.Log(text);
     }
 
-    // The board's state in one line, for the log: lifecycle, seats, moves, position, owner.
+    // The board's state in one line, for the log: lifecycle, seats, moves, position, result, clocks, owner. The clocks
+    // are the synced values (each side's stored ms and the turn start), so clients' lines can be compared exactly.
     string BoardSummary() {
         string last = board.moveCount > 0 ? " (last " + board.notation[board.moveCount - 1] + ")" : "";
+        string result = board.ending != ChessGame.EndingNone
+            ? ", " + board.ResultText() + " (" + EndingName(board.ending) + ")" : "";
+        string clocks = board.HasClock()
+            ? ", clocks White " + board.whiteTime + " ms, Black " + board.blackTime + " ms, turn start "
+                + board.turnStart.ToString("F3")
+            : "";
         return LifecycleName(board.lifecycle) + ", White " + SeatText(board.whitePlayer) + ", Black "
             + SeatText(board.blackPlayer) + ", " + board.moveCount + " moves" + last + ", "
-            + ChessFen.WriteFen(board.board, board.state, board.halfmoveClock, board.moveNumber) + ", game "
-            + (board.gameId.Length > 0 ? board.gameId : "none") + ", owner " + BoardOwnerName();
+            + ChessFen.WriteFen(board.board, board.state, board.halfmoveClock, board.moveNumber) + result + clocks
+            + ", game " + (board.gameId.Length > 0 ? board.gameId : "none") + ", owner " + BoardOwnerName();
+    }
+
+    // Logs the board's owner when it changes (polled on each redraw), so a client's log shows ownership passing on,
+    // including VRChat's handover when the owner leaves.
+    void LogBoardOwner() {
+        string owner = BoardOwnerName();
+        if (owner == lastBoardOwner) return;
+        Debug.Log("[ChessDebugView] board owner now " + owner + (lastBoardOwner.Length > 0 ? " (was " + lastBoardOwner
+            + ")" : "") + ", " + VRCPlayerApi.GetPlayerCount() + " players here");
+        lastBoardOwner = owner;
     }
 
     string BoardOwnerName() {
@@ -562,6 +581,7 @@ public class ChessDebugView : ChessBoardListener {
         RefreshSquares();
         if (Utilities.IsValid(statusText)) statusText.text = StatusText();
         LogArbiterSettings();
+        LogBoardOwner();
     }
 
     // Logs the arbiter's settings when they differ from the last logged ones (and once at the start), so each client's
