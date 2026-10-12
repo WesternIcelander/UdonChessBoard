@@ -56,6 +56,14 @@ namespace SiggiChessBoard {
         public const int ChangeLoaded = 14;
         // A loaded game continued from here.
         public const int ChangeContinued = 15;
+        // Nothing changed but the last activity time: a touch on the board (a piece picked up, dropped back or
+        // rejected), sent so every client sees the board isn't idle (docs/inactivity.md). Never told to the toucher's
+        // own listeners.
+        public const int ChangeActivity = 16;
+
+        // A touch that changes nothing is sent at most once in this many seconds (docs/inactivity.md), so players
+        // fidgeting with pieces don't send the board's whole state every frame.
+        public const double ActivityThrottle = 5;
 
         // Room for this many plies in the history arrays at first; they grow as needed.
         public const int InitialHistoryCapacity = 128;
@@ -133,8 +141,8 @@ namespace SiggiChessBoard {
         [NonSerialized] public string whitePlayer = "";
         [NonSerialized] public string blackPlayer = "";
 
-        // Server time of the last change sent (docs/inactivity.md): every change but a rejection stamps it; piece
-        // touches that change nothing come with step 8.5.
+        // Server time of the last activity (docs/inactivity.md): every change sent stamps it, and so does a touch that
+        // changes nothing (TouchAsAt), throttled.
         [NonSerialized] public double lastActivity;
 
         // How the game ended (a ChessGame.Ending* value, EndingNone while in progress) and who won (ChessRules.White
@@ -224,6 +232,8 @@ namespace SiggiChessBoard {
         // How many games this client has logged, and the last one's PGN (docs/pgn.md, Logging), for tests.
         [NonSerialized] public int loggedGames;
         [NonSerialized] public string lastLoggedPgn = "";
+        // How many times this client has sent the board, for the debug view (the activity throttle).
+        [NonSerialized] public int serializations;
 
         // Whether a serialization has arrived; Start mustn't clear it then.
         bool received;
@@ -318,6 +328,7 @@ namespace SiggiChessBoard {
         }
 
         public override void OnPreSerialization() {
+            serializations++;
             PackState();
         }
 
@@ -373,9 +384,61 @@ namespace SiggiChessBoard {
         // not reset already, and the snapshot's reset-available time (seconds, or Never) passed since the last
         // activity.
         public bool IsIdleForResetAt(double now) {
+            return IsIdleForAt(ChessArbiter.NumberResetAvailableTime, now);
+        }
+
+        // ---- Inactivity (docs/inactivity.md) ----
+        // Every client measures idleness against the synced lastActivity (server time), so they agree on it without a
+        // timer being sent. After the reset-available time anyone may reset the board (CanResetAs, MayOwnAs); after the
+        // auto-reset time the owner resets it (Update), so it happens once. Either time can be Never.
+
+        // Whether the board has been idle long enough at server time now to reset itself: not reset already, and the
+        // snapshot's auto-reset time (seconds, or Never) passed since the last activity.
+        public bool IsIdleForAutoResetAt(double now) {
+            return IsIdleForAt(ChessArbiter.NumberAutoResetTime, now);
+        }
+
+        bool IsIdleForAt(int number, double now) {
             if (lifecycle == LifecycleReset) return false;
-            int wait = GameNumber(ChessArbiter.NumberResetAvailableTime);
+            int wait = GameNumber(number);
             return wait != ChessArbiter.Never && now - lastActivity >= wait;
+        }
+
+        // Resets the board if it has been idle for the auto-reset time at server time now, as the reset button does
+        // (a game in progress is logged, as unfinished or on time), and returns whether it did. Update calls it on the
+        // owner only; public for tests.
+        public bool CheckAutoResetAt(double now) {
+            if (!IsIdleForAutoResetAt(now)) return false;
+            Debug.Log("[ChessBoard] " + gameObject.name + ": reset after " + Math.Floor(now - lastActivity)
+                + " s idle (auto-reset time " + GameNumber(ChessArbiter.NumberAutoResetTime) + " s)");
+            ClearGameAt(now);
+            NotifyChanged(ChangeReset);
+            return true;
+        }
+
+        // A touch on the board by name that changes nothing by itself (a piece picked up, dropped back or rejected),
+        // at server time now. It counts as activity from the player who'd act next: in a game in progress outside
+        // replay the side to move's player, and in replay whoever may work the replay controls. The other player's
+        // touches don't count while the game runs: sending them could race the side to move's move and send the
+        // position from before it. A touch that counts stamps lastActivity and sends it (ChangeActivity, taking
+        // ownership), unless the last activity was less than ActivityThrottle seconds ago. Returns whether it was
+        // sent. The local player's listeners aren't told: nothing they show has changed.
+        public bool TouchAsAt(string name, bool organizer, double now) {
+            if (!TouchCounts(name, organizer)) return false;
+            if (now - lastActivity < ActivityThrottle) return false;
+            lastActivity = now;
+            lastSentChange = ChangeActivity;
+            SendState();
+            return true;
+        }
+
+        void TouchAs(string name, bool organizer) {
+            TouchAsAt(name, organizer, ServerTime());
+        }
+
+        bool TouchCounts(string name, bool organizer) {
+            if (replayMode) return lifecycle != LifecycleReset && MayControlReplay(name, organizer);
+            return lifecycle == LifecycleInGame && IsSeated(state[ChessPosition.StateSideToMove], name);
         }
 
         // Copies the state into the synced fields. Public for tests.
@@ -1081,9 +1144,13 @@ namespace SiggiChessBoard {
 
         // ---- Game endings (docs/game-endings.md) ----
 
-        // The owner watches for flag fall, so the game ends on time once; every other client sees the update.
+        // The owner watches for flag fall and the auto-reset time, so the game ends on time once and the board resets
+        // itself once; every other client sees the update.
         void Update() {
-            if (lifecycle == LifecycleInGame && Networking.IsOwner(gameObject)) CheckFlagFall();
+            if (lifecycle == LifecycleReset || !Networking.IsOwner(gameObject)) return;
+            double now = ServerTime();
+            if (lifecycle == LifecycleInGame) CheckFlagFallAt(now);
+            CheckAutoResetAt(now);
         }
 
         // Ends the game in progress at server time now: how it ended, who won (ChessRules.NoColor for a draw), and
@@ -1190,8 +1257,9 @@ namespace SiggiChessBoard {
         // is remembered in between, so there's nothing to sync or clear. A king castles by being dropped on its own
         // rook, on its castling destination when no other king move ends there, or on the castle drop space (a view
         // object, forwarded as KingDroppedOnCastleSpace). In replay, pickups and drops are free moves on the replay
-        // board instead (ReplayPiecePickedUpAs, ReplayPieceDroppedAs). Activity timestamps come with 8.5. The *As
-        // methods take any name, for tests and the debug view; in replay they don't count name as an organizer.
+        // board instead (ReplayPiecePickedUpAs, ReplayPieceDroppedAs). Every piece input is a touch (TouchAsAt), so
+        // even one that changes nothing keeps the board from going idle. The *As methods take any name, for tests and
+        // the debug view; in replay they don't count name as an organizer.
 
         public int PiecePickedUp(int square) {
             if (replayMode) return ReplayPiecePickedUpAs(LocalName(), LocalIsOrganizer(), square);
@@ -1203,6 +1271,7 @@ namespace SiggiChessBoard {
         // In replay, a free move's pickup (ReplayPiecePickedUpAs).
         public int PiecePickedUpAs(string name, int square) {
             if (replayMode) return ReplayPiecePickedUpAs(name, false, square);
+            TouchAs(name, false);
             return NotifyIfRejected(MayPickUp(name, square) ? InputAccepted : InputRejected);
         }
 
@@ -1225,6 +1294,7 @@ namespace SiggiChessBoard {
         // a free move (ReplayPieceDroppedAs).
         public int PieceDroppedAs(string name, int from, int to) {
             if (replayMode) return ReplayPieceDroppedAs(name, false, from, to);
+            TouchAs(name, false);
             return NotifyIfRejected(DropAs(name, from, to, ChessRules.NoPieceType));
         }
 
@@ -1236,6 +1306,7 @@ namespace SiggiChessBoard {
         // Bishop or Knight). Rejected for any other type and for a move that isn't a promotion, so a picker that's
         // cancelled passes ChessRules.NoPieceType and the rejection puts the pawn back.
         public int PromotionChosenAs(string name, int from, int to, int pieceType) {
+            TouchAs(name, false);
             if (pieceType != ChessRules.Queen && pieceType != ChessRules.Rook && pieceType != ChessRules.Bishop
                 && pieceType != ChessRules.Knight) {
                 return NotifyIfRejected(InputRejected);
@@ -1251,6 +1322,7 @@ namespace SiggiChessBoard {
         // move's castle on that side if it's legal. The view shows the space only when IsCastleDropSpaceNeeded, but the
         // castle is played either way.
         public int KingDroppedOnCastleSpaceAs(string name, int side) {
+            TouchAs(name, false);
             if (!MayMove(name)) return NotifyIfRejected(InputRejected);
             int legalCount = ChessMoves.GenerateLegalMoves(board, state, legalMoves, true);
             int castle = FindCastle(legalCount, side);
@@ -1349,8 +1421,7 @@ namespace SiggiChessBoard {
         // method, which refuses when its check doesn't. The methods themselves come with their steps: resign (with the
         // game endings), draws (below), replay 7.8a, takebacks 7.8b, loading 7.9a, continuing 7.9b, reset 7.10. The plain
         // checks are for the local player; the *As ones take any name, and an organizer flag where organizers count,
-        // for tests and the debug view. Who may take ownership is under Ownership (8.4); a bystander's reset once the
-        // board is idle comes with step 8.5.
+        // for tests and the debug view. Who may take ownership is under Ownership (8.4); idleness under Inactivity.
 
         // Scratch for the repetition counts of ClaimableDraw and AutomaticDraw.
         byte[] repetitionBoard = new byte[64];
@@ -1617,9 +1688,11 @@ namespace SiggiChessBoard {
         }
 
         // Whether name may reset the board (docs/board-lifecycle.md, Reset): a board that isn't reset already, by a
-        // seated player or an organizer. Everyone else once the board has been idle long enough comes with step 8.5.
+        // seated player or an organizer, or by anyone once it has been idle for the reset-available time
+        // (docs/inactivity.md).
         public bool CanResetAs(string name, bool organizer) {
-            return lifecycle != LifecycleReset && (organizer || IsPlayer(name));
+            if (lifecycle == LifecycleReset) return false;
+            return organizer || IsPlayer(name) || IsIdleForResetAt(ServerTime());
         }
 
         public int ResetBoard() {
@@ -1632,12 +1705,18 @@ namespace SiggiChessBoard {
         // it ended and a loaded one wasn't played here, so neither is logged. Listeners hear of the reset only.
         public int ResetBoardAs(string name, bool organizer) {
             if (!CanResetAs(name, organizer)) return InputRejected;
-            if (lifecycle == LifecycleInGame && !EndOnFlagFallAt(ServerTime())) {
+            ClearGameAt(ServerTime());
+            NotifyChanged(ChangeReset);
+            return InputAccepted;
+        }
+
+        // A reset's steps at server time now, without telling anyone: a game in progress is logged, on time if its
+        // flag has fallen, otherwise as unfinished, then the state is cleared.
+        void ClearGameAt(double now) {
+            if (lifecycle == LifecycleInGame && !EndOnFlagFallAt(now)) {
                 LogGame(ChessGame.EndingUnterminated, ChessRules.NoColor);
             }
             ClearState();
-            NotifyChanged(ChangeReset);
-            return InputAccepted;
         }
 
         // Whether a game can be loaded (a PGN import, or from the archive): only onto a reset board, by anyone.
@@ -1713,6 +1792,7 @@ namespace SiggiChessBoard {
         // Whether name may pick up the piece on square of the replay board for a free move: in replay, name may work
         // the replay controls, and there's a piece there (either colour).
         public int ReplayPiecePickedUpAs(string name, bool organizer, int square) {
+            TouchAs(name, organizer);
             return NotifyIfRejected(MayPickUpInReplay(name, organizer, square) ? InputAccepted : InputRejected);
         }
 
@@ -1725,6 +1805,7 @@ namespace SiggiChessBoard {
         // with no legality, promotion or castling, and the position becomes custom, which cancels a pending takeback
         // request. Rejected unless name may pick the piece up, and for a drop back on its own square or off the board.
         public int ReplayPieceDroppedAs(string name, bool organizer, int from, int to) {
+            TouchAs(name, organizer);
             if (!MayPickUpInReplay(name, organizer, from) || to < 0 || to >= 64 || to == from) {
                 return NotifyIfRejected(InputRejected);
             }

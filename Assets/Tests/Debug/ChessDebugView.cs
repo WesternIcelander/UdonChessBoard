@@ -257,6 +257,81 @@ public class ChessDebugView : ChessBoardListener {
             + board.arbiter.DefaultNumber(ChessArbiter.NumberResetAvailableTime), done);
     }
 
+    // The instance default auto-reset time, cycled through 60 s, 600 s and never. The arbiter keeps the
+    // reset-available time no longer than it.
+    public void CycleDefaultAutoResetTime() {
+        if (!BeginArbiterChange("Default auto-reset time")) return;
+        int current = board.arbiter.DefaultNumber(ChessArbiter.NumberAutoResetTime);
+        int next = current == 60 ? 600 : current == 600 ? ChessArbiter.Never : 60;
+        bool done = board.arbiter.SetDefaultNumber(ChessArbiter.NumberAutoResetTime, next);
+        EndArbiterChange("Arbiter default auto-reset time "
+            + board.arbiter.DefaultNumber(ChessArbiter.NumberAutoResetTime) + " (reset-available "
+            + board.arbiter.DefaultNumber(ChessArbiter.NumberResetAvailableTime) + ")", done);
+    }
+
+    // ---- Fidget (8.5): picks up a piece every half second for FidgetSeconds, as a player handling pieces without
+    // moving, then logs how many pickups were made, how many stamped the board's activity, and how many times this
+    // client sent the board meanwhile. The activity throttle allows one send per ChessBoard.ActivityThrottle seconds.
+    // Pressed again while running, it stops early. ----
+
+    const float FidgetSeconds = 30;
+    const float FidgetInterval = 0.5f;
+    bool fidgeting;
+    float fidgetEnd;
+    int fidgetPickups;
+    int fidgetStamps;
+    int fidgetSerializations;
+
+    public void Fidget() {
+        if (fidgeting) {
+            EndFidget();
+            return;
+        }
+        fidgeting = true;
+        fidgetEnd = Time.time + FidgetSeconds;
+        fidgetPickups = 0;
+        fidgetStamps = 0;
+        fidgetSerializations = board.serializations;
+        ReportDone("Fidget for " + FidgetSeconds + " s started", true);
+        FidgetStep();
+    }
+
+    public void FidgetStep() {
+        if (!fidgeting) return;
+        if (Time.time >= fidgetEnd) {
+            EndFidget();
+            return;
+        }
+        double before = board.lastActivity;
+        int square = FidgetSquare();
+        if (square >= 0) {
+            fidgetPickups++;
+            // A pickup put back where it was: accepted (the side to move's own piece) or rejected, it changes nothing.
+            if (board.PiecePickedUp(square) == ChessBoard.InputAccepted) board.PieceDropped(square, square);
+        }
+        if (board.lastActivity != before) fidgetStamps++;
+        SendCustomEventDelayedSeconds(nameof(FidgetStep), FidgetInterval);
+    }
+
+    void EndFidget() {
+        fidgeting = false;
+        ReportDone("Fidget ended: " + fidgetPickups + " pickups, " + fidgetStamps + " activity stamps, "
+            + (board.serializations - fidgetSerializations) + " sends (throttle " + ChessBoard.ActivityThrottle + " s)",
+            true);
+    }
+
+    // A square with a piece of the side to move on the board shown (any piece if it has none), -1 if it's empty.
+    int FidgetSquare() {
+        int any = -1;
+        for (int square = 0; square < 64; square++) {
+            int piece = board.PieceAt(square);
+            if (piece == ChessRules.Empty) continue;
+            if (ChessRules.PieceColorOf(piece) == board.SideToMove()) return square;
+            if (any < 0) any = square;
+        }
+        return any;
+    }
+
     // Asks VRChat for ownership of the arbiter directly, without BeginChange's organizer check, to see that the
     // arbiter refuses a non-organizer. The owner is reported now and again after a few seconds, once the current
     // owner has answered.
@@ -437,11 +512,16 @@ public class ChessDebugView : ChessBoardListener {
             + (board.lastChangeReceived ? " (received)" : "") + "   logged games: " + board.loggedGames
             + "   board owner: " + BoardOwnerName() + "\n";
         double now = board.ServerTime();
-        string idle = board.lifecycle == ChessBoard.LifecycleReset ? "-"
-            : Mathf.FloorToInt((float)(now - board.lastActivity)) + " s";
+        string idle = "-";
+        if (board.lifecycle != ChessBoard.LifecycleReset) {
+            double idleSeconds = now - board.lastActivity;
+            idle = Mathf.FloorToInt((float)idleSeconds) + " s (reset available "
+                + IdleDeadline(board.GameNumber(ChessArbiter.NumberResetAvailableTime), idleSeconds) + ", auto-reset "
+                + IdleDeadline(board.GameNumber(ChessArbiter.NumberAutoResetTime), idleSeconds) + ")";
+        }
         text += "Ownership: both players here: " + (board.BothPlayersPresent() ? "yes" : "no") + "   idle: " + idle
-            + (board.IsIdleForResetAt(now) ? " (idle for reset)" : "") + "   you may take it: "
-            + (board.MayOwn(Networking.LocalPlayer) ? "yes" : "no") + "\n";
+            + "   you may take it: " + (board.MayOwn(Networking.LocalPlayer) ? "yes" : "no") + "   sends: "
+            + board.serializations + "\n";
         text += "White: " + SeatText(board.whitePlayer) + ClockSuffix(ChessRules.White) + "   Black: "
             + SeatText(board.blackPlayer) + ClockSuffix(ChessRules.Black) + "\n";
         text += "Mode: " + ModeName(board.mode) + "   clock: " + ClockName(board.baseTime, board.increment)
@@ -546,6 +626,13 @@ public class ChessDebugView : ChessBoardListener {
         return Utilities.IsValid(player) ? player.displayName : "";
     }
 
+    // When an inactivity time of wait seconds (or Never) is reached, idleSeconds into the board's idleness.
+    static string IdleDeadline(int wait, double idleSeconds) {
+        if (wait == ChessArbiter.Never) return "never";
+        if (idleSeconds >= wait) return "now";
+        return "in " + Mathf.CeilToInt((float)(wait - idleSeconds)) + " s";
+    }
+
     static string SeatText(string seat) {
         return seat.Length > 0 ? seat : "(empty)";
     }
@@ -604,6 +691,7 @@ public class ChessDebugView : ChessBoardListener {
             case ChessBoard.ChangeTakeback: return "takeback";
             case ChessBoard.ChangeLoaded: return "loaded";
             case ChessBoard.ChangeContinued: return "continued";
+            case ChessBoard.ChangeActivity: return "activity";
         }
         return "?" + change;
     }

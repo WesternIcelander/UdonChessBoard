@@ -4,9 +4,9 @@ using UnityEngine;
 using VRC.SDKBase;
 
 // Step 7 test behaviour (PLAN.md section 7): the logical board driven with no world objects, plus the single-client
-// sync checks of 8.3 (packing and receiving the synced state) and the ownership rules of 8.4. Runs only with no one
-// else in the instance. Logs "[BoardTest] PASS: <check>" or "[BoardTest] FAIL: <check>: <details>" per check, then a
-// summary line.
+// sync checks of 8.3 (packing and receiving the synced state), the ownership rules of 8.4 and the inactivity rules of
+// 8.5. Runs only with no one else in the instance. Logs "[BoardTest] PASS: <check>" or "[BoardTest] FAIL: <check>:
+// <details>" per check, then a summary line.
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
 public class BoardTest : ChessBoardListener {
     // The board under test; its checks fail if it isn't assigned. The checks clear it and leave it in the reset state.
@@ -93,6 +93,7 @@ public class BoardTest : ChessBoardListener {
             TestScenarios();
             TestSync();
             TestOwnership();
+            TestInactivity();
             // Every [ChessPGN] entry in the log is one of these, so the two counts must agree.
             Debug.Log("[BoardTest] games logged by the board: " + board.loggedGames);
             if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
@@ -5125,5 +5126,182 @@ public class BoardTest : ChessBoardListener {
             name + ": names compared exactly", "allowed");
         Check(!board.MayOwnAs(null, false, true, now) && !board.MayOwnAs("", false, true, now),
             name + ": no name refused", "allowed");
+    }
+
+    // ---- 8.5 inactivity ----
+
+    void TestInactivity() {
+        NothingForced();
+        string s = "inactivity";
+        int autoTime = ChessArbiter.NumberAutoResetTime;
+        board.AddListener(this);
+        MarkNotifications();
+
+        // A reset board is never idle, and a touch on it counts for nobody.
+        board.ClearState();
+        double now = board.ServerTime();
+        Check(!board.IsIdleForAutoResetAt(now + 10000000), s + ": a reset board never resets itself", "idle");
+        Check(!board.CheckAutoResetAt(now + 10000000), s + ": nothing to auto-reset on a reset board", "reset");
+        Check(!board.TouchAsAt("Ana", true, now + 100), s + ": a touch on a reset board doesn't count", "sent");
+
+        // The reset button for a bystander, once the board is idle for the reset-available time.
+        int before = board.loggedGames;
+        IdleTestGame(120, 600);
+        Check(!board.CanResetAs("Cleo", false), s + ": a bystander can't reset an active board", "allowed");
+        CheckInt(board.ResetBoardAs("Cleo", false), ChessBoard.InputRejected, s + ": bystander's reset refused");
+        board.lastActivity = board.ServerTime() - 119;
+        Check(!board.CanResetAs("Cleo", false), s + ": nor before the reset-available time", "allowed");
+        board.lastActivity = board.ServerTime() - 121;
+        Check(board.CanResetAs("Cleo", false), s + ": a bystander may reset once idle", "refused");
+        CheckInt(board.ResetBoardAs("Cleo", false), ChessBoard.InputAccepted, s + ": bystander's reset");
+        CheckLoggedOnReset(before, "*", "unterminated", s + ": bystander's reset");
+        CheckCleared(s + ": bystander's reset");
+        IdleTestGame(ChessArbiter.Never, 600);
+        board.lastActivity = board.ServerTime() - 10000000;
+        Check(!board.CanResetAs("Cleo", false), s + ": never: a bystander can't reset however long idle", "allowed");
+        Check(board.CanResetAs("Ana", false) && board.CanResetAs("Cleo", true),
+            s + ": never: the players and organizers still may", "refused");
+
+        // The automatic reset: once, at the auto-reset time, logging the game in progress as unfinished.
+        before = board.loggedGames;
+        IdleTestGame(120, 600);
+        double t = board.lastActivity;
+        MarkNotifications();
+        Check(!board.IsIdleForAutoResetAt(t + 599.9), s + ": not idle before the auto-reset time", "idle");
+        Check(!board.CheckAutoResetAt(t + 599.9), s + ": no auto-reset before its time", "reset");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, s + ": still in game before the auto-reset time");
+        CheckNotTold(s + ": before the auto-reset time");
+        Check(board.IsIdleForAutoResetAt(t + 600), s + ": idle at the auto-reset time", "not idle");
+        Check(board.CheckAutoResetAt(t + 600), s + ": auto-reset at its time", "not reset");
+        CheckTold(ChessBoard.ChangeReset, s + ": auto-reset");
+        CheckCleared(s + ": auto-reset");
+        CheckLoggedOnReset(before, "*", "unterminated", s + ": auto-reset");
+        board.PackState();
+        CheckInt(board.syncedInts[ChessBoard.SyncChange], ChessBoard.ChangeReset, s + ": the auto-reset is sent");
+        Check(!board.CheckAutoResetAt(t + 100000), s + ": auto-reset only once", "reset again");
+        CheckLogged(before, 1, s + ": auto-reset logged once");
+
+        // Never, 0, an ended game, a fallen flag and the lobby.
+        IdleTestGame(120, ChessArbiter.Never);
+        t = board.lastActivity;
+        Check(!board.CheckAutoResetAt(t + 10000000), s + ": never: no auto-reset however long idle", "reset");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, s + ": never: still in game");
+        IdleTestGame(0, 0);
+        Check(board.CheckAutoResetAt(board.lastActivity), s + ": 0: auto-reset at once", "not reset");
+        before = board.loggedGames;
+        IdleTestGame(120, 600);
+        board.ResignAs(ChessRules.Black, "Bob");
+        CheckLogged(before, 1, s + ": ended: logged on resigning");
+        Check(board.CheckAutoResetAt(board.lastActivity + 600), s + ": an ended game resets itself", "not reset");
+        CheckLogged(before, 1, s + ": ended: not logged again");
+        before = board.loggedGames;
+        IdleTestGame(120, 600);
+        FlagFallen();
+        Check(board.CheckAutoResetAt(board.lastActivity + 600), s + ": flag fallen: auto-reset", "not reset");
+        CheckLoggedOnReset(before, "0-1", "time forfeit", s + ": flag fallen");
+        LobbyWithTwoPlayers();
+        board.gameNumbers[autoTime] = 600;
+        Check(board.CheckAutoResetAt(board.lastActivity + 600), s + ": the lobby resets itself", "not reset");
+        CheckCleared(s + ": the lobby");
+
+        // Touches: the side to move's, sent at most once per ActivityThrottle seconds and not told locally.
+        IdleTestGame(120, 600);
+        t = board.lastActivity;
+        MarkNotifications();
+        Check(!board.TouchAsAt("Ana", false, t + ChessBoard.ActivityThrottle - 0.1),
+            s + ": a touch within the throttle isn't sent", "sent");
+        Check(board.lastActivity == t, s + ": a touch within the throttle doesn't stamp", "activity " + board.lastActivity);
+        Check(board.TouchAsAt("Ana", false, t + ChessBoard.ActivityThrottle), s + ": a touch after the throttle is sent",
+            "not sent");
+        Check(board.lastActivity == t + ChessBoard.ActivityThrottle, s + ": the touch stamps the activity",
+            "activity " + board.lastActivity);
+        CheckNotTold(s + ": a touch");
+        board.PackState();
+        CheckInt(board.syncedInts[ChessBoard.SyncChange], ChessBoard.ChangeActivity, s + ": the touch sent as activity");
+        Check(board.syncedLastActivity == t + ChessBoard.ActivityThrottle, s + ": the touch's time sent",
+            "sent " + board.syncedLastActivity);
+        Check(!board.TouchAsAt("Ana", false, t + ChessBoard.ActivityThrottle + 1), s + ": the throttle starts again",
+            "sent");
+        t = board.lastActivity + 100;
+        Check(!board.TouchAsAt("Bob", false, t), s + ": the player not to move doesn't count", "sent");
+        Check(!board.TouchAsAt("Cleo", false, t) && !board.TouchAsAt("Cleo", true, t),
+            s + ": a bystander or an organizer outside replay doesn't count", "sent");
+        Check(board.TouchAsAt("Ana", false, t), s + ": the side to move counts", "not sent");
+        Check(!board.IsIdleForResetAt(t + 119), s + ": a touch keeps the board from going idle", "idle");
+
+        // Received: every client gets the new activity time, and the change says nothing else happened.
+        string sent = SeatedGameText();
+        before = board.loggedGames;
+        board.PackState();
+        board.lastActivity = 0;
+        MarkNotifications();
+        board.ReceiveState();
+        CheckTold(ChessBoard.ChangeActivity, s + ": activity received");
+        Check(board.lastChangeReceived, s + ": activity marked received", "not marked");
+        Check(board.lastActivity == t, s + ": the activity time received", "activity " + board.lastActivity);
+        CheckText(SeatedGameText(), sent, s + ": nothing else changed");
+        CheckLogged(before, 0, s + ": activity received: nothing logged");
+
+        // The piece inputs touch: picked up, rejected or dropped back, by the side to move.
+        CheckTouched("Ana", true, ChessRules.G1, ChessRules.G1, s + ": pickup and drop back by the side to move");
+        CheckTouched("Ana", true, ChessRules.D7, ChessRules.D5, s + ": rejected pickup and drop by the side to move");
+        CheckTouched("Bob", false, ChessRules.D7, ChessRules.D5, s + ": the other player's pickup and drop");
+        board.lastActivity = board.ServerTime() - 10;
+        CheckInt(board.KingDroppedOnCastleSpaceAs("Ana", ChessBoard.CastleKingSide), ChessBoard.InputRejected,
+            s + ": castle drop space with no castle");
+        Check(board.lastActivity >= board.ServerTime() - 1, s + ": the castle drop space touches",
+            "activity " + board.lastActivity);
+        board.lastActivity = board.ServerTime() - 10;
+        CheckInt(board.PromotionChosenAs("Ana", ChessRules.G1, ChessRules.F3, ChessRules.Queen),
+            ChessBoard.InputRejected, s + ": not a promotion");
+        Check(board.lastActivity >= board.ServerTime() - 1, s + ": a promotion choice touches",
+            "activity " + board.lastActivity);
+
+        // In replay, whoever may work the replay controls.
+        CheckInt(board.EnterReplayAs("Bob", false), ChessBoard.InputAccepted, s + ": replay entered");
+        CheckTouched("Bob", true, ChessRules.D7, ChessRules.D7, s + ": replay: the player not to move");
+        CheckTouched("Cleo", false, ChessRules.D7, ChessRules.D7, s + ": replay: a bystander");
+        Check(board.TouchAsAt("Cleo", true, board.lastActivity + 100), s + ": replay: an organizer counts", "not sent");
+
+        // Lobby and ended: nothing to touch.
+        LobbyWithTwoPlayers();
+        Check(!board.TouchAsAt("Ana", false, board.lastActivity + 100), s + ": the lobby: a touch doesn't count",
+            "sent");
+        IdleTestGame(120, 600);
+        board.ResignAs(ChessRules.White, "Ana");
+        Check(!board.TouchAsAt("Bob", false, board.lastActivity + 100), s + ": ended: a touch doesn't count", "sent");
+
+        board.RemoveListener(this);
+        board.ClearState();
+    }
+
+    // A game between Ana and Bob with no clock, 1. e4 e5 played (White, Ana, to move), with these inactivity times in
+    // the snapshot.
+    void IdleTestGame(int resetSeconds, int autoSeconds) {
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        Drop("Ana", ChessRules.E2, ChessRules.E4, "inactivity: game");
+        Drop("Bob", ChessRules.E7, ChessRules.E5, "inactivity: game");
+        board.gameNumbers[ChessArbiter.NumberResetAvailableTime] = resetSeconds;
+        board.gameNumbers[ChessArbiter.NumberAutoResetTime] = autoSeconds;
+    }
+
+    // name picks up the piece on from, then drops it on to, each with the board idle for 10 s before: whether each
+    // stamped the activity (touched) or left it as it was.
+    void CheckTouched(string name, bool touched, int from, int to, string label) {
+        double old = board.ServerTime() - 10;
+        board.lastActivity = old;
+        board.PiecePickedUpAs(name, from);
+        CheckStamped(touched, old, label + ": pickup");
+        board.lastActivity = old;
+        board.PieceDroppedAs(name, from, to);
+        CheckStamped(touched, old, label + ": drop");
+    }
+
+    void CheckStamped(bool touched, double old, string label) {
+        if (touched) {
+            Check(board.lastActivity >= old + 9, label + " touches", "activity " + board.lastActivity);
+        } else {
+            Check(board.lastActivity == old, label + " doesn't touch", "activity " + board.lastActivity);
+        }
     }
 }

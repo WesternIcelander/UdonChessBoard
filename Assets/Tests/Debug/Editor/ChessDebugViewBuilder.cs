@@ -32,7 +32,8 @@ public static class ChessDebugViewBuilder {
         { "Arbiter: draws", "ToggleDraws" }, { "Arbiter: clock forced", "ToggleClockForced" },
         { "Arbiter: clear overrides", "ClearOverrides" }, { "Re-snapshot", "Resnapshot" },
         { "Default takebacks", "ToggleDefaultTakebacks" }, { "Default reset time", "CycleDefaultResetTime" },
-        { "Take arbiter", "TakeArbiter" }, { "Take board", "TakeBoard" },
+        { "Default auto-reset time", "CycleDefaultAutoResetTime" }, { "Take arbiter", "TakeArbiter" },
+        { "Take board", "TakeBoard" }, { "Fidget", "Fidget" },
     };
     const int ButtonColumns = 7;
 
