@@ -81,6 +81,7 @@ public class BoardTest : ChessBoardListener {
             TestReset();
             TestSnapshot();
             TestListeners();
+            TestScenarios();
             // Every [ChessPGN] entry in the log is one of these, so the two counts must agree.
             Debug.Log("[BoardTest] games logged by the board: " + board.loggedGames);
             if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
@@ -4331,5 +4332,467 @@ public class BoardTest : ChessBoardListener {
         board.JoinAs(ChessRules.White, "Ana");
         CheckNotTold("listeners: removed");
         board.ClearState();
+    }
+
+    // ---- 7.12 scenarios ----
+
+    // Whole games from a reset board back to a reset board. Unlike the checks above, the settings come only from the
+    // arbiter's overrides through the snapshot (never written on the board), and everything goes through the board's
+    // input methods and buttons, with the test listening throughout. Needs the arbiter, with the local player an
+    // organizer (TestSnapshot reports either missing).
+    void TestScenarios() {
+        if (!Utilities.IsValid(board.arbiter) || !board.arbiter.HasBoard(board.boardNumber)) return;
+        board.AddListener(this);
+        ScenarioTournament();
+        ScenarioCasual();
+        ScenarioResnapshot();
+        ScenarioLoadedGame();
+        ScenarioEndings(ChessArbiter.SettingTakebacks | ChessArbiter.SettingsDrawRules, "every rule on");
+        ScenarioEndings(0, "no draws, no takebacks");
+        board.RemoveListener(this);
+        board.arbiter.ClearOverrides(board.boardNumber);
+        NothingForced();
+        board.ClearState();
+    }
+
+    // The arbiter's overrides for the board: these bits on and the rest off, both inactivity times never, and the
+    // forced values (used only while their bit is on).
+    void ScenarioSettings(int settings, int forcedMode, int forcedBase, int forcedInc) {
+        OverrideAll(settings, ChessArbiter.Never, ChessArbiter.Never, forcedMode, forcedBase, forcedInc);
+    }
+
+    // Checks the snapshot against the bits of ScenarioSettings.
+    void CheckScenarioSnapshot(int settings, int forcedMode, int forcedBase, int forcedInc, string name) {
+        CheckSnapshot(settings, ChessArbiter.Never, ChessArbiter.Never, forcedMode, forcedBase, forcedInc, name);
+    }
+
+    // Ana and Bob join a reset board (the snapshot must have these bits), choose this clock unless it's none, and
+    // Ana starts.
+    void ScenarioGame(int settings, int baseSeconds, string name) {
+        board.ClearState();
+        CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, name + ": Ana joins");
+        CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, name + ": Bob joins");
+        CheckText(ChessArbiter.SettingsToString(board.gameSettings), ChessArbiter.SettingsToString(settings),
+            name + ": the snapshot");
+        if (baseSeconds != ChessArbiter.NoClock) {
+            CheckInt(board.SetClockAs("Ana", baseSeconds, 0), ChessBoard.InputAccepted, name + ": the clock chosen");
+        }
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, name + ": started");
+    }
+
+    // A seated player resets the board, logging nothing.
+    void ScenarioReset(string name) {
+        int before = board.loggedGames;
+        MarkNotifications();
+        CheckInt(board.ResetBoardAs("Ana", false), ChessBoard.InputAccepted, name + ": reset");
+        CheckTold(ChessBoard.ChangeReset, name + ": reset");
+        CheckLogged(before, 0, name + ": nothing logged on reset");
+        CheckCleared(name + ": reset");
+    }
+
+    // name drops the side to move's first legal move that's neither a promotion nor a castle.
+    void DropAnyMove(string name, string label) {
+        int[] moves = new int[ChessMoves.MaxMoves];
+        int count = ChessMoves.GenerateLegalMoves(board.board, board.state, moves, true);
+        int move = 0;
+        for (int i = 0; i < count && move == 0; i++) {
+            if (ChessRules.MovePromotion(moves[i]) == 0 && !ChessRules.MoveIsCastle(moves[i])) move = moves[i];
+        }
+        Check(move != 0, label + ": a move to play", "no legal move");
+        if (move != 0) Drop(name, ChessRules.MoveFrom(move), ChessRules.MoveTo(move), label);
+    }
+
+    // A tournament board: Chess960 and 3+2 forced, no takebacks, "No draws". The snapshot is taken on the first join
+    // and kept while the arbiter changes; the game ends on time, a loss under "No draws"; the next game after the
+    // reset gets the arbiter's new settings.
+    void ScenarioTournament() {
+        string s = "scenario tournament";
+        int settings = ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced;
+        ScenarioSettings(settings, ChessGame.ModeChess960, 180, 2);
+        board.ClearState();
+        CheckInt(board.gameSettings, 0, s + ": no snapshot on the reset board");
+        MarkNotifications();
+        CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana joins");
+        CheckTold(ChessBoard.ChangeJoined, s + ": Ana joins");
+        CheckScenarioSnapshot(settings, ChessGame.ModeChess960, 180, 2, s + ": snapshot on the first join");
+        CheckInt(board.mode, ChessGame.ModeChess960, s + ": the lobby shows the forced mode");
+        CheckInt(board.baseTime * 1000 + board.increment, 180002, s + ": the lobby shows the forced clock");
+
+        // The organizers open everything up after the first join: the board keeps its snapshot.
+        int open = ChessArbiter.SettingTakebacks | ChessArbiter.SettingsDrawRules;
+        ScenarioSettings(open, ChessGame.ModeStandard, ChessArbiter.NoClock, 0);
+        CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob joins");
+        CheckScenarioSnapshot(settings, ChessGame.ModeChess960, 180, 2, s + ": the second join keeps the snapshot");
+        CheckInt(board.SetModeAs("Ana", ChessGame.ModeStandard), ChessBoard.InputRejected, s + ": the mode is forced");
+        CheckInt(board.SetClockAs("Bob", 60, 0), ChessBoard.InputRejected, s + ": the clock is forced");
+        MarkNotifications();
+        CheckInt(board.StartGameAs("Bob"), ChessBoard.InputAccepted, s + ": started");
+        CheckTold(ChessBoard.ChangeStarted, s + ": started");
+        CheckScenarioSnapshot(settings, ChessGame.ModeChess960, 180, 2, s + ": Start keeps the snapshot");
+        CheckInt(board.mode, ChessGame.ModeChess960, s + ": a Chess960 game");
+        CheckInt(board.whiteTime, 180000, s + ": white's clock");
+        CheckInt(board.blackTime, 180000, s + ": black's clock");
+
+        // Pawn pushes are legal from every Chess960 start.
+        MarkNotifications();
+        Drop("Ana", ChessRules.A2, ChessRules.A3, s);
+        CheckTold(ChessBoard.ChangeMove, s + ": a3");
+        Check(board.whiteTime > 180000 && board.whiteTime <= 182000, s + ": a3: the increment added",
+            "white has " + board.whiteTime + " ms");
+        Drop("Bob", ChessRules.H7, ChessRules.H6, s);
+        Drop("Ana", ChessRules.B2, ChessRules.B3, s);
+        Drop("Bob", ChessRules.G7, ChessRules.G6, s);
+        CheckInt(board.OfferDrawAs(ChessRules.White, "Ana"), ChessBoard.InputRejected, s + ": no draw offers");
+        CheckInt(board.ClaimableDraw(), ChessGame.EndingNone, s + ": no draw claims");
+        CheckInt(board.EnterReplayAs("Bob", false), ChessBoard.InputAccepted, s + ": replay");
+        CheckInt(board.StepToAs("Bob", false, 2), ChessBoard.InputAccepted, s + ": step to ply 2");
+        CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputRejected, s + ": no takebacks");
+        CheckInt(board.LeaveReplayAs("Ana", false), ChessBoard.InputAccepted, s + ": leave replay");
+
+        // White's flag falls: lost on time.
+        double late = board.turnStart + 1000;
+        CheckInt(board.FlaggedColorAt(late), ChessRules.White, s + ": white's flag falls");
+        int before = board.loggedGames;
+        MarkNotifications();
+        Check(board.CheckFlagFallAt(late), s + ": the flag fall ends the game", "not ended");
+        CheckTold(ChessBoard.ChangeEnded, s + ": flag fall");
+        CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.Black, "0-1", s + ": lost on time");
+        CheckInt(board.whiteTime, 0, s + ": white's clock stopped at 0");
+        CheckLoggedEnding(before, "0-1", "time forfeit", s + ": logged");
+        CheckLogHas("[White \"Ana\"]\n", s + ": logged White");
+        CheckLogHas("[Black \"Bob\"]\n", s + ": logged Black");
+        CheckLogHas("[Variant \"Chess960\"]\n", s + ": logged Variant");
+        CheckLogHas("[SetUp \"1\"]\n", s + ": logged SetUp");
+        CheckLogHas("[FEN \"" + board.startFen + "\"]\n", s + ": logged FEN");
+        CheckLogHas("[TimeControl \"180+2\"]\n", s + ": logged TimeControl");
+        CheckLogHas("[GameID \"" + board.gameId + "\"]\n", s + ": logged GameID");
+        CheckLogHas("1. a3 { [%clk 0:03:0", s + ": logged a3 with its clock");
+        CheckLogHas("2... g6 { [%clk ", s + ": logged g6 with its clock");
+
+        // The ended game can still be replayed; the reset logs nothing more and clears the snapshot.
+        CheckInt(board.EnterReplayAs("Ana", false), ChessBoard.InputAccepted, s + ": replay once ended");
+        CheckInt(board.StepToAs("Ana", false, 0), ChessBoard.InputAccepted, s + ": step to the start once ended");
+        CheckInt(board.ResetBoardAs("Cleo", false), ChessBoard.InputRejected, s + ": a bystander can't reset");
+        ScenarioReset(s);
+
+        // The next game on the board takes the arbiter's settings as they are now.
+        CheckInt(board.JoinAs(ChessRules.White, "Cleo"), ChessBoard.InputAccepted, s + ": Cleo joins");
+        CheckScenarioSnapshot(open, ChessGame.ModeStandard, ChessArbiter.NoClock, 0, s + ": the next snapshot");
+        Check(!board.IsModeForced() && !board.IsClockForced(), s + ": nothing forced now", "a forced bit is on");
+        CheckInt(board.SetModeAs("Cleo", ChessGame.ModeChess960), ChessBoard.InputAccepted, s + ": the mode is free");
+        board.ClearState();
+    }
+
+    // A casual board with takebacks and every draw rule on, nothing forced: the players choose the mode and clock,
+    // a draw offer is declined, a takeback continues the game under a new ID (the old one logged unfinished), and the
+    // continued game ends with a threefold repetition claimed.
+    void ScenarioCasual() {
+        string s = "scenario casual";
+        int settings = ChessArbiter.SettingTakebacks | ChessArbiter.SettingsDrawRules;
+        ScenarioSettings(settings, ChessGame.ModeChess960, 180, 2);
+        board.ClearState();
+        CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana joins");
+        CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob joins");
+        CheckScenarioSnapshot(settings, ChessGame.ModeChess960, 180, 2, s + ": snapshot");
+        CheckInt(board.mode, ChessGame.ModeStandard, s + ": the forced mode unused while not forced");
+        CheckInt(board.baseTime, ChessArbiter.NoClock, s + ": the forced clock unused while not forced");
+        CheckInt(board.SetModeAs("Bob", ChessGame.ModeChess960), ChessBoard.InputAccepted, s + ": Bob picks Chess960");
+        CheckInt(board.SetModeAs("Ana", ChessGame.ModeStandard), ChessBoard.InputAccepted, s + ": Ana picks Standard");
+        CheckInt(board.SetClockAs("Bob", 60, 1), ChessBoard.InputAccepted, s + ": Bob picks 1+1");
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, s + ": started");
+        CheckInt(board.mode, ChessGame.ModeStandard, s + ": a Standard game");
+        CheckText(Fen(), ChessFen.StartFen, s + ": the standard start");
+        CheckInt(board.whiteTime, 60000, s + ": the chosen clock");
+        string firstId = board.gameId;
+
+        Drop("Ana", ChessRules.E2, ChessRules.E4, s);
+        Drop("Bob", ChessRules.E7, ChessRules.E5, s);
+        Drop("Ana", ChessRules.G1, ChessRules.F3, s);
+        Drop("Bob", ChessRules.B8, ChessRules.C6, s);
+        MarkNotifications();
+        CheckInt(board.OfferDrawAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob offers a draw");
+        CheckTold(ChessBoard.ChangeRequest, s + ": draw offer");
+        CheckInt(board.DeclineDrawAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana declines");
+        CheckInt(board.drawOfferColor, ChessRules.NoColor, s + ": no offer pending");
+
+        // Bob asks to go back to the position after 1... e5, and Ana agrees.
+        CheckInt(board.EnterReplayAs("Bob", false), ChessBoard.InputAccepted, s + ": replay");
+        CheckInt(board.StepToAs("Bob", false, 2), ChessBoard.InputAccepted, s + ": step to ply 2");
+        CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": takeback asked");
+        int before = board.loggedGames;
+        MarkNotifications();
+        CheckInt(board.AcceptTakebackAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": takeback agreed");
+        CheckTold(ChessBoard.ChangeTakeback, s + ": takeback");
+        CheckLogged(before, 1, s + ": the unfinished game logged");
+        CheckLogHas("[Result \"*\"]\n", s + ": logged unfinished");
+        CheckLogHas("[Termination \"unterminated\"]\n", s + ": logged unterminated");
+        CheckLogHas("[GameID \"" + firstId + "\"]\n", s + ": logged with the first ID");
+        CheckLogHas("[TimeControl \"60+1\"]\n", s + ": logged with the chosen clock");
+        CheckLogHas("2... Nc6 { [%clk ", s + ": logged with every move");
+        CheckInGame(s + ": continued");
+        Check(!board.replayMode, s + ": continued out of replay", "in replay");
+        CheckInt(board.moveCount, 2, s + ": continued from ply 2");
+        CheckText(Fen(), "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2", s + ": the position after e5");
+        Check(board.gameId != "" && board.gameId != firstId, s + ": a new ID", "ID " + board.gameId);
+        CheckText(board.continuedFrom, firstId + "/2", s + ": ContinuedFrom");
+
+        // The knights go out and back twice: the position after 1... e5 for the third time.
+        KnightShuffle(2, s);
+        CheckInt(board.ClaimableDraw(), ChessGame.EndingThreefoldRepetition, s + ": threefold claimable");
+        CheckInt(board.ClaimDrawAs("Bob"), ChessBoard.InputRejected, s + ": only the side to move claims");
+        before = board.loggedGames;
+        MarkNotifications();
+        CheckInt(board.ClaimDrawAs("Ana"), ChessBoard.InputAccepted, s + ": Ana claims");
+        CheckTold(ChessBoard.ChangeEnded, s + ": claim");
+        CheckEnded(ChessGame.EndingThreefoldRepetition, ChessRules.NoColor, "1/2-1/2", s + ": threefold");
+        CheckLoggedEnding(before, "1/2-1/2", "threefold repetition", s + ": the continued game");
+        CheckLogHas("[GameID \"" + board.gameId + "\"]\n", s + ": logged with the new ID");
+        CheckLogHas("[ContinuedFrom \"" + firstId + "/2\"]\n", s + ": logged ContinuedFrom");
+        CheckLogHas("1. e4 { [%clk ", s + ": logged with the moves before the takeback");
+        CheckLogHas("5... Ng8 { [%clk ", s + ": logged with the moves after the takeback");
+
+        // An organizer passing by resets it.
+        CheckInt(board.ResetBoardAs("Cleo", false), ChessBoard.InputRejected, s + ": a bystander can't reset");
+        before = board.loggedGames;
+        CheckInt(board.ResetBoardAs("Cleo", true), ChessBoard.InputAccepted, s + ": an organizer resets");
+        CheckLogged(before, 0, s + ": nothing logged on reset");
+        CheckCleared(s + ": reset");
+    }
+
+    // Takebacks off and only draws by agreement: the arbiter turning takebacks on changes nothing until an organizer
+    // re-snapshots the board mid-game; turning draws off ("No draws") and re-snapshotting stops offers; turned back
+    // on, a draw is agreed.
+    void ScenarioResnapshot() {
+        string s = "scenario re-snapshot";
+        ScenarioSettings(ChessArbiter.SettingDrawAgreement, ChessGame.ModeStandard, ChessArbiter.NoClock, 0);
+        board.ClearState();
+        CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana joins");
+        int both = ChessArbiter.SettingDrawAgreement | ChessArbiter.SettingTakebacks;
+        ScenarioSettings(both, ChessGame.ModeStandard, ChessArbiter.NoClock, 0);
+        CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob joins");
+        CheckInt(board.StartGameAs("Bob"), ChessBoard.InputAccepted, s + ": started");
+        CheckText(ChessArbiter.SettingsToString(board.gameSettings),
+            ChessArbiter.SettingsToString(ChessArbiter.SettingDrawAgreement), s + ": the first join's snapshot");
+        Drop("Ana", ChessRules.E2, ChessRules.E4, s);
+        Drop("Bob", ChessRules.E7, ChessRules.E5, s);
+        Drop("Ana", ChessRules.D2, ChessRules.D4, s);
+        CheckInt(board.EnterReplayAs("Ana", false), ChessBoard.InputAccepted, s + ": replay");
+        CheckInt(board.StepToAs("Ana", false, 1), ChessBoard.InputAccepted, s + ": step to ply 1");
+        CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputRejected,
+            s + ": takebacks off in the snapshot");
+
+        MarkNotifications();
+        CheckInt(board.Resnapshot(), ChessBoard.InputAccepted, s + ": an organizer re-snapshots");
+        CheckTold(ChessBoard.ChangeSettings, s + ": re-snapshot");
+        CheckScenarioSnapshot(both, ChessGame.ModeStandard, ChessArbiter.NoClock, 0, s + ": the re-snapshot");
+        CheckInGame(s + ": re-snapshot");
+        Check(board.replayMode && board.replayIndex == 1, s + ": re-snapshot: still showing ply 1",
+            (board.replayMode ? "in replay" : "not in replay") + " at " + board.replayIndex);
+        CheckInt(board.moveCount, 3, s + ": re-snapshot: the moves kept");
+        CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": takeback asked");
+        CheckInt(board.DeclineTakebackAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana declines");
+        CheckInt(board.LeaveReplayAs("Bob", false), ChessBoard.InputAccepted, s + ": leave replay");
+        CheckInt(board.moveCount, 3, s + ": declined: the moves kept");
+
+        ScenarioSettings(ChessArbiter.SettingTakebacks, ChessGame.ModeStandard, ChessArbiter.NoClock, 0);
+        CheckInt(board.Resnapshot(), ChessBoard.InputAccepted, s + ": re-snapshot to \"No draws\"");
+        CheckInt(board.OfferDrawAs(ChessRules.Black, "Bob"), ChessBoard.InputRejected, s + ": no offers under \"No draws\"");
+        ScenarioSettings(both, ChessGame.ModeStandard, ChessArbiter.NoClock, 0);
+        CheckInt(board.Resnapshot(), ChessBoard.InputAccepted, s + ": re-snapshot with agreement");
+        CheckInt(board.OfferDrawAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob offers a draw");
+        Drop("Bob", ChessRules.E5, ChessRules.D4, s);
+        CheckInt(board.drawOfferColor, ChessRules.Black, s + ": the offer kept by Bob's own move");
+        int before = board.loggedGames;
+        MarkNotifications();
+        CheckInt(board.AcceptDrawAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana accepts");
+        CheckTold(ChessBoard.ChangeEnded, s + ": draw agreed");
+        CheckEnded(ChessGame.EndingDrawAgreement, ChessRules.NoColor, "1/2-1/2", s + ": draw agreed");
+        CheckLoggedEnding(before, "1/2-1/2", "draw agreement", s + ": logged");
+        CheckLogHas("[TimeControl \"-\"]\n", s + ": logged with no clock");
+        CheckLogHas("\n1. e4 e5 2. d4 exd4 1/2-1/2\n", s + ": logged move text");
+        ScenarioReset(s);
+    }
+
+    // Siggi-vs-Nuka loaded onto a board with the mode and a 5+0 clock forced, takebacks on and "No draws": the
+    // snapshot is taken on loading (the forced clock applied, the game's mode kept), the players join and continue
+    // from ply 20, take back past the continuation point, and White resigns.
+    void ScenarioLoadedGame() {
+        string s = "scenario loaded";
+        if (!Utilities.IsValid(importer) || !Utilities.IsValid(siggiVsNuka)) {
+            Check(false, s, "the importer or siggiVsNuka field is empty");
+            return;
+        }
+        int settings = ChessArbiter.SettingTakebacks | ChessArbiter.SettingModeForced
+            | ChessArbiter.SettingClockForced;
+        ScenarioSettings(settings, ChessGame.ModeChess960, 300, 0);
+        board.ClearState();
+        CheckInt(ImportText(siggiVsNuka.text), ChessPgn.ImportDone, s + ": imported");
+        CheckInt(board.gameSettings, 0, s + ": no snapshot before loading");
+        MarkNotifications();
+        CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, s + ": loaded");
+        CheckTold(ChessBoard.ChangeLoaded, s + ": loaded");
+        CheckScenarioSnapshot(settings, ChessGame.ModeChess960, 300, 0, s + ": snapshot on loading");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, s + ": the loaded state");
+        Check(board.replayMode, s + ": in replay", "not in replay");
+        CheckInt(board.mode, ChessGame.ModeStandard, s + ": the game's mode, not the forced one");
+        CheckInt(board.baseTime * 1000 + board.increment, 300000, s + ": the forced clock for continuing");
+        CheckPgnHas("[TimeControl \"600\"]", true, s + ": the loaded game's own time control exported");
+        CheckInt(board.ending * 10 + board.winner, ChessGame.EndingCheckmate * 10 + ChessRules.Black,
+            s + ": won by Black by checkmate");
+
+        // The arbiter changing now doesn't reach the board.
+        ScenarioSettings(ChessArbiter.SettingsDrawRules, ChessGame.ModeStandard, ChessArbiter.NoClock, 0);
+        CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana joins");
+        CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob joins");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, s + ": still loaded");
+        CheckScenarioSnapshot(settings, ChessGame.ModeChess960, 300, 0, s + ": joining keeps the snapshot");
+        CheckInt(board.SetClockAs("Ana", 60, 0), ChessBoard.InputRejected, s + ": the clock is forced");
+        CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputRejected, s + ": not from the final checkmate");
+        CheckInt(board.StepToAs("Bob", false, 20), ChessBoard.InputAccepted, s + ": step to ply 20");
+        int before = board.loggedGames;
+        MarkNotifications();
+        CheckInt(board.ContinueGameAs("Bob"), ChessBoard.InputAccepted, s + ": continued");
+        CheckTold(ChessBoard.ChangeContinued, s + ": continued");
+        CheckLogged(before, 0, s + ": nothing logged on continuing");
+        CheckInGame(s + ": continued");
+        CheckInt(board.moveCount, 20, s + ": continued from ply 20");
+        CheckInt(board.mode, ChessGame.ModeStandard, s + ": continued in the game's mode");
+        CheckInt(board.whiteTime, 300000, s + ": white's fresh clock");
+        CheckInt(board.blackTime, 300000, s + ": black's fresh clock");
+        CheckText(board.continuedFrom, "20250710001921/20", s + ": ContinuedFrom the PGN's ID");
+        string continuedId = board.gameId;
+        Check(continuedId != "" && continuedId != "20250710001921", s + ": a new ID", "ID " + continuedId);
+        DropAnyMove("Ana", s + ": White plays on");
+        DropAnyMove("Bob", s + ": Black plays on");
+
+        // Back to ply 18, before the continuation point: the continued game logged unfinished, both sides on the base
+        // time.
+        CheckInt(board.EnterReplayAs("Ana", false), ChessBoard.InputAccepted, s + ": replay");
+        CheckInt(board.StepToAs("Ana", false, 18), ChessBoard.InputAccepted, s + ": step to ply 18");
+        CheckInt(board.RequestTakebackAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": takeback asked");
+        MarkNotifications();
+        CheckInt(board.AcceptTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": takeback agreed");
+        CheckTold(ChessBoard.ChangeTakeback, s + ": takeback");
+        CheckLogged(before, 1, s + ": the continued game logged unfinished");
+        CheckLogHas("[Result \"*\"]\n", s + ": logged unfinished");
+        CheckLogHas("[White \"Ana\"]\n", s + ": logged with the seated White");
+        CheckLogHas("[Black \"Bob\"]\n", s + ": logged with the seated Black");
+        CheckLogHas("[TimeControl \"300\"]\n", s + ": logged with the forced clock");
+        CheckLogHas("[GameID \"" + continuedId + "\"]\n", s + ": logged with the continued game's ID");
+        CheckLogHas("[ContinuedFrom \"20250710001921/20\"]\n", s + ": logged ContinuedFrom");
+        CheckInGame(s + ": taken back");
+        CheckInt(board.moveCount, 18, s + ": taken back to ply 18");
+        CheckInt(board.whiteTime, 300000, s + ": taken back: white's base time");
+        CheckInt(board.blackTime, 300000, s + ": taken back: black's base time");
+        CheckText(board.continuedFrom, continuedId + "/18", s + ": taken back: ContinuedFrom");
+
+        CheckInt(board.OfferDrawAs(ChessRules.Black, "Bob"), ChessBoard.InputRejected, s + ": no offers under \"No draws\"");
+        before = board.loggedGames;
+        MarkNotifications();
+        CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana resigns");
+        CheckTold(ChessBoard.ChangeEnded, s + ": resign");
+        CheckEnded(ChessGame.EndingResignation, ChessRules.Black, "0-1", s + ": resigned");
+        CheckLoggedEnding(before, "0-1", "resignation", s + ": logged");
+        CheckLogHas("[ContinuedFrom \"" + continuedId + "/18\"]\n", s + ": logged ContinuedFrom the continued game");
+        Check(!board.lastLoggedPgn.Contains("[%clk"), s + ": no clocks for the loaded moves",
+            "PGN:\n" + board.lastLoggedPgn);
+        ScenarioReset(s);
+    }
+
+    // The endings reachable by play under these settings (from the arbiter, nothing forced), each game logged once:
+    // checkmate and stalemate whatever the draw rules; the knights shuffling to a fifth repetition, a draw with
+    // fivefold on and otherwise played on until Black resigns; a flag fall with material on the board, lost either
+    // way. After the mate, a takeback to before it is agreed when takebacks are on, and refused when they're off.
+    void ScenarioEndings(int settings, string label) {
+        string s = "scenario endings (" + label + ")";
+        bool fivefold = (settings & ChessArbiter.SettingFivefoldRepetition) != 0;
+        bool takebacks = (settings & ChessArbiter.SettingTakebacks) != 0;
+        ScenarioSettings(settings, ChessGame.ModeStandard, ChessArbiter.NoClock, 0);
+
+        // Fool's mate.
+        string f = s + ": fool's mate";
+        ScenarioGame(settings, ChessArbiter.NoClock, f);
+        Drop("Ana", ChessRules.F2, ChessRules.F3, f);
+        Drop("Bob", ChessRules.E7, ChessRules.E5, f);
+        Drop("Ana", ChessRules.G2, ChessRules.G4, f);
+        int before = board.loggedGames;
+        MarkNotifications();
+        Drop("Bob", ChessRules.D8, ChessRules.H4, f);
+        CheckTold(ChessBoard.ChangeMove, f + ": the mating move");
+        CheckEnded(ChessGame.EndingCheckmate, ChessRules.Black, "0-1", f);
+        CheckLoggedEnding(before, "0-1", "checkmate", f);
+        CheckInt(board.EnterReplayAs("Ana", false), ChessBoard.InputAccepted, f + ": replay");
+        CheckInt(board.StepToAs("Ana", false, 2), ChessBoard.InputAccepted, f + ": step to ply 2");
+        CheckInt(board.RequestTakebackAs(ChessRules.White, "Ana"),
+            takebacks ? ChessBoard.InputAccepted : ChessBoard.InputRejected, f + ": takeback asked");
+        if (takebacks) {
+            before = board.loggedGames;
+            CheckInt(board.AcceptTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, f + ": takeback agreed");
+            CheckLogged(before, 0, f + ": the ended game not logged again");
+            CheckInGame(f + ": taken back");
+            CheckInt(board.moveCount, 2, f + ": taken back to ply 2");
+            Drop("Ana", ChessRules.G2, ChessRules.G3, f + ": taken back");
+            MarkNotifications();
+            CheckInt(board.ResetBoardAs("Ana", false), ChessBoard.InputAccepted, f + ": reset");
+            CheckTold(ChessBoard.ChangeReset, f + ": reset");
+            CheckLoggedOnReset(before, "*", "unterminated", f + ": the continued game");
+            CheckCleared(f + ": reset");
+        } else {
+            ScenarioReset(f);
+        }
+
+        // Sam Loyd's ten-move stalemate.
+        string st = s + ": stalemate";
+        ScenarioGame(settings, ChessArbiter.NoClock, st);
+        int[] loyd = new int[] {
+            ChessRules.E2, ChessRules.E3, ChessRules.A7, ChessRules.A5, ChessRules.D1, ChessRules.H5,
+            ChessRules.A8, ChessRules.A6, ChessRules.H5, ChessRules.A5, ChessRules.H7, ChessRules.H5,
+            ChessRules.H2, ChessRules.H4, ChessRules.A6, ChessRules.H6, ChessRules.A5, ChessRules.C7,
+            ChessRules.F7, ChessRules.F6, ChessRules.C7, ChessRules.D7, ChessRules.E8, ChessRules.F7,
+            ChessRules.D7, ChessRules.B7, ChessRules.D8, ChessRules.D3, ChessRules.B7, ChessRules.B8,
+            ChessRules.D3, ChessRules.H7, ChessRules.B8, ChessRules.C8, ChessRules.F7, ChessRules.G6,
+            ChessRules.C8, ChessRules.E6
+        };
+        before = board.loggedGames;
+        for (int i = 0; i < loyd.Length; i += 2) {
+            Drop(i % 4 == 0 ? "Ana" : "Bob", loyd[i], loyd[i + 1], st);
+        }
+        CheckText(Fen(), "5bnr/4p1pq/4Qpkr/7p/7P/4P3/PPPP1PP1/RNB1KBNR b KQ - 2 10", st + ": the position");
+        CheckEnded(ChessGame.EndingStalemate, ChessRules.NoColor, "1/2-1/2", st);
+        CheckLoggedEnding(before, "1/2-1/2", "stalemate", st);
+        ScenarioReset(st);
+
+        // The knights out and back four times: the starting position for the fifth time.
+        string r = s + ": repetition";
+        ScenarioGame(settings, ChessArbiter.NoClock, r);
+        before = board.loggedGames;
+        KnightShuffle(4, r);
+        if (fivefold) {
+            CheckEnded(ChessGame.EndingFivefoldRepetition, ChessRules.NoColor, "1/2-1/2", r + ": fivefold");
+            CheckLoggedEnding(before, "1/2-1/2", "fivefold repetition", r);
+        } else {
+            CheckInGame(r + ": played on");
+            CheckInt(board.ClaimableDraw(), ChessGame.EndingNone, r + ": nothing to claim");
+            CheckInt(board.OfferDrawAs(ChessRules.White, "Ana"), ChessBoard.InputRejected, r + ": no offers");
+            CheckLogged(before, 0, r + ": nothing logged yet");
+            CheckInt(board.ResignAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, r + ": Bob resigns");
+            CheckEnded(ChessGame.EndingResignation, ChessRules.White, "1-0", r + ": resigned");
+            CheckLoggedEnding(before, "1-0", "resignation", r);
+        }
+        ScenarioReset(r);
+
+        // Black's flag falls with all the material on the board.
+        string t = s + ": time forfeit";
+        ScenarioGame(settings, 60, t);
+        Drop("Ana", ChessRules.E2, ChessRules.E4, t);
+        double late = board.turnStart + 61;
+        before = board.loggedGames;
+        MarkNotifications();
+        Check(board.CheckFlagFallAt(late), t + ": the flag fall ends the game", "not ended");
+        CheckTold(ChessBoard.ChangeEnded, t + ": flag fall");
+        CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.White, "1-0", t);
+        CheckLoggedEnding(before, "1-0", "time forfeit", t);
+        CheckLogHas("[TimeControl \"60\"]\n", t + ": logged TimeControl");
+        ScenarioReset(t);
     }
 }
