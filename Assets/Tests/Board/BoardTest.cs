@@ -4,9 +4,9 @@ using UnityEngine;
 using VRC.SDKBase;
 
 // Step 7 test behaviour (PLAN.md section 7): the logical board driven with no world objects, plus the single-client
-// sync checks of 8.3 (packing and receiving the synced state), the ownership rules of 8.4, the inactivity rules of 8.5
-// and the notation fill-in of 8.6. Runs only with no one else in the instance. Logs "[BoardTest] PASS: <check>" or
-// "[BoardTest] FAIL: <check>: <details>" per check, then a summary line.
+// sync checks of 8.3 (packing and receiving the synced state), the ownership rules of 8.4, the inactivity rules of
+// 8.5, the notation fill-in of 8.6 and the import of 8.7. Runs only with no one else in the instance. Logs
+// "[BoardTest] PASS: <check>" or "[BoardTest] FAIL: <check>: <details>" per check, then a summary line.
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
 public class BoardTest : ChessBoardListener {
     // The board under test; its checks fail if it isn't assigned. The checks clear it and leave it in the reset state.
@@ -37,7 +37,8 @@ public class BoardTest : ChessBoardListener {
     }
 
     // The checks run over three frames (RunChecks, RunSyncChecks, RunFillChecks), each ending with the board reset:
-    // Udon halts a behaviour whose event runs past 10 s, and all of them in one frame take longer than that.
+    // Udon halts a behaviour whose event runs past 10 s, and all of them in one frame take longer than that. An import
+    // over real frames follows (PollImport), then the summary.
     public void RunChecks() {
         if (ran || !started || !joined) return;
         ran = true;
@@ -108,9 +109,15 @@ public class BoardTest : ChessBoardListener {
         SendCustomEventDelayedFrames(nameof(RunFillChecks), 1);
     }
 
-    // The third frame: the notation fill-in (8.6), then the summary.
+    // The third frame: the notation fill-in (8.6) and the import (8.7), then an import over the next frames
+    // (PollImport), then the summary.
     public void RunFillChecks() {
         TestNotationFill();
+        TestImport();
+        StartFrameImport();
+    }
+
+    void Finish() {
         // Every [ChessPGN] entry in the log is one of these, so the two counts must agree.
         Debug.Log("[BoardTest] games logged by the board: " + board.loggedGames);
         if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
@@ -5511,5 +5518,183 @@ public class BoardTest : ChessBoardListener {
         }
         board.fillBudgetMs = ChessBoard.DefaultFillBudgetMs;
         return frames;
+    }
+
+    // ---- 8.7 import ----
+
+    int importTold;
+
+    public override void OnImportChanged() {
+        importTold++;
+    }
+
+    // The board's import on one client, driven by hand: the importer run in one go (ImportFor) and its done event
+    // called directly (_ImportFinished), as its Update would.
+    void TestImport() {
+        NothingForced();
+        string s = "import";
+        if (!Utilities.IsValid(importer) || siggiVsNuka == null) {
+            Check(false, s + ": importer and Siggi-vs-Nuka assigned", "assign them in the Inspector");
+            return;
+        }
+        ChessPgnImporter boardImporter = board.importer;
+        board.AddListener(this);
+        string nuka = siggiVsNuka.text;
+
+        // Refused with no importer and on a board that isn't reset; nobody told.
+        board.ClearState();
+        board.importer = null;
+        int told = importTold;
+        int status = board.importStatus;
+        Check(!board.CanImport(), s + ": no importer: can't import", "CanImport");
+        CheckInt(board.StartImport(nuka), ChessBoard.InputRejected, s + ": no importer: refused");
+        board.importer = importer;
+        Check(board.CanImport(), s + ": reset: can import", "not CanImport");
+        board.JoinAs(ChessRules.White, "Ana");
+        Check(!board.CanImport(), s + ": lobby: can't import", "CanImport");
+        CheckInt(board.StartImport(nuka), ChessBoard.InputRejected, s + ": lobby: refused");
+        CheckInt(importTold - told, 0, s + ": refusals: nobody told of an import");
+        CheckInt(board.importStatus, status, s + ": refusals: status unchanged");
+
+        // Started: nothing changes on the board or is sent until it finishes, then it's loaded and sent in one update.
+        board.ClearState();
+        int sentChange = board.lastSentChange;
+        MarkNotifications();
+        told = importTold;
+        CheckInt(board.StartImport(nuka), ChessBoard.InputAccepted, s + ": started");
+        CheckInt(board.importStatus, ChessBoard.ImportRunning, s + ": under way");
+        CheckInt(importTold - told, 1, s + ": started: told");
+        Check(importer.importing, s + ": the importer is importing", "not importing");
+        CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, s + ": imported");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleReset, s + ": the board still reset");
+        CheckNotTold(s + ": while importing: OnBoardChanged");
+        CheckInt(board.lastSentChange, sentChange, s + ": while importing: nothing sent");
+        board._ImportFinished();
+        CheckInt(board.importStatus, ChessBoard.ImportLoaded, s + ": loaded");
+        CheckText(board.importMessage, "", s + ": loaded: no message");
+        CheckInt(importTold - told, 2, s + ": loaded: told");
+        CheckTold(ChessBoard.ChangeLoaded, s + ": loaded");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, s + ": the board loaded");
+        CheckInt(board.moveCount, 54, s + ": 54 plies");
+        CheckText(board.gameId, "20250710001921", s + ": the PGN's GameID");
+        board.PackState();
+        CheckInt(board.syncedInts[ChessBoard.SyncChange], ChessBoard.ChangeLoaded, s + ": sent as loaded");
+        CheckInt(board.syncedMoves.Length, 54, s + ": every move sent");
+        CheckText(board.syncedNotation[53], board.notation[53], s + ": the notation sent");
+        board._ImportFinished();
+        CheckInt(importTold - told, 2, s + ": a second done event: nobody told");
+        CheckNotTold(s + ": a second done event: OnBoardChanged");
+        CheckInt(board.importStatus, ChessBoard.ImportLoaded, s + ": a second done event: still loaded");
+
+        // A failed import: the reason, nothing changed or sent.
+        string f = "import failed";
+        board.ClearState();
+        sentChange = board.lastSentChange;
+        told = importTold;
+        MarkNotifications();
+        CheckInt(board.StartImport("1. e4 e5 2. Ke3 *"), ChessBoard.InputAccepted, f + ": started");
+        importer.ImportFor(float.MaxValue);
+        board._ImportFinished();
+        CheckInt(board.importStatus, ChessBoard.ImportFailed, f + ": failed");
+        CheckText(board.importMessage, "failed at move 2.: illegal move", f + ": the reason");
+        CheckInt(importTold - told, 2, f + ": told when started and when failed");
+        CheckNotTold(f + ": OnBoardChanged");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleReset, f + ": the board still reset");
+        CheckInt(board.lastSentChange, sentChange, f + ": nothing sent");
+
+        // Abandoned by a change made here: the importer stops, and its result is never loaded.
+        string a = "import abandoned";
+        board.ClearState();
+        told = importTold;
+        CheckInt(board.StartImport(nuka), ChessBoard.InputAccepted, a + ": started");
+        importer.ImportFor(0f);
+        CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, a + ": Ana joins");
+        CheckInt(board.importStatus, ChessBoard.ImportAbandoned, a + ": abandoned");
+        Check(board.importMessage.Length > 0, a + ": the reason", "no message");
+        CheckInt(importTold - told, 2, a + ": told when started and when abandoned");
+        Check(!importer.importing, a + ": the importer stopped", "still importing");
+        importer.ImportFor(float.MaxValue);
+        MarkNotifications();
+        board._ImportFinished();
+        CheckInt(board.importStatus, ChessBoard.ImportAbandoned, a + ": a late done event: still abandoned");
+        CheckNotTold(a + ": a late done event: OnBoardChanged");
+        CheckInt(importTold - told, 2, a + ": a late done event: nobody told");
+        CheckInt(board.lifecycle * 1000 + board.moveCount, ChessBoard.LifecycleLobby * 1000,
+            a + ": the board still in the lobby with no moves");
+
+        // A rejected piece input and a received touch change nothing, so the import goes on; any other update
+        // arriving abandons it.
+        string r = "import received";
+        board.ClearState();
+        board.lastSentChange = ChessBoard.ChangeActivity;
+        board.PackState();
+        told = importTold;
+        CheckInt(board.StartImport(nuka), ChessBoard.InputAccepted, r + ": started");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4), ChessBoard.InputRejected,
+            r + ": a drop on a reset board");
+        CheckInt(board.importStatus, ChessBoard.ImportRunning, r + ": a rejection: still under way");
+        board.ReceiveState();
+        CheckInt(board.importStatus, ChessBoard.ImportRunning, r + ": a touch received: still under way");
+        board.JoinAs(ChessRules.Black, "Bob");
+        board.PackState();
+        board.ClearState();
+        CheckInt(board.StartImport(nuka), ChessBoard.InputAccepted, r + ": started again");
+        board.ReceiveState();
+        CheckInt(board.importStatus, ChessBoard.ImportAbandoned, r + ": a join received: abandoned");
+        CheckText(board.blackPlayer, "Bob", r + ": the update taken");
+        CheckInt(importTold - told, 4, r + ": told twice for each import");
+        Check(!importer.importing, r + ": the importer stopped", "still importing");
+
+        // Starting again replaces an import under way.
+        string g = "import again";
+        board.ClearState();
+        CheckInt(board.StartImport(nuka), ChessBoard.InputAccepted, g + ": the first");
+        importer.ImportFor(0f);
+        CheckInt(board.StartImport("1. e4 *"), ChessBoard.InputAccepted, g + ": the second");
+        CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, g + ": imported");
+        board._ImportFinished();
+        CheckInt(board.importStatus, ChessBoard.ImportLoaded, g + ": loaded");
+        CheckInt(board.moveCount, 1, g + ": the second one's moves");
+
+        board.RemoveListener(this);
+        board.importer = boardImporter;
+        board.ClearState();
+    }
+
+    // An import over real frames: the importer's Update runs it and sends its done event to the board, which loads it.
+    ChessPgnImporter frameBoardImporter;
+    int frameImportStart;
+
+    void StartFrameImport() {
+        if (!Utilities.IsValid(importer) || siggiVsNuka == null) {
+            Finish();
+            return;
+        }
+        board.ClearState();
+        frameBoardImporter = board.importer;
+        board.importer = importer;
+        board.AddListener(this);
+        frameImportStart = Time.frameCount;
+        CheckInt(board.StartImport(siggiVsNuka.text), ChessBoard.InputAccepted, "import over frames: started");
+        SendCustomEventDelayedFrames(nameof(PollImport), 1);
+    }
+
+    public void PollImport() {
+        string s = "import over frames";
+        int frames = Time.frameCount - frameImportStart;
+        if (board.importStatus == ChessBoard.ImportRunning && frames < 600) {
+            SendCustomEventDelayedFrames(nameof(PollImport), 1);
+            return;
+        }
+        CheckInt(board.importStatus, ChessBoard.ImportLoaded, s + ": loaded");
+        CheckInt(board.lifecycle * 1000 + board.moveCount, ChessBoard.LifecycleLoaded * 1000 + 54,
+            s + ": the board loaded with 54 plies");
+        CheckInt(board.lastSentChange, ChessBoard.ChangeLoaded, s + ": sent");
+        Check(frames >= 2, s + ": over several frames", frames + " frames");
+        Debug.Log("[BoardTest] import timing: Siggi-vs-Nuka in " + frames + " frames (importer: " + importer.frames
+            + " frames, longest " + importer.longestFrameMs + " ms, " + importer.totalMs + " ms in all)");
+        board.RemoveListener(this);
+        board.importer = frameBoardImporter;
+        Finish();
     }
 }

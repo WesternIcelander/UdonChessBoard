@@ -17,6 +17,7 @@ using VRC.Udon;
 public static class ChessDebugViewBuilder {
     const string ViewScriptPath = "Assets/Tests/Debug/ChessDebugView.cs";
     const string ViewProgramPath = "Assets/Tests/Debug/ChessDebugView.asset";
+    const string ImportPgnPath = "Assets/Tests/PGN/Siggi-vs-Nuka.pgn.txt";
 
     // Button label and the ChessDebugView method it calls, in rows of ButtonColumns.
     static readonly string[,] Buttons = {
@@ -34,11 +35,12 @@ public static class ChessDebugViewBuilder {
         { "Default takebacks", "ToggleDefaultTakebacks" }, { "Default reset time", "CycleDefaultResetTime" },
         { "Default auto-reset time", "CycleDefaultAutoResetTime" }, { "Take arbiter", "TakeArbiter" },
         { "Take board", "TakeBoard" }, { "Fidget", "Fidget" }, { "Forget notation", "ForgetNotation" },
+        { "Import PGN", "ImportPgn" }, { "Import PGN (paused)", "ImportPaused" }, { "Resume import", "ResumeImport" },
     };
     const int ButtonColumns = 7;
 
     const float CanvasWidth = 1600;
-    const float CanvasHeight = 1000;
+    const float CanvasHeight = 1040;
     const float Margin = 20;
     const float SquareSize = 60;
     const float ButtonHeight = 56;
@@ -49,6 +51,7 @@ public static class ChessDebugViewBuilder {
         ChessBoard board = FindBoard();
         if (board == null) return;
         if (!EnsureProgramAsset()) return;
+        EnsureImporter(board);
 
         Font font = BuiltinFont();
         GameObject root = new GameObject("ChessDebugView (" + board.gameObject.name + ")");
@@ -70,6 +73,11 @@ public static class ChessDebugViewBuilder {
 
         ChessDebugView view = UdonSharpUndo.AddComponent<ChessDebugView>(root);
         view.board = board;
+        view.importPgn = AssetDatabase.LoadAssetAtPath<TextAsset>(ImportPgnPath);
+        if (view.importPgn == null) {
+            Debug.LogWarning("[ChessDebugViewBuilder] " + ImportPgnPath + " not found; the import buttons need a PGN "
+                + "in the view's Import Pgn field.");
+        }
         view.squareImages = new Image[64];
         view.squareTexts = new Text[64];
 
@@ -129,6 +137,23 @@ public static class ChessDebugViewBuilder {
         Selection.activeGameObject = root;
         Debug.Log("[ChessDebugViewBuilder] " + (old != null ? "Replaced " : "Created ") + root.name + " for "
             + board.gameObject.name + ". Move it where you like and save the scene.");
+    }
+
+    // The import buttons (8.7) need the board to have an importer: if it has none, one is added as a child of the
+    // board. The proxy holds the board's fields: only the importer is set on it (as the Inspector would), then copied to
+    // the Udon side. Copying the Udon side to the proxy first wiped the board's Arbiter field (8.7).
+    static void EnsureImporter(ChessBoard board) {
+        if (board.importer != null) return;
+        GameObject child = new GameObject("ChessPgnImporter");
+        Undo.RegisterCreatedObjectUndo(child, "Create Debug View");
+        child.transform.SetParent(board.transform, false);
+        ChessPgnImporter importer = UdonSharpUndo.AddComponent<ChessPgnImporter>(child);
+        SerializedObject boardFields = new SerializedObject(board);
+        boardFields.FindProperty("importer").objectReferenceValue = importer;
+        boardFields.ApplyModifiedProperties();
+        UdonSharpEditorUtility.CopyProxyToUdon(board);
+        PrefabUtility.RecordPrefabInstancePropertyModifications(UdonSharpEditorUtility.GetBackingUdonBehaviour(board));
+        Debug.Log("[ChessDebugViewBuilder] Added a ChessPgnImporter to " + board.gameObject.name + " for its imports.");
     }
 
     // The scene's debug view for a board (built earlier), or null.

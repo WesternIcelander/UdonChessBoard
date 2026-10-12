@@ -17,6 +17,8 @@ public class ChessDebugView : ChessBoardListener {
     public Text[] squareTexts = new Text[64];
     // Everything else about the board, and the result of the last button pressed.
     public Text statusText;
+    // The PGN the import buttons import (8.7): Assets/Tests/PGN/Siggi-vs-Nuka.pgn.txt, set by the builder.
+    public TextAsset importPgn;
 
     // Clock choices cycled by CycleClock (base seconds, increment): none, 15 s (to see a flag fall), 1+1, 3+2.
     int[] clockBases = { ChessArbiter.NoClock, 15, 60, 180 };
@@ -419,6 +421,51 @@ public class ChessDebugView : ChessBoardListener {
         ReportDone("Forget notation: " + forgot + " of " + count + " entries forgotten", true);
     }
 
+    // ---- PGN import (8.7) ----
+
+    // Imports importPgn over the next frames; the board loads and sends it when done (OnImportChanged logs it).
+    public void ImportPgn() {
+        StartImport("Import PGN", false);
+    }
+
+    // Starts importing importPgn but holds the import (the importer paused), so the board can be changed meanwhile,
+    // here or on another client, to see the import abandoned. Resume import lets it finish.
+    public void ImportPaused() {
+        StartImport("Import PGN (paused)", true);
+    }
+
+    public void ResumeImport() {
+        bool running = board.importStatus == ChessBoard.ImportRunning && Utilities.IsValid(board.importer);
+        if (running) board.importer.paused = false;
+        ReportDone("Resume import" + (running ? "" : " (no import under way)"), running);
+    }
+
+    void StartImport(string label, bool paused) {
+        if (importPgn == null) {
+            ReportDone(label + " (the Import Pgn field is empty)", false);
+            return;
+        }
+        int result = board.StartImport(importPgn.text);
+        if (result == ChessBoard.InputAccepted && paused) board.importer.paused = true;
+        Report(label + " " + importPgn.name, result);
+    }
+
+    // The board's import started, was loaded, failed or was abandoned: logged with the board's state.
+    public override void OnImportChanged() {
+        dirty = true;
+        Debug.Log("[ChessDebugView] import " + ImportText() + "; now " + BoardSummary());
+    }
+
+    string ImportText() {
+        string text = ImportStatusName(board.importStatus);
+        if (board.importMessage.Length > 0) text += " (" + board.importMessage + ")";
+        if (board.importStatus == ChessBoard.ImportRunning && Utilities.IsValid(board.importer)
+            && board.importer.paused) {
+            text += ", paused";
+        }
+        return text;
+    }
+
     // ---- Helpers ----
 
     // The colour to act for: preferred when the check for it holds, else the other one if the local player holds that
@@ -610,6 +657,7 @@ public class ChessDebugView : ChessBoardListener {
             text += "Arbiter: none\n";
         }
         text += "Claimable: " + EndingName(board.ClaimableDraw()) + "\n";
+        text += "Import: " + ImportText() + "\n";
         text += "Moves (" + board.moveCount + "): " + MovesText() + "\n";
         text += "Applies to you: " + ApplicableButtons(name) + "\n";
         text += "Last action: " + lastAction;
@@ -656,6 +704,7 @@ public class ChessDebugView : ChessBoardListener {
         if (board.CanStepTo(board.replayIndex + 1)) text += " step-forward";
         if (board.CanContinue()) text += " continue";
         if (board.CanReset()) text += " reset";
+        if (board.CanImport()) text += " import";
         return text.Length > 0 ? text : " none";
     }
 
@@ -715,6 +764,17 @@ public class ChessDebugView : ChessBoardListener {
         if (ending == ChessGame.EndingNone) return "none";
         if (ending == ChessGame.EndingUnknown) return "unknown";
         return ChessPgn.TerminationText(ending);
+    }
+
+    static string ImportStatusName(int status) {
+        switch (status) {
+            case ChessBoard.ImportNone: return "none";
+            case ChessBoard.ImportRunning: return "under way";
+            case ChessBoard.ImportLoaded: return "loaded";
+            case ChessBoard.ImportFailed: return "failed";
+            case ChessBoard.ImportAbandoned: return "abandoned";
+        }
+        return "?" + status;
     }
 
     static string LifecycleName(int lifecycle) {

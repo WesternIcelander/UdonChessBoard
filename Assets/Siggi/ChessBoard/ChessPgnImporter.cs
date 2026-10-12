@@ -16,6 +16,9 @@ namespace SiggiChessBoard {
 
         // Whether an import is under way (started and neither finished nor abandoned).
         [NonSerialized] public bool importing;
+        // While set, Update runs no import steps, so an import under way waits (for testing: the debug view holds one
+        // to change the board meanwhile). Starting an import clears it.
+        [NonSerialized] public bool paused;
         // The last ChessPgn.ImportNext result: ImportMore while importing, then ImportDone or a failure.
         [NonSerialized] public int result = ChessPgn.ImportDone;
 
@@ -80,6 +83,7 @@ namespace SiggiChessBoard {
             totalMs = 0;
             result = ChessPgn.ImportMore;
             importing = true;
+            paused = false;
         }
 
         // Stops the import under way without finishing it (e.g. the board changed, docs/pgn.md). No event is sent.
@@ -112,7 +116,7 @@ namespace SiggiChessBoard {
         }
 
         void Update() {
-            if (!importing) return;
+            if (!importing || paused) return;
             if (ImportFor(budgetMs) == ChessPgn.ImportMore) return;
             if (doneTarget != null) doneTarget.SendCustomEvent(doneEvent);
         }

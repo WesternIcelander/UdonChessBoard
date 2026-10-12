@@ -78,6 +78,10 @@ namespace SiggiChessBoard {
         [Tooltip("This board's number for per-board setting overrides: 0 to the arbiter's Board Count - 1. A number "
             + "outside that range always gets the instance defaults.")]
         public int boardNumber;
+        // Runs this board's PGN imports (StartImport). One importer per board: starting an import abandons any other
+        // under way on the same importer.
+        [Tooltip("The ChessPgnImporter that runs this board's PGN imports. Give each board its own.")]
+        public ChessPgnImporter importer;
         // The PGN Event and Site tags of this board's games (docs/pgn.md, Export tags); empty is written "?".
         [Tooltip("The PGN Event tag of games played on this board. Empty is written \"?\".")]
         public string pgnEvent = "";
@@ -289,6 +293,7 @@ namespace SiggiChessBoard {
 
         // A change made on this client: sends it (unless it's a rejection, which changes nothing), stamped as the
         // board's last activity, and tells every listener.
+        // A change also abandons an import under way here (docs/pgn.md).
         void NotifyChanged(int change) {
             if (change != ChangeRejected) {
                 lastSentChange = change;
@@ -296,6 +301,7 @@ namespace SiggiChessBoard {
                 SendState();
             }
             TellListeners(change, false);
+            if (change != ChangeRejected) AbandonImport();
         }
 
         // Records the change and tells every listener (empty Inspector entries are skipped).
@@ -502,7 +508,8 @@ namespace SiggiChessBoard {
         // the change it carries (lastChangeReceived). An update that isn't valid is ignored. A game this client saw in
         // progress is logged on its transition, once (docs/game-endings.md): when the update ends it, or when it's
         // gone (a reset, or a takeback continuing it as a new game) without this client having seen it end. A late
-        // joiner's first update logs nothing. Public for tests.
+        // joiner's first update logs nothing. Any update but a touch (ChangeActivity) abandons an import under way here.
+        // Public for tests.
         public void ReceiveState() {
             if (!IsSyncedStateValid()) return;
             received = true;
@@ -515,6 +522,7 @@ namespace SiggiChessBoard {
             if (wasInGame && sameGame && lifecycle == LifecycleEnded) LogGame(ending, winner);
             lastSentChange = syncedInts[SyncChange];
             TellListeners(lastSentChange, true);
+            if (lastSentChange != ChangeActivity) AbandonImport();
         }
 
         // Whether the synced fields hold a state PackState could have written: the arrays there and of the right
@@ -2028,6 +2036,78 @@ namespace SiggiChessBoard {
                 blackTime = toMove;
             }
             turnStart = now;
+        }
+
+        // ---- PGN import (docs/pgn.md, Import; docs/networking.md, Imported games) ----
+        // The importing player's board runs the import over frames on its importer, locally: nothing is sent, the
+        // board isn't locked and nobody takes ownership meanwhile. When the import finishes the game is loaded
+        // (LoadImport) and sent in one update. Any change to the board before then, made here or arriving from another
+        // client, abandons the import: it could only be loaded onto the reset board it started on, and a lock could
+        // get stuck if the importing player left. Only the importing client knows of the import; its listeners hear
+        // of it through OnImportChanged.
+
+        // importStatus: no import yet, under way, loaded, failed (importMessage says why), abandoned.
+        public const int ImportNone = 0;
+        public const int ImportRunning = 1;
+        public const int ImportLoaded = 2;
+        public const int ImportFailed = 3;
+        public const int ImportAbandoned = 4;
+
+        // Room for this many plies in an imported game; a longer one fails as "game too long".
+        public const int ImportCapacity = 1024;
+
+        // The last import's status on this client, and why it failed or was abandoned ("" otherwise).
+        [NonSerialized] public int importStatus = ImportNone;
+        [NonSerialized] public string importMessage = "";
+        // The import's time per frame in milliseconds (at least one step per frame).
+        [NonSerialized] public float importBudgetMs = ChessPgnImporter.DefaultBudgetMs;
+
+        // Whether an import can start: onto a reset board (CanLoadGame), by anyone, with an importer assigned.
+        public bool CanImport() {
+            return CanLoadGame() && Utilities.IsValid(importer);
+        }
+
+        // The import button: starts importing the PGN text over the next frames (CanImport), replacing an import
+        // already under way. Nothing changes on the board until it finishes.
+        public int StartImport(string text) {
+            if (!CanImport()) return InputRejected;
+            importer.StartImport(text, ImportCapacity, importBudgetMs, this, nameof(_ImportFinished));
+            SetImportStatus(ImportRunning, "");
+            return InputAccepted;
+        }
+
+        // The importer's done event: loads a finished import, which sends it, or reports why it failed. Ignored unless
+        // an import is under way (one abandoned meanwhile stays abandoned). Public for the importer's SendCustomEvent
+        // and for tests.
+        public void _ImportFinished() {
+            if (importStatus != ImportRunning || !Utilities.IsValid(importer)) return;
+            int result = importer.result;
+            if (result == ChessPgn.ImportMore) return;
+            if (result != ChessPgn.ImportDone) {
+                SetImportStatus(ImportFailed, "failed at move " + importer.FailedAt() + ": "
+                    + ChessPgn.ImportErrorText(result));
+                return;
+            }
+            // Not running any more, so the load's own change doesn't abandon it.
+            importStatus = ImportLoaded;
+            if (LoadImport(importer) == InputAccepted) SetImportStatus(ImportLoaded, "");
+            else SetImportStatus(ImportFailed, "the game couldn't be loaded");
+        }
+
+        // Stops an import under way because the board changed, and tells the listeners.
+        void AbandonImport() {
+            if (importStatus != ImportRunning) return;
+            if (Utilities.IsValid(importer)) importer.Abandon();
+            SetImportStatus(ImportAbandoned, "the board changed before the import finished");
+        }
+
+        void SetImportStatus(int status, string message) {
+            importStatus = status;
+            importMessage = message;
+            if (listeners == null) return;
+            for (int i = 0; i < listeners.Length; i++) {
+                if (Utilities.IsValid(listeners[i])) listeners[i].OnImportChanged();
+            }
         }
 
         // ---- Loading a game (docs/replay.md, Continuing a loaded game) ----

@@ -92,3 +92,13 @@ No FEN or PGN goes over the network, so no client parses anything to stay in syn
 ## Imported games
 
 The importing player parses the PGN locally, then writes the resulting state (pieces, move history, notation, starting FEN, replay index) to the synced fields like any other update. Everyone else, including late joiners, can step through the replay. (Syncing only the final FEN was the original idea; it shows the end position but loses the game.)
+
+### Implementation
+
+`ChessBoard` (8.7), on the importing client. See also [PGN import](pgn.md#import-local-rare).
+
+- **Starting:** `StartImport(text)` (the import button; `CanImport()`: a reset board, by anyone, and the board's `importer` field set) starts the board's `ChessPgnImporter` with room for `ImportCapacity` (1024) plies and `importBudgetMs` per frame (the importer's `DefaultBudgetMs`). Starting again replaces an import under way. Nothing changes on the board, nothing is sent and nobody takes ownership while it runs.
+- **Finishing:** the importer sends `_ImportFinished` to the board when it's done. A finished import is loaded with `LoadImport` (`ChangeLoaded`), which takes ownership and sends the whole game in one update like any other change; every client, and every late joiner, gets it from that update. A failed import changes nothing and sends nothing; `importMessage` says why (`failed at move 2...: illegal move`).
+- **Abandoning:** every change after it started abandons the import: one made here (`NotifyChanged`, anything but a rejection) or one arriving from another client (`ReceiveState`, anything but a touch, `ChangeActivity`, which changes nothing). The importer is stopped and a later done event is ignored, so an abandoned import is never loaded. Abandoning on the change itself, rather than checking when the import finishes, tells the importing player at once.
+- **Telling:** `importStatus` is `ImportNone`, `ImportRunning`, `ImportLoaded`, `ImportFailed` or `ImportAbandoned`, and each change to it calls the listeners' `OnImportChanged()` ([Architecture](architecture.md#implementation)). Only the importing client knows of the import.
+- **One importer per board:** the board's `importer` (Inspector) runs only its imports, since starting an import on an importer abandons the one under way there. The debug view's builder adds one to a board that has none.

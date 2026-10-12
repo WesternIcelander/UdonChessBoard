@@ -14,5 +14,11 @@ namespace SiggiChessBoard {
         // nothing but the move list's text, so lastChange stays as it was.
         public virtual void OnNotationFilled() {
         }
+
+        // Called on the importing client when a PGN import (ChessBoard.StartImport) starts, is loaded, fails or is
+        // abandoned (ChessBoard.importStatus and importMessage). A loaded import is also an OnBoardChanged
+        // (ChangeLoaded), told first.
+        public virtual void OnImportChanged() {
+        }
     }
 }
