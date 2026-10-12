@@ -3,15 +3,19 @@ using SiggiChessBoard;
 using UdonSharp;
 using UdonSharpEditor;
 using UnityEditor;
+using UnityEditor.Events;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Events;
+using UnityEngine.UI;
 using VRC.SDK3.Components;
+using VRC.Udon;
 
 // Builds the physical board (PLAN.md 9.1, ChessBoardView.cs) in the open scene for the selected ChessBoard, or the
-// scene's only one: a table, the board's surface and squares, and the 32 piece objects, wired to a ChessBoardView. An
-// existing view for the same board is replaced, keeping its place. The piece meshes and the materials are generated
-// placeholders in Assets/Siggi/ChessBoard/Models/, made only when missing, so they can be replaced there (or other
-// meshes assigned in the view's Meshes field). Menu: Tools > Chess Board > Create Board View. Plain editor C#, not Udon.
+// scene's only one: a table, the board's surface and squares, the 32 piece objects and the button panels (step 9.4a),
+// wired to a ChessBoardView. An existing view for the same board is replaced, keeping its place. The piece meshes and
+// the materials are generated placeholders in Assets/Siggi/ChessBoard/Models/, made only when missing, so they can be
+// replaced there (or other meshes assigned in the view's Meshes field). Menu: Tools > Chess Board > Create Board View. Plain editor C#, not Udon.
 public static class ChessBoardViewBuilder {
     const string ViewScriptPath = "Assets/Siggi/ChessBoard/ChessBoardView.cs";
     const string ViewProgramPath = "Assets/Siggi/ChessBoard/ChessBoardView.asset";
@@ -25,6 +29,8 @@ public static class ChessBoardViewBuilder {
     const float Border = 0.02f;
     const float BoardThickness = 0.02f;
     const float TableHeight = 0.8f;
+    // The table's depth (along z), in board widths.
+    const float TableDepthFactor = 1.8f;
 
     static readonly string[] TypeNames = { "", "Pawn", "Knight", "Bishop", "Rook", "Queen", "King" };
     // The back rank from a to h, by piece type, for the pieces' places in the editor.
@@ -55,12 +61,13 @@ public static class ChessBoardViewBuilder {
         root.transform.position = board.transform.position + new Vector3(0, TableHeight, 0);
 
         float boardWidth = 8 * SquareSize + 2 * Border;
-        // Deep enough for the castle drop spaces, a square beyond each back rank.
+        // Deep enough for the castle drop spaces, a square beyond each back rank, and the button panels beyond them.
         GameObject table = GameObject.CreatePrimitive(PrimitiveType.Cube);
         table.name = "Table";
         table.transform.SetParent(root.transform, false);
         table.transform.localPosition = new Vector3(0, -(TableHeight + BoardThickness) / 2, 0);
-        table.transform.localScale = new Vector3(boardWidth * 1.6f, TableHeight - BoardThickness, boardWidth * 1.3f);
+        table.transform.localScale = new Vector3(boardWidth * 1.6f, TableHeight - BoardThickness,
+            boardWidth * TableDepthFactor);
         table.GetComponent<MeshRenderer>().sharedMaterial = frame;
 
         GameObject boardBase = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -110,6 +117,7 @@ public static class ChessBoardViewBuilder {
         view.castleSpaceTargets = new ChessSquare[2];
         for (int side = 0; side < 2; side++) view.castleSpaces[side] = CastleSpace(root, view, side, castleSpace);
         AddSquareTargets(root, view);
+        AddButtons(root, view, boardWidth * TableDepthFactor);
         UdonSharpEditorUtility.CopyProxyToUdon(view);
         if (old != null) {
             root.transform.SetParent(old.transform.parent, false);
@@ -205,6 +213,90 @@ public static class ChessBoardViewBuilder {
             UdonSharpEditorUtility.CopyProxyToUdon(behaviour);
             view.squareTargets[square] = behaviour;
             target.SetActive(false);
+        }
+    }
+
+    // The view's Press... event for each ChessBoardView.Button* action, by action.
+    static readonly string[] ButtonEvents = {
+        "PressJoinWhite", "PressJoinBlack", "PressMode", "PressClock", "PressStart", "PressContinue", "PressReset",
+    };
+    // A button panel's size in canvas pixels (a millimetre each), its grid cells and how far it leans back from
+    // upright.
+    const float PanelWidth = 440;
+    const float PanelHeight = 110;
+    const float PanelTilt = 70;
+    static readonly Vector2 ButtonCell = new Vector2(100, 44);
+
+    // The board's buttons (step 9.4a): a world-space canvas at each end of the table, leaning back towards that
+    // side's player, each with one button per action but the other colour's Join. Every button calls the view's
+    // Press... event for its action; the view shows only those whose action applies, and the grid packs the shown
+    // ones together.
+    static void AddButtons(GameObject root, ChessBoardView view, float tableDepth) {
+        UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(view);
+        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        int actions = ChessBoardView.ButtonCount;
+        view.buttons = new GameObject[2 * (actions - 1)];
+        view.buttonActions = new int[2 * (actions - 1)];
+        view.buttonLabels = new Text[2 * (actions - 1)];
+        int next = 0;
+        float z = tableDepth / 2 - PanelHeight * 0.001f / 2 - 0.004f;
+        for (int panel = 0; panel < 2; panel++) {
+            bool white = panel == 0;
+            GameObject canvasObject = new GameObject(white ? "Buttons (White)" : "Buttons (Black)", typeof(RectTransform));
+            canvasObject.layer = LayerMask.NameToLayer("Default");
+            canvasObject.transform.SetParent(root.transform, false);
+            Canvas canvas = canvasObject.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            RectTransform rect = canvasObject.GetComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(PanelWidth, PanelHeight);
+            rect.localScale = Vector3.one * 0.001f;
+            rect.localPosition = new Vector3(0, 0.012f, white ? -z : z);
+            rect.localRotation = Quaternion.Euler(PanelTilt, white ? 0 : 180, 0);
+            canvasObject.AddComponent<CanvasScaler>();
+            canvasObject.AddComponent<GraphicRaycaster>();
+            canvasObject.AddComponent<VRCUiShape>();
+            canvasObject.AddComponent<Image>().color = new Color(0.12f, 0.12f, 0.14f, 0.9f);
+            GridLayoutGroup grid = canvasObject.AddComponent<GridLayoutGroup>();
+            grid.padding = new RectOffset(6, 6, 6, 6);
+            grid.cellSize = ButtonCell;
+            grid.spacing = new Vector2(8, 8);
+            grid.childAlignment = TextAnchor.MiddleCenter;
+            grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            grid.constraintCount = 4;
+            for (int action = 0; action < actions; action++) {
+                // Each end joins only its own colour.
+                if (action == (white ? ChessBoardView.ButtonJoinBlack : ChessBoardView.ButtonJoinWhite)) continue;
+                int index = next++;
+                GameObject buttonObject = new GameObject(ButtonEvents[action].Substring(5), typeof(RectTransform));
+                buttonObject.layer = canvasObject.layer;
+                buttonObject.transform.SetParent(canvasObject.transform, false);
+                Image image = buttonObject.AddComponent<Image>();
+                image.color = new Color(0.85f, 0.85f, 0.88f);
+                Button button = buttonObject.AddComponent<Button>();
+                button.targetGraphic = image;
+                button.navigation = new Navigation { mode = Navigation.Mode.None };
+                UnityEventTools.AddStringPersistentListener(button.onClick,
+                    new UnityAction<string>(udon.SendCustomEvent), ButtonEvents[action]);
+                GameObject labelObject = new GameObject("Label", typeof(RectTransform));
+                labelObject.layer = canvasObject.layer;
+                RectTransform labelRect = labelObject.GetComponent<RectTransform>();
+                labelRect.SetParent(buttonObject.transform, false);
+                labelRect.anchorMin = Vector2.zero;
+                labelRect.anchorMax = Vector2.one;
+                labelRect.offsetMin = new Vector2(3, 2);
+                labelRect.offsetMax = new Vector2(-3, -2);
+                Text label = labelObject.AddComponent<Text>();
+                label.font = font;
+                label.fontSize = 16;
+                label.alignment = TextAnchor.MiddleCenter;
+                label.color = Color.black;
+                label.raycastTarget = false;
+                label.text = view.ButtonText(action);
+                view.buttons[index] = buttonObject;
+                view.buttonActions[index] = action;
+                view.buttonLabels[index] = label;
+            }
         }
     }
 

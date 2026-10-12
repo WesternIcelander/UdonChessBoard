@@ -718,7 +718,179 @@ public class ViewTest : UdonSharpBehaviour {
         view.SetInputStyle(savedStyle);
         view.Refresh();
         CheckView("cleared after the click checks");
+        SendCustomEventDelayedFrames(nameof(RunButtonChecks), 1);
+    }
+
+    // ---- 9.4a: board buttons ----
+
+    // The Button* actions' names, as CheckButtons lists them.
+    string[] buttonNames = { "JoinWhite", "JoinBlack", "Mode", "Clock", "Start", "Continue", "Reset" };
+
+    // The eighth frame: every action has its buttons, each with a label; in each state (a reset board, the local
+    // player's lobby and game, someone else's lobby and game, an ended game, a loaded game joined and continued) the
+    // buttons shown are exactly the ones that apply, and pressing one does what the board's method does, a hidden
+    // one being refused.
+    public void RunButtonChecks() {
+        int count = view.buttons.Length;
+        Check(count > 0 && view.buttonActions.Length == count && view.buttonLabels.Length == count,
+            "buttons: wired, each with its action and label", count + " buttons, " + view.buttonActions.Length
+            + " actions, " + view.buttonLabels.Length + " labels");
+        string missing = "";
+        for (int action = 0; action < ChessBoardView.ButtonCount; action++) {
+            bool found = false;
+            for (int i = 0; i < count && i < view.buttonActions.Length; i++) {
+                if (view.buttonActions[i] == action && Utilities.IsValid(view.buttons[i])
+                    && i < view.buttonLabels.Length && Utilities.IsValid(view.buttonLabels[i])) {
+                    found = true;
+                }
+            }
+            if (!found) missing += buttonNames[action] + " ";
+        }
+        Check(missing.Length == 0, "buttons: every action has a button", "none for " + missing);
+        CheckString(ChessBoardView.ClockText(ChessArbiter.NoClock, 0), "No clock", "clock text: none");
+        CheckString(ChessBoardView.ClockText(300, 3), "5+3", "clock text: 5+3");
+        CheckString(ChessBoardView.ClockText(45, 0), "45s+0", "clock text: 45 s");
+
+        board.ClearState();
+        CheckButtons("JoinWhite JoinBlack", "reset board");
+        CheckInt(view.PressButton(ChessBoardView.ButtonStart), ChessBoard.InputRejected, "reset board: Start refused");
+        CheckInt(view.PressButton(ChessBoardView.ButtonReset), ChessBoard.InputRejected, "reset board: Reset refused");
+
+        // The local player's lobby, White first.
+        view.PressJoinWhite();
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "Join White: in the lobby");
+        CheckString(board.whitePlayer, localName, "Join White: seated as White");
+        CheckButtons("JoinBlack Mode Clock Reset", "lobby, White joined");
+        CheckInt(view.PressButton(ChessBoardView.ButtonStart), ChessBoard.InputRejected,
+            "lobby, White joined: Start refused");
+        if (!board.IsModeForced()) {
+            CheckInt(view.PressButton(ChessBoardView.ButtonMode), ChessBoard.InputAccepted, "Mode pressed");
+            CheckInt(board.mode, ChessGame.ModeChess960, "Mode pressed: Chess960");
+            CheckLabel(ChessBoardView.ButtonMode, "Mode: Chess960", "Mode pressed");
+            view.PressMode();
+            CheckInt(board.mode, ChessGame.ModeStandard, "Mode pressed again: Standard");
+            CheckLabel(ChessBoardView.ButtonMode, "Mode: Standard", "Mode pressed again");
+        }
+        if (!board.IsClockForced()) {
+            CheckLabel(ChessBoardView.ButtonClock, "Clock: No clock", "lobby, no clock");
+            CheckInt(view.PressButton(ChessBoardView.ButtonClock), ChessBoard.InputAccepted, "Clock pressed");
+            CheckInt(board.baseTime * 1000 + board.increment, 60000, "Clock pressed: 1+0");
+            CheckLabel(ChessBoardView.ButtonClock, "Clock: 1+0", "Clock pressed");
+            view.PressClock();
+            CheckInt(board.baseTime * 1000 + board.increment, 180002, "Clock pressed again: 3+2");
+            CheckLabel(ChessBoardView.ButtonClock, "Clock: 3+2", "Clock pressed again");
+        }
+        view.PressJoinBlack();
+        CheckString(board.blackPlayer, localName, "Join Black: seated as Black too");
+        CheckButtons("Mode Clock Start Reset", "lobby, both seats");
+        int baseTime = board.baseTime;
+        view.PressStart();
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Start: in game");
+        CheckInt(board.baseTime, baseTime, "Start: with the clock chosen");
+        CheckButtons("Reset", "own game");
+        CheckInt(view.PressButton(ChessBoardView.ButtonJoinWhite), ChessBoard.InputRejected,
+            "own game: Join White refused");
+        CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, "own game: resigned");
+        CheckButtons("Reset", "own game ended");
+        view.PressReset();
+        CheckInt(board.lifecycle, ChessBoard.LifecycleReset, "Reset: the board is reset");
+        CheckButtons("JoinWhite JoinBlack", "after Reset");
+
+        // Someone else's lobby and game: only Reset, for an organizer or once the board is idle.
+        CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "others: Ana joined White");
+        CheckButtons("JoinBlack Reset?", "others' lobby, Black open");
+        CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "others: Bob joined Black");
+        CheckButtons("Reset?", "others' lobby");
+        CheckInt(view.PressButton(ChessBoardView.ButtonMode), ChessBoard.InputRejected, "others' lobby: Mode refused");
+        CheckInt(view.PressButton(ChessBoardView.ButtonClock), ChessBoard.InputRejected,
+            "others' lobby: Clock refused");
+        CheckInt(view.PressButton(ChessBoardView.ButtonStart), ChessBoard.InputRejected,
+            "others' lobby: Start refused");
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, "others: Ana started");
+        CheckButtons("Reset?", "others' game");
+
+        // A loaded game: both seats joined, the clock chosen, continued from ply 3.
+        board.ClearState();
+        Check(Utilities.IsValid(importer) && chess960Pgn != null, "buttons: importer and PGN assigned",
+            "assign ViewTest's Importer and PGNs in the Inspector");
+        if (Utilities.IsValid(importer) && chess960Pgn != null) {
+            importer.StartImport(chess960Pgn.text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
+            CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, "loaded game: imported");
+            CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, "loaded game: loaded");
+            CheckButtons("JoinWhite JoinBlack Reset?", "loaded game");
+            view.PressJoinWhite();
+            CheckButtons("JoinBlack Clock Reset", "loaded game, White joined");
+            CheckInt(view.PressButton(ChessBoardView.ButtonContinue), ChessBoard.InputRejected,
+                "loaded game, White joined: Continue refused");
+            view.PressJoinBlack();
+            CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "loaded game, both seats: still loaded");
+            CheckButtons("Clock Continue Reset", "loaded game, both seats");
+            CheckInt(view.PressButton(ChessBoardView.ButtonMode), ChessBoard.InputRejected,
+                "loaded game: Mode refused");
+            if (!board.IsClockForced()) {
+                CheckInt(view.PressButton(ChessBoardView.ButtonClock), ChessBoard.InputAccepted,
+                    "loaded game: Clock pressed");
+                CheckLabel(ChessBoardView.ButtonClock, "Clock: " + ChessBoardView.ClockText(board.baseTime,
+                    board.increment), "loaded game: Clock pressed");
+            }
+            CheckInt(board.StepToAs(localName, true, 3), ChessBoard.InputAccepted, "loaded game: stepped to ply 3");
+            CheckButtons("Clock Continue Reset", "loaded game at ply 3");
+            view.PressContinue();
+            CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Continue: in game");
+            CheckInt(board.moveCount, 3, "Continue: from ply 3");
+            CheckButtons("Reset", "continued game");
+        }
+
+        board.ClearState();
+        CheckButtons("JoinWhite JoinBlack", "cleared after the button checks");
+        CheckView("cleared after the button checks");
         LogSummary();
+    }
+
+    // After a Refresh, the buttons shown are exactly the actions in expected (names from buttonNames, separated by
+    // spaces), each shown one labelled as the view says; "Reset?" means Reset is shown when the board lets the local
+    // player reset (an organizer, or an idle board), and Mode and Clock are hidden when the snapshot forces them. The
+    // view's ButtonApplies agrees.
+    void CheckButtons(string expected, string name) {
+        view.Refresh();
+        string padded = " " + expected + " ";
+        string errors = "";
+        for (int i = 0; i < view.buttons.Length && i < view.buttonActions.Length; i++) {
+            GameObject button = view.buttons[i];
+            if (!Utilities.IsValid(button)) continue;
+            int action = view.buttonActions[i];
+            if (action < 0 || action >= ChessBoardView.ButtonCount) continue;
+            string actionName = buttonNames[action];
+            bool want = padded.Contains(" " + actionName + " ");
+            if (action == ChessBoardView.ButtonReset && padded.Contains(" Reset? ")) want = board.CanReset();
+            if (action == ChessBoardView.ButtonMode && board.IsModeForced()) want = false;
+            if (action == ChessBoardView.ButtonClock && board.IsClockForced()) want = false;
+            if (button.activeSelf != want) {
+                errors += actionName + (want ? " hidden; " : " shown; ");
+            } else if (view.ButtonApplies(action) != want) {
+                errors += actionName + " applies " + view.ButtonApplies(action) + "; ";
+            } else if (want && i < view.buttonLabels.Length && Utilities.IsValid(view.buttonLabels[i])
+                && view.buttonLabels[i].text != view.ButtonText(action)) {
+                errors += actionName + " labelled " + view.buttonLabels[i].text + "; ";
+            }
+        }
+        Check(errors.Length == 0, name + ": buttons shown " + expected, errors);
+    }
+
+    // Every button for action is shown and labelled text.
+    void CheckLabel(int action, string text, string name) {
+        view.Refresh();
+        string errors = "";
+        for (int i = 0; i < view.buttons.Length && i < view.buttonActions.Length; i++) {
+            if (view.buttonActions[i] != action || !Utilities.IsValid(view.buttons[i])) continue;
+            if (!view.buttons[i].activeSelf) {
+                errors += "hidden; ";
+            } else if (i < view.buttonLabels.Length && Utilities.IsValid(view.buttonLabels[i])
+                && view.buttonLabels[i].text != text) {
+                errors += "labelled " + view.buttonLabels[i].text + "; ";
+            }
+        }
+        Check(errors.Length == 0, name + ": " + buttonNames[action] + " labelled " + text, errors);
     }
 
     const string WhitePieces = "a1 b1 c1 d1 e1 f1 g1 h1 a2 b2 c2 d2 e2 f2 g2 h2";
@@ -1035,6 +1207,10 @@ public class ViewTest : UdonSharpBehaviour {
 
     void CheckInt(int actual, int expected, string name) {
         Check(actual == expected, name, "got " + actual + ", expected " + expected);
+    }
+
+    void CheckString(string actual, string expected, string name) {
+        Check(actual == expected, name, "got \"" + actual + "\", expected \"" + expected + "\"");
     }
 
     void Check(bool ok, string name, string details) {

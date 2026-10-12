@@ -1,6 +1,7 @@
 using System;
 using UdonSharp;
 using UnityEngine;
+using UnityEngine.UI;
 using VRC.SDK3.Components;
 using VRC.SDKBase;
 
@@ -54,6 +55,25 @@ namespace SiggiChessBoard {
         public ChessSquare[] castleSpaceTargets = new ChessSquare[2];
         // How far a selected piece is lifted above its square, in squares.
         public const float SelectLift = 0.5f;
+        // The board's buttons (docs/player-input.md, Buttons; step 9.4a), by what they do. Each is shown only while
+        // the board's Can... check for it holds for the local player.
+        public const int ButtonJoinWhite = 0;
+        public const int ButtonJoinBlack = 1;
+        public const int ButtonMode = 2;
+        public const int ButtonClock = 3;
+        public const int ButtonStart = 4;
+        public const int ButtonContinue = 5;
+        public const int ButtonReset = 6;
+        public const int ButtonCount = 7;
+        // The button objects in the world (any number: the builder puts a panel at each end of the table), with the
+        // Button* action of each and its label at the same index. A button's UI Button calls the view's Press...
+        // event for its action.
+        public GameObject[] buttons = new GameObject[0];
+        public int[] buttonActions = new int[0];
+        public Text[] buttonLabels = new Text[0];
+        // The time controls the Clock button steps through, in seconds (base ChessArbiter.NoClock for none).
+        public int[] clockBases = { ChessArbiter.NoClock, 60, 180, 300, 600, 900, 1800 };
+        public int[] clockIncrements = { 0, 0, 2, 3, 0, 10, 0 };
 
         // Which object stands on each square (NoObject for none), and the other way round (NoSquare for an object
         // off the board: captured, or not needed by the position). objectType is the piece type each object stands
@@ -129,6 +149,8 @@ namespace SiggiChessBoard {
                 Refresh();
             } else if (Time.time >= nextPickupCheck) {
                 UpdatePickupable();
+                // Being an organizer and the board's idle time (for Reset) change without the board changing.
+                UpdateButtons();
             }
         }
 
@@ -185,6 +207,7 @@ namespace SiggiChessBoard {
             UpdatePickupable();
             // The castle a held king could make may have changed (or the game ended, or replay began).
             UpdateCastleSpaces();
+            UpdateButtons();
         }
 
         // ---- Input (docs/player-input.md) ----
@@ -512,6 +535,131 @@ namespace SiggiChessBoard {
             VRCPickup pickup = piecePickups[obj];
             // Its OnDrop is then ignored, since it's no longer heldObject.
             if (Utilities.IsValid(pickup) && pickup.IsHeld) pickup.Drop();
+        }
+
+        // ---- Buttons (docs/player-input.md, Buttons; step 9.4a) ----
+        // Each button is shown only while its action applies to the local player (the board's Can... check), and
+        // pressing it calls the board's method, which refuses whenever the check doesn't hold.
+
+        // The UI Buttons' events, one per action.
+        public void PressJoinWhite() {
+            PressButton(ButtonJoinWhite);
+        }
+
+        public void PressJoinBlack() {
+            PressButton(ButtonJoinBlack);
+        }
+
+        public void PressMode() {
+            PressButton(ButtonMode);
+        }
+
+        public void PressClock() {
+            PressButton(ButtonClock);
+        }
+
+        public void PressStart() {
+            PressButton(ButtonStart);
+        }
+
+        public void PressContinue() {
+            PressButton(ButtonContinue);
+        }
+
+        public void PressReset() {
+            PressButton(ButtonReset);
+        }
+
+        // Does what the button for action does, for the local player: the board's answer (InputRejected for an
+        // unknown action). Mode switches between Standard and Chess960; Clock picks the next of clockBases and
+        // clockIncrements after the board's time control (the first when it isn't one of them).
+        public int PressButton(int action) {
+            if (!Utilities.IsValid(board)) return ChessBoard.InputRejected;
+            int result = ChessBoard.InputRejected;
+            if (action == ButtonJoinWhite) {
+                result = board.JoinWhite();
+            } else if (action == ButtonJoinBlack) {
+                result = board.JoinBlack();
+            } else if (action == ButtonMode) {
+                result = board.SetMode(board.mode == ChessGame.ModeChess960
+                    ? ChessGame.ModeStandard : ChessGame.ModeChess960);
+            } else if (action == ButtonClock) {
+                int next = NextClockChoice();
+                if (next >= 0) result = board.SetClock(clockBases[next], clockIncrements[next]);
+            } else if (action == ButtonStart) {
+                result = board.StartGame();
+            } else if (action == ButtonContinue) {
+                result = board.ContinueGame();
+            } else if (action == ButtonReset) {
+                result = board.ResetBoard();
+            }
+            // A refusal tells nobody, so the buttons are brought up to date here too.
+            UpdateButtons();
+            return result;
+        }
+
+        // The index in clockBases of the choice after the board's time control; -1 with no choices.
+        int NextClockChoice() {
+            int count = Mathf.Min(clockBases.Length, clockIncrements.Length);
+            if (count == 0) return -1;
+            for (int i = 0; i < count; i++) {
+                if (clockBases[i] == board.baseTime && clockIncrements[i] == board.increment) return (i + 1) % count;
+            }
+            return 0;
+        }
+
+        // Whether the button for action applies to the local player now: its Can... check on the board.
+        public bool ButtonApplies(int action) {
+            if (!Utilities.IsValid(board)) return false;
+            if (action == ButtonJoinWhite) return board.CanJoin(ChessRules.White);
+            if (action == ButtonJoinBlack) return board.CanJoin(ChessRules.Black);
+            if (action == ButtonMode) return board.CanSetMode();
+            if (action == ButtonClock) return board.CanSetClock();
+            if (action == ButtonStart) return board.CanStartGame();
+            if (action == ButtonContinue) return board.CanContinue();
+            if (action == ButtonReset) return board.CanReset();
+            return false;
+        }
+
+        // The label of the button for action: Mode and Clock show the board's current choice.
+        public string ButtonText(int action) {
+            if (action == ButtonJoinWhite) return "Join White";
+            if (action == ButtonJoinBlack) return "Join Black";
+            if (action == ButtonMode) {
+                bool chess960 = Utilities.IsValid(board) && board.mode == ChessGame.ModeChess960;
+                return "Mode: " + (chess960 ? "Chess960" : "Standard");
+            }
+            if (action == ButtonClock) {
+                if (!Utilities.IsValid(board)) return "Clock";
+                return "Clock: " + ClockText(board.baseTime, board.increment);
+            }
+            if (action == ButtonStart) return "Start";
+            if (action == ButtonContinue) return "Continue from here";
+            if (action == ButtonReset) return "Reset";
+            return "";
+        }
+
+        // A time control as players say it: "No clock", "5+3" (minutes plus seconds), or "45s+0" for a base that
+        // isn't whole minutes.
+        public static string ClockText(int baseSeconds, int incrementSeconds) {
+            if (baseSeconds == ChessArbiter.NoClock) return "No clock";
+            string baseText = baseSeconds % 60 == 0 ? (baseSeconds / 60).ToString() : baseSeconds + "s";
+            return baseText + "+" + incrementSeconds;
+        }
+
+        // Shows each button whose action applies to the local player and hides the rest, with its label. Called on
+        // every Refresh, once a second and after every press.
+        public void UpdateButtons() {
+            for (int i = 0; i < buttons.Length; i++) {
+                GameObject button = buttons[i];
+                if (!Utilities.IsValid(button) || i >= buttonActions.Length) continue;
+                int action = buttonActions[i];
+                bool shown = ButtonApplies(action);
+                if (button.activeSelf != shown) button.SetActive(shown);
+                if (!shown || i >= buttonLabels.Length || !Utilities.IsValid(buttonLabels[i])) continue;
+                string text = ButtonText(action);
+                if (buttonLabels[i].text != text) buttonLabels[i].text = text;
+            }
         }
 
         // ---- Pickups (docs/physical-pieces.md) ----
