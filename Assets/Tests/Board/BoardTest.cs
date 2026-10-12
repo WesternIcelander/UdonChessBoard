@@ -6,7 +6,7 @@ using VRC.SDKBase;
 // Step 7 test behaviour (PLAN.md section 7): the logical board driven with no world objects.
 // Logs "[BoardTest] PASS: <check>" or "[BoardTest] FAIL: <check>: <details>" per check, then a summary line.
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
-public class BoardTest : UdonSharpBehaviour {
+public class BoardTest : ChessBoardListener {
     // The board under test; its checks fail if it isn't assigned. The checks clear it and leave it in the reset state.
     public ChessBoard board;
     // For the loading checks (7.9a): Assets/Tests/PGN/Siggi-vs-Nuka.pgn.txt and an importer to read PGNs with. The
@@ -80,6 +80,7 @@ public class BoardTest : UdonSharpBehaviour {
             TestContinueLoaded();
             TestReset();
             TestSnapshot();
+            TestListeners();
             // Every [ChessPGN] entry in the log is one of these, so the two counts must agree.
             Debug.Log("[BoardTest] games logged by the board: " + board.loggedGames);
             if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
@@ -4016,5 +4017,319 @@ public class BoardTest : UdonSharpBehaviour {
         CheckLoggedOnReset(before, "*", "unterminated", "reset: continued");
         CheckLogHas("[ContinuedFrom \"" + continuedFrom + "\"]\n", "reset: continued: ContinuedFrom");
         CheckCleared("reset: continued");
+    }
+
+    // ---- 7.11 ----
+
+    // How many times the board has told this test of a change and the last change it told of (while TestListeners
+    // has it listening), and the count at the last check of them.
+    int notifications;
+    int notifiedChange = -1;
+    int notificationMark;
+
+    public override void OnBoardChanged() {
+        notifications++;
+        notifiedChange = board.lastChange;
+    }
+
+    void MarkNotifications() {
+        notificationMark = notifications;
+    }
+
+    // Since the last mark: told exactly once, of change.
+    void CheckTold(int change, string name) {
+        CheckInt(notifications - notificationMark, 1, name + ": told once");
+        CheckInt(notifiedChange, change, name + ": the change");
+        CheckInt(board.lastChange, change, name + ": lastChange");
+        MarkNotifications();
+    }
+
+    // Since the last mark: told nothing.
+    void CheckNotTold(string name) {
+        CheckInt(notifications - notificationMark, 0, name + ": nobody told");
+        MarkNotifications();
+    }
+
+    // Every square PieceAt shows has the piece of fen's placement.
+    void CheckShown(string fen, string name) {
+        byte[] squares = new byte[64];
+        int[] scratchState = new int[ChessPosition.StateLength];
+        int clock;
+        int number;
+        ChessFen.ParseFen(fen, squares, scratchState, out clock, out number);
+        int wrong = -1;
+        for (int i = 0; i < 64 && wrong < 0; i++) {
+            if (board.PieceAt(i) != squares[i]) wrong = i;
+        }
+        Check(wrong < 0, name + ": PieceAt shows the position",
+            wrong < 0 ? "" : "wrong piece on " + ChessRules.SquareName(wrong));
+    }
+
+    // LastMove is the move from-to (from -1: none, 0).
+    void CheckLastMove(int from, int to, string name) {
+        int move = board.LastMove();
+        if (from < 0) {
+            CheckInt(move, 0, name + ": no last move");
+            return;
+        }
+        CheckInt((move >> ChessRules.MoveFromShift) & ChessRules.MoveSquareMask, from, name + ": last move from");
+        CheckInt((move >> ChessRules.MoveToShift) & ChessRules.MoveSquareMask, to, name + ": last move to");
+    }
+
+    void TestListeners() {
+        NothingForced();
+        board.ClearState();
+        int listenerCount = board.listeners == null ? 0 : board.listeners.Length;
+        board.AddListener(this);
+        board.AddListener(this);
+        board.AddListener(null);
+        CheckInt(board.listeners.Length, listenerCount + 1, "listeners: added once");
+        MarkNotifications();
+
+        // The lobby.
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckTold(ChessBoard.ChangeJoined, "listeners: join");
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckNotTold("listeners: joining own seat again");
+        board.JoinAs(ChessRules.White, "Bob");
+        CheckNotTold("listeners: refused join");
+        board.JoinAs(ChessRules.Black, "Bob");
+        CheckTold(ChessBoard.ChangeJoined, "listeners: second join");
+        board.SetModeAs("Ana", ChessGame.ModeStandard);
+        CheckTold(ChessBoard.ChangeSettings, "listeners: mode");
+        board.SetClockAs("Bob", 300, 2);
+        CheckTold(ChessBoard.ChangeSettings, "listeners: clock");
+        board.SetModeAs("Cleo", ChessGame.ModeChess960);
+        CheckNotTold("listeners: refused mode");
+        if (board.Resnapshot() == ChessBoard.InputAccepted) {
+            CheckTold(ChessBoard.ChangeSettings, "listeners: re-snapshot");
+        } else {
+            CheckNotTold("listeners: refused re-snapshot");
+        }
+        board.gameSettings = ChessArbiter.SettingDrawAgreement | ChessArbiter.SettingTakebacks;
+        board.StartGameAs("Ana");
+        CheckTold(ChessBoard.ChangeStarted, "listeners: start");
+        CheckShown(ChessFen.StartFen, "listeners: started");
+        CheckLastMove(-1, -1, "listeners: started");
+        CheckInt(board.SideToMove(), ChessRules.White, "listeners: started: white to move");
+        Check(!board.IsInCheck(), "listeners: started: not in check", "in check");
+        CheckText(board.ResultText(), "*", "listeners: started: result");
+        int[] moves = new int[ChessMoves.MaxMoves];
+        CheckInt(board.LegalMovesFrom(ChessRules.E2, moves), 2, "listeners: two moves from e2");
+        CheckInt(board.LegalMovesFrom(ChessRules.G1, moves), 2, "listeners: two moves from g1");
+        CheckInt((moves[0] >> ChessRules.MoveFromShift) & ChessRules.MoveSquareMask, ChessRules.G1,
+            "listeners: moves from g1 are from g1");
+        CheckInt(board.LegalMovesFrom(ChessRules.E7, moves), 0, "listeners: none from e7 on White's move");
+        CheckInt(board.LegalMovesFrom(ChessRules.E4, moves), 0, "listeners: none from an empty square");
+        CheckInt(board.LegalMovesFrom(64, moves), 0, "listeners: none off the board");
+        CheckNotTold("listeners: getters");
+
+        // Piece input: an accepted pickup changes nothing, each rejection is told once.
+        board.PiecePickedUpAs("Ana", ChessRules.E2);
+        CheckNotTold("listeners: pickup");
+        board.PiecePickedUpAs("Bob", ChessRules.E7);
+        CheckTold(ChessBoard.ChangeRejected, "listeners: rejected pickup");
+        board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E5);
+        CheckTold(ChessBoard.ChangeRejected, "listeners: illegal drop");
+        board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E2);
+        CheckTold(ChessBoard.ChangeRejected, "listeners: drop back");
+        board.PromotionChosenAs("Ana", ChessRules.E2, ChessRules.E4, ChessRules.NoPieceType);
+        CheckTold(ChessBoard.ChangeRejected, "listeners: promotion picker cancelled");
+        board.PromotionChosenAs("Ana", ChessRules.E2, ChessRules.E4, ChessRules.Queen);
+        CheckTold(ChessBoard.ChangeRejected, "listeners: not a promotion");
+        board.KingDroppedOnCastleSpaceAs("Ana", ChessBoard.CastleKingSide);
+        CheckTold(ChessBoard.ChangeRejected, "listeners: castle drop space with no castle");
+        board.PlayMove(0);
+        CheckNotTold("listeners: refused PlayMove (not piece input)");
+
+        // Moves.
+        board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4);
+        CheckTold(ChessBoard.ChangeMove, "listeners: e4");
+        string afterE4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+        CheckShown(afterE4, "listeners: e4");
+        CheckLastMove(ChessRules.E2, ChessRules.E4, "listeners: e4");
+        CheckInt(board.SideToMove(), ChessRules.Black, "listeners: e4: black to move");
+        CheckInt(board.LegalMovesFrom(ChessRules.E2, moves), 0, "listeners: e4: none from e2");
+        board.PieceDroppedAs("Bob", ChessRules.F7, ChessRules.F5);
+        CheckTold(ChessBoard.ChangeMove, "listeners: f5");
+        board.PieceDroppedAs("Ana", ChessRules.D1, ChessRules.H5);
+        CheckTold(ChessBoard.ChangeMove, "listeners: Qh5+");
+        Check(board.IsInCheck(), "listeners: Qh5+: in check", "not in check");
+        CheckInt(board.LegalMovesFrom(ChessRules.G7, moves), 1, "listeners: Qh5+: g6 blocks, g5 doesn't");
+        board.PieceDroppedAs("Bob", ChessRules.G7, ChessRules.G6);
+        CheckTold(ChessBoard.ChangeMove, "listeners: g6");
+        Check(!board.IsInCheck(), "listeners: g6: not in check", "in check");
+        string afterG6 = "rnbqkbnr/ppppp2p/6p1/5p1Q/4P3/8/PPPP1PPP/RNB1KBNR w KQkq - 0 3";
+        CheckShown(afterG6, "listeners: g6");
+
+        // Draw offers.
+        board.OfferDrawAs(ChessRules.White, "Ana");
+        CheckTold(ChessBoard.ChangeRequest, "listeners: draw offer");
+        board.OfferDrawAs(ChessRules.Black, "Bob");
+        CheckNotTold("listeners: refused second offer");
+        board.DeclineDrawAs(ChessRules.Black, "Bob");
+        CheckTold(ChessBoard.ChangeRequest, "listeners: draw declined");
+
+        // Replay: the getters show the replay board; the side to move stays the game's.
+        board.EnterReplayAs("Ana", false);
+        CheckTold(ChessBoard.ChangeEnteredReplay, "listeners: enter replay");
+        CheckShown(afterG6, "listeners: replay of the current position");
+        CheckLastMove(ChessRules.G7, ChessRules.G6, "listeners: replay of the current position");
+        CheckInt(board.LegalMovesFrom(ChessRules.G1, moves), 0, "listeners: replay: no legal moves");
+        board.StepToAs("Ana", false, 1);
+        CheckTold(ChessBoard.ChangeReplayStep, "listeners: step");
+        CheckShown(afterE4, "listeners: step to 1");
+        CheckLastMove(ChessRules.E2, ChessRules.E4, "listeners: step to 1");
+        CheckInt(board.SideToMove(), ChessRules.White, "listeners: step to 1: the game's side to move");
+        board.StepToAs("Ana", false, 1);
+        CheckNotTold("listeners: refused step to the ply shown");
+        board.StepToAs("Bob", false, 0);
+        CheckTold(ChessBoard.ChangeReplayStep, "listeners: step to 0");
+        CheckShown(ChessFen.StartFen, "listeners: step to 0");
+        CheckLastMove(-1, -1, "listeners: step to 0");
+        board.StepToAs("Bob", false, 1);
+        CheckTold(ChessBoard.ChangeReplayStep, "listeners: step back to 1");
+
+        // Free moves: a custom position has no last move.
+        board.PiecePickedUpAs("Ana", ChessRules.B1);
+        CheckNotTold("listeners: replay pickup");
+        board.PiecePickedUpAs("Cleo", ChessRules.B1);
+        CheckTold(ChessBoard.ChangeRejected, "listeners: replay pickup by a bystander");
+        board.PieceDroppedAs("Ana", ChessRules.B1, ChessRules.C3);
+        CheckTold(ChessBoard.ChangeFreeMove, "listeners: free move");
+        CheckShown("rnbqkbnr/pppppppp/8/8/4P3/2N5/PPPP1PPP/R1BQKBNR b KQkq - 0 1", "listeners: free move");
+        CheckLastMove(-1, -1, "listeners: free move");
+        board.PieceDroppedAs("Ana", ChessRules.B1, ChessRules.D2);
+        CheckTold(ChessBoard.ChangeRejected, "listeners: free move from an empty square");
+        board.PieceDroppedAs("Ana", ChessRules.C3, ChessRules.C3);
+        CheckTold(ChessBoard.ChangeRejected, "listeners: free move back");
+
+        // Takebacks.
+        board.StepToAs("Ana", false, 2);
+        CheckTold(ChessBoard.ChangeReplayStep, "listeners: step from a custom position");
+        board.RequestTakebackAs(ChessRules.Black, "Bob");
+        CheckTold(ChessBoard.ChangeRequest, "listeners: takeback request");
+        board.DeclineTakebackAs(ChessRules.White, "Ana");
+        CheckTold(ChessBoard.ChangeRequest, "listeners: takeback declined");
+        board.RequestTakebackAs(ChessRules.Black, "Bob");
+        CheckTold(ChessBoard.ChangeRequest, "listeners: takeback request again");
+        int before = board.loggedGames;
+        board.AcceptTakebackAs(ChessRules.White, "Ana");
+        CheckTold(ChessBoard.ChangeTakeback, "listeners: takeback");
+        CheckLogged(before, 1, "listeners: takeback: the game logged");
+        CheckShown("rnbqkbnr/ppppp1pp/8/5p2/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2", "listeners: takeback");
+        CheckLastMove(ChessRules.F7, ChessRules.F5, "listeners: takeback");
+        board.EnterReplayAs("Bob", false);
+        CheckTold(ChessBoard.ChangeEnteredReplay, "listeners: enter replay again");
+        board.LeaveReplayAs("Bob", false);
+        CheckTold(ChessBoard.ChangeLeftReplay, "listeners: leave replay");
+        board.LeaveReplayAs("Bob", false);
+        CheckNotTold("listeners: refused leave");
+
+        // Endings.
+        board.ResignAs(ChessRules.White, "Ana");
+        CheckTold(ChessBoard.ChangeEnded, "listeners: resign");
+        CheckText(board.ResultText(), "0-1", "listeners: resign: result");
+        board.ResignAs(ChessRules.Black, "Bob");
+        CheckNotTold("listeners: refused resign once ended");
+        before = board.loggedGames;
+        board.ResetBoardAs("Ana", false);
+        CheckTold(ChessBoard.ChangeReset, "listeners: reset");
+        CheckLogged(before, 0, "listeners: reset: an ended game not logged again");
+        CheckShown(ChessFen.StartFen, "listeners: reset");
+        board.ResetBoardAs("Ana", false);
+        CheckNotTold("listeners: refused reset");
+
+        ButtonGame(ChessArbiter.SettingDrawAgreement);
+        MarkNotifications();
+        board.OfferDrawAs(ChessRules.White, "Ana");
+        CheckTold(ChessBoard.ChangeRequest, "listeners: offer to accept");
+        board.AcceptDrawAs(ChessRules.Black, "Bob");
+        CheckTold(ChessBoard.ChangeEnded, "listeners: draw agreed");
+        CheckText(board.ResultText(), "1/2-1/2", "listeners: draw agreed: result");
+
+        ButtonGame(ChessArbiter.SettingThreefoldRepetition);
+        KnightShuffle(1, "listeners: threefold");
+        MarkNotifications();
+        board.ClaimDrawAs("Ana");
+        CheckTold(ChessBoard.ChangeEnded, "listeners: draw claimed");
+
+        // A move that ends the game is told as a move.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        Drop("Ana", ChessRules.F2, ChessRules.F3, "listeners: fool's mate");
+        Drop("Bob", ChessRules.E7, ChessRules.E5, "listeners: fool's mate");
+        Drop("Ana", ChessRules.G2, ChessRules.G4, "listeners: fool's mate");
+        MarkNotifications();
+        board.PieceDroppedAs("Bob", ChessRules.D8, ChessRules.H4);
+        CheckTold(ChessBoard.ChangeMove, "listeners: checkmate");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "listeners: checkmate: ended");
+        Check(board.IsInCheck(), "listeners: checkmate: in check", "not in check");
+        CheckText(board.ResultText(), "0-1", "listeners: checkmate: result");
+
+        // A castle from the castle drop space is a move, told once.
+        CastlingGame("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1");
+        MarkNotifications();
+        board.KingDroppedOnCastleSpaceAs("Ana", ChessBoard.CastleKingSide);
+        CheckTold(ChessBoard.ChangeMove, "listeners: castle drop space");
+        CheckLastMove(ChessRules.E1, ChessRules.H1, "listeners: castle drop space (to is the rook's square)");
+
+        // Flag fall: told once by CheckFlagFall; a reset that ends the game on time on its way is told as a reset.
+        StartedGame(60, 0, board.ServerTime());
+        Drop("Ana", ChessRules.E2, ChessRules.E4, "listeners: flag");
+        FlagFallen();
+        MarkNotifications();
+        CheckInt(board.FlaggedColor(), ChessRules.Black, "listeners: flag: black's flag fallen");
+        board.CheckFlagFall();
+        CheckTold(ChessBoard.ChangeEnded, "listeners: flag fall");
+        board.CheckFlagFall();
+        CheckNotTold("listeners: flag fall once");
+        StartedGame(60, 0, board.ServerTime());
+        Drop("Ana", ChessRules.E2, ChessRules.E4, "listeners: flag on reset");
+        FlagFallen();
+        MarkNotifications();
+        before = board.loggedGames;
+        board.ResetBoardAs("Ana", false);
+        CheckTold(ChessBoard.ChangeReset, "listeners: reset with a fallen flag");
+        CheckLoggedOnReset(before, "1-0", "time forfeit", "listeners: reset with a fallen flag");
+
+        // A loaded game.
+        if (!Utilities.IsValid(importer) || !Utilities.IsValid(siggiVsNuka)) {
+            Check(false, "listeners: loading", "the importer or siggiVsNuka field is empty");
+        } else {
+            board.ClearState();
+            CheckInt(ImportText(siggiVsNuka.text), ChessPgn.ImportDone, "listeners: imported");
+            MarkNotifications();
+            board.LoadImport(importer);
+            CheckTold(ChessBoard.ChangeLoaded, "listeners: loaded");
+            CheckShown("6k1/1b4pp/p3p3/2p1P1b1/NPPn4/7P/P5q1/RN2Kr2 w - - 0 28", "listeners: loaded");
+            CheckLastMove(ChessRules.F8, ChessRules.F1, "listeners: loaded: the mating move");
+            Check(board.IsInCheck(), "listeners: loaded: White in check", "not in check");
+            CheckText(board.ResultText(), "0-1", "listeners: loaded: result");
+            board.LoadImport(importer);
+            CheckNotTold("listeners: refused load");
+            board.JoinAs(ChessRules.White, "Ana");
+            CheckTold(ChessBoard.ChangeJoined, "listeners: loaded: join");
+            board.JoinAs(ChessRules.Black, "Bob");
+            CheckTold(ChessBoard.ChangeJoined, "listeners: loaded: second join");
+            board.SetClockAs("Ana", 300, 3);
+            CheckTold(ChessBoard.ChangeSettings, "listeners: loaded: clock");
+            board.StepToAs("Ana", false, 20);
+            CheckTold(ChessBoard.ChangeReplayStep, "listeners: loaded: step");
+            int lastBefore = board.moveHistory[19];
+            board.ContinueGameAs("Bob");
+            CheckTold(ChessBoard.ChangeContinued, "listeners: continued");
+            CheckInt(board.LastMove(), lastBefore, "listeners: continued: last move");
+            CheckInt(board.SideToMove(), ChessRules.White, "listeners: continued: white to move");
+            board.ResetBoardAs("Bob", false);
+            CheckTold(ChessBoard.ChangeReset, "listeners: continued: reset");
+        }
+
+        // Removed, the test is told nothing.
+        board.RemoveListener(this);
+        board.RemoveListener(this);
+        CheckInt(board.listeners.Length, listenerCount, "listeners: removed");
+        board.JoinAs(ChessRules.White, "Ana");
+        CheckNotTold("listeners: removed");
+        board.ClearState();
     }
 }

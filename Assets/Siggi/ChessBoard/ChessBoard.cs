@@ -28,6 +28,34 @@ namespace SiggiChessBoard {
         public const int CastleKingSide = 0;
         public const int CastleQueenSide = 1;
 
+        // What the last change to the board was (lastChange), for listeners (docs/architecture.md): a view animates a
+        // move and puts everything else straight where the board says.
+        // Nothing yet since the board started.
+        public const int ChangeNone = 0;
+        // Nothing changed: a piece input (pickup, drop, promotion choice) was rejected, so the view puts it back.
+        public const int ChangeRejected = 1;
+        public const int ChangeReset = 2;
+        public const int ChangeJoined = 3;
+        // The mode or clock chosen in the lobby or on a loaded board, or a re-snapshot.
+        public const int ChangeSettings = 4;
+        public const int ChangeStarted = 5;
+        // A move played, also one that ends the game (checkmate, stalemate, an automatic draw).
+        public const int ChangeMove = 6;
+        // The game ended by anything but a move: resignation, a draw agreed or claimed, flag fall.
+        public const int ChangeEnded = 7;
+        // A draw offer or takeback request made or declined.
+        public const int ChangeRequest = 8;
+        public const int ChangeEnteredReplay = 9;
+        public const int ChangeLeftReplay = 10;
+        public const int ChangeReplayStep = 11;
+        // A free move on the replay board.
+        public const int ChangeFreeMove = 12;
+        // A takeback accepted: the game continues from an earlier ply.
+        public const int ChangeTakeback = 13;
+        public const int ChangeLoaded = 14;
+        // A loaded game continued from here.
+        public const int ChangeContinued = 15;
+
         // Room for this many plies in the history arrays at first; they grow as needed.
         public const int InitialHistoryCapacity = 128;
 
@@ -46,6 +74,9 @@ namespace SiggiChessBoard {
         public string pgnEvent = "";
         [Tooltip("The PGN Site tag of games played on this board. Empty is written \"?\".")]
         public string pgnSite = "VRChat";
+        // The behaviours told of every change (OnBoardChanged): set in the Inspector, or added with AddListener.
+        [Tooltip("Behaviours told of every change to this board: its view, and anything else showing the game.")]
+        public ChessBoardListener[] listeners = new ChessBoardListener[0];
 
         // ---- Board state (docs/networking.md, Synced fields) ----
 
@@ -125,6 +156,10 @@ namespace SiggiChessBoard {
         [NonSerialized] public int gameSettings;
         [NonSerialized] public int[] gameNumbers = new int[ChessArbiter.NumberCount];
 
+        // What the last change was, a Change* value, for listeners. ChangeRejected is local: a rejection changes
+        // nothing to send.
+        [NonSerialized] public int lastChange = ChangeNone;
+
         // ---- Local, not synced ----
 
         // How many games this client has logged, and the last one's PGN (docs/pgn.md, Logging), for tests.
@@ -138,6 +173,108 @@ namespace SiggiChessBoard {
                     + "draws, nothing forced, never reset for inactivity.");
             }
             ClearState();
+            NotifyChanged(ChangeReset);
+        }
+
+        // ---- Listeners (docs/architecture.md, Logical → physical) ----
+        // Every public method that changes the board tells the listeners once, after the change, with lastChange
+        // saying what it was; a rejected piece input tells them too (ChangeRejected), so the view puts the piece back.
+        // Methods that only answer a question, and refusals of anything else, tell nobody. ClearState and TakeSnapshot
+        // are the exceptions: they're the steps of other changes, public for tests.
+
+        // Adds a listener at run time (one set in the Inspector needn't be); adding one twice changes nothing.
+        public void AddListener(ChessBoardListener listener) {
+            if (!Utilities.IsValid(listener)) return;
+            int count = listeners == null ? 0 : listeners.Length;
+            for (int i = 0; i < count; i++) {
+                if (listeners[i] == listener) return;
+            }
+            ChessBoardListener[] grown = new ChessBoardListener[count + 1];
+            for (int i = 0; i < count; i++) grown[i] = listeners[i];
+            grown[count] = listener;
+            listeners = grown;
+        }
+
+        // Stops telling a listener of changes.
+        public void RemoveListener(ChessBoardListener listener) {
+            if (listeners == null) return;
+            int count = 0;
+            for (int i = 0; i < listeners.Length; i++) {
+                if (listeners[i] != listener) count++;
+            }
+            if (count == listeners.Length) return;
+            ChessBoardListener[] kept = new ChessBoardListener[count];
+            int k = 0;
+            for (int i = 0; i < listeners.Length; i++) {
+                if (listeners[i] != listener) kept[k++] = listeners[i];
+            }
+            listeners = kept;
+        }
+
+        // Records the change and tells every listener (empty Inspector entries are skipped).
+        void NotifyChanged(int change) {
+            lastChange = change;
+            if (listeners == null) return;
+            for (int i = 0; i < listeners.Length; i++) {
+                if (Utilities.IsValid(listeners[i])) listeners[i].OnBoardChanged();
+            }
+        }
+
+        // Passes a piece input's result on, telling the listeners when it's a rejection.
+        int NotifyIfRejected(int result) {
+            if (result == InputRejected) NotifyChanged(ChangeRejected);
+            return result;
+        }
+
+        // ---- Getters for the view (docs/architecture.md) ----
+        // Most of the state is read straight from the public fields: the lifecycle, replayMode and replayIndex, the
+        // seats, ending and winner, the pending requests, the clocks (RemainingTime), and the Can… checks for the
+        // buttons.
+
+        // The piece shown on square (a ChessRules piece, Empty for none): the replay board's in replay, the game's
+        // otherwise.
+        public int PieceAt(int square) {
+            if (square < 0 || square >= 64) return ChessRules.Empty;
+            return replayMode ? replayBoard[square] : board[square];
+        }
+
+        // The move that led to the position shown (packed, for the last-move highlight and a move's animation), 0 for
+        // none: the starting position, or a custom replay position.
+        public int LastMove() {
+            int ply = replayMode ? replayIndex : moveCount;
+            if (replayMode && replayCustom) return 0;
+            return ply > 0 && ply <= moveCount ? moveHistory[ply - 1] : 0;
+        }
+
+        // The colour to move in the game (ChessRules.White or Black), whatever replay shows.
+        public int SideToMove() {
+            return state[ChessPosition.StateSideToMove];
+        }
+
+        // Whether the side to move is in check in the game.
+        public bool IsInCheck() {
+            return ChessMoves.IsInCheck(board, state, state[ChessPosition.StateSideToMove]);
+        }
+
+        // The legal moves from square in the game (for the legal-target highlights) into moves, which
+        // ChessMoves.MaxMoves entries always hold, and how many there are: none unless a game is in progress and not
+        // in replay, with the side to move's flag not fallen. Promotions are four moves to one square.
+        public int LegalMovesFrom(int square, int[] moves) {
+            if (lifecycle != LifecycleInGame || replayMode || FlaggedColor() != ChessRules.NoColor) return 0;
+            if (square < 0 || square >= 64 || moves == null) return 0;
+            int legalCount = ChessMoves.GenerateLegalMoves(board, state, legalMoves, true);
+            int count = 0;
+            for (int i = 0; i < legalCount && count < moves.Length; i++) {
+                if (((legalMoves[i] >> ChessRules.MoveFromShift) & ChessRules.MoveSquareMask) == square) {
+                    moves[count++] = legalMoves[i];
+                }
+            }
+            return count;
+        }
+
+        // The game's result as PGN writes it: "1-0", "0-1", "1/2-1/2", or "*" while it's undecided.
+        public string ResultText() {
+            return ChessPgn.ResultText(ending, winner);
         }
 
         // Puts every state field back to the reset state: the standard starting position, no game, empty seats.
@@ -238,6 +375,7 @@ namespace SiggiChessBoard {
                 lifecycle = LifecycleLobby;
                 TakeSnapshot();
             }
+            NotifyChanged(ChangeJoined);
             return InputAccepted;
         }
 
@@ -322,6 +460,7 @@ namespace SiggiChessBoard {
                 return InputRejected;
             }
             TakeSnapshot();
+            NotifyChanged(ChangeSettings);
             return InputAccepted;
         }
 
@@ -361,6 +500,7 @@ namespace SiggiChessBoard {
             if (!CanSetModeAs(name)) return InputRejected;
             if (newMode != ChessGame.ModeStandard && newMode != ChessGame.ModeChess960) return InputRejected;
             mode = newMode;
+            NotifyChanged(ChangeSettings);
             return InputAccepted;
         }
 
@@ -384,6 +524,7 @@ namespace SiggiChessBoard {
             if (!IsValidTimeControl(newBaseTime, newIncrement)) return InputRejected;
             baseTime = newBaseTime;
             increment = newIncrement;
+            NotifyChanged(ChangeSettings);
             return InputAccepted;
         }
 
@@ -432,6 +573,7 @@ namespace SiggiChessBoard {
             gameId = NewGameIdAt(NetworkDateTime());
             continuedFrom = "";
             lifecycle = LifecycleInGame;
+            NotifyChanged(ChangeStarted);
             return InputAccepted;
         }
 
@@ -591,6 +733,7 @@ namespace SiggiChessBoard {
                 int automatic = AutomaticDraw();
                 if (automatic != ChessGame.EndingNone) EndGameAt(automatic, ChessRules.NoColor, now);
             }
+            NotifyChanged(ChangeMove);
             return InputAccepted;
         }
 
@@ -690,6 +833,7 @@ namespace SiggiChessBoard {
         public int ResignAs(int color, string name) {
             if (!CanResignAs(color, name)) return InputRejected;
             EndGameAt(ChessGame.EndingResignation, ChessRules.OtherColor(color), ServerTime());
+            NotifyChanged(ChangeEnded);
             return InputAccepted;
         }
 
@@ -701,6 +845,13 @@ namespace SiggiChessBoard {
         // it did. The side out of time loses, unless its opponent can't checkmate (ChessDraws.HasNoMatingMaterial) and
         // the snapshot's dead-position rule is on, which makes it a draw; under "No draws" it always loses.
         public bool CheckFlagFallAt(double now) {
+            if (!EndOnFlagFallAt(now)) return false;
+            NotifyChanged(ChangeEnded);
+            return true;
+        }
+
+        // CheckFlagFallAt without telling the listeners, for a change that ends the game on time on its way (a reset).
+        bool EndOnFlagFallAt(double now) {
             int flagged = FlaggedColorAt(now);
             if (flagged == ChessRules.NoColor) return false;
             int opponent = ChessRules.OtherColor(flagged);
@@ -730,14 +881,14 @@ namespace SiggiChessBoard {
         // In replay, a free move's pickup (ReplayPiecePickedUpAs).
         public int PiecePickedUpAs(string name, int square) {
             if (replayMode) return ReplayPiecePickedUpAs(name, false, square);
-            if (!MayMove(name)) return InputRejected;
-            if (square < 0 || square >= 64) return InputRejected;
+            return NotifyIfRejected(MayPickUp(name, square) ? InputAccepted : InputRejected);
+        }
+
+        bool MayPickUp(string name, int square) {
+            if (!MayMove(name)) return false;
+            if (square < 0 || square >= 64) return false;
             int piece = board[square];
-            if (piece == ChessRules.Empty
-                || ChessRules.PieceColorOf(piece) != state[ChessPosition.StateSideToMove]) {
-                return InputRejected;
-            }
-            return InputAccepted;
+            return piece != ChessRules.Empty && ChessRules.PieceColorOf(piece) == state[ChessPosition.StateSideToMove];
         }
 
         public int PieceDropped(int from, int to) {
@@ -752,7 +903,7 @@ namespace SiggiChessBoard {
         // a free move (ReplayPieceDroppedAs).
         public int PieceDroppedAs(string name, int from, int to) {
             if (replayMode) return ReplayPieceDroppedAs(name, false, from, to);
-            return DropAs(name, from, to, ChessRules.NoPieceType);
+            return NotifyIfRejected(DropAs(name, from, to, ChessRules.NoPieceType));
         }
 
         public int PromotionChosen(int from, int to, int pieceType) {
@@ -760,13 +911,14 @@ namespace SiggiChessBoard {
         }
 
         // The follow-up to InputPromotionNeeded: plays the promotion from-to to pieceType (ChessRules.Queen, Rook,
-        // Bishop or Knight). Rejected for any other type and for a move that isn't a promotion.
+        // Bishop or Knight). Rejected for any other type and for a move that isn't a promotion, so a picker that's
+        // cancelled passes ChessRules.NoPieceType and the rejection puts the pawn back.
         public int PromotionChosenAs(string name, int from, int to, int pieceType) {
             if (pieceType != ChessRules.Queen && pieceType != ChessRules.Rook && pieceType != ChessRules.Bishop
                 && pieceType != ChessRules.Knight) {
-                return InputRejected;
+                return NotifyIfRejected(InputRejected);
             }
-            return DropAs(name, from, to, pieceType);
+            return NotifyIfRejected(DropAs(name, from, to, pieceType));
         }
 
         public int KingDroppedOnCastleSpace(int side) {
@@ -777,11 +929,11 @@ namespace SiggiChessBoard {
         // move's castle on that side if it's legal. The view shows the space only when IsCastleDropSpaceNeeded, but the
         // castle is played either way.
         public int KingDroppedOnCastleSpaceAs(string name, int side) {
-            if (!MayMove(name)) return InputRejected;
+            if (!MayMove(name)) return NotifyIfRejected(InputRejected);
             int legalCount = ChessMoves.GenerateLegalMoves(board, state, legalMoves, true);
             int castle = FindCastle(legalCount, side);
-            if (castle == 0) return InputRejected;
-            return PlayMove(castle);
+            if (castle == 0) return NotifyIfRejected(InputRejected);
+            return NotifyIfRejected(PlayMove(castle));
         }
 
         // Whether the view should offer the castle drop space for side while the side to move's king is held: a game
@@ -979,6 +1131,7 @@ namespace SiggiChessBoard {
         public int OfferDrawAs(int color, string name) {
             if (!CanOfferDrawAs(color, name)) return InputRejected;
             drawOfferColor = color;
+            NotifyChanged(ChangeRequest);
             return InputAccepted;
         }
 
@@ -991,6 +1144,7 @@ namespace SiggiChessBoard {
         public int AcceptDrawAs(int color, string name) {
             if (!CanAcceptDrawAs(color, name)) return InputRejected;
             EndGameAt(ChessGame.EndingDrawAgreement, ChessRules.NoColor, ServerTime());
+            NotifyChanged(ChangeEnded);
             return InputAccepted;
         }
 
@@ -1003,6 +1157,7 @@ namespace SiggiChessBoard {
         public int DeclineDrawAs(int color, string name) {
             if (!CanDeclineDrawAs(color, name)) return InputRejected;
             drawOfferColor = ChessRules.NoColor;
+            NotifyChanged(ChangeRequest);
             return InputAccepted;
         }
 
@@ -1015,6 +1170,7 @@ namespace SiggiChessBoard {
         public int ClaimDrawAs(string name) {
             if (!CanClaimDrawAs(name)) return InputRejected;
             EndGameAt(ClaimableDraw(), ChessRules.NoColor, ServerTime());
+            NotifyChanged(ChangeEnded);
             return InputAccepted;
         }
 
@@ -1149,14 +1305,15 @@ namespace SiggiChessBoard {
 
         // The reset button (CanResetAs; named ResetBoard since Reset is a Unity message): clears the board and both
         // seats. A game in progress is logged as unfinished (*) if it had moves, after a fallen flag has ended it on
-        // time (CheckFlagFall), since that game is already over, not unfinished. An ended game was logged when it
-        // ended and a loaded one wasn't played here, so neither is logged.
+        // time (as CheckFlagFall does), since that game is already over, not unfinished. An ended game was logged when
+        // it ended and a loaded one wasn't played here, so neither is logged. Listeners hear of the reset only.
         public int ResetBoardAs(string name, bool organizer) {
             if (!CanResetAs(name, organizer)) return InputRejected;
-            if (lifecycle == LifecycleInGame && !CheckFlagFall()) {
+            if (lifecycle == LifecycleInGame && !EndOnFlagFallAt(ServerTime())) {
                 LogGame(ChessGame.EndingUnterminated, ChessRules.NoColor);
             }
             ClearState();
+            NotifyChanged(ChangeReset);
             return InputAccepted;
         }
 
@@ -1183,6 +1340,7 @@ namespace SiggiChessBoard {
             if (!CanEnterReplayAs(name, organizer)) return InputRejected;
             replayMode = true;
             ShowPly(moveCount);
+            NotifyChanged(ChangeEnteredReplay);
             return InputAccepted;
         }
 
@@ -1196,6 +1354,7 @@ namespace SiggiChessBoard {
             if (!CanLeaveReplayAs(name, organizer)) return InputRejected;
             ShowPly(moveCount);
             replayMode = false;
+            NotifyChanged(ChangeLeftReplay);
             return InputAccepted;
         }
 
@@ -1209,6 +1368,7 @@ namespace SiggiChessBoard {
         public int StepToAs(string name, bool organizer, int ply) {
             if (!CanStepToAs(name, organizer, ply)) return InputRejected;
             ShowPly(ply);
+            NotifyChanged(ChangeReplayStep);
             return InputAccepted;
         }
 
@@ -1230,22 +1390,27 @@ namespace SiggiChessBoard {
         // Whether name may pick up the piece on square of the replay board for a free move: in replay, name may work
         // the replay controls, and there's a piece there (either colour).
         public int ReplayPiecePickedUpAs(string name, bool organizer, int square) {
-            if (!replayMode || !MayControlReplay(name, organizer)) return InputRejected;
-            if (square < 0 || square >= 64 || replayBoard[square] == ChessRules.Empty) return InputRejected;
-            return InputAccepted;
+            return NotifyIfRejected(MayPickUpInReplay(name, organizer, square) ? InputAccepted : InputRejected);
+        }
+
+        bool MayPickUpInReplay(string name, bool organizer, int square) {
+            if (!replayMode || !MayControlReplay(name, organizer)) return false;
+            return square >= 0 && square < 64 && replayBoard[square] != ChessRules.Empty;
         }
 
         // A free move in replay: the piece on from goes to to, replacing whatever stood there (any piece, kings too),
         // with no legality, promotion or castling, and the position becomes custom, which cancels a pending takeback
         // request. Rejected unless name may pick the piece up, and for a drop back on its own square or off the board.
         public int ReplayPieceDroppedAs(string name, bool organizer, int from, int to) {
-            if (ReplayPiecePickedUpAs(name, organizer, from) != InputAccepted) return InputRejected;
-            if (to < 0 || to >= 64 || to == from) return InputRejected;
+            if (!MayPickUpInReplay(name, organizer, from) || to < 0 || to >= 64 || to == from) {
+                return NotifyIfRejected(InputRejected);
+            }
             replayBoard[to] = replayBoard[from];
             replayBoard[from] = ChessRules.Empty;
             replayCustom = true;
             takebackColor = ChessRules.NoColor;
             takebackPly = 0;
+            NotifyChanged(ChangeFreeMove);
             return InputAccepted;
         }
 
@@ -1263,6 +1428,7 @@ namespace SiggiChessBoard {
             if (!CanRequestTakebackAs(color, name)) return InputRejected;
             takebackColor = color;
             takebackPly = replayIndex;
+            NotifyChanged(ChangeRequest);
             return InputAccepted;
         }
 
@@ -1275,6 +1441,7 @@ namespace SiggiChessBoard {
             if (!CanDeclineTakebackAs(color, name)) return InputRejected;
             takebackColor = ChessRules.NoColor;
             takebackPly = 0;
+            NotifyChanged(ChangeRequest);
             return InputAccepted;
         }
 
@@ -1301,6 +1468,7 @@ namespace SiggiChessBoard {
             drawOfferColor = ChessRules.NoColor;
             ShowPly(moveCount);
             replayMode = false;
+            NotifyChanged(ChangeTakeback);
             return InputAccepted;
         }
 
@@ -1454,6 +1622,7 @@ namespace SiggiChessBoard {
             replayMode = true;
             ShowPly(moveCount);
             TakeSnapshot();
+            NotifyChanged(ChangeLoaded);
             return InputAccepted;
         }
 
@@ -1491,6 +1660,7 @@ namespace SiggiChessBoard {
             lifecycle = LifecycleInGame;
             ShowPly(moveCount);
             replayMode = false;
+            NotifyChanged(ChangeContinued);
             return InputAccepted;
         }
 

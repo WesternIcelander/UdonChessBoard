@@ -50,6 +50,7 @@ No FEN or PGN goes over the network, so no client parses anything to stay in syn
 | time control | `int` ×2 | base and increment in seconds; base `-1` = no clock |
 | clocks | `int` ×2 + `double` | each side's remaining ms, and server time the current turn began |
 | clock history | `int[]` | mover's remaining ms after each move |
+| last change | `byte` | what the last change was (`ChessBoard.Change*`), so listeners on every client can animate a move; `ChangeRejected` is local and never sent. See [Architecture](architecture.md#implementation) |
 | game settings | `int` + `int` ×5 | settings snapshot (setting bits, plus the five numeric settings: two inactivity times, forced mode, forced base time and increment) taken when the board left the reset state; see [Per-board overrides](settings.md#per-board-overrides) |
 
 - The move history is the full packed ints, not a 2-byte compact form. A long game is a couple of KB, well within manual sync limits, and receivers get the undo info with no reconstruction. This replaces the earlier 2-byte format, which was designed for receivers rebuilding moves themselves.

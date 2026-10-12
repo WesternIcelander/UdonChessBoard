@@ -28,6 +28,22 @@ Each board is split into two behaviours that never reach into each other's domai
 - On rejection, the board notifies listeners as usual and the view puts the piece back from the board state. The view never decides a piece's position itself.
 - Promotion: when the board answers "promotion choice needed", the view shows the piece picker and calls again with the chosen piece.
 
+### Implementation
+
+`ChessBoardListener` (`Assets/Siggi/ChessBoard/ChessBoardListener.cs`) is an abstract behaviour with one virtual method, `OnBoardChanged()`. On `ChessBoard`:
+
+- **Listeners:** the `listeners` array, set in the Inspector or changed at run time with `AddListener`/`RemoveListener` (adding one twice changes nothing). Empty entries are skipped.
+- **One notification per change:** every public method that changes the board calls each listener's `OnBoardChanged()` once, after the change, having set `lastChange`. A change made of steps (a reset that ends the game on time and logs it first, a move that checkmates) is still one notification. Answers (`Can…`, getters), refusals and accepted pickups tell nobody. `ClearState` and `TakeSnapshot` are steps of other changes, public for tests, and tell nobody either. `Start` tells the listeners once (`ChangeReset`) after clearing, so a view can draw the starting board.
+- **`lastChange`** is a `Change*` constant: `ChangeReset`, `ChangeJoined`, `ChangeSettings` (mode, clock, re-snapshot), `ChangeStarted`, `ChangeMove` (also a move that ends the game), `ChangeEnded` (resignation, a draw agreed or claimed, flag fall), `ChangeRequest` (a draw offer or takeback request made or declined), `ChangeEnteredReplay`, `ChangeLeftReplay`, `ChangeReplayStep`, `ChangeFreeMove`, `ChangeTakeback`, `ChangeLoaded`, `ChangeContinued`; `ChangeNone` before the first.
+- **Rejections:** a rejected piece input (`PiecePickedUp`, `PieceDropped`, `PromotionChosen`, `KingDroppedOnCastleSpace`, and their replay forms) tells the listeners once with `ChangeRejected`, so the view puts the piece back. `InputPromotionNeeded` tells nobody: the piece waits while the picker shows, and a cancelled picker calls `PromotionChosen` with `ChessRules.NoPieceType`, which is rejected and puts the pawn back. `ChangeRejected` is local and never sent (step 8.3): a rejection changes nothing.
+- **Getters:** the public state fields (lifecycle, `replayMode`/`replayIndex`, seats, `ending`/`winner`, pending requests, `RemainingTime`) and the `Can…` checks, plus:
+  - `PieceAt(square)`: the piece shown, from the replay board in replay and the game's board otherwise.
+  - `LastMove()`: the packed move that led to the position shown, for the last-move highlight and animation; 0 for the starting position or a custom replay position.
+  - `SideToMove()` and `IsInCheck()`: the game's, whatever replay shows.
+  - `LegalMovesFrom(square, moves)`: the game's legal moves from a square (for the legal-target highlights), none unless a game is in progress, not in replay and the side to move's flag hasn't fallen.
+  - `ResultText()`: `1-0`, `0-1`, `1/2-1/2` or `*`.
+  - Which pieces the local player may grab (`pickupable`, [Physical pieces](physical-pieces.md)) depends on ownership and inactivity, so it comes with steps 8.4/8.5 and 9.2.
+
 **Benefits:** the logical board can be driven entirely by test behaviours with no world objects (see [Testing](testing.md)), and the world presentation can be redesigned without touching the rules.
 
 The same split applies to the instance-wide objects: the archive's history wall and the settings menu are views of `GameArchive` and `ChessArbiter`.
