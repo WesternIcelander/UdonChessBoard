@@ -31,5 +31,10 @@ namespace SiggiChessBoard {
         public override void OnDrop() {
             if (Utilities.IsValid(view)) view.OnPieceDropped(index);
         }
+
+        // A click in desktop mode (step 9.3c); the view makes the piece interactive only where a click does something.
+        public override void Interact() {
+            if (Utilities.IsValid(view)) view.OnPieceClicked(index);
+        }
     }
 }

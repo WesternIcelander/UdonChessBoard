@@ -17,6 +17,8 @@ public static class ChessBoardViewBuilder {
     const string ViewProgramPath = "Assets/Siggi/ChessBoard/ChessBoardView.asset";
     const string PieceScriptPath = "Assets/Siggi/ChessBoard/ChessPiece.cs";
     const string PieceProgramPath = "Assets/Siggi/ChessBoard/ChessPiece.asset";
+    const string SquareScriptPath = "Assets/Siggi/ChessBoard/ChessSquare.cs";
+    const string SquareProgramPath = "Assets/Siggi/ChessBoard/ChessSquare.asset";
     const string ModelsFolder = "Assets/Siggi/ChessBoard/Models";
 
     const float SquareSize = 0.05f;
@@ -81,6 +83,7 @@ public static class ChessBoardViewBuilder {
         view.pieceFilters = new MeshFilter[ChessBoardView.PieceCount];
         view.piecePickups = new VRCPickup[ChessBoardView.PieceCount];
         view.pieceColliders = new BoxCollider[ChessBoardView.PieceCount];
+        view.pieceBehaviours = new ChessPiece[ChessBoardView.PieceCount];
         GameObject piecesParent = new GameObject("Pieces");
         piecesParent.transform.SetParent(root.transform, false);
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
@@ -104,7 +107,9 @@ public static class ChessBoardViewBuilder {
             AddPickup(piece, view, obj, meshes[type]);
         }
         view.castleSpaces = new GameObject[2];
-        for (int side = 0; side < 2; side++) view.castleSpaces[side] = CastleSpace(root, side, castleSpace);
+        view.castleSpaceTargets = new ChessSquare[2];
+        for (int side = 0; side < 2; side++) view.castleSpaces[side] = CastleSpace(root, view, side, castleSpace);
+        AddSquareTargets(root, view);
         UdonSharpEditorUtility.CopyProxyToUdon(view);
         if (old != null) {
             root.transform.SetParent(old.transform.parent, false);
@@ -145,12 +150,14 @@ public static class ChessBoardViewBuilder {
         UdonSharpEditorUtility.CopyProxyToUdon(behaviour);
         view.piecePickups[obj] = pickup;
         view.pieceColliders[obj] = box;
+        view.pieceBehaviours[obj] = behaviour;
     }
 
     // A castle drop space (docs/player-input.md): a pad the size of a square, as thick as the board and just above
-    // its surface, with no collider (the view finds a drop on it by position). Built hidden; the view places and shows
-    // it while a held king needs it.
-    static GameObject CastleSpace(GameObject root, int side, Material material) {
+    // its surface. A held king's drop on it is found by position; for desktop clicks (step 9.3c) the space has a
+    // collider over the pad and a ChessSquare, which the view makes interactive only while a selected king needs it.
+    // Built hidden; the view places and shows it while a held or selected king needs it.
+    static GameObject CastleSpace(GameObject root, ChessBoardView view, int side, Material material) {
         GameObject space = new GameObject(side == ChessBoard.CastleKingSide
             ? "Castle Space (king side)" : "Castle Space (queen side)");
         space.transform.SetParent(root.transform, false);
@@ -161,8 +168,44 @@ public static class ChessBoardViewBuilder {
         pad.transform.localPosition = new Vector3(0, -BoardThickness / 2 + 0.001f, 0);
         pad.transform.localScale = new Vector3(SquareSize * 0.92f, BoardThickness, SquareSize * 0.92f);
         pad.GetComponent<MeshRenderer>().sharedMaterial = material;
+        BoxCollider box = space.AddComponent<BoxCollider>();
+        box.center = pad.transform.localPosition;
+        box.size = pad.transform.localScale;
+        ChessSquare target = UdonSharpUndo.AddComponent<ChessSquare>(space);
+        target.view = view;
+        target.square = ChessRules.NoSquare;
+        target.castleSide = side;
+        UdonSharpEditorUtility.CopyProxyToUdon(target);
+        view.castleSpaceTargets[side] = target;
         space.SetActive(false);
         return space;
+    }
+
+    // Desktop mode's square targets (step 9.3c): one object per square, a1 to h8, under "Square Targets", each a thin
+    // box collider over its square with a ChessSquare, all inactive; the view activates the ones a click on would do
+    // something. Interact doesn't say where a collider was hit, so each square needs its own.
+    static void AddSquareTargets(GameObject root, ChessBoardView view) {
+        GameObject parent = new GameObject("Square Targets");
+        parent.transform.SetParent(root.transform, false);
+        view.squareTargets = new ChessSquare[64];
+        const string files = "abcdefgh";
+        for (int square = 0; square < 64; square++) {
+            int file = square % 8;
+            int rank = square / 8;
+            GameObject target = new GameObject(files[file] + (rank + 1).ToString());
+            target.transform.SetParent(parent.transform, false);
+            target.transform.localPosition = new Vector3((file - 3.5f) * SquareSize, 0, (rank - 3.5f) * SquareSize);
+            BoxCollider box = target.AddComponent<BoxCollider>();
+            box.center = new Vector3(0, 0.001f, 0);
+            box.size = new Vector3(SquareSize, 0.002f, SquareSize);
+            ChessSquare behaviour = UdonSharpUndo.AddComponent<ChessSquare>(target);
+            behaviour.view = view;
+            behaviour.square = square;
+            behaviour.castleSide = ChessBoardView.NoCastleSide;
+            UdonSharpEditorUtility.CopyProxyToUdon(behaviour);
+            view.squareTargets[square] = behaviour;
+            target.SetActive(false);
+        }
     }
 
     // The scene's board view for a board (built earlier), or null.
@@ -189,16 +232,17 @@ public static class ChessBoardViewBuilder {
     }
 
     // UdonSharp needs a compiled program asset next to a script before its behaviour can be added. The repository
-    // has them (the view's and the pieces'); any that's missing is created and compiled, and the menu item has to be
+    // has them (the view's, the pieces' and the squares'); any that's missing is created and compiled, and the menu item has to be
     // run again afterwards.
     static bool EnsureProgramAssets() {
         bool created = CreateProgramAssetIfMissing(ViewScriptPath, ViewProgramPath);
         created |= CreateProgramAssetIfMissing(PieceScriptPath, PieceProgramPath);
+        created |= CreateProgramAssetIfMissing(SquareScriptPath, SquareProgramPath);
         if (!created) return true;
         AssetDatabase.SaveAssets();
         UdonSharpProgramAsset.CompileAllCsPrograms(true);
-        EditorUtility.DisplayDialog("Create Board View", "Created the program assets next to " + ViewScriptPath
-            + " and " + PieceScriptPath + ". Once UdonSharp has finished compiling, run Tools > Chess Board > "
+        EditorUtility.DisplayDialog("Create Board View", "Created the missing program assets next to "
+            + ViewScriptPath + ", " + PieceScriptPath + " or " + SquareScriptPath + ". Once UdonSharp has finished compiling, run Tools > Chess Board > "
             + "Create Board View again.", "OK");
         return false;
     }

@@ -101,7 +101,7 @@ public class BoardTest : ChessBoardListener {
     }
 
     // The second frame: snapshots, listeners and scenarios (7.9 to 7.12), sync, ownership and inactivity (8.3 to 8.5),
-    // and who may touch the pieces (9.2).
+    // who may touch the pieces (9.2) and pick them up (9.3c).
     public void RunSyncChecks() {
         TestSnapshot();
         TestListeners();
@@ -110,6 +110,7 @@ public class BoardTest : ChessBoardListener {
         TestOwnership();
         TestInactivity();
         TestTouchPieces();
+        TestCanPickUp();
         board.ClearState();
         SendCustomEventDelayedFrames(nameof(RunFillChecks), 1);
     }
@@ -5399,6 +5400,83 @@ public class BoardTest : ChessBoardListener {
         Check(board.MayTouchPiecesAs("Cleo", false) == cleo, name + ": the bystander Cleo " + (cleo ? "may" : "may not"),
             cleo ? "refused" : "allowed");
     }
+    // ---- 9.3c: whether a pickup would be accepted, for desktop clicks ----
+
+    void TestCanPickUp() {
+        NothingForced();
+        string p = "can pick up";
+        board.ClearState();
+        CheckPickUps("Ana", 0, p + ": a reset board");
+        LobbyWithTwoPlayers();
+        CheckPickUps("Ana", 0, p + ": the lobby");
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, p + ": started");
+        Check(board.CanPickUpAs("Ana", false, ChessRules.E2) && board.CanPickUpAs("Ana", false, ChessRules.G1),
+            p + ": White to move: Ana's pieces", "refused");
+        Check(!board.CanPickUpAs("Ana", false, ChessRules.E7) && !board.CanPickUpAs("Ana", false, ChessRules.E4),
+            p + ": White to move: not Black's piece or an empty square", "allowed");
+        Check(!board.CanPickUpAs("Ana", false, -1) && !board.CanPickUpAs("Ana", false, 64),
+            p + ": no square refused", "allowed");
+        Check(!board.CanPickUpAs("Bob", false, ChessRules.E7) && !board.CanPickUpAs("Bob", false, ChessRules.E2),
+            p + ": White to move: Bob nothing", "allowed");
+        Check(!board.CanPickUpAs("Cleo", true, ChessRules.E2), p + ": an organizer isn't a player", "allowed");
+        CheckPickUps("Ana", 16, p + ": White to move, Ana");
+        CheckPickUps("Bob", 0, p + ": White to move, Bob");
+        CheckPickUps("Cleo", 0, p + ": White to move, Cleo");
+
+        // Asking changes nothing: nobody told, no activity stamped.
+        board.AddListener(this);
+        MarkNotifications();
+        double activity = board.lastActivity = 12345.5;
+        for (int square = 0; square < 64; square++) board.CanPickUpAs("Ana", false, square);
+        CheckInt(notifications - notificationMark, 0, p + ": asking tells nobody");
+        Check(board.lastActivity == activity, p + ": asking stamps no activity", "activity " + board.lastActivity);
+        board.RemoveListener(this);
+
+        Drop("Ana", ChessRules.E2, ChessRules.E4, p);
+        Check(board.CanPickUpAs("Bob", false, ChessRules.E7) && !board.CanPickUpAs("Ana", false, ChessRules.E4),
+            p + ": Black to move: Bob's piece, not Ana's", "wrong");
+        CheckPickUps("Ana", 0, p + ": Black to move, Ana");
+        CheckPickUps("Bob", 16, p + ": Black to move, Bob");
+
+        // Replay (on the last position, e4 played): free moves of either colour, organizers counting.
+        CheckInt(board.EnterReplayAs("Bob", false), ChessBoard.InputAccepted, p + ": replay entered");
+        Check(board.CanPickUpAs("Bob", false, ChessRules.E4) && board.CanPickUpAs("Bob", false, ChessRules.E7)
+            && !board.CanPickUpAs("Bob", false, ChessRules.E2), p + ": replay: either colour, not an empty square",
+            "wrong");
+        Check(board.CanPickUpAs("Cleo", true, ChessRules.E4) && !board.CanPickUpAs("Cleo", false, ChessRules.E4),
+            p + ": replay: an organizer, not a bystander", "wrong");
+        CheckPickUps("Ana", 32, p + ": replay, Ana");
+        CheckPickUps("Cleo", 0, p + ": replay, Cleo");
+        CheckInt(board.LeaveReplayAs("Bob", false), ChessBoard.InputAccepted, p + ": replay left");
+        CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, p + ": resigned");
+        CheckPickUps("Bob", 0, p + ": ended, Bob");
+
+        // The local player, in both seats.
+        board.ClearState();
+        board.JoinAs(ChessRules.White, localName);
+        board.JoinAs(ChessRules.Black, localName);
+        CheckInt(board.StartGameAs(localName), ChessBoard.InputAccepted, p + ": local game started");
+        Check(board.CanPickUp(ChessRules.E2) && !board.CanPickUp(ChessRules.E7), p + ": the local player, White to move",
+            "wrong");
+        board.ClearState();
+    }
+
+    // Whether CanPickUpAs (no organizer) agrees with the pickup itself on every square for name, and allows count.
+    void CheckPickUps(string name, int count, string label) {
+        int wrong = 0;
+        int allowed = 0;
+        string first = "";
+        for (int square = 0; square < 64; square++) {
+            bool can = board.CanPickUpAs(name, false, square);
+            int result = board.replayMode ? board.ReplayPiecePickedUpAs(name, false, square)
+                : board.PiecePickedUpAs(name, square);
+            if (can) allowed++;
+            if (can != (result == ChessBoard.InputAccepted) && wrong++ == 0) first = ChessRules.SquareName(square);
+        }
+        Check(wrong == 0, label + ": agrees with the pickup on every square", wrong + " differ, first " + first);
+        CheckInt(allowed, count, label + ": " + count + " pieces");
+    }
+
 
     // ---- 8.6 notation fill-in ----
 

@@ -46,6 +46,14 @@ namespace SiggiChessBoard {
         // the size of a square just off the board, beside the king's castling destination on the outer side of its
         // back rank. Shown only while the local player holds a king whose castle on that side needs one.
         public GameObject[] castleSpaces = new GameObject[2];
+        // Desktop mode's click targets (step 9.3c): each piece's ChessPiece (the same index as pieces), and the
+        // ChessSquare of each square (by square, each its own collider, active only while a click on it does something)
+        // and of each castle drop space (by side, on the space's object).
+        public ChessPiece[] pieceBehaviours = new ChessPiece[PieceCount];
+        public ChessSquare[] squareTargets = new ChessSquare[64];
+        public ChessSquare[] castleSpaceTargets = new ChessSquare[2];
+        // How far a selected piece is lifted above its square, in squares.
+        public const float SelectLift = 0.5f;
 
         // Which object stands on each square (NoObject for none), and the other way round (NoSquare for an object
         // off the board: captured, or not needed by the position). objectType is the piece type each object stands
@@ -87,8 +95,18 @@ namespace SiggiChessBoard {
         [NonSerialized] public int promotionObject = NoObject;
         [NonSerialized] public int promotionFrom = ChessRules.NoSquare;
         [NonSerialized] public int promotionTo = ChessRules.NoSquare;
-        // Which castle drop spaces are shown (by side), for the held king's colour.
+        // Which castle drop spaces are shown (by side), for the held or selected king's colour.
         [NonSerialized] public bool[] castleSpaceShown = new bool[2];
+        // Desktop mode: the object the local player has selected by clicking, with the board's consent (NoObject for
+        // none), the square it was selected on and whether that was in replay. It stands lifted over its square until
+        // a click places it or puts it back, or the board changes so that it can no longer be picked up there.
+        [NonSerialized] public int selectedObject = NoObject;
+        [NonSerialized] public int selectedFrom = ChessRules.NoSquare;
+        bool selectedInReplay;
+        // The squares a click places the selected piece on: its legal moves' (a castle's rook square and, when the
+        // king moves, its destination too), or in replay every other square.
+        [NonSerialized] public bool[] selectedTargets = new bool[64];
+        int[] targetMoves = new int[ChessMoves.MaxMoves];
 
         void Start() {
             for (int i = 0; i < 64; i++) squareObject[i] = NoObject;
@@ -157,6 +175,10 @@ namespace SiggiChessBoard {
             mappingStale = false;
             // A held piece the board no longer shows where it was picked up is let go, and placed with the rest.
             if (heldObject != NoObject && objectSquare[heldObject] != heldFrom) LetGo();
+            // So does a selected piece that can no longer be picked up there; one that still can has its targets
+            // worked out again, since the position may have changed (a takeback, another player's free move).
+            CheckSelection();
+            if (selectedObject != NoObject) FindTargets();
             for (int i = 0; i < PieceCount; i++) {
                 if (i != heldObject) PlaceObject(i);
             }
@@ -247,15 +269,22 @@ namespace SiggiChessBoard {
         // Shows each castle drop space while the local player holds the side to move's king and the board says that
         // castle needs one (it's legal, and a drop on its destination wouldn't castle), beside the destination on the
         // outer side of the king's back rank; hides it otherwise. Called on every pickup, drop and change.
+        // A selected king (desktop mode) shows them the same way, and they're then click targets.
         public void UpdateCastleSpaces() {
-            bool king = heldObject != NoObject && objectType[heldObject] == ChessRules.King && Utilities.IsValid(board);
+            int lifted = heldObject != NoObject ? heldObject : selectedObject;
+            bool king = lifted != NoObject && objectType[lifted] == ChessRules.King && Utilities.IsValid(board);
             for (int side = 0; side < 2; side++) {
                 bool shown = king && board.IsCastleDropSpaceNeeded(side);
                 castleSpaceShown[side] = shown;
                 GameObject space = castleSpaces[side];
                 if (!Utilities.IsValid(space)) continue;
-                if (shown) space.transform.localPosition = CastleSpacePosition(ObjectColor(heldObject), side);
+                if (shown) space.transform.localPosition = CastleSpacePosition(ObjectColor(lifted), side);
                 if (space.activeSelf != shown) space.SetActive(shown);
+                ChessSquare target = castleSpaceTargets[side];
+                if (!Utilities.IsValid(target)) continue;
+                bool clickable = shown && lifted == selectedObject;
+                if (target.DisableInteractive == clickable) target.DisableInteractive = !clickable;
+                if (clickable) target.InteractionText = "Castle";
             }
         }
 
@@ -279,6 +308,196 @@ namespace SiggiChessBoard {
                 }
             }
             return NoCastleSide;
+        }
+
+        // ---- Desktop mode (docs/player-input.md, step 9.3c) ----
+        // Clicks instead of carrying, for players not using pickups: selecting is PiecePickedUp and placing is
+        // PieceDropped (or KingDroppedOnCastleSpace), so the board treats both input styles alike.
+
+        // A click on a piece (its ChessPiece's Interact). With nothing selected it selects the piece; on the selected
+        // piece it puts it back; on a square the selected piece can go to it places it there (a capture, or a castle on
+        // its own rook; in replay, a free move onto the other colour); on another piece the board would let the player
+        // pick up it selects that one instead; anything else is a placing the board rejects, which puts it back.
+        public void OnPieceClicked(int obj) {
+            if (obj < 0 || obj >= PieceCount || UsesPickups() || !Utilities.IsValid(board)) return;
+            int square = objectSquare[obj];
+            if (square == ChessRules.NoSquare) return;
+            if (selectedObject == NoObject) {
+                Select(obj);
+            } else if (obj == selectedObject) {
+                Unselect();
+            } else if (PlacesOn(obj)) {
+                Place(square);
+            } else if (board.CanPickUp(square)) {
+                Select(obj);
+            } else {
+                Place(square);
+            }
+        }
+
+        // A click on a square's target (only active while a piece is selected): on the square the selected piece came
+        // from it puts it back, anywhere else it places it there.
+        public void OnSquareClicked(int square) {
+            if (square < 0 || square >= 64 || selectedObject == NoObject || UsesPickups()) return;
+            if (!Utilities.IsValid(board)) return;
+            if (square == selectedFrom) {
+                Unselect();
+            } else {
+                Place(square);
+            }
+        }
+
+        // A click on a castle drop space shown for the selected king: castles on that side, as a drop on it would.
+        public void OnCastleSpaceClicked(int side) {
+            if (side < 0 || side > 1 || selectedObject == NoObject || !castleSpaceShown[side]) return;
+            if (!Utilities.IsValid(board)) return;
+            ClearSelection();
+            UpdateCastleSpaces();
+            board.KingDroppedOnCastleSpace(side);
+        }
+
+        // Selects obj if the board accepts its pickup (the previous selection going back down), taking the piece's
+        // ownership as a grab would, so its VRCObjectSync shows the lift to everyone. A refused pickup leaves nothing
+        // selected; the board's rejection puts everything back.
+        void Select(int obj) {
+            promotionObject = NoObject;
+            ClearSelection();
+            int square = objectSquare[obj];
+            if (board.PiecePickedUp(square) == ChessBoard.InputAccepted) {
+                selectedObject = obj;
+                selectedFrom = square;
+                selectedInReplay = board.replayMode;
+                FindTargets();
+                dirty = true;
+                VRCPlayerApi local = Networking.LocalPlayer;
+                GameObject piece = Utilities.IsValid(pieces[obj]) ? pieces[obj].gameObject : null;
+                if (Utilities.IsValid(local) && Utilities.IsValid(piece) && !Networking.IsOwner(local, piece)) {
+                    Networking.SetOwner(local, piece);
+                }
+            }
+            UpdateCastleSpaces();
+            UpdateClickables();
+        }
+
+        // Puts the selected piece back down where it was, unselected; the board isn't asked.
+        void Unselect() {
+            ClearSelection();
+            UpdateCastleSpaces();
+            UpdateClickables();
+        }
+
+        // Plays the selected piece's move to square: a promotion waits for ChoosePromotion as a dropped one does, with
+        // the pawn standing on square; anything else is placed from the board after its change, so a rejected placing
+        // puts the piece back, unselected.
+        void Place(int square) {
+            int obj = selectedObject;
+            int from = selectedFrom;
+            ClearSelection();
+            UpdateCastleSpaces();
+            if (board.PieceDropped(from, square) == ChessBoard.InputPromotionNeeded) {
+                promotionObject = obj;
+                promotionFrom = from;
+                promotionTo = square;
+            }
+            UpdateClickables();
+        }
+
+        // Nothing selected any more; the piece is placed back down on the next frame.
+        void ClearSelection() {
+            if (selectedObject == NoObject) return;
+            selectedObject = NoObject;
+            selectedFrom = ChessRules.NoSquare;
+            for (int i = 0; i < 64; i++) selectedTargets[i] = false;
+            dirty = true;
+        }
+
+        // Puts a selected piece back down, unselected, once it can no longer be picked up where it was: the board
+        // changed (a reset, the game ending, replay entered or left, the piece's square taken, the turn passing), or
+        // the local player switched to pickups.
+        void CheckSelection() {
+            if (selectedObject == NoObject) return;
+            if (!UsesPickups() && Utilities.IsValid(board) && objectSquare[selectedObject] == selectedFrom
+                && board.replayMode == selectedInReplay && board.CanPickUp(selectedFrom)) {
+                return;
+            }
+            ClearSelection();
+            UpdateCastleSpaces();
+        }
+
+        // Whether a click on obj places the selected piece on its square rather than selecting obj: the square is a
+        // target and obj isn't one of the selected piece's own (outside replay, a target with an own piece on it is
+        // a castling rook).
+        bool PlacesOn(int obj) {
+            int square = objectSquare[obj];
+            if (selectedObject == NoObject || square == ChessRules.NoSquare || !selectedTargets[square]) return false;
+            return !selectedInReplay || ObjectColor(obj) != ObjectColor(selectedObject);
+        }
+
+        // Works out selectedTargets for the selected piece from the board's legal moves (every other square in replay,
+        // where moves are free).
+        void FindTargets() {
+            for (int i = 0; i < 64; i++) selectedTargets[i] = selectedInReplay && i != selectedFrom;
+            if (selectedInReplay) return;
+            int count = board.LegalMovesFrom(selectedFrom, targetMoves);
+            for (int i = 0; i < count; i++) {
+                int move = targetMoves[i];
+                int to = ChessRules.MoveTo(move);
+                selectedTargets[to] = true;
+                if (!ChessRules.MoveIsCastle(move)) continue;
+                // A castle stores its rook's square; the board also castles on a drop on the king's destination,
+                // unless a normal move ends there (which is then a target anyway) or the king doesn't move.
+                int destination = ChessRules.SquareOf(
+                    ChessRules.FileOf(to) > ChessRules.FileOf(selectedFrom) ? ChessRules.FileG : ChessRules.FileC,
+                    ChessRules.RankOf(selectedFrom));
+                if (destination != selectedFrom) selectedTargets[destination] = true;
+            }
+        }
+
+        // Makes the pieces and squares click targets exactly where a click does something for the local player in
+        // desktop mode, with interact text saying what: with nothing selected, the pieces the board would let them
+        // pick up; with one selected, that piece and its square (put back), its targets (pieces to capture or castle
+        // with, squares to place on) and the other pieces they could select instead. Players using pickups get none.
+        // Called after every change, once a second and on every click.
+        public void UpdateClickables() {
+            bool clicks = !UsesPickups() && Utilities.IsValid(board);
+            for (int obj = 0; obj < PieceCount; obj++) {
+                ChessPiece behaviour = pieceBehaviours[obj];
+                if (!Utilities.IsValid(behaviour)) continue;
+                int square = objectSquare[obj];
+                string text = null;
+                if (clicks && square != ChessRules.NoSquare) {
+                    if (obj == selectedObject) {
+                        text = "Put back";
+                    } else if (PlacesOn(obj)) {
+                        text = ObjectColor(obj) == ObjectColor(selectedObject) ? "Castle" : "Capture";
+                    } else if (board.CanPickUp(square)) {
+                        text = "Select";
+                    }
+                }
+                bool clickable = text != null;
+                if (behaviour.DisableInteractive == clickable) behaviour.DisableInteractive = !clickable;
+                if (clickable) behaviour.InteractionText = text;
+            }
+            bool selected = clicks && selectedObject != NoObject;
+            for (int square = 0; square < 64; square++) {
+                ChessSquare target = squareTargets[square];
+                if (!Utilities.IsValid(target)) continue;
+                bool clickable = selected && (square == selectedFrom || selectedTargets[square]);
+                GameObject targetObject = target.gameObject;
+                if (targetObject.activeSelf != clickable) targetObject.SetActive(clickable);
+                if (clickable) target.InteractionText = square == selectedFrom ? "Put back" : "Place";
+            }
+        }
+
+        // Whether obj can be clicked now (desktop mode), for tests.
+        public bool IsPieceClickable(int obj) {
+            ChessPiece behaviour = pieceBehaviours[obj];
+            return Utilities.IsValid(behaviour) && !behaviour.DisableInteractive;
+        }
+
+        public bool IsSquareClickable(int square) {
+            ChessSquare target = squareTargets[square];
+            return Utilities.IsValid(target) && target.gameObject.activeSelf;
         }
 
         // Stops treating a piece as held and takes it out of the local player's hand, to be placed from the board.
@@ -326,6 +545,9 @@ namespace SiggiChessBoard {
                 bool pickupable = allowed && objectSquare[obj] != ChessRules.NoSquare;
                 if (pickup.pickupable != pickupable) pickup.pickupable = pickupable;
             }
+            // Desktop mode's selection and click targets depend on the same things (and on whose turn it is).
+            CheckSelection();
+            UpdateClickables();
         }
 
         // The debug view's button: Auto, then Pickups, then Clicks, on this client only.
@@ -473,6 +695,8 @@ namespace SiggiChessBoard {
             // A pawn waiting for its promotion piece stands where it was dropped.
             if (obj == promotionObject) square = promotionTo;
             piece.localPosition = square != ChessRules.NoSquare ? SquarePosition(square) : SparePosition(obj);
+            // A selected piece (desktop mode) stands lifted over its square.
+            if (obj == selectedObject) piece.localPosition += new Vector3(0, SelectLift * squareSize, 0);
             piece.localRotation = ObjectColor(obj) == ChessRules.White
                 ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
         }

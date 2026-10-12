@@ -480,7 +480,336 @@ public class ViewTest : UdonSharpBehaviour {
         view.Refresh();
         CheckSpaces(false, false, "cleared at the end");
         CheckView("cleared at the end");
+        SendCustomEventDelayedFrames(nameof(RunClickChecks), 1);
+    }
+
+    // ---- 9.3c: desktop mode ----
+
+    // A white pawn about to promote on e8, the kings out of its way.
+    const string PromotionFen = "k7/4P3/8/8/8/8/8/K7 w - - 0 1";
+
+    // The seventh frame, with Clicks: selecting by clicking a piece (lifted, its ownership taken), putting it back by
+    // clicking it or its square, switching to another piece, placing on a square, capturing by clicking a piece,
+    // castling on the rook, on the destination and on the castle drop space, promoting, illegal placings put back
+    // unselected, a selection put back when the game ends or replay is left, free moves in replay, and exactly the
+    // pieces and squares where a click does something interactive, with the right text. Then with Pickups: no
+    // interacts at all.
+    public void RunClickChecks() {
+        int savedStyle = view.inputStyle;
+        view.SetInputStyle(ChessBoardView.InputClicks);
+        int wired = 0;
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            if (Utilities.IsValid(view.pieceBehaviours[obj]) && view.pieceBehaviours[obj] == PieceBehaviour(obj)) wired++;
+        }
+        CheckInt(wired, ChessBoardView.PieceCount, "clicks: every piece's ChessPiece assigned to the view");
+        int squares = 0;
+        for (int square = 0; square < 64; square++) {
+            ChessSquare target = view.squareTargets[square];
+            if (Utilities.IsValid(target) && target.view == view && target.square == square
+                && target.castleSide == ChessBoardView.NoCastleSide && Utilities.IsValid(target.GetComponent<Collider>())
+                && view.DropSquare(target.transform.position) == square) {
+                squares++;
+            }
+        }
+        CheckInt(squares, 64, "clicks: every square has its target, over that square");
+        int spaces = 0;
+        for (int side = 0; side < 2; side++) {
+            ChessSquare target = view.castleSpaceTargets[side];
+            if (Utilities.IsValid(target) && target.view == view && target.castleSide == side
+                && Utilities.IsValid(view.castleSpaces[side]) && target.gameObject == view.castleSpaces[side]
+                && Utilities.IsValid(target.GetComponent<Collider>())) {
+                spaces++;
+            }
+        }
+        CheckInt(spaces, 2, "clicks: both castle spaces have their target");
+
+        // Nobody's game: nothing to click.
+        board.ClearState();
+        view.Refresh();
+        CheckClickables("", "", "clicks: a reset board");
+
+        string c = "click game";
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, c);
+        CheckClickables(WhitePieces, "", c + ": White to move");
+        CheckText(Sq("e2"), "Select", c + ": e2");
+
+        // Selected and put back, by clicking the piece and by clicking its square.
+        int pawn = view.squareObject[Sq("e2")];
+        ClickPiece("e2");
+        CheckInt(view.selectedObject, pawn, c + ": e2 clicked: selected");
+        Check(Networking.IsOwner(Networking.LocalPlayer, view.pieces[pawn].gameObject),
+            c + ": e2 clicked: its ownership taken", "not the owner");
+        view.Refresh();
+        CheckLifted(pawn, "e2", c + ": e2 selected");
+        CheckClickables(WhitePieces, "e2 e3 e4", c + ": e2 selected");
+        CheckText(Sq("e2"), "Put back", c + ": e2 selected");
+        CheckSquareText("e2", "Put back", c + ": e2 selected");
+        CheckSquareText("e4", "Place", c + ": e2 selected");
+        CheckText(Sq("d2"), "Select", c + ": e2 selected, d2");
+        ClickPiece("e2");
+        CheckInt(board.lastChange, ChessBoard.ChangeStarted, c + ": e2 clicked again: the board not asked");
+        CheckUnselected(0, c + ": e2 clicked again: put back");
+        ClickPiece("e2");
+        ClickSquare("e2");
+        CheckInt(board.lastChange, ChessBoard.ChangeStarted, c + ": its square clicked: the board not asked");
+        CheckUnselected(0, c + ": e2 selected, its square clicked: put back");
+
+        // Switching to another piece, then placing it.
+        int knight = view.squareObject[Sq("g1")];
+        ClickPiece("e2");
+        ClickPiece("g1");
+        CheckInt(view.selectedObject, knight, c + ": g1 clicked with e2 selected: g1 selected");
+        view.Refresh();
+        CheckLifted(knight, "g1", c + ": g1 selected");
+        Check((view.pieces[pawn].localPosition - view.SquarePosition(Sq("e2"))).sqrMagnitude < 1e-8f,
+            c + ": g1 selected: e2 back down", "at " + view.pieces[pawn].localPosition.ToString("F3"));
+        CheckClickables(WhitePieces, "g1 f3 h3", c + ": g1 selected");
+        ClickSquare("f3");
+        CheckUnselected(1, c + ": f3 clicked: Nf3 played");
+        CheckInt(view.squareObject[Sq("f3")], knight, c + ": Nf3: the g1 object on f3");
+        CheckClickables(BlackPieces, "", c + ": Black to move");
+
+        ClickPiece("e7");
+        ClickSquare("e5");
+        CheckUnselected(2, c + ": e7 then e5 clicked: e5 played");
+
+        // Capturing by clicking the opponent's piece.
+        ClickPiece("f3");
+        view.Refresh();
+        CheckText(Sq("e5"), "Capture", c + ": f3 selected, e5");
+        Check(view.IsPieceClickable(view.squareObject[Sq("e5")]), c + ": f3 selected: e5 clickable", "it isn't");
+        Check(!view.IsPieceClickable(view.squareObject[Sq("d7")]), c + ": f3 selected: d7 not clickable", "it is");
+        ClickPiece("e5");
+        CheckUnselected(3, c + ": e5 clicked with f3 selected: Nxe5 played");
+        CheckInt(ChessRules.MoveTo(board.LastMove()), Sq("e5"), c + ": Nxe5 goes to e5");
+        CheckInt(view.squareObject[Sq("e5")], knight, c + ": Nxe5: the knight's object on e5");
+
+        // Illegal placings: put back, unselected.
+        ClickPiece("a7");
+        view.OnSquareClicked(Sq("a4"));
+        CheckInt(board.lastChange, ChessBoard.ChangeRejected, c + ": a7 to a4 rejected");
+        CheckUnselected(3, c + ": a7 selected, a4 clicked: put back");
+        ClickPiece("d8");
+        view.OnPieceClicked(view.squareObject[Sq("e5")]);
+        CheckInt(board.lastChange, ChessBoard.ChangeRejected, c + ": d8 to e5 rejected");
+        CheckUnselected(3, c + ": d8 selected, the e5 knight clicked: put back");
+        CheckInt(view.squareObject[Sq("e5")], knight, c + ": the e5 knight still there");
+
+        // The game ending while a piece is selected puts it back.
+        ClickPiece("d7");
+        CheckInt(view.selectedObject, view.squareObject[Sq("d7")], c + ": d7 selected");
+        CheckInt(board.ResignAs(ChessRules.Black, localName), ChessBoard.InputAccepted, c + ": resigned with d7 selected");
+        view.Refresh();
+        CheckView(c + ": resigned: d7 down on that Refresh");
+        CheckUnselected(3, c + ": resigned: d7 put back");
+        CheckClickables("", "", c + ": ended");
+
+        // In replay: free moves of any piece; another piece of the selected one's colour is selected instead, one of
+        // the other colour captured; leaving replay puts a selection back.
+        CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, c + ": entered replay");
+        view.Refresh();
+        CheckInt(ClickableCount(), OnBoardCount(), c + ": replay: every piece on the board clickable");
+        ClickPiece("a1");
+        CheckInt(view.selectedObject, view.squareObject[Sq("a1")], c + ": replay: a1 selected");
+        view.Refresh();
+        CheckInt(SquareTargetCount(), 64, c + ": replay: a1 selected, every square clickable");
+        CheckText(Sq("a8"), "Capture", c + ": replay: a1 selected, a8");
+        CheckText(Sq("b1"), "Select", c + ": replay: a1 selected, b1");
+        ClickPiece("b1");
+        CheckInt(view.selectedObject, view.squareObject[Sq("b1")], c + ": replay: b1 clicked: b1 selected instead");
+        ClickPiece("b8");
+        CheckInt(board.lastChange, ChessBoard.ChangeFreeMove, c + ": replay: b8 clicked with b1 selected: a free move");
+        CheckUnselected(3, c + ": replay: b1 to b8");
+        CheckInt(board.replayBoard[Sq("b8")], ChessRules.PieceOf(ChessRules.White, ChessRules.Knight),
+            c + ": replay: the white knight on b8");
+        ClickPiece("h2");
+        ClickSquare("h5");
+        CheckInt(board.lastChange, ChessBoard.ChangeFreeMove, c + ": replay: h2 then h5 clicked: a free move");
+        CheckUnselected(3, c + ": replay: h2 to h5");
+        CheckInt(board.replayBoard[Sq("h5")], ChessRules.PieceOf(ChessRules.White, ChessRules.Pawn),
+            c + ": replay: the white pawn on h5");
+        ClickPiece("c1");
+        CheckInt(view.selectedObject, view.squareObject[Sq("c1")], c + ": replay: c1 selected");
+        CheckInt(board.LeaveReplayAs(localName, true), ChessBoard.InputAccepted, c + ": left replay with c1 selected");
+        view.Refresh();
+        CheckUnselected(3, c + ": left replay: c1 put back");
+
+        // Castling on the rook (labelled Castle), on the destination, and on the castle drop space (Chess960).
+        CastleSpaceGame(StandardCastlingFen, "click castling");
+        int king = view.squareObject[Sq("e1")];
+        int rook = view.squareObject[Sq("h1")];
+        ClickPiece("e1");
+        view.Refresh();
+        CheckClickables("a1 e1 h1", "a1 c1 d1 e1 f1 g1 h1 d2 e2 f2", "click castling: e1 selected");
+        CheckText(Sq("h1"), "Castle", "click castling: e1 selected, h1");
+        CheckSpaces(false, false, "click castling: e1 selected");
+        ClickPiece("h1");
+        CheckUnselected(1, "click castling: h1 clicked with e1 selected: castled");
+        Check(ChessRules.MoveIsCastle(board.LastMove()), "click castling: on the rook, a castle", "it isn't");
+        CheckInt(view.squareObject[Sq("g1")], king, "click castling: the king's object on g1");
+        CheckInt(view.squareObject[Sq("f1")], rook, "click castling: the rook's object on f1");
+        ClickPiece("e8");
+        ClickSquare("c8");
+        CheckUnselected(2, "click castling: e8 then c8 clicked: castled");
+        Check(ChessRules.MoveIsCastle(board.LastMove()), "click castling: on the destination, a castle", "it isn't");
+
+        CastleSpaceGame(OneSquareFen, "click space");
+        king = view.squareObject[Sq("f1")];
+        rook = view.squareObject[Sq("h1")];
+        ChessSquare space = view.castleSpaceTargets[ChessBoard.CastleKingSide];
+        Check(Utilities.IsValid(space) && space.DisableInteractive, "click space: nothing selected, the space not "
+            + "clickable", "clickable");
+        ClickPiece("f1");
+        CheckSpaces(true, false, "click space: f1 selected");
+        Check(Utilities.IsValid(space) && !space.DisableInteractive && space.InteractionText == "Castle",
+            "click space: the space clickable, labelled Castle", "not clickable or wrong text");
+        CheckSquareText("g1", "Place", "click space: f1 selected, g1");
+        ClickPiece("f2");
+        CheckSpaces(false, false, "click space: f2 selected instead");
+        ClickPiece("f1");
+        if (Utilities.IsValid(space)) space.Interact();
+        CheckSpaces(false, false, "click space: the space clicked");
+        CheckUnselected(1, "click space: the space clicked: castled");
+        Check(ChessRules.MoveIsCastle(board.LastMove()), "click space: a castle", "it isn't");
+        CheckInt(view.squareObject[Sq("g1")], king, "click space: the king's object on g1");
+        CheckInt(view.squareObject[Sq("f1")], rook, "click space: the rook's object on f1");
+        ClickPiece("f8");
+        ClickSquare("g8");
+        CheckUnselected(2, "click space: f8 then g8 clicked: played");
+        Check(!ChessRules.MoveIsCastle(board.LastMove()), "click space: g8 clicked: Kg8, not a castle", "it castled");
+
+        // Promoting by clicking: the pawn waits on e8 for its piece.
+        CastleSpaceGame(PromotionFen, "click promotion");
+        int promoting = view.squareObject[Sq("e7")];
+        ClickPiece("e7");
+        ClickSquare("e8");
+        CheckInt(view.promotionObject, promoting, "click promotion: e8 clicked: waits for a piece");
+        CheckInt(view.selectedObject, ChessBoardView.NoObject, "click promotion: nothing selected");
+        CheckInt(board.moveCount, 0, "click promotion: nothing played yet");
+        view.Refresh();
+        Check((view.pieces[promoting].localPosition - view.SquarePosition(Sq("e8"))).sqrMagnitude < 1e-8f,
+            "click promotion: the pawn stands on e8 meanwhile", "at " + view.pieces[promoting].localPosition.ToString("F3"));
+        CheckInt(view.ChoosePromotion(ChessRules.Rook), ChessBoard.InputAccepted, "click promotion: e8=R chosen");
+        CheckDropped(1, ChessBoard.ChangeMove, "click promotion: e8=R");
+        CheckInt(view.objectType[promoting], ChessRules.Rook, "click promotion: the pawn's object is a rook");
+
+        // A VR player (Pickups): pickups and no interacts; switching to it puts a selection back.
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, "pickups, no clicks");
+        ClickPiece("e2");
+        CheckInt(view.selectedObject, view.squareObject[Sq("e2")], "pickups, no clicks: e2 selected with Clicks");
+        view.SetInputStyle(ChessBoardView.InputPickups);
+        view.Refresh();
+        CheckUnselected(0, "pickups, no clicks: switched to Pickups: e2 put back");
+        CheckClickables("", "", "pickups, no clicks: Pickups");
+        CheckPickupable(32, "pickups, no clicks: Pickups");
+        view.OnPieceClicked(view.squareObject[Sq("e2")]);
+        CheckInt(view.selectedObject, ChessBoardView.NoObject, "pickups, no clicks: a click selects nothing");
+        CastleSpaceGame(OneSquareFen, "pickups, no clicks: f1 game");
+        int heldKing = view.squareObject[Sq("f1")];
+        view.OnPiecePickedUp(heldKing);
+        CheckSpaces(true, false, "pickups, no clicks: f1 held");
+        Check(Utilities.IsValid(space) && space.DisableInteractive, "pickups, no clicks: the space shown, not clickable",
+            "clickable");
+        view.OnPieceDropped(heldKing);
+
+        board.ClearState();
+        view.SetInputStyle(savedStyle);
+        view.Refresh();
+        CheckView("cleared after the click checks");
         LogSummary();
+    }
+
+    const string WhitePieces = "a1 b1 c1 d1 e1 f1 g1 h1 a2 b2 c2 d2 e2 f2 g2 h2";
+    const string BlackPieces = "a8 b8 c8 d8 e8 f8 g8 h8 a7 b7 c7 d7 e7 f7 g7 h7";
+
+    // Clicks the piece on square through its ChessPiece, as VRChat's Interact would.
+    void ClickPiece(string square) {
+        int obj = view.squareObject[Sq(square)];
+        ChessPiece piece = obj == ChessBoardView.NoObject ? null : PieceBehaviour(obj);
+        if (Utilities.IsValid(piece)) piece.Interact();
+        else Check(false, "click on " + square, "no piece there");
+    }
+
+    // Clicks square's target through its ChessSquare (whether it's active or not).
+    void ClickSquare(string square) {
+        ChessSquare target = view.squareTargets[Sq(square)];
+        if (Utilities.IsValid(target)) target.Interact();
+        else Check(false, "click on the square " + square, "no target");
+    }
+
+    // Nothing selected and the board at moveCount moves; then the view, refreshed, matches the board (nothing
+    // lifted) with no square clickable.
+    void CheckUnselected(int moveCount, string name) {
+        CheckInt(view.selectedObject, ChessBoardView.NoObject, name + ": nothing selected");
+        CheckInt(board.moveCount, moveCount, name + ": move count");
+        view.Refresh();
+        CheckView(name);
+        CheckInt(SquareTargetCount(), 0, name + ": no square clickable");
+    }
+
+    // Whether obj stands lifted over square.
+    void CheckLifted(int obj, string square, string name) {
+        Vector3 expected = view.SquarePosition(Sq(square))
+            + new Vector3(0, ChessBoardView.SelectLift * view.squareSize, 0);
+        Check((view.pieces[obj].localPosition - expected).sqrMagnitude < 1e-8f, name + ": lifted over " + square,
+            "at " + view.pieces[obj].localPosition.ToString("F3"));
+    }
+
+    // Whether exactly the pieces on pieceSquares and the square targets on targetSquares (square names separated by
+    // spaces, in any order) are clickable, and no piece off the board.
+    void CheckClickables(string pieceSquares, string targetSquares, string name) {
+        string wrongPieces = "";
+        string wrongSquares = "";
+        for (int square = 0; square < 64; square++) {
+            string text = " " + SquareText(square) + " ";
+            int obj = view.squareObject[square];
+            bool piece = obj != ChessBoardView.NoObject && view.IsPieceClickable(obj);
+            if (piece != (" " + pieceSquares + " ").Contains(text)) wrongPieces += SquareText(square) + " ";
+            if (view.IsSquareClickable(square) != (" " + targetSquares + " ").Contains(text)) {
+                wrongSquares += SquareText(square) + " ";
+            }
+        }
+        int offBoard = 0;
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            if (view.objectSquare[obj] == ChessRules.NoSquare && view.IsPieceClickable(obj)) offBoard++;
+        }
+        Check(wrongPieces.Length == 0 && wrongSquares.Length == 0 && offBoard == 0, name + ": clickable pieces ["
+            + pieceSquares + "], squares [" + targetSquares + "]", "pieces wrong on " + wrongPieces
+            + "; squares wrong on " + wrongSquares + "; " + offBoard + " off the board");
+    }
+
+    // Whether the piece on square has the interact text.
+    void CheckText(int square, string text, string name) {
+        int obj = view.squareObject[square];
+        ChessPiece piece = obj == ChessBoardView.NoObject ? null : PieceBehaviour(obj);
+        string actual = Utilities.IsValid(piece) ? piece.InteractionText : "(no piece)";
+        Check(actual == text, name + ": labelled " + text, "labelled " + actual);
+    }
+
+    // Whether square's target is clickable with the interact text.
+    void CheckSquareText(string square, string text, string name) {
+        ChessSquare target = view.squareTargets[Sq(square)];
+        string actual = Utilities.IsValid(target) ? target.InteractionText : "(no target)";
+        Check(view.IsSquareClickable(Sq(square)) && actual == text, name + ": the square " + square + " labelled "
+            + text, "clickable " + view.IsSquareClickable(Sq(square)) + ", labelled " + actual);
+    }
+
+    int ClickableCount() {
+        int count = 0;
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            if (view.IsPieceClickable(obj)) count++;
+        }
+        return count;
+    }
+
+    int SquareTargetCount() {
+        int count = 0;
+        for (int square = 0; square < 64; square++) {
+            if (view.IsSquareClickable(square)) count++;
+        }
+        return count;
     }
 
     // A game of the local player against themselves, from fen.

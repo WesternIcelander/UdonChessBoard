@@ -46,6 +46,7 @@ Each board is split into two behaviours that never reach into each other's domai
   - `LegalMovesFrom(square, moves)`: the game's legal moves from a square (for the legal-target highlights), none unless a game is in progress, not in replay and the side to move's flag hasn't fallen.
   - `ResultText()`: `1-0`, `0-1`, `1/2-1/2` or `*`.
   - `MayTouchPieces()` (and `MayTouchPiecesAs`, `PlayerMayTouchPieces`): whether the local player may touch the pieces, for `pickupable` and the pieces' ownership check (step 9.2, [Physical pieces](physical-pieces.md#pickups-step-92)).
+  - `CanPickUp(square)` (and `CanPickUpAs(name, organizer, square)`): whether `PiecePickedUp` would accept the pickup, without touching the board or telling anyone, for desktop mode's clickable pieces (step 9.3c, [Desktop mode](player-input.md#desktop-mode-step-93c)).
 
 **Benefits:** the logical board can be driven entirely by test behaviours with no world objects (see [Testing](testing.md)), and the world presentation can be redesigned without touching the rules.
 

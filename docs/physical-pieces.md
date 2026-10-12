@@ -35,8 +35,8 @@
 
 ### Castle drop space (step 9.3b)
 
-- **Objects:** `castleSpaces[2]`, by side (`ChessBoard.CastleKingSide`, `CastleQueenSide`): pads the size of a square, as thick as the board and just above its surface, with no collider. The builder makes them hidden (with a generated **Castle Space** material) and makes the table deep enough for them.
+- **Objects:** `castleSpaces[2]`, by side (`ChessBoard.CastleKingSide`, `CastleQueenSide`): pads the size of a square, as thick as the board and just above its surface; a drop is found by position, not by collider (9.3c adds one, for clicks). The builder makes them hidden (with a generated **Castle Space** material) and makes the table deep enough for them.
 - **Where:** the square off the board beyond the king's back rank, next to its castling destination (g or c): for White beyond g1/c1 (rank "0"), for Black beyond g8/c8 (`CastleSpacePosition(color, side)`). Off the board, so a drop there is no square, and away from the spare pieces beside the board.
 - **When:** `UpdateCastleSpaces` shows a side's space (`castleSpaceShown`) while the local player holds a king (`heldObject`, a pickup the board accepted, so the side to move's) and `ChessBoard.IsCastleDropSpaceNeeded(side)`; it runs on every pickup, drop, let-go and `Refresh`, so a change while the king is held (the game ending, replay) hides it. Standard castles and Chess960 castles moving the king two or more squares never show one; in replay none is shown.
 - **Dropping:** a held king let go over a shown space (`CastleSpaceUnder`, by where it is over the pad whatever its height) goes to the board as `KingDroppedOnCastleSpace(side)` instead of a drop; anywhere else as before. A drop where no space is shown is beside the board, which the board rejects.
-- Desktop mode (step 9.3c) shows the same spaces while a king is selected.
+- Desktop mode (step 9.3c) shows the same spaces while a king is selected, and gives each a collider and a `ChessSquare` so a click on it castles (see [Desktop mode](player-input.md#desktop-mode-step-93c)); it's clickable only while shown for a selected king.

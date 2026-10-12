@@ -1427,6 +1427,18 @@ namespace SiggiChessBoard {
             return NotifyIfRejected(MayPickUp(name, square) ? InputAccepted : InputRejected);
         }
 
+        public bool CanPickUp(int square) {
+            return CanPickUpAs(LocalName(), LocalIsOrganizer(), square);
+        }
+
+        // Whether PiecePickedUp would accept name's pickup of the piece on square (in replay, a free move's pickup,
+        // where organizer counts), without touching the board or telling anyone: the view makes only these pieces
+        // clickable in desktop mode (step 9.3c).
+        public bool CanPickUpAs(string name, bool organizer, int square) {
+            if (replayMode) return MayPickUpInReplay(name, organizer, square);
+            return MayPickUp(name, square);
+        }
+
         bool MayPickUp(string name, int square) {
             if (!MayMove(name)) return false;
             if (square < 0 || square >= 64) return false;
