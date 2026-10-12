@@ -272,6 +272,19 @@ public class ChessDebugView : ChessBoardListener {
             Networking.IsOwner(board.arbiter.gameObject));
     }
 
+    // Asks VRChat for ownership of the board directly, as every change does but without the input methods' own
+    // checks, to see that the board refuses a bystander while both players are here and the board isn't idle. The
+    // owner is reported now and again after a few seconds, once the current owner has answered.
+    public void TakeBoard() {
+        Networking.SetOwner(Networking.LocalPlayer, board.gameObject);
+        ReportDone("Take board (owner now " + BoardOwnerName() + ")", Networking.IsOwner(board.gameObject));
+        SendCustomEventDelayedSeconds(nameof(ReportBoardOwner), 3);
+    }
+
+    public void ReportBoardOwner() {
+        ReportDone("Take board, 3 s later (owner " + BoardOwnerName() + ")", Networking.IsOwner(board.gameObject));
+    }
+
     public void Resnapshot() {
         Report("Re-snapshot", board.Resnapshot());
     }
@@ -423,6 +436,12 @@ public class ChessDebugView : ChessBoardListener {
         text += "Lifecycle: <b>" + LifecycleName(board.lifecycle) + "</b>   last change: " + ChangeName(board.lastChange)
             + (board.lastChangeReceived ? " (received)" : "") + "   logged games: " + board.loggedGames
             + "   board owner: " + BoardOwnerName() + "\n";
+        double now = board.ServerTime();
+        string idle = board.lifecycle == ChessBoard.LifecycleReset ? "-"
+            : Mathf.FloorToInt((float)(now - board.lastActivity)) + " s";
+        text += "Ownership: both players here: " + (board.BothPlayersPresent() ? "yes" : "no") + "   idle: " + idle
+            + (board.IsIdleForResetAt(now) ? " (idle for reset)" : "") + "   you may take it: "
+            + (board.MayOwn(Networking.LocalPlayer) ? "yes" : "no") + "\n";
         text += "White: " + SeatText(board.whitePlayer) + ClockSuffix(ChessRules.White) + "   Black: "
             + SeatText(board.blackPlayer) + ClockSuffix(ChessRules.Black) + "\n";
         text += "Mode: " + ModeName(board.mode) + "   clock: " + ClockName(board.baseTime, board.increment)

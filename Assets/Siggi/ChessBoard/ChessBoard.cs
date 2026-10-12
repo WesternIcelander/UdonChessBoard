@@ -133,7 +133,8 @@ namespace SiggiChessBoard {
         [NonSerialized] public string whitePlayer = "";
         [NonSerialized] public string blackPlayer = "";
 
-        // Server time of the last piece touch (docs/inactivity.md, step 8.5).
+        // Server time of the last change sent (docs/inactivity.md): every change but a rejection stamps it; piece
+        // touches that change nothing come with step 8.5.
         [NonSerialized] public double lastActivity;
 
         // How the game ended (a ChessGame.Ending* value, EndingNone while in progress) and who won (ChessRules.White
@@ -276,11 +277,12 @@ namespace SiggiChessBoard {
             listeners = kept;
         }
 
-        // A change made on this client: sends it (unless it's a rejection, which changes nothing) and tells every
-        // listener.
+        // A change made on this client: sends it (unless it's a rejection, which changes nothing), stamped as the
+        // board's last activity, and tells every listener.
         void NotifyChanged(int change) {
             if (change != ChangeRejected) {
                 lastSentChange = change;
+                lastActivity = ServerTime();
                 SendState();
             }
             TellListeners(change, false);
@@ -305,7 +307,7 @@ namespace SiggiChessBoard {
         // ---- Networking (docs/networking.md, docs/ownership.md) ----
         // Manual sync: the client making a change takes ownership of the board and asks for a serialization; the
         // state is packed when it's sent, so several changes in one frame go out as one update. Receivers unpack it
-        // and tell their listeners, with no move generation. Who may take ownership is step 8.4.
+        // and tell their listeners, with no move generation. Who may take ownership is below (Ownership).
 
         // Takes ownership of the board for the local player and asks VRChat to send the state.
         void SendState() {
@@ -321,6 +323,59 @@ namespace SiggiChessBoard {
 
         public override void OnDeserialization() {
             ReceiveState();
+        }
+
+        // ---- Ownership (docs/ownership.md) ----
+        // While both players are in the instance, only they and organizers may take the board, and everyone else only
+        // once it has been idle for the reset-available time (to reset it). Checked on the requesting client and on the
+        // owner. VRChat doesn't ask when the owner leaves, so the board can still end up with anyone; that's harmless,
+        // since owning the board never grants a move. The input methods refuse a bystander before this is reached, so
+        // a refusal here only catches a race (a seat or a player's presence changing meanwhile): the local change then
+        // isn't sent, and the next update from the owner replaces it.
+
+        public override bool OnOwnershipRequest(VRCPlayerApi requestingPlayer, VRCPlayerApi requestedOwner) {
+            return MayOwn(requestedOwner);
+        }
+
+        // Whether a player may own the board now (MayOwnAs).
+        public bool MayOwn(VRCPlayerApi who) {
+            if (!Utilities.IsValid(who)) return false;
+            bool organizer = Utilities.IsValid(arbiter) && arbiter.IsOrganizer(who);
+            return MayOwnAs(who.displayName, organizer, BothPlayersPresent(), ServerTime());
+        }
+
+        // Whether name may own the board at server time now: an organizer, a seated player, anyone while a seat is
+        // empty or its player isn't in the instance (playersPresent false), and anyone once the board is idle enough
+        // to reset.
+        public bool MayOwnAs(string name, bool organizer, bool playersPresent, double now) {
+            if (organizer || IsPlayer(name) || !playersPresent) return true;
+            if (whitePlayer.Length == 0 || blackPlayer.Length == 0) return true;
+            return IsIdleForResetAt(now);
+        }
+
+        // Whether both seats are filled by players in the instance (by display name; one player may hold both).
+        public bool BothPlayersPresent() {
+            if (whitePlayer.Length == 0 || blackPlayer.Length == 0) return false;
+            VRCPlayerApi[] players = new VRCPlayerApi[VRCPlayerApi.GetPlayerCount()];
+            VRCPlayerApi.GetPlayers(players);
+            bool white = false;
+            bool black = false;
+            for (int i = 0; i < players.Length; i++) {
+                if (!Utilities.IsValid(players[i])) continue;
+                string name = players[i].displayName;
+                if (name == whitePlayer) white = true;
+                if (name == blackPlayer) black = true;
+            }
+            return white && black;
+        }
+
+        // Whether the board has been idle long enough at server time now for anyone to reset it (docs/inactivity.md):
+        // not reset already, and the snapshot's reset-available time (seconds, or Never) passed since the last
+        // activity.
+        public bool IsIdleForResetAt(double now) {
+            if (lifecycle == LifecycleReset) return false;
+            int wait = GameNumber(ChessArbiter.NumberResetAvailableTime);
+            return wait != ChessArbiter.Never && now - lastActivity >= wait;
         }
 
         // Copies the state into the synced fields. Public for tests.
@@ -1294,8 +1349,8 @@ namespace SiggiChessBoard {
         // method, which refuses when its check doesn't. The methods themselves come with their steps: resign (with the
         // game endings), draws (below), replay 7.8a, takebacks 7.8b, loading 7.9a, continuing 7.9b, reset 7.10. The plain
         // checks are for the local player; the *As ones take any name, and an organizer flag where organizers count,
-        // for tests and the debug view. Who may take ownership, and the idle-reset exception for everyone else, come
-        // with steps 8.4 and 8.5.
+        // for tests and the debug view. Who may take ownership is under Ownership (8.4); a bystander's reset once the
+        // board is idle comes with step 8.5.
 
         // Scratch for the repetition counts of ClaimableDraw and AutomaticDraw.
         byte[] repetitionBoard = new byte[64];

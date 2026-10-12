@@ -4,8 +4,9 @@ using UnityEngine;
 using VRC.SDKBase;
 
 // Step 7 test behaviour (PLAN.md section 7): the logical board driven with no world objects, plus the single-client
-// sync checks of 8.3 (packing and receiving the synced state). Runs only with no one else in the instance.
-// Logs "[BoardTest] PASS: <check>" or "[BoardTest] FAIL: <check>: <details>" per check, then a summary line.
+// sync checks of 8.3 (packing and receiving the synced state) and the ownership rules of 8.4. Runs only with no one
+// else in the instance. Logs "[BoardTest] PASS: <check>" or "[BoardTest] FAIL: <check>: <details>" per check, then a
+// summary line.
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
 public class BoardTest : ChessBoardListener {
     // The board under test; its checks fail if it isn't assigned. The checks clear it and leave it in the reset state.
@@ -91,6 +92,7 @@ public class BoardTest : ChessBoardListener {
             TestListeners();
             TestScenarios();
             TestSync();
+            TestOwnership();
             // Every [ChessPGN] entry in the log is one of these, so the two counts must agree.
             Debug.Log("[BoardTest] games logged by the board: " + board.loggedGames);
             if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
@@ -5032,5 +5034,96 @@ public class BoardTest : ChessBoardListener {
         board.RemoveListener(this);
         board.ClearState();
         board.PackState();
+    }
+
+    // ---- 8.4 ownership ----
+
+    // Who may take the board (MayOwnAs), with each player's presence given; then MayOwn for the local player, alone
+    // in the instance.
+    void TestOwnership() {
+        NothingForced();
+        string o = "ownership";
+        int resetTime = ChessArbiter.NumberResetAvailableTime;
+
+        board.ClearState();
+        double now = board.ServerTime();
+        Check(board.MayOwnAs("Cleo", false, true, now), o + ": anyone on a reset board", "refused");
+        Check(!board.IsIdleForResetAt(now + 100000), o + ": a reset board is never idle for reset", "idle");
+        board.JoinAs(ChessRules.White, "Ana");
+        Check(board.MayOwnAs("Cleo", false, true, now), o + ": anyone while a seat is empty", "refused");
+
+        // Every change sent stamps the activity time; a rejection doesn't.
+        double before = board.ServerTime();
+        board.JoinAs(ChessRules.Black, "Bob");
+        double after = board.ServerTime();
+        Check(board.lastActivity >= before && board.lastActivity <= after, o + ": a change stamps the activity",
+            "activity " + board.lastActivity + ", change between " + before + " and " + after);
+        double t = board.lastActivity;
+        CheckInt(board.JoinAs(ChessRules.Black, "Cleo"), ChessBoard.InputRejected, o + ": seat taken");
+        Check(board.lastActivity == t, o + ": a rejection doesn't stamp the activity", "activity " + board.lastActivity);
+
+        // The lobby with both players present.
+        board.gameNumbers[resetTime] = 120;
+        CheckOwners(t, o + ": lobby");
+        Check(board.MayOwnAs("Cleo", false, false, t), o + ": anyone while a player is away", "refused");
+        Check(!board.MayOwnAs("Cleo", false, true, t + 119.9), o + ": refused before the reset-available time",
+            "allowed");
+        Check(board.MayOwnAs("Cleo", false, true, t + 120), o + ": anyone once idle for the reset-available time",
+            "refused");
+        Check(board.IsIdleForResetAt(t + 120), o + ": idle for reset", "not idle");
+        board.gameNumbers[resetTime] = ChessArbiter.Never;
+        Check(!board.MayOwnAs("Cleo", false, true, t + 10000000), o + ": never: refused however long idle",
+            "allowed");
+        Check(!board.IsIdleForResetAt(t + 10000000), o + ": never: not idle for reset", "idle");
+        board.gameNumbers[resetTime] = 0;
+        Check(board.MayOwnAs("Cleo", false, true, t), o + ": 0: anyone at once", "refused");
+
+        // A game in progress, then ended.
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, o + ": started");
+        board.gameNumbers[resetTime] = 120;
+        t = board.lastActivity;
+        CheckOwners(t, o + ": in game");
+        Drop("Ana", ChessRules.E2, ChessRules.E4, o);
+        Check(board.lastActivity >= t, o + ": a move stamps the activity", "activity " + board.lastActivity);
+        t = board.lastActivity;
+        Check(!board.MayOwnAs("Cleo", false, true, t + 119.9), o + ": in game: refused before the move's time + 120",
+            "allowed");
+        Check(board.MayOwnAs("Cleo", false, true, t + 120), o + ": in game: anyone once idle", "refused");
+        CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, o + ": resigned");
+        t = board.lastActivity;
+        CheckOwners(t, o + ": ended");
+        Check(board.MayOwnAs("Cleo", false, true, t + 120), o + ": ended: anyone once idle", "refused");
+
+        // The local player, alone: a seat held by someone absent lets anyone take the board.
+        VRCPlayerApi local = Networking.LocalPlayer;
+        Check(!board.MayOwn(null), o + ": no player refused", "allowed");
+        LobbyWithTwoPlayers();
+        Check(!board.BothPlayersPresent(), o + ": Ana and Bob aren't here", "present");
+        Check(board.MayOwn(local), o + ": the local player while Ana and Bob are away", "refused");
+        board.ClearState();
+        board.JoinAs(ChessRules.White, localName);
+        board.JoinAs(ChessRules.Black, "Bob");
+        Check(!board.BothPlayersPresent(), o + ": Bob isn't here", "present");
+        board.ClearState();
+        board.JoinAs(ChessRules.White, localName);
+        board.JoinAs(ChessRules.Black, localName);
+        Check(board.BothPlayersPresent(), o + ": the local player in both seats is present", "absent");
+        Check(board.MayOwn(local), o + ": the local player in both seats", "refused");
+        Check(board.OnOwnershipRequest(local, local) && !board.OnOwnershipRequest(local, null),
+            o + ": OnOwnershipRequest answers MayOwn", "wrong answer");
+        board.ClearState();
+    }
+
+    // With both players present at server time now (the last activity): the players and an organizer may own the
+    // board, a bystander may not, names compared exactly.
+    void CheckOwners(double now, string name) {
+        Check(board.MayOwnAs("Ana", false, true, now), name + ": the white player", "refused");
+        Check(board.MayOwnAs("Bob", false, true, now), name + ": the black player", "refused");
+        Check(board.MayOwnAs("Cleo", true, true, now), name + ": an organizer", "refused");
+        Check(!board.MayOwnAs("Cleo", false, true, now), name + ": a bystander refused", "allowed");
+        Check(!board.MayOwnAs("ana", false, true, now) && !board.MayOwnAs("Ana ", false, true, now),
+            name + ": names compared exactly", "allowed");
+        Check(!board.MayOwnAs(null, false, true, now) && !board.MayOwnAs("", false, true, now),
+            name + ": no name refused", "allowed");
     }
 }
