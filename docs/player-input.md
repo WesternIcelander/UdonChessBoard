@@ -10,6 +10,20 @@ Players pick pieces up and drop them on a square; they never type moves. The vie
   - The same applies when castling doesn't move the king at all (it already stands on g1/c1): dropping on its own square would just put it back, so the castle drop space is used there too.
   - The castle drop space is purely a view concept; the board receives it as "castle on that side".
 
+## Desktop mode
+
+Players not in VR (desktop and mobile, `IsUserInVR()` false) move by clicking instead of carrying. Their pieces aren't pickups (`pickupable` stays off for them), so a click is an interact.
+
+- **Select:** clicking one of their own pieces lifts it a little above its square to show it's selected.
+- **Place:** clicking a square plays the move to it; clicking an opponent's piece captures it (a move to its square). Clicking their own rook with the king selected castles, as a drop on it would, and the castle drop space appears while the king is selected, as it does while the king is held.
+- **Unselect:** clicking the selected piece again, or the square it came from, puts it back down where it was.
+- **Changing selection:** clicking another of their own pieces (other than a rook the selected king can castle with) selects that one instead, the first going back down.
+- **Rejected:** a click on a square the piece can't move to puts it back down, unselected, as a VR drop snaps back.
+- **Board changes** (a reset, a resignation, a flag fall, entering replay, the piece no longer being selectable) put a selected piece back down, unselected.
+- **Others see it:** selecting takes the piece's ownership, like a grab, so its `VRCObjectSync` shows the lift to everyone. If the pieces lose `VRCObjectSync` (step 9.6), the lift is seen only by the player who selected it.
+
+This is purely a view concept: selecting is `PiecePickedUp`, placing is `PieceDropped` (or `KingDroppedOnCastleSpace`), so the board treats both input styles alike, including promotion (the picker appears after the placing click) and replay's free moves.
+
 ## Implementation
 
 On `ChessBoard` (`Assets/Siggi/ChessBoard/ChessBoard.cs`). Each method has an `*As(name, ...)` form taking any display name, for tests and the debug view; the plain one is for the local player. They return `InputAccepted`, `InputRejected` or `InputPromotionNeeded`.
@@ -22,6 +36,12 @@ On `ChessBoard` (`Assets/Siggi/ChessBoard/ChessBoard.cs`). Each method has an `*
 - `KingDroppedOnCastleSpace(side)`: the view's drop on the castle drop space, `CastleKingSide` (rook right of the king) or `CastleQueenSide`; plays the side to move's legal castle on that side, otherwise rejected. It castles in unambiguous positions too, since the view only offers the space when needed.
 - `IsCastleDropSpaceNeeded(side)`: tells the view (step 9.3b) whether to show the space while the king is held: a game in progress and not in replay, the castle on that side legal, and a drop on its destination not a castle (the king already stands there, or a normal king move ends there).
 - In replay, pickups and drops are free moves on the replay board instead (see [Replay](replay.md#implementation)). Every piece input is also a touch that keeps the board from going idle, sent at most every few seconds (see [Inactivity](inactivity.md#implementation)).
+
+### Desktop mode (step 9.3c)
+
+- **Click targets:** each piece's behaviour (already there for 9.2's pickup events and `OnOwnershipRequest`) gets `Interact`, and the board gets 64 square targets, one collider each with a small behaviour that forwards its square index to the view (`Interact` doesn't say where the collider was hit, so one collider for the whole board can't tell the squares apart). The interact text says what a click does ("Select", "Place", "Capture", "Put back").
+- **What's clickable:** pieces with `DisableInteractive` off only where a click does something for the local player: their own pieces while `PiecePickedUp` would accept them, and while one is selected, every square it could move to plus the selected piece and its square. The square targets are switched off while nothing is selected, so the board doesn't outline on hover.
+- **VR players** never get interacts on pieces or squares; desktop players never get pickups. To check in 9.3c: `Interact` works on an object whose `VRCPickup` has `pickupable` off (if not, desktop clicks go through a separate collider on the piece).
 
 ## Buttons
 

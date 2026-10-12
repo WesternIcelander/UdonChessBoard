@@ -14,7 +14,7 @@ This file holds the implementation steps. The design is split into topic files u
 | [physical-pieces.md](docs/physical-pieces.md) | 32 piece objects, `VRCObjectSync`, grab gating |
 | [move-encoding.md](docs/move-encoding.md) | 32-bit move layout, derived flags, castling encoding, undo |
 | [legality-checking.md](docs/legality-checking.md) | Attack-check legality, direct SAN disambiguation |
-| [player-input.md](docs/player-input.md) | Drops, promotion, castling by drop, castle drop space |
+| [player-input.md](docs/player-input.md) | Drops, promotion, castling by drop, castle drop space, desktop mode (click to select and place) |
 | [board-lifecycle.md](docs/board-lifecycle.md) | Lifecycle states, seats, starting, reset |
 | [clocks.md](docs/clocks.md) | Time control, synced clock state, flag fall |
 | [modes.md](docs/modes.md) | Standard, Chess960, Fog of War (later) and `prohibitSelfCheck` |
@@ -389,23 +389,25 @@ Taking a board's snapshot of these settings depends on the board's lifecycle, so
   - Verify: in Play Mode the pieces match the board after a reset, a sequence of moves, a promotion, and loading a Chess960 game.
   - Setup: **Tools > Chess Board > Create Board View** builds `ChessBoardView` with generated placeholder meshes ([Physical pieces](docs/physical-pieces.md#implementation)); **Create View Test** adds `ViewTest`, which runs after `BoardTest` ([Testing](docs/testing.md#view-test)).
   - First run (2026-10-12): all 148 `ViewTest` checks pass in Play Mode, after `BoardTest`'s 4112.
-- [ ] **9.2** `VRCPickup` + `VRCObjectSync`; per-player `pickupable` from the board; pieces' ownership check.
-  - Verify (several clients): players can grab pieces during their game and bystanders can't; anyone can on a reset board; the pieces' `OnOwnershipRequest` agrees with the board.
+- [ ] **9.2** `VRCPickup` + `VRCObjectSync`; per-player `pickupable` from the board (VR players only; see 9.3c); pieces' ownership check.
+  - Verify (several clients): players in VR can grab pieces during their game and bystanders can't; anyone in VR can on a reset board; desktop players get no pickups; the pieces' `OnOwnershipRequest` agrees with the board.
 - [ ] **9.3a** Forwarding pickups and drops to the board; snapping back on rejection.
   - Verify: legal drops are played; illegal drops snap the piece back; promotion drops ask for a piece.
 - [ ] **9.3b** The castle drop space (shown only while that king is held and the castle is legal; `IsCastleDropSpaceNeeded` from 7.4b).
   - Verify: in a Chess960 position where castling is ambiguous, the space appears only while that king is held and the castle is legal, and dropping on it castles.
+- [ ] **9.3c** Desktop mode: click a piece to lift (select) it, click a square or an opponent's piece to place or capture, click the piece or its square again to put it back ([Desktop mode](docs/player-input.md#desktop-mode)).
+  - Verify: a desktop player selects, moves, captures, castles (on the rook, and on the castle drop space in Chess960) and promotes by clicking; clicking the piece or its square puts it back; an illegal target puts it back unselected; clicking another own piece switches the selection; only pieces and squares where a click does something are interactable; a VR player gets pickups and no interacts.
 - [ ] **9.4a** Board buttons, each shown only when it applies: Join White / Join Black, mode and clock selection, Start, "Continue from here" on a loaded game, reset. ("Load PGN" opens the PGN text box, so it comes with that in step 11.)
   - Verify: each button appears only in the states where it applies, and pressing it does what the board's method does.
 - [ ] **9.4b** Board buttons, each shown only when it applies: resign, offer / accept / claim draw, enter / leave replay and step, request / accept / decline takeback.
   - Verify: as 9.4a.
-- [ ] **9.5a** Promotion picker, highlights (last move, legal targets).
-  - Verify: the picker appears on a promotion drop and plays the chosen piece; highlights show the last move and the held piece's legal targets.
+- [ ] **9.5a** Promotion picker, highlights (last move, legal targets of the held or selected piece).
+  - Verify: the picker appears on a promotion drop or placing click and plays the chosen piece; highlights show the last move and the held or selected piece's legal targets.
 - [ ] **9.5b** Move animations.
   - Verify: a move, a capture, castling and en passant animate rather than snap; a reset or load places pieces without odd animations.
 - [ ] **9.5c** Status display (turn, clocks, check, result, stalemate, pending offers and requests, replay source names).
   - Verify: each item shows correctly in a game and in replay of a loaded game.
-- [ ] **9.6** **Test with several clients:** carrying is visible to others, dropped pieces stay where the board puts them on every client (if `VRCObjectSync` fights the snap, remove it from the pieces), rejected moves snap back everywhere, bystanders can't grab during a game, castling by drop (including the castle drop space in Chess960).
+- [ ] **9.6** **Test with several clients:** carrying is visible to others, dropped pieces stay where the board puts them on every client (if `VRCObjectSync` fights the snap, remove it from the pieces), rejected moves snap back everywhere, bystanders can't grab during a game, castling by drop (including the castle drop space in Chess960), a desktop player's selected piece lifting on every client and a desktop player playing a VR player.
   - Verify: every scenario listed behaves as described on every client.
 
 ### 10. Archive and history wall (`GameArchive`)
