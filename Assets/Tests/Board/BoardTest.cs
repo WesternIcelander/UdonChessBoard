@@ -70,6 +70,7 @@ public class BoardTest : UdonSharpBehaviour {
             TestGameIdFormat();
             TestGameIds();
             TestPgnLog();
+            TestReplay();
             TestSnapshot();
             // Every [ChessPGN] entry in the log is one of these, so the two counts must agree.
             Debug.Log("[BoardTest] games logged by the board: " + board.loggedGames);
@@ -1126,12 +1127,15 @@ public class BoardTest : UdonSharpBehaviour {
         CheckText(board.notation[4], "Nxe5", "drop: SAN of the capture");
         CheckText(Fen(), "r1bqkbnr/pppp1ppp/2n5/4N3/4P3/8/PPPP1PPP/RNBQKB1R b KQkq - 0 3", "drop: position");
 
-        // Not while in replay, or out of game.
-        board.replayMode = true;
-        CheckInt(board.PiecePickedUpAs("Bob", ChessRules.C6), ChessBoard.InputRejected, "pickup: not in replay");
-        CheckInt(board.PieceDroppedAs("Bob", ChessRules.C6, ChessRules.E5), ChessBoard.InputRejected,
-            "drop: not in replay");
-        board.replayMode = false;
+        // In replay a drop is a free move on the replay board (7.8a), never a game move; out of game nothing.
+        string beforeReplay = Fen();
+        CheckInt(board.EnterReplayAs("Bob", false), ChessBoard.InputAccepted, "drop: replay entered");
+        CheckInt(board.PiecePickedUpAs("Bob", ChessRules.C6), ChessBoard.InputAccepted, "pickup: in replay, free");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.C6, ChessRules.E5), ChessBoard.InputAccepted,
+            "drop: in replay, a free move");
+        CheckInt(board.moveCount, 5, "drop: no game move in replay");
+        CheckText(Fen(), beforeReplay, "drop: the game position untouched in replay");
+        CheckInt(board.LeaveReplayAs("Bob", false), ChessBoard.InputAccepted, "drop: replay left");
         board.lifecycle = ChessBoard.LifecycleEnded;
         CheckInt(board.PiecePickedUpAs("Bob", ChessRules.C6), ChessBoard.InputRejected, "pickup: not once ended");
         CheckInt(board.PieceDroppedAs("Bob", ChessRules.C6, ChessRules.E5), ChessBoard.InputRejected,
@@ -1363,12 +1367,15 @@ public class BoardTest : UdonSharpBehaviour {
 
         // Not in replay or once ended, and no space offered there.
         CastlingGame(CastlingFen);
-        board.replayMode = true;
-        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E1, ChessRules.G1), ChessBoard.InputRejected,
-            "castling: not in replay");
+        CheckInt(board.EnterReplayAs("Ana", false), ChessBoard.InputAccepted, "castling: replay entered");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.E1, ChessRules.G1), ChessBoard.InputAccepted,
+            "castling: in replay only a free move");
+        Check(board.replayBoard[ChessRules.G1] == ChessRules.WhiteKing
+            && board.replayBoard[ChessRules.H1] == ChessRules.WhiteRook, "castling: the free move doesn't castle",
+            "the rook moved or the king didn't");
         CheckInt(board.KingDroppedOnCastleSpaceAs("Ana", ChessBoard.CastleKingSide), ChessBoard.InputRejected,
             "castling: castle space not in replay");
-        board.replayMode = false;
+        board.LeaveReplayAs("Ana", false);
         board.lifecycle = ChessBoard.LifecycleEnded;
         CheckInt(board.KingDroppedOnCastleSpaceAs("Ana", ChessBoard.CastleKingSide), ChessBoard.InputRejected,
             "castling: castle space not once ended");
@@ -2688,6 +2695,199 @@ public class BoardTest : UdonSharpBehaviour {
         board.continuedFrom = "20261011120000-000001/4";
         board.StartGameAs("Ana");
         CheckText(board.continuedFrom, "", "Start clears ContinuedFrom");
+
+        board.ClearState();
+    }
+
+    // ---- 7.8a replay ----
+
+    // A position's 64 squares as text, for comparing.
+    string BoardText(byte[] squares) {
+        string text = "";
+        for (int i = 0; i < 64; i++) text += (char)('A' + squares[i]);
+        return text;
+    }
+
+    // Everything replay must leave alone, as text.
+    string GameText() {
+        string text = Fen() + "|" + board.moveCount + "|" + board.lifecycle + "|" + board.whiteTime + "|"
+            + board.blackTime + "|" + board.turnStart + "|" + board.halfmoveClock + "|" + board.ending + "|"
+            + board.winner + "|" + board.drawOfferColor + "|" + board.gameId + "|" + BoardText(board.board);
+        for (int i = 0; i < board.moveHistory.Length; i++) {
+            text += "|" + board.moveHistory[i] + "," + board.notation[i] + "," + board.clockHistory[i] + ","
+                + board.halfmoveClocks[i];
+        }
+        return text;
+    }
+
+    void CheckShows(int ply, string expected, string name) {
+        CheckInt(board.replayIndex, ply, name + ": replay index");
+        CheckText(BoardText(board.replayBoard), expected, name + ": replay board");
+        Check(!board.replayCustom, name + ": not custom", "custom");
+    }
+
+    void TestReplay() {
+        NothingForced();
+
+        // A game with en passant, captures and castling, each position recorded.
+        StartedGame(60, 0, board.ServerTime());
+        int[] from = { ChessRules.E2, ChessRules.G8, ChessRules.E4, ChessRules.D7, ChessRules.E5, ChessRules.C7,
+            ChessRules.G1, ChessRules.B8, ChessRules.F1, ChessRules.G7, ChessRules.E1, ChessRules.F8 };
+        int[] to = { ChessRules.E4, ChessRules.F6, ChessRules.E5, ChessRules.D5, ChessRules.D6, ChessRules.D6,
+            ChessRules.F3, ChessRules.C6, ChessRules.E2, ChessRules.G6, ChessRules.G1, ChessRules.G7 };
+        int plies = from.Length;
+        string[] positions = new string[plies + 1];
+        positions[0] = BoardText(board.board);
+        for (int i = 0; i < plies; i++) {
+            Drop(i % 2 == 0 ? "Ana" : "Bob", from[i], to[i], "replay game ply " + i);
+            positions[i + 1] = BoardText(board.board);
+        }
+        CheckText(board.notation[4], "exd6", "replay game: en passant played");
+        CheckText(board.notation[10], "O-O", "replay game: castling played");
+        string game = GameText();
+
+        // Entering.
+        CheckInt(board.EnterReplayAs("Cleo", false), ChessBoard.InputRejected, "enter replay: not a bystander");
+        Check(!board.replayMode, "enter replay: refused leaves it off", "on");
+        CheckInt(board.EnterReplayAs("Ana", false), ChessBoard.InputAccepted, "enter replay: white");
+        Check(board.replayMode, "enter replay: on", "off");
+        CheckShows(plies, positions[plies], "enter replay: the current position");
+        CheckInt(board.EnterReplayAs("Bob", false), ChessBoard.InputRejected, "enter replay: not twice");
+        Check(board.IsClockRunning(), "replay: the clock keeps running", "stopped");
+
+        // Stepping reaches every position, back to the start, forward again, and out of order.
+        int wrong = 0;
+        for (int ply = plies - 1; ply >= 0; ply--) {
+            if (board.StepToAs("Bob", false, ply) != ChessBoard.InputAccepted || board.replayIndex != ply
+                || BoardText(board.replayBoard) != positions[ply] || board.replayCustom) {
+                wrong++;
+            }
+        }
+        CheckInt(wrong, 0, "step: every position back to the start");
+        for (int ply = 1; ply <= plies; ply++) {
+            if (board.StepToAs("Ana", false, ply) != ChessBoard.InputAccepted
+                || BoardText(board.replayBoard) != positions[ply]) {
+                wrong++;
+            }
+        }
+        CheckInt(wrong, 0, "step: every position forward to the end");
+        int[] order = { 0, 12, 5, 3, 11, 4, 7 };
+        for (int i = 0; i < order.Length; i++) {
+            CheckInt(board.StepToAs("Ana", false, order[i]), ChessBoard.InputAccepted, "step: to " + order[i]);
+            CheckShows(order[i], positions[order[i]], "step: to " + order[i]);
+        }
+        CheckInt(board.StepToAs("Ana", false, 7), ChessBoard.InputRejected, "step: not to the ply shown");
+        CheckInt(board.StepToAs("Ana", false, -1), ChessBoard.InputRejected, "step: not before the start");
+        CheckInt(board.StepToAs("Ana", false, plies + 1), ChessBoard.InputRejected, "step: not past the end");
+        CheckInt(board.StepToAs("Cleo", false, 2), ChessBoard.InputRejected, "step: not a bystander");
+        CheckInt(board.StepToAs("Cleo", true, 2), ChessBoard.InputAccepted, "step: an organizer");
+        CheckShows(2, positions[2], "step: by an organizer");
+        CheckText(GameText(), game, "step: the game untouched");
+
+        // Free moves: either colour's pieces, any square, no legality; custom until the next step.
+        CheckInt(board.PiecePickedUpAs("Bob", ChessRules.E4), ChessBoard.InputAccepted, "free: pick up white's");
+        CheckInt(board.PiecePickedUpAs("Ana", ChessRules.E4), ChessBoard.InputAccepted, "free: pick up as white");
+        CheckInt(board.PiecePickedUpAs("Ana", ChessRules.E3), ChessBoard.InputRejected, "free: not an empty square");
+        CheckInt(board.PiecePickedUpAs("Cleo", ChessRules.E4), ChessBoard.InputRejected, "free: not a bystander");
+        CheckInt(board.PiecePickedUpAs("Ana", 64), ChessBoard.InputRejected, "free: not off the board");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.E4, ChessRules.E4), ChessBoard.InputRejected,
+            "free: not on its own square");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.E4, -1), ChessBoard.InputRejected, "free: not off the board");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.E3, ChessRules.E4), ChessBoard.InputRejected,
+            "free: not from an empty square");
+        CheckInt(board.PieceDroppedAs("Cleo", ChessRules.E4, ChessRules.E5), ChessBoard.InputRejected,
+            "free: not by a bystander");
+        Check(!board.replayCustom, "free: refused drops change nothing", "custom");
+        CheckText(BoardText(board.replayBoard), positions[2], "free: refused drops leave the replay board");
+        CheckInt(board.PieceDroppedAs("Bob", ChessRules.E4, ChessRules.E8), ChessBoard.InputAccepted,
+            "free: a white pawn takes the black king");
+        Check(board.replayCustom, "free: custom", "not custom");
+        CheckInt(board.replayIndex, 2, "free: the replay index stays");
+        Check(board.replayBoard[ChessRules.E8] == ChessRules.WhitePawn && board.replayBoard[ChessRules.E4] == 0,
+            "free: the pawn placed on e8, not promoted", "e8 " + board.replayBoard[ChessRules.E8]);
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.D1, ChessRules.E1), ChessBoard.InputAccepted,
+            "free: the queen on her own king");
+        CheckInt(board.ReplayPieceDroppedAs("Cleo", true, ChessRules.A2, ChessRules.A7), ChessBoard.InputAccepted,
+            "free: an organizer");
+        CheckInt(board.PromotionChosenAs("Ana", ChessRules.H2, ChessRules.H4, ChessRules.Queen),
+            ChessBoard.InputRejected, "free: no promotion choice in replay");
+        CheckInt(board.KingDroppedOnCastleSpaceAs("Ana", ChessBoard.CastleKingSide), ChessBoard.InputRejected,
+            "free: no castle drop space in replay");
+        CheckText(GameText(), game, "free: the game untouched");
+        Check(board.CanStepToAs("Ana", false, 2), "free: stepping to its own ply allowed from custom", "refused");
+        CheckInt(board.StepToAs("Ana", false, 2), ChessBoard.InputAccepted, "free: step back onto ply 2");
+        CheckShows(2, positions[2], "free: back on the game history");
+        board.PieceDroppedAs("Ana", ChessRules.B1, ChessRules.C3);
+        Check(board.replayCustom, "free: custom again", "not custom");
+        CheckInt(board.StepToAs("Bob", false, 9), ChessBoard.InputAccepted, "free: step elsewhere from custom");
+        CheckShows(9, positions[9], "free: stepping elsewhere clears custom");
+
+        // Leaving restores the game exactly, and play goes on.
+        board.PieceDroppedAs("Bob", ChessRules.H7, ChessRules.H5);
+        CheckInt(board.LeaveReplayAs("Cleo", false), ChessBoard.InputRejected, "leave replay: not a bystander");
+        CheckInt(board.LeaveReplayAs("Bob", false), ChessBoard.InputAccepted, "leave replay: black");
+        Check(!board.replayMode && !board.replayCustom, "leave replay: off, not custom", "replay flags set");
+        CheckText(GameText(), game, "leave replay: the game exactly as it was");
+        CheckShows(plies, positions[plies], "leave replay: replay fields back on the current position");
+        CheckInt(board.LeaveReplayAs("Bob", false), ChessBoard.InputRejected, "leave replay: not twice");
+        Drop("Ana", ChessRules.D2, ChessRules.D4, "after replay: d4");
+        CheckInt(board.moveCount, plies + 1, "after replay: the game goes on");
+
+        // No moves yet: the start position; a free move, then back to ply 0.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        CheckInt(board.EnterReplayAs("Bob", false), ChessBoard.InputAccepted, "replay with no moves: entered");
+        CheckShows(0, positions[0], "replay with no moves");
+        CheckInt(board.StepToAs("Bob", false, 0), ChessBoard.InputRejected, "replay with no moves: no step to 0");
+        board.PieceDroppedAs("Bob", ChessRules.E7, ChessRules.E5);
+        CheckInt(board.StepToAs("Bob", false, 0), ChessBoard.InputAccepted, "replay with no moves: back to 0");
+        CheckShows(0, positions[0], "replay with no moves: back to the start");
+
+        // An ended game: replay works and leaving keeps it ended.
+        ButtonGame(0);
+        board.ResignAs(ChessRules.White, "Ana");
+        string ended = GameText();
+        CheckInt(board.EnterReplayAs("Bob", false), ChessBoard.InputAccepted, "replay once ended: entered");
+        CheckInt(board.StepToAs("Bob", false, 1), ChessBoard.InputAccepted, "replay once ended: step");
+        board.PieceDroppedAs("Ana", ChessRules.F3, ChessRules.E5);
+        Check(board.replayCustom, "replay once ended: free move", "not custom");
+        CheckInt(board.LeaveReplayAs("Ana", false), ChessBoard.InputAccepted, "replay once ended: left");
+        CheckText(GameText(), ended, "replay once ended: the game as it was");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "replay once ended: still ended");
+
+        // A loaded board (set up by hand until 7.9a): in replay for good; anyone while nobody is seated.
+        ButtonGame(0);
+        board.ResignAs(ChessRules.White, "Ana");
+        board.whitePlayer = "";
+        board.blackPlayer = "";
+        board.lifecycle = ChessBoard.LifecycleLoaded;
+        board.replayMode = true;
+        board.replayIndex = 4;
+        board.replayCustom = false;
+        CheckInt(board.StepToAs("Cleo", false, 2), ChessBoard.InputAccepted, "loaded: anyone steps");
+        CheckInt(board.PieceDroppedAs("Cleo", ChessRules.E2, ChessRules.E4), ChessBoard.InputAccepted,
+            "loaded: anyone moves freely");
+        CheckInt(board.LeaveReplayAs("Cleo", true), ChessBoard.InputRejected, "loaded: no leaving replay");
+        board.whitePlayer = "Ana";
+        CheckInt(board.StepToAs("Cleo", false, 1), ChessBoard.InputRejected, "loaded: not a bystander once seated");
+        CheckInt(board.PieceDroppedAs("Cleo", ChessRules.E4, ChessRules.E5), ChessBoard.InputRejected,
+            "loaded: no free moves by a bystander once seated");
+        CheckInt(board.StepToAs("Ana", false, 1), ChessBoard.InputAccepted, "loaded: the seated player steps");
+
+        // The local player's methods, seated in both seats.
+        board.ClearState();
+        board.JoinWhite();
+        board.JoinBlack();
+        board.StartGame();
+        board.PieceDropped(ChessRules.E2, ChessRules.E4);
+        board.PieceDropped(ChessRules.E7, ChessRules.E5);
+        string local = GameText();
+        CheckInt(board.EnterReplay(), ChessBoard.InputAccepted, "local replay: enter");
+        CheckInt(board.StepTo(1), ChessBoard.InputAccepted, "local replay: step");
+        CheckInt(board.PiecePickedUp(ChessRules.E4), ChessBoard.InputAccepted, "local replay: pick up");
+        CheckInt(board.PieceDropped(ChessRules.E4, ChessRules.E6), ChessBoard.InputAccepted, "local replay: free move");
+        Check(board.replayCustom, "local replay: custom", "not custom");
+        CheckInt(board.LeaveReplay(), ChessBoard.InputAccepted, "local replay: leave");
+        CheckText(GameText(), local, "local replay: the game as it was");
 
         board.ClearState();
     }

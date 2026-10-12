@@ -34,3 +34,13 @@ A loaded game is one imported from a PGN or loaded from the archive. The board i
 - **What import keeps:** the game history (starting FEN, if one was given, the moves, and the clock history from `[%clk]` comments), the mode from `Variant`, the time control from `TimeControl`, plus the `White`, `Black` and `Result` tags, which are shown in the UI during replay. Nothing else from the PGN is stored (see [PGN import](pgn.md#import-local-rare)).
 - **On continuing**, the game history up to that point (including the starting FEN) is kept, and the loaded `White`, `Black` and `Result` are dropped.
 - Every PGN the board writes is built from scratch from the board's own state: current players, date, result, and the `FEN` tag when the game didn't start from the standard position.
+
+## Implementation
+
+On `ChessBoard` (`Assets/Siggi/ChessBoard/ChessBoard.cs`), each method refusing when its `Can…` check doesn't hold ([Buttons](player-input.md#buttons)), with a local-player form and an `*As(name, organizer, …)` form:
+
+- `EnterReplay`/`EnterReplayAs`: replay on, showing the current position (`replayIndex` = `moveCount`).
+- `StepTo(ply)`/`StepToAs`: shows the position before move `ply` (0 is the start, `moveCount` the current position). The replay board is rebuilt each time by copying the game position and undoing the moves after `ply` (`ChessPosition.UnmakeMove`), on a scratch state, since the synced replay board is only the 64 squares. Stepping clears the custom flag, and stepping to the shown ply is allowed only from a custom position, which brings the game's position back. There are no separate back and forward buttons: the view calls `StepTo(replayIndex - 1)` and `StepTo(replayIndex + 1)`.
+- `LeaveReplay`/`LeaveReplayAs`: replay off. The game fields were never touched, and the replay fields are put back on the current position, as on entering.
+- **Free moves:** in replay, `PiecePickedUp`/`PieceDropped` (and their `*As` forms, which don't count the name as an organizer) go to `ReplayPiecePickedUpAs(name, organizer, square)`/`ReplayPieceDroppedAs(name, organizer, from, to)`. They're open to whoever may work the replay controls, for a piece of either colour. A drop puts the piece on the target square and replaces whatever stands there (a king too). There's no promotion, castling or legality, and every free move marks the position custom, even one that matches the game's next move. A drop back on its own square, or from an empty square, is refused. `PromotionChosen` and `KingDroppedOnCastleSpace` are refused in replay. Taking a piece off the board isn't a free move: the view puts a piece dropped off the board back.
+- The clock keeps running and the lifecycle is unchanged. A game that ends while in replay stays in replay.

@@ -21,7 +21,7 @@ On `ChessBoard` (`Assets/Siggi/ChessBoard/ChessBoard.cs`). Each method has an `*
 - **Castling by drop** (in `PieceDropped`): a king dropped on the square of a rook it can castle with castles on that side. Dropped on its castling destination (g or c on its back rank), it castles only when no normal king move ends there; otherwise (Chess960 castles that move the king one square) that king move is played. A king that castles without moving can't be dropped on its own square (a drop back is rejected), so it castles on the rook or the castle drop space.
 - `KingDroppedOnCastleSpace(side)`: the view's drop on the castle drop space, `CastleKingSide` (rook right of the king) or `CastleQueenSide`; plays the side to move's legal castle on that side, otherwise rejected. It castles in unambiguous positions too, since the view only offers the space when needed.
 - `IsCastleDropSpaceNeeded(side)`: tells the view (step 9.3b) whether to show the space while the king is held: a game in progress and not in replay, the castle on that side legal, and a drop on its destination not a castle (the king already stands there, or a normal king move ends there).
-- Free moves in replay are step 7.8a; activity timestamps on touches come with inactivity (step 8.5).
+- In replay, pickups and drops are free moves on the replay board instead (see [Replay](replay.md#implementation)). Activity timestamps on touches come with inactivity (step 8.5).
 
 ## Buttons
 

@@ -696,16 +696,20 @@ namespace SiggiChessBoard {
         // InputPromotionNeeded, and the view calls PromotionChosen with the same squares and the chosen piece. Nothing
         // is remembered in between, so there's nothing to sync or clear. A king castles by being dropped on its own
         // rook, on its castling destination when no other king move ends there, or on the castle drop space (a view
-        // object, forwarded as KingDroppedOnCastleSpace). Free moves in replay are step 7.8a, activity timestamps
-        // 8.5. The *As methods take any name, for tests and the debug view.
+        // object, forwarded as KingDroppedOnCastleSpace). In replay, pickups and drops are free moves on the replay
+        // board instead (ReplayPiecePickedUpAs, ReplayPieceDroppedAs). Activity timestamps come with 8.5. The *As
+        // methods take any name, for tests and the debug view; in replay they don't count name as an organizer.
 
         public int PiecePickedUp(int square) {
+            if (replayMode) return ReplayPiecePickedUpAs(LocalName(), LocalIsOrganizer(), square);
             return PiecePickedUpAs(LocalName(), square);
         }
 
         // Whether name may pick up the piece on square: a game is in progress and not in replay, the side to move
         // has time left, name holds that side's seat and the piece is that side's. Rejected, the view puts it back.
+        // In replay, a free move's pickup (ReplayPiecePickedUpAs).
         public int PiecePickedUpAs(string name, int square) {
+            if (replayMode) return ReplayPiecePickedUpAs(name, false, square);
             if (!MayMove(name)) return InputRejected;
             if (square < 0 || square >= 64) return InputRejected;
             int piece = board[square];
@@ -717,14 +721,17 @@ namespace SiggiChessBoard {
         }
 
         public int PieceDropped(int from, int to) {
+            if (replayMode) return ReplayPieceDroppedAs(LocalName(), LocalIsOrganizer(), from, to);
             return PieceDroppedAs(LocalName(), from, to);
         }
 
         // name dropped the piece from from on to. Plays the legal move it matches, answers InputPromotionNeeded for a
         // promotion (nothing played), and rejects anything else, including a drop back on its own square. A king
         // dropped on its own rook castles with it; dropped on its castling destination it castles unless a normal king
-        // move ends there too (Chess960 castles moving the king one square), which is then played instead.
+        // move ends there too (Chess960 castles moving the king one square), which is then played instead. In replay,
+        // a free move (ReplayPieceDroppedAs).
         public int PieceDroppedAs(string name, int from, int to) {
+            if (replayMode) return ReplayPieceDroppedAs(name, false, from, to);
             return DropAs(name, from, to, ChessRules.NoPieceType);
         }
 
@@ -1102,6 +1109,85 @@ namespace SiggiChessBoard {
         // Whether a game can be loaded (a PGN import, or from the archive): only onto a reset board, by anyone.
         public bool CanLoadGame() {
             return lifecycle == LifecycleReset;
+        }
+
+        // ---- Replay (docs/replay.md) ----
+        // Replay shows a position on its own board, replayBoard, and never touches the game state, so leaving it
+        // returns to the game exactly as it was. Stepping shows a position of the game history (replayIndex, its ply)
+        // by undoing the game's moves from the current position. Free moves are plain piece placement on the replay
+        // board, with no legality, and make the position custom until the next step. The clock keeps running.
+
+        // Scratch for stepping: the state of the position being undone to (the replay board has no state).
+        int[] replayState = new int[ChessPosition.StateLength];
+
+        public int EnterReplay() {
+            return EnterReplayAs(LocalName(), LocalIsOrganizer());
+        }
+
+        // The enter replay button (CanEnterReplayAs): the replay shows the game's current position.
+        public int EnterReplayAs(string name, bool organizer) {
+            if (!CanEnterReplayAs(name, organizer)) return InputRejected;
+            replayMode = true;
+            ShowPly(moveCount);
+            return InputAccepted;
+        }
+
+        public int LeaveReplay() {
+            return LeaveReplayAs(LocalName(), LocalIsOrganizer());
+        }
+
+        // The leave replay button (CanLeaveReplayAs): back to the game, which replay never changed. The replay fields
+        // are put back to the current position, as on entering.
+        public int LeaveReplayAs(string name, bool organizer) {
+            if (!CanLeaveReplayAs(name, organizer)) return InputRejected;
+            ShowPly(moveCount);
+            replayMode = false;
+            return InputAccepted;
+        }
+
+        public int StepTo(int ply) {
+            return StepToAs(LocalName(), LocalIsOrganizer(), ply);
+        }
+
+        // The replay's step buttons (CanStepToAs): shows the position before ply of the game's moves (0 the starting
+        // position, moveCount the current one), which clears the custom flag. The view steps by one with replayIndex
+        // - 1 and + 1.
+        public int StepToAs(string name, bool organizer, int ply) {
+            if (!CanStepToAs(name, organizer, ply)) return InputRejected;
+            ShowPly(ply);
+            return InputAccepted;
+        }
+
+        // Puts the position before ply of the game's moves on the replay board, undoing the moves after it from the
+        // current position, and makes ply the replay's game position (not custom).
+        void ShowPly(int ply) {
+            Array.Copy(board, replayBoard, 64);
+            Array.Copy(state, replayState, ChessPosition.StateLength);
+            for (int i = moveCount - 1; i >= ply; i--) {
+                ChessPosition.UnmakeMove(replayBoard, replayState, moveHistory[i]);
+            }
+            replayIndex = ply;
+            replayCustom = false;
+        }
+
+        // Whether name may pick up the piece on square of the replay board for a free move: in replay, name may work
+        // the replay controls, and there's a piece there (either colour).
+        public int ReplayPiecePickedUpAs(string name, bool organizer, int square) {
+            if (!replayMode || !MayControlReplay(name, organizer)) return InputRejected;
+            if (square < 0 || square >= 64 || replayBoard[square] == ChessRules.Empty) return InputRejected;
+            return InputAccepted;
+        }
+
+        // A free move in replay: the piece on from goes to to, replacing whatever stood there (any piece, kings too),
+        // with no legality, promotion or castling, and the position becomes custom. Rejected unless name may pick the
+        // piece up, and for a drop back on its own square or off the board.
+        public int ReplayPieceDroppedAs(string name, bool organizer, int from, int to) {
+            if (ReplayPiecePickedUpAs(name, organizer, from) != InputAccepted) return InputRejected;
+            if (to < 0 || to >= 64 || to == from) return InputRejected;
+            replayBoard[to] = replayBoard[from];
+            replayBoard[from] = ChessRules.Empty;
+            replayCustom = true;
+            return InputAccepted;
         }
 
         // Doubles the room in the history arrays, keeping the moves; new notation entries are "" (a synced string[]
