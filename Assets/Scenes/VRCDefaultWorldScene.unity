@@ -581,6 +581,8 @@ MonoBehaviour:
   _udonSharpBackingUdonBehaviour: {fileID: 862814459}
   arbiter: {fileID: 1280104624}
   boardNumber: 0
+  pgnEvent: 
+  pgnSite: VRChat
 --- !u!114 &862814459
 MonoBehaviour:
   m_ObjectHideFlags: 2
@@ -905,6 +907,8 @@ MonoBehaviour:
     SerializationNodes: []
   _udonSharpBackingUdonBehaviour: {fileID: 1376711254}
   board: {fileID: 862814458}
+  siggiVsNuka: {fileID: 4900000, guid: b608162355b1ce24285f3a544c0ea63d, type: 3}
+  importer: {fileID: 95691700}
 --- !u!4 &1376711256
 Transform:
   m_ObjectHideFlags: 0
