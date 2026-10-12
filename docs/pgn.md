@@ -68,6 +68,7 @@ Details settled while writing the reader (5.2a):
   - `ImportFor(budget)` runs one frame's worth by hand. With a huge budget it imports in one go, and sends no event.
   - The result is in its fields (`result`, `cursor`, `tags`, `board`, `state`, `moves`, `sans`, `clocks`) and `MoveCount()`, `FailedAt()` and `StartFen()`. The frames used and the longest frame's import time (`frames`, `longestFrameMs`, `totalMs`) are kept for benchmarking the budget.
   - Imports are Standard or Chess960, so `prohibitSelfCheck` is always on.
+  - The board takes a finished import with `ChessBoard.LoadImport(importer)` (7.9a; see [Replay](replay.md#implementation)).
 - **Failure reporting.** `cursor[CursorMoves]` is always the number of moves played, also after a failure, so the moves before the failure stay in the history and on the working board. `ImportFailedAt(cursor)` gives the move it failed at as `MoveLabel(firstMoveNumber, firstSideToMove, ply)` text, numbered from the starting position (`2...` for Black's second move, `41.`): the UI shows "failed at move 2...". `ImportErrorText(result)` gives a short reason ("illegal move", "ambiguous move", "not a PGN", "invalid FEN", "game too long").
 
 ## Export

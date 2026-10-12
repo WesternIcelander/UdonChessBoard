@@ -9,6 +9,10 @@ using VRC.SDKBase;
 public class BoardTest : UdonSharpBehaviour {
     // The board under test; its checks fail if it isn't assigned. The checks clear it and leave it in the reset state.
     public ChessBoard board;
+    // For the loading checks (7.9a): Assets/Tests/PGN/Siggi-vs-Nuka.pgn.txt and an importer to read PGNs with. The
+    // loading checks fail if either isn't assigned.
+    public TextAsset siggiVsNuka;
+    public ChessPgnImporter importer;
 
     string localName;
     int passed;
@@ -72,6 +76,7 @@ public class BoardTest : UdonSharpBehaviour {
             TestPgnLog();
             TestReplay();
             TestTakeback();
+            TestLoadGame();
             TestSnapshot();
             // Every [ChessPGN] entry in the log is one of these, so the two counts must agree.
             Debug.Log("[BoardTest] games logged by the board: " + board.loggedGames);
@@ -3135,6 +3140,285 @@ public class BoardTest : UdonSharpBehaviour {
         CheckContinued(1, fens[1], "local takeback");
 
         board.ClearState();
+    }
+
+    // ---- 7.9a loading a game ----
+
+    const string NukaFinalFen = "6k1/1b4pp/p3p3/2p1P1b1/NPPn4/7P/P5q1/RN2Kr2 w - - 0 28";
+
+    // Imports text in one go with the importer and returns the result.
+    int ImportText(string text) {
+        importer.StartImport(text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
+        return importer.ImportFor(float.MaxValue);
+    }
+
+    // Imports text and loads it onto a reset board, checking both are accepted.
+    void LoadText(string text, string name) {
+        board.ClearState();
+        CheckInt(ImportText(text), ChessPgn.ImportDone, name + ": imported");
+        CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, name + ": loaded");
+    }
+
+    // Whether the board's PGN has this tag line.
+    void CheckPgnHas(string line, bool expected, string name) {
+        string pgn = board.GamePgn();
+        Check(pgn.Contains(line + "\n") == expected, name, (expected ? "missing " : "has ") + line + " in\n" + pgn);
+    }
+
+    // A refused load leaves the board reset, as ClearState makes it.
+    void CheckStillReset(string name) {
+        CheckInt(board.lifecycle, ChessBoard.LifecycleReset, name + ": still reset");
+        CheckText(Fen(), ChessFen.StartFen, name + ": the standard start");
+        CheckInt(board.moveCount, 0, name + ": no moves");
+        Check(!board.replayMode, name + ": not in replay", "in replay");
+        CheckText(board.replaySourceWhite + board.replaySourceBlack + board.replaySourceResult + board.gameId, "",
+            name + ": no loaded tags");
+    }
+
+    void TestLoadGame() {
+        Check(Utilities.IsValid(importer) && siggiVsNuka != null, "load: importer and Siggi-vs-Nuka assigned",
+            "assign BoardTest's Importer and Siggi Vs Nuka (Assets/Tests/PGN/Siggi-vs-Nuka.pgn.txt) in the Inspector");
+        if (!Utilities.IsValid(importer) || siggiVsNuka == null) return;
+        string nuka = siggiVsNuka.text;
+
+        // Siggi-vs-Nuka: the loaded state in replay on the last position, the PGN's names, result and ID, its time
+        // control and clocks, and the moves played through (FEN counters included).
+        board.ClearState();
+        Check(board.CanLoadGame(), "load: a reset board can load", "refused");
+        CheckInt(ImportText(nuka), ChessPgn.ImportDone, "load: Siggi-vs-Nuka imported");
+        CheckInt(importer.MoveCount(), 54, "load: Siggi-vs-Nuka has 54 plies");
+        CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, "load: Siggi-vs-Nuka loaded");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "load: loaded state");
+        Check(board.replayMode, "load: in replay", "not in replay");
+        CheckShows(54, BoardText(board.board), "load: shows the last position");
+        CheckText(Fen(), NukaFinalFen, "load: the final position");
+        CheckInt(board.moveCount, 54, "load: 54 moves");
+        CheckInt(board.mode, ChessGame.ModeStandard, "load: Standard");
+        CheckText(board.replaySourceWhite, "Siggі", "load: White from the PGN");
+        CheckText(board.replaySourceBlack, "Nukaǃ", "load: Black from the PGN");
+        CheckText(board.replaySourceResult, "0-1", "load: Result from the PGN");
+        CheckText(board.gameId, "20250710001921", "load: the PGN's GameID");
+        CheckText(board.continuedFrom, "", "load: no ContinuedFrom");
+        CheckSeats("", "", "load: nobody seated");
+        CheckInt(board.ending, ChessGame.EndingCheckmate, "load: ended by checkmate");
+        CheckInt(board.winner, ChessRules.Black, "load: Black won");
+        CheckInt(board.replaySourceBaseTime * 1000 + board.replaySourceIncrement, 600000,
+            "load: the game's time control 600");
+        CheckInt(board.baseTime * 1000 + board.increment, 600000, "load: the clock for continuing starts as 600");
+        Check(!board.IsClockRunning() && board.RemainingTime(ChessRules.White) == 0, "load: no clock running",
+            "running");
+        CheckInt(board.clockHistory[0], 600000, "load: clock of ply 1");
+        CheckInt(board.clockHistory[1], 597600, "load: clock of ply 2");
+        CheckInt(board.clockHistory[53], 480500, "load: clock of ply 54");
+        string errors = "";
+        int[] clocks = new int[600];
+        ChessDraws.BuildHalfmoveClocks(board.moveHistory, 54, 0, clocks);
+        for (int i = 0; i < board.moveHistory.Length; i++) {
+            bool played = i < 54;
+            if (board.moveHistory[i] != (played ? importer.moves[i] : 0)
+                || board.notation[i] != (played ? importer.sans[i] : "")
+                || board.clockHistory[i] != (played ? importer.clocks[i] : -1)
+                || board.halfmoveClocks[i] != (played ? clocks[i] : 0)) {
+                errors += " ply " + (i + 1) + ": " + board.moveHistory[i] + " " + board.notation[i] + " "
+                    + board.clockHistory[i] + " " + board.halfmoveClocks[i];
+            }
+        }
+        Check(errors == "", "load: the import's moves, SAN and clocks, the halfmove clocks, nothing after", errors);
+        CheckText(board.notation[53], "Rxf1#", "load: the last SAN with its #");
+
+        // The board's export: the PGN's own tags and the same [%clk] values (read back with the importer).
+        CheckPgnHas("[White \"Siggі\"]", true, "load: export White");
+        CheckPgnHas("[Black \"Nukaǃ\"]", true, "load: export Black");
+        CheckPgnHas("[Result \"0-1\"]", true, "load: export Result");
+        CheckPgnHas("[TimeControl \"600\"]", true, "load: export TimeControl");
+        CheckPgnHas("[GameID \"20250710001921\"]", true, "load: export GameID");
+        CheckPgnHas("[Termination \"checkmate\"]", true, "load: export Termination");
+        CheckPgnHas("[Date \"????.??.??\"]", true, "load: export Date unknown for a foreign ID");
+        Check(!board.GamePgn().Contains("ContinuedFrom") && !board.GamePgn().Contains("[FEN"),
+            "load: export without ContinuedFrom or FEN", board.GamePgn());
+        Check(board.GamePgn().Contains("1. e4 { [%clk 0:10:00] } 1... c5 { [%clk 0:09:57.6] } 2. Nf3"),
+            "load: export move text with clocks", board.GamePgn());
+        string exported = board.GamePgn();
+        CheckInt(ImportText(exported), ChessPgn.ImportDone, "load: export imported again");
+        errors = "";
+        for (int i = 0; i < 54; i++) {
+            if (importer.clocks[i] != board.clockHistory[i] || importer.sans[i] != board.notation[i]) {
+                errors += " ply " + (i + 1) + ": " + importer.sans[i] + " " + importer.clocks[i];
+            }
+        }
+        if (importer.MoveCount() != 54) errors += " " + importer.MoveCount() + " plies";
+        Check(errors == "", "load: the export's [%clk] values and moves are the loaded game's", errors);
+        CheckText(importer.tags[ChessPgn.TagResult], "0-1", "load: the export's Result read back");
+
+        // Replay on the loaded board: stepping by anyone while nobody is seated, no leaving.
+        CheckInt(board.StepToAs("Cleo", false, 0), ChessBoard.InputAccepted, "load: step to the start");
+        CheckText(BoardText(board.replayBoard), BoardText(StartBoard()), "load: the start shown");
+        CheckInt(board.StepToAs("Cleo", false, 54), ChessBoard.InputAccepted, "load: step to the end");
+        CheckInt(board.LeaveReplayAs("Cleo", true), ChessBoard.InputRejected, "load: no leaving replay");
+        CheckInt(board.EnterReplayAs("Cleo", true), ChessBoard.InputRejected, "load: no entering replay again");
+        CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "load: a seat joined");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "load: still loaded after joining");
+        CheckPgnHas("[White \"Siggі\"]", true, "load: export keeps the PGN's White after joining");
+
+        // Refused unless the board is reset: loaded (a second load), lobby, in game and ended. Nothing changes.
+        string loaded = GameText();
+        Check(!board.CanLoadGame(), "load: a loaded board can't load", "allowed");
+        CheckInt(ImportText(nuka), ChessPgn.ImportDone, "load: imported again");
+        CheckInt(board.LoadImport(importer), ChessBoard.InputRejected, "load: refused on a loaded board");
+        CheckText(GameText(), loaded, "load: refused on a loaded board, nothing changed");
+        LobbyWithTwoPlayers();
+        string lobby = GameText();
+        CheckInt(board.LoadImport(importer), ChessBoard.InputRejected, "load: refused in the lobby");
+        CheckText(GameText(), lobby, "load: refused in the lobby, nothing changed");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "load: refused in the lobby, still the lobby");
+        board.StartGameAs("Ana");
+        board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4);
+        string inGame = GameText();
+        CheckInt(board.LoadImport(importer), ChessBoard.InputRejected, "load: refused in game");
+        CheckText(GameText(), inGame, "load: refused in game, nothing changed");
+        board.ResignAs(ChessRules.Black, "Bob");
+        string ended = GameText();
+        CheckInt(board.LoadImport(importer), ChessBoard.InputRejected, "load: refused once ended");
+        CheckText(GameText(), ended, "load: refused once ended, nothing changed");
+        Check(!board.CanLoadGame(), "load: an ended board can't load", "allowed");
+
+        // An import still under way or failed is refused, and so is no importer.
+        board.ClearState();
+        importer.StartImport(nuka, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
+        CheckInt(board.LoadImport(importer), ChessBoard.InputRejected, "load: refused while importing");
+        CheckStillReset("load: refused while importing");
+        importer.Abandon();
+        CheckInt(ImportText("1. e4 hello"), ChessPgn.ImportBadSyntax, "load: a failed import");
+        CheckInt(board.LoadImport(importer), ChessBoard.InputRejected, "load: refused after a failed import");
+        CheckStillReset("load: refused after a failed import");
+        CheckInt(board.LoadImport(null), ChessBoard.InputRejected, "load: refused with no importer");
+
+        // LoadGame refuses invalid data and leaves the board reset.
+        int[] moves = new int[4];
+        string[] sans = new string[] { "", "", "", "" };
+        int[] noClocks = new int[] { -1, -1, -1, -1 };
+        CheckInt(board.LoadGame("not a fen", moves, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "",
+            ChessArbiter.NoClock, 0), ChessBoard.InputRejected, "load: bad FEN refused");
+        CheckStillReset("load: bad FEN refused");
+        CheckInt(board.LoadGame("", moves, sans, noClocks, 5, ChessGame.ModeStandard, "", "", "", "",
+            ChessArbiter.NoClock, 0), ChessBoard.InputRejected, "load: more moves than given refused");
+        CheckInt(board.LoadGame("", moves, sans, noClocks, -1, ChessGame.ModeStandard, "", "", "", "",
+            ChessArbiter.NoClock, 0), ChessBoard.InputRejected, "load: a negative count refused");
+        CheckInt(board.LoadGame("", null, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "",
+            ChessArbiter.NoClock, 0), ChessBoard.InputRejected, "load: no moves array refused");
+        CheckInt(board.LoadGame("", moves, sans, noClocks, 0, 7, "", "", "", "", ChessArbiter.NoClock, 0),
+            ChessBoard.InputRejected, "load: unknown mode refused");
+        CheckInt(board.LoadGame("", moves, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "", 0, 0),
+            ChessBoard.InputRejected, "load: base time 0 refused");
+        CheckInt(board.LoadGame("", moves, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "", 60, -1),
+            ChessBoard.InputRejected, "load: negative increment refused");
+        CheckStillReset("load: invalid data refused");
+
+        // LoadGame directly (as the archive will): no moves, null tags, the standard start.
+        CheckInt(board.LoadGame(null, moves, sans, noClocks, 0, ChessGame.ModeStandard, null, null, null, null,
+            ChessArbiter.NoClock, 0), ChessBoard.InputAccepted, "load: a game with no moves");
+        CheckShows(0, BoardText(StartBoard()), "load: a game with no moves");
+        CheckText(board.replaySourceWhite + board.replaySourceBlack + board.replaySourceResult + board.gameId, "",
+            "load: null tags are empty");
+        CheckInt(board.ending, ChessGame.EndingNone, "load: a game with no moves has no result");
+        CheckPgnHas("[TimeControl \"-\"]", true, "load: no clock exported as -");
+        CheckPgnHas("[Result \"*\"]", true, "load: no result exported as *");
+
+        // Time controls: "-" is no clock, a missing or unreadable one unknown ("?", no clock to continue with), one
+        // a player couldn't choose kept for the export only.
+        LoadText("[TimeControl \"-\"]\n\n1. e4 *", "load: TimeControl -");
+        CheckInt(board.replaySourceBaseTime, ChessArbiter.NoClock, "load: TimeControl - is no clock");
+        CheckInt(board.baseTime, ChessArbiter.NoClock, "load: TimeControl -, no clock to continue with");
+        CheckPgnHas("[TimeControl \"-\"]", true, "load: TimeControl - exported");
+        LoadText("1. e4 *", "load: no TimeControl");
+        CheckInt(board.replaySourceBaseTime, ChessBoard.UnknownClock, "load: no TimeControl is unknown");
+        CheckInt(board.baseTime, ChessArbiter.NoClock, "load: no TimeControl, no clock to continue with");
+        CheckPgnHas("[TimeControl \"?\"]", true, "load: no TimeControl exported as ?");
+        LoadText("[TimeControl \"40/7200:3600\"]\n\n1. e4 *", "load: unreadable TimeControl");
+        CheckPgnHas("[TimeControl \"?\"]", true, "load: unreadable TimeControl exported as ?");
+        LoadText("[TimeControl \"300+3\"]\n\n1. e4 *", "load: TimeControl 300+3");
+        CheckInt(board.baseTime * 1000 + board.increment, 300003, "load: 300+3 to continue with");
+        CheckPgnHas("[TimeControl \"300+3\"]", true, "load: 300+3 exported");
+        LoadText("[TimeControl \"90000+5\"]\n\n1. e4 *", "load: TimeControl over 24 h");
+        CheckInt(board.replaySourceBaseTime * 10 + board.replaySourceIncrement, 900005, "load: 90000+5 kept");
+        CheckInt(board.baseTime, ChessArbiter.NoClock, "load: 90000+5, no clock to continue with");
+        CheckPgnHas("[TimeControl \"90000+5\"]", true, "load: 90000+5 exported");
+
+        // Results: a Result tag without a mate on the board is an unknown ending with that winner; "*" or none is
+        // no result; a stalemate on the board is one whatever the tag says.
+        LoadText("[Result \"1-0\"]\n\n1. e4 1-0", "load: Result 1-0");
+        CheckInt(board.ending, ChessGame.EndingUnknown, "load: Result 1-0, ending unknown");
+        CheckInt(board.winner, ChessRules.White, "load: Result 1-0, White won");
+        CheckPgnHas("[Result \"1-0\"]", true, "load: Result 1-0 exported");
+        Check(!board.GamePgn().Contains("Termination"), "load: Result 1-0, no Termination", board.GamePgn());
+        Check(board.GamePgn().EndsWith(" 1-0\n"), "load: Result 1-0 ends the move text", board.GamePgn());
+        LoadText("[Result \"1/2-1/2\"]\n\n1. e4 1/2-1/2", "load: Result 1/2-1/2");
+        CheckInt(board.ending * 10 + board.winner, ChessGame.EndingUnknown * 10 + ChessRules.NoColor,
+            "load: Result 1/2-1/2, a draw");
+        CheckPgnHas("[Result \"1/2-1/2\"]", true, "load: Result 1/2-1/2 exported");
+        LoadText("[Result \"*\"]\n\n1. e4 *", "load: Result *");
+        CheckInt(board.ending, ChessGame.EndingNone, "load: Result *, no result");
+        CheckPgnHas("[Result \"*\"]", true, "load: Result * exported");
+        LoadText("[Result \"0-1\"]\n[SetUp \"1\"]\n[FEN \"7k/5Q2/6K1/8/8/8/8/8 b - - 0 1\"]\n\n0-1", "load: stalemate");
+        CheckInt(board.ending * 10 + board.winner, ChessGame.EndingStalemate * 10 + ChessRules.NoColor,
+            "load: stalemate on the board");
+        CheckText(board.replaySourceResult, "0-1", "load: stalemate, the tag shown as it is");
+        CheckPgnHas("[FEN \"7k/5Q2/6K1/8/8/8/8/8 b - - 0 1\"]", true, "load: stalemate, FEN exported");
+
+        // Chess960 from Variant, a game longer than the history's first room, and Black to move first.
+        LoadText("[Variant \"Chess960\"]\n[SetUp \"1\"]\n[FEN \"qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w GBgb - 0 1\"]"
+            + "\n\n1. e4 e5 2. Bf3 Bf6 3. O-O-O O-O-O *", "load: Chess960");
+        CheckInt(board.mode, ChessGame.ModeChess960, "load: Chess960 from Variant");
+        CheckText(Fen(), "q1krbnrn/pppp1ppp/5b2/4p3/4P3/5B2/PPPP1PPP/Q1KRBNRN w - - 4 4", "load: Chess960 position");
+        CheckPgnHas("[Variant \"Chess960\"]", true, "load: Chess960 exported");
+        string shuffle = "";
+        for (int i = 0; i < 40; i++) shuffle += "Nf3 Nf6 Ng1 Ng8 ";
+        LoadText(shuffle + "*", "load: 160 plies");
+        CheckInt(board.moveCount, 160, "load: 160 plies loaded");
+        Check(board.moveHistory.Length >= 160 && board.notation.Length == board.moveHistory.Length
+            && board.clockHistory.Length == board.moveHistory.Length
+            && board.halfmoveClocks.Length == board.moveHistory.Length, "load: 160 plies, the history grown",
+            "length " + board.moveHistory.Length);
+        CheckText(Fen(), "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 160 81", "load: 160 plies, counters");
+        CheckText(board.notation[159] + "|" + board.notation[160], "Ng8|", "load: 160 plies, SAN");
+        CheckInt(board.halfmoveClocks[159], 159, "load: 160 plies, halfmove clock before the last");
+        LoadText("[SetUp \"1\"]\n[FEN \"4k3/8/8/8/8/8/4P3/4K3 b - - 3 30\"]\n\n30... Kd7 31. e4 *", "load: Black first");
+        CheckText(Fen(), "8/3k4/8/8/4P3/8/8/4K3 b - e3 0 31", "load: Black first, the position");
+        Check(board.GamePgn().Contains("30... Kd7 31. e4 *"), "load: Black first, the export's numbering",
+            board.GamePgn());
+
+        // The snapshot is taken once the board is loaded: a forced clock is applied (not the forced mode, the
+        // game's), and the export keeps the game's own time control. Without an arbiter everything is off.
+        if (Utilities.IsValid(board.arbiter)) {
+            int forced = ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced
+                | ChessArbiter.SettingTakebacks;
+            OverrideAll(forced, 30, 300, ChessGame.ModeStandard, 120, 1);
+            LoadText("[Variant \"Chess960\"]\n[TimeControl \"600\"]\n[SetUp \"1\"]\n"
+                + "[FEN \"qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w GBgb - 0 1\"]\n\n1. e4 *", "load: snapshot");
+            CheckSnapshot(forced, 30, 300, ChessGame.ModeStandard, 120, 1, "load: snapshot taken");
+            CheckInt(board.baseTime * 1000 + board.increment, 120001, "load: snapshot, the forced clock");
+            CheckInt(board.mode, ChessGame.ModeChess960, "load: snapshot, the game's mode");
+            CheckPgnHas("[TimeControl \"600\"]", true, "load: snapshot, the game's TimeControl exported");
+            CheckInt(board.SetClockAs("Ana", 60, 0), ChessBoard.InputRejected, "load: snapshot, the clock forced");
+            NothingForced();
+        } else {
+            LoadText("1. e4 *", "load: no arbiter");
+            CheckInt(board.gameSettings, 0, "load: no arbiter, every setting off");
+            CheckInt(board.GameNumber(ChessArbiter.NumberAutoResetTime), ChessArbiter.Never,
+                "load: no arbiter, never reset");
+        }
+
+        board.ClearState();
+    }
+
+    // The standard starting position's squares.
+    byte[] StartBoard() {
+        byte[] squares = new byte[64];
+        int[] scratchState = new int[ChessPosition.StateLength];
+        int clock;
+        int number;
+        ChessFen.ParseFen(ChessFen.StartFen, squares, scratchState, out clock, out number);
+        return squares;
     }
 
     // ---- 7.7 PGN logging ----

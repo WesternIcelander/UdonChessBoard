@@ -29,7 +29,9 @@ namespace SiggiChessBoard {
         public const int EndingUnterminated = 11;
         // Fog of War only (later).
         public const int EndingKingCaptured = 12;
-        public const int EndingCount = 13;
+        // A loaded game whose result is known (its Result tag) but not how it ended: no Termination is written.
+        public const int EndingUnknown = 13;
+        public const int EndingCount = 14;
 
         // ---- Chess960 starting positions (docs/modes.md) ----
 

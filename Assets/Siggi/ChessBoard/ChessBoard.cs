@@ -31,6 +31,9 @@ namespace SiggiChessBoard {
         // Room for this many plies in the history arrays at first; they grow as needed.
         public const int InitialHistoryCapacity = 128;
 
+        // A loaded game's time control when its PGN has none (or one that can't be read): exported as "?".
+        public const int UnknownClock = -2;
+
         // The arbiter whose settings this board snapshots, and this board's number for its per-board overrides
         // (docs/settings.md).
         [Tooltip("The ChessArbiter holding the rules settings this board uses.")]
@@ -89,6 +92,10 @@ namespace SiggiChessBoard {
         [NonSerialized] public string replaySourceWhite = "";
         [NonSerialized] public string replaySourceBlack = "";
         [NonSerialized] public string replaySourceResult = "";
+        // A loaded game's own time control (seconds, base NoClock for none, UnknownClock when the PGN didn't say),
+        // for its export; the clock for continuing it is baseTime and increment.
+        [NonSerialized] public int replaySourceBaseTime = ChessArbiter.NoClock;
+        [NonSerialized] public int replaySourceIncrement;
 
         // The seated players' display names, "" for an empty seat (docs/board-lifecycle.md, Seats).
         [NonSerialized] public string whitePlayer = "";
@@ -164,6 +171,8 @@ namespace SiggiChessBoard {
             replaySourceWhite = "";
             replaySourceBlack = "";
             replaySourceResult = "";
+            replaySourceBaseTime = ChessArbiter.NoClock;
+            replaySourceIncrement = 0;
             whitePlayer = "";
             blackPlayer = "";
             lastActivity = 0;
@@ -641,13 +650,19 @@ namespace SiggiChessBoard {
 
         // The game's PGN with this ending and winner in place of the board's own, so an unfinished game can be
         // logged as ChessGame.EndingUnterminated (a reset, 7.10, or a takeback, 7.8b) without ending it. The Date is
-        // the start date in the Game ID; the first move's number and side come from the starting position.
+        // the start date in the Game ID; the first move's number and side come from the starting position. A loaded
+        // game is written with its own players and time control, not the seats and the clock chosen for continuing.
         string PgnWith(int pgnEnding, int pgnWinner) {
             int firstSide = state[ChessPosition.StateSideToMove];
             if (moveCount % 2 == 1) firstSide = ChessRules.OtherColor(firstSide);
-            string tags = ChessPgn.WriteTags(pgnEvent, pgnSite, ChessGame.DateFromGameId(gameId), whitePlayer,
-                blackPlayer, pgnEnding, pgnWinner, mode, startFen, baseTime == ChessArbiter.NoClock ? 0 : baseTime,
-                increment, gameId, continuedFrom);
+            bool loaded = lifecycle == LifecycleLoaded;
+            int pgnBase = loaded ? replaySourceBaseTime : baseTime;
+            // ChessPgn's convention: 0 for no clock, below 0 for unknown.
+            int pgnBaseSeconds = pgnBase == ChessArbiter.NoClock ? 0 : pgnBase == UnknownClock ? -1 : pgnBase;
+            string tags = ChessPgn.WriteTags(pgnEvent, pgnSite, ChessGame.DateFromGameId(gameId),
+                loaded ? replaySourceWhite : whitePlayer, loaded ? replaySourceBlack : blackPlayer, pgnEnding,
+                pgnWinner, mode, startFen, pgnBaseSeconds, loaded ? replaySourceIncrement : increment, gameId,
+                continuedFrom);
             return tags + "\n" + ChessPgn.WriteMoveText(notation, clockHistory, moveCount, startMoveNumber, firstSide,
                 pgnEnding, pgnWinner, ChessPgn.LineWidth);
         }
@@ -1283,6 +1298,124 @@ namespace SiggiChessBoard {
                 blackTime = toMove;
             }
             turnStart = now;
+        }
+
+        // ---- Loading a game (docs/replay.md, Continuing a loaded game) ----
+        // A finished PGN import (LoadImport) or a game from the archive (step 10) is put on a reset board, which
+        // enters the loaded state showing it in replay. Players can then join and continue it (step 7.9b).
+
+        // Loads a finished import from importer (ChessPgnImporter.result ImportDone): its starting position, moves,
+        // SAN and clocks, the mode from Variant, the White, Black, Result and GameID tags, and the time control from
+        // TimeControl ("-" no clock, a value it can't read unknown). Refused while it's still importing (its result
+        // is ImportMore) or after a failed import, and as LoadGame refuses.
+        public int LoadImport(ChessPgnImporter importer) {
+            if (!Utilities.IsValid(importer) || importer.result != ChessPgn.ImportDone) return InputRejected;
+            string[] tags = importer.tags;
+            if (tags == null) return InputRejected;
+            int baseSeconds;
+            int incrementSeconds;
+            int loadedBase = UnknownClock;
+            int loadedIncrement = 0;
+            if (ChessPgn.ParseTimeControl(tags[ChessPgn.TagTimeControl], out baseSeconds, out incrementSeconds)
+                && baseSeconds != 0) {
+                loadedBase = baseSeconds;
+                loadedIncrement = incrementSeconds;
+            } else if (baseSeconds == 0) {
+                loadedBase = ChessArbiter.NoClock;
+            }
+            return LoadGame(importer.StartFen(), importer.moves, importer.sans, importer.clocks, importer.MoveCount(),
+                ChessPgn.ModeFromVariant(tags[ChessPgn.TagVariant]), tags[ChessPgn.TagWhite], tags[ChessPgn.TagBlack],
+                tags[ChessPgn.TagResult], tags[ChessPgn.TagGameId], loadedBase, loadedIncrement);
+        }
+
+        // Loads a game onto the board (CanLoadGame: only a reset board): the position fen ("" or null for the
+        // standard start), the first count of moves (packed, the game's legal moves from fen, as an import or the
+        // archive has them), their SAN in sans ("" where not known yet) and clocks (milliseconds, below 0 for
+        // unknown), the mode (ChessGame.ModeStandard or ModeChess960), its White, Black and Result tags, its Game ID
+        // ("" for none) and its time control (seconds, base ChessArbiter.NoClock for none or UnknownClock). The board
+        // plays the moves through to rebuild the halfmove clocks and the move number, and enters the loaded state in
+        // replay showing the last position, with the result: a checkmate or stalemate on the board, otherwise
+        // ChessGame.EndingUnknown with the Result tag's winner, or none for "*" or no tag. The clock for continuing
+        // starts as the game's own time control when a player could choose it, no clock otherwise. Then the settings
+        // snapshot is taken (which applies a forced clock). Refused for anything invalid, which leaves the board
+        // reset.
+        public int LoadGame(string fen, int[] moves, string[] sans, int[] clocks, int count, int loadedMode,
+            string white, string black, string result, string loadedGameId, int loadedBaseTime, int loadedIncrement) {
+            if (!CanLoadGame()) return InputRejected;
+            if (moves == null || sans == null || clocks == null || count < 0 || count > moves.Length
+                || count > sans.Length || count > clocks.Length) {
+                return InputRejected;
+            }
+            if (loadedMode != ChessGame.ModeStandard && loadedMode != ChessGame.ModeChess960) return InputRejected;
+            if (loadedBaseTime < 1 && loadedBaseTime != ChessArbiter.NoClock && loadedBaseTime != UnknownClock) {
+                return InputRejected;
+            }
+            if (loadedIncrement < 0) return InputRejected;
+            int clock;
+            int number;
+            // ParseFen changes board and state only when it succeeds.
+            if (!ChessFen.ParseFen(fen == null || fen.Length == 0 ? ChessFen.StartFen : fen, board, state, out clock,
+                    out number)) {
+                return InputRejected;
+            }
+            SetStartPosition(clock, number);
+
+            while (moveHistory.Length < count) GrowHistory();
+            for (int i = 0; i < count; i++) {
+                int move = moves[i];
+                int mover = state[ChessPosition.StateSideToMove];
+                ChessPosition.MakeMove(board, state, move);
+                moveHistory[i] = move;
+                notation[i] = sans[i] == null ? "" : sans[i];
+                clockHistory[i] = clocks[i] < 0 ? -1 : clocks[i];
+                halfmoveClocks[i] = halfmoveClock;
+                halfmoveClock = ChessDraws.HalfmoveClockAfter(halfmoveClock, move);
+                if (mover == ChessRules.Black) moveNumber++;
+            }
+            moveCount = count;
+
+            mode = loadedMode;
+            replaySourceWhite = white == null ? "" : white;
+            replaySourceBlack = black == null ? "" : black;
+            replaySourceResult = result == null ? "" : result;
+            replaySourceBaseTime = loadedBaseTime;
+            replaySourceIncrement = loadedBaseTime < 1 ? 0 : loadedIncrement;
+            gameId = loadedGameId == null ? "" : loadedGameId;
+            continuedFrom = "";
+
+            int status = ChessMoves.PositionStatus(board, state,
+                ChessMoves.GenerateLegalMoves(board, state, legalMoves, true), true);
+            int resultWinner;
+            if (status == ChessMoves.StatusCheckmate) {
+                ending = ChessGame.EndingCheckmate;
+                winner = ChessRules.OtherColor(state[ChessPosition.StateSideToMove]);
+            } else if (status == ChessMoves.StatusStalemate) {
+                ending = ChessGame.EndingStalemate;
+                winner = ChessRules.NoColor;
+            } else if (ChessPgn.ParseResult(replaySourceResult, out resultWinner)) {
+                ending = ChessGame.EndingUnknown;
+                winner = resultWinner;
+            } else {
+                ending = ChessGame.EndingNone;
+                winner = ChessRules.NoColor;
+            }
+
+            if (IsValidTimeControl(replaySourceBaseTime, replaySourceIncrement)) {
+                baseTime = replaySourceBaseTime;
+                increment = replaySourceIncrement;
+            } else {
+                baseTime = ChessArbiter.NoClock;
+                increment = 0;
+            }
+            whiteTime = 0;
+            blackTime = 0;
+            turnStart = 0;
+
+            lifecycle = LifecycleLoaded;
+            replayMode = true;
+            ShowPly(moveCount);
+            TakeSnapshot();
+            return InputAccepted;
         }
 
         // Doubles the room in the history arrays, keeping the moves; new notation entries are "" (a synced string[]

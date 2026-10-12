@@ -41,6 +41,7 @@ No FEN or PGN goes over the network, so no client parses anything to stay in syn
 | game ID | `string` | see [Game IDs](game-ids.md) |
 | continued from | `string` | `<GameID>/<ply>`, or empty; see [Game IDs](game-ids.md) |
 | replay source White / Black / Result | `string` ×3 | from an imported PGN or an archived game, for display in replay; cleared when play continues |
+| replay source time control | `int` ×2 | the loaded game's own base and increment (base `-1` no clock, `-2` unknown), for its export; the clock for continuing is the time control field |
 | white / black player | `string` ×2 | display names, so a rejoining player keeps their seat; see [Ownership](ownership.md) |
 | last activity | `double` | server time of the last piece touch, see [Inactivity](inactivity.md) |
 | result | `byte` ×2 | ending (in progress, or how it ended) and winner; see [Game endings](game-endings.md) |

@@ -198,7 +198,7 @@ public class PgnTest : UdonSharpBehaviour {
         string[] terminations = new string[] {
             "", "checkmate", "resignation", "time forfeit", "stalemate", "draw agreement", "threefold repetition",
             "fivefold repetition", "fifty-move rule", "seventy-five-move rule", "insufficient material",
-            "unterminated", "king captured"
+            "unterminated", "king captured", ""
         };
         string errors = "";
         if (terminations.Length != ChessGame.EndingCount) errors += " count=" + ChessGame.EndingCount;

@@ -505,6 +505,16 @@ namespace SiggiChessBoard {
             return true;
         }
 
+        // Reads a Result tag's value: "1-0", "0-1" and "1/2-1/2" give the winner (ChessRules.White, Black, or NoColor
+        // for the draw) and true; anything else ("*", empty, unknown text) gives NoColor and false.
+        public static bool ParseResult(string text, out int winner) {
+            winner = ChessRules.NoColor;
+            if (text == "1-0") winner = ChessRules.White;
+            else if (text == "0-1") winner = ChessRules.Black;
+            else if (text != "1/2-1/2") return false;
+            return true;
+        }
+
         // The mode a Variant tag gives (docs/modes.md): ChessGame.ModeChess960 for "Chess960", otherwise Standard.
         public static int ModeFromVariant(string variant) {
             return variant == "Chess960" ? ChessGame.ModeChess960 : ChessGame.ModeStandard;
