@@ -78,6 +78,7 @@ public class BoardTest : UdonSharpBehaviour {
             TestTakeback();
             TestLoadGame();
             TestContinueLoaded();
+            TestReset();
             TestSnapshot();
             // Every [ChessPGN] entry in the log is one of these, so the two counts must agree.
             Debug.Log("[BoardTest] games logged by the board: " + board.loggedGames);
@@ -3848,5 +3849,172 @@ public class BoardTest : UdonSharpBehaviour {
         board.pgnEvent = savedEvent;
         board.pgnSite = savedSite;
         board.ClearState();
+    }
+
+    // ---- 7.10 reset ----
+
+    // The board cleared as ClearState leaves it, seats included.
+    void CheckCleared(string name) {
+        CheckInt(board.lifecycle, ChessBoard.LifecycleReset, name + ": reset");
+        CheckSeats("", "", name);
+        CheckText(Fen(), ChessFen.StartFen, name + ": the standard start");
+        CheckText(board.startFen, ChessFen.StartFen, name + ": the starting FEN");
+        CheckInt(board.moveCount, 0, name + ": no moves");
+        string errors = "";
+        for (int i = 0; i < board.moveHistory.Length; i++) {
+            if (board.moveHistory[i] != 0 || board.notation[i] != "" || board.clockHistory[i] != -1) {
+                errors += " ply " + (i + 1);
+            }
+        }
+        Check(errors == "", name + ": the history emptied", errors);
+        CheckInt(board.ending * 10 + board.winner, ChessGame.EndingNone * 10 + ChessRules.NoColor,
+            name + ": no result");
+        CheckText(board.gameId + "|" + board.continuedFrom, "|", name + ": no game ID");
+        CheckText(board.replaySourceWhite + "|" + board.replaySourceBlack + "|" + board.replaySourceResult, "||",
+            name + ": no loaded tags");
+        Check(!board.replayMode && !board.replayCustom && board.replayIndex == 0, name + ": not in replay",
+            "replay fields set");
+        CheckInt(board.takebackColor * 10 + board.drawOfferColor, ChessRules.NoColor * 11, name + ": nothing pending");
+        CheckInt(board.mode, ChessGame.ModeStandard, name + ": Standard mode");
+        CheckInt(board.baseTime * 1000 + board.increment, ChessArbiter.NoClock * 1000, name + ": no clock");
+        CheckInt(board.gameSettings, 0, name + ": no snapshot");
+        Check(board.CanLoadGame(), name + ": a game can be loaded", "refused");
+    }
+
+    // One game logged since before, with this Result and Termination and the result ending the move text (the board
+    // is cleared by then, so unlike CheckLoggedEnding there's no PGN of its own to compare with).
+    void CheckLoggedOnReset(int before, string result, string termination, string name) {
+        CheckLogged(before, 1, name + ": logged once");
+        CheckLogHas("[Result \"" + result + "\"]\n", name + ": Result tag");
+        CheckLogHas("[Termination \"" + termination + "\"]\n", name + ": Termination tag");
+        Check(board.lastLoggedPgn.EndsWith(" " + result + "\n") || board.lastLoggedPgn.EndsWith("\n" + result + "\n"),
+            name + ": the move text ends with the result", "PGN:\n" + board.lastLoggedPgn);
+    }
+
+    string SeatedGameText() {
+        return board.whitePlayer + "|" + board.blackPlayer + "|" + GameText();
+    }
+
+    void TestReset() {
+        NothingForced();
+        int takebacks = ChessArbiter.SettingTakebacks;
+
+        // Nothing to reset on a reset board.
+        board.ClearState();
+        CheckInt(board.ResetBoardAs("Cleo", true), ChessBoard.InputRejected, "reset: refused on a reset board");
+
+        // The lobby: a seated player resets, nothing is logged; a bystander can't.
+        int before = board.loggedGames;
+        LobbyWithTwoPlayers();
+        board.SetModeAs("Ana", ChessGame.ModeChess960);
+        board.SetClockAs("Ana", 300, 2);
+        string seen = SeatedGameText();
+        CheckInt(board.ResetBoardAs("Cleo", false), ChessBoard.InputRejected, "reset: refused for a bystander");
+        CheckText(SeatedGameText(), seen, "reset: refused, nothing changed");
+        CheckInt(board.ResetBoardAs("", false), ChessBoard.InputRejected, "reset: refused for an empty name");
+        CheckInt(board.ResetBoardAs("Bob", false), ChessBoard.InputAccepted, "reset: the lobby by a player");
+        CheckCleared("reset: the lobby");
+        CheckLogged(before, 0, "reset: the lobby: nothing logged");
+        CheckInt(board.JoinAs(ChessRules.Black, "Cleo"), ChessBoard.InputAccepted, "reset: the seats free again");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "reset: a join enters the lobby again");
+
+        // A game in progress with moves: logged once, unfinished, with its whole history, then cleared.
+        before = board.loggedGames;
+        ButtonGame(0);
+        string id = board.gameId;
+        CheckInt(board.ResetBoardAs("Cleo", false), ChessBoard.InputRejected, "reset: refused for a bystander in game");
+        CheckLogged(before, 0, "reset: refused, nothing logged");
+        CheckInt(board.ResetBoardAs("Bob", false), ChessBoard.InputAccepted, "reset: in game by a player");
+        CheckLoggedOnReset(before, "*", "unterminated", "reset: in game");
+        CheckLogHas("[White \"Ana\"]\n[Black \"Bob\"]\n", "reset: in game: logged with the seats");
+        CheckLogHas("[GameID \"" + id + "\"]\n", "reset: in game: logged with its ID");
+        Check(board.lastLoggedPgn.EndsWith("\n\n1. Nf3 Nf6 2. Ng1 Ng8 *\n"), "reset: in game: the whole history",
+            "PGN:\n" + board.lastLoggedPgn);
+        CheckCleared("reset: in game");
+
+        // By an organizer in game, with a clock; and in replay with a takeback request pending.
+        before = board.loggedGames;
+        StartedGame(60, 0, board.ServerTime());
+        Play(ChessRules.E2, ChessRules.E4, board.ServerTime(), "reset: organizer: 1. e4");
+        CheckInt(board.ResetBoardAs("Cleo", true), ChessBoard.InputAccepted, "reset: in game by an organizer");
+        CheckLoggedOnReset(before, "*", "unterminated", "reset: by an organizer");
+        CheckLogHas("[TimeControl \"60\"]\n", "reset: by an organizer: the clock");
+        CheckLogHas("1. e4 { [%clk ", "reset: by an organizer: the move's clock");
+        CheckCleared("reset: by an organizer");
+
+        before = board.loggedGames;
+        ButtonReplay(takebacks, 2);
+        CheckInt(board.RequestTakebackAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted,
+            "reset: in replay: takeback requested");
+        CheckInt(board.ResetBoardAs("Ana", false), ChessBoard.InputAccepted, "reset: in replay");
+        CheckLoggedOnReset(before, "*", "unterminated", "reset: in replay");
+        Check(board.lastLoggedPgn.EndsWith("\n\n1. Nf3 Nf6 2. Ng1 Ng8 *\n"),
+            "reset: in replay: the game logged, not the replay", "PGN:\n" + board.lastLoggedPgn);
+        CheckCleared("reset: in replay");
+
+        // A game in progress with no moves isn't logged.
+        before = board.loggedGames;
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        CheckInt(board.ResetBoardAs("Ana", false), ChessBoard.InputAccepted, "reset: no moves");
+        CheckLogged(before, 0, "reset: no moves: nothing logged");
+        CheckCleared("reset: no moves");
+
+        // An ended game was logged when it ended, and isn't logged again.
+        before = board.loggedGames;
+        ButtonGame(0);
+        board.ResignAs(ChessRules.White, "Ana");
+        CheckLogged(before, 1, "reset: ended: logged on resigning");
+        CheckInt(board.ResetBoardAs("Cleo", false), ChessBoard.InputRejected, "reset: ended: refused for a bystander");
+        CheckInt(board.ResetBoardAs("Ana", false), ChessBoard.InputAccepted, "reset: ended by the loser");
+        CheckLogged(before, 1, "reset: ended: not logged again");
+        CheckCleared("reset: ended");
+
+        // A fallen flag the board hasn't acted on yet: the game is over on time, not unfinished.
+        before = board.loggedGames;
+        ButtonGame(0);
+        FlagFallen();
+        CheckInt(board.ResetBoardAs("Ana", false), ChessBoard.InputAccepted, "reset: flag fallen");
+        CheckLoggedOnReset(before, "0-1", "time forfeit", "reset: flag fallen");
+        CheckCleared("reset: flag fallen");
+
+        // The local player's button.
+        before = board.loggedGames;
+        board.ClearState();
+        board.JoinWhite();
+        board.JoinBlack();
+        board.StartGame();
+        board.PieceDropped(ChessRules.E2, ChessRules.E4);
+        Check(board.CanReset(), "reset: the local player may", "refused");
+        CheckInt(board.ResetBoard(), ChessBoard.InputAccepted, "reset: the local player");
+        CheckLoggedOnReset(before, "*", "unterminated", "reset: the local player");
+        CheckCleared("reset: the local player");
+
+        // A loaded game wasn't played here: never logged. With nobody seated, only an organizer may reset it.
+        if (!Utilities.IsValid(importer) || siggiVsNuka == null) return;
+        before = board.loggedGames;
+        LoadText(siggiVsNuka.text, "reset: loaded");
+        seen = SeatedGameText();
+        CheckInt(board.ResetBoardAs("Cleo", false), ChessBoard.InputRejected, "reset: loaded: refused for a bystander");
+        CheckText(SeatedGameText(), seen, "reset: loaded: refused, nothing changed");
+        CheckInt(board.ResetBoardAs("Cleo", true), ChessBoard.InputAccepted, "reset: loaded by an organizer");
+        CheckLogged(before, 0, "reset: loaded: nothing logged");
+        CheckCleared("reset: loaded");
+
+        LoadSeated(siggiVsNuka.text, 20, "reset: loaded and seated");
+        CheckInt(board.ResetBoardAs("Bob", false), ChessBoard.InputAccepted, "reset: loaded by a seated player");
+        CheckLogged(before, 0, "reset: loaded and seated: nothing logged");
+        CheckCleared("reset: loaded and seated");
+
+        // Continued from a loaded game and played on: logged as unfinished, with ContinuedFrom.
+        LoadSeated(siggiVsNuka.text, 20, "reset: continued");
+        CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputAccepted, "reset: continued");
+        string continuedFrom = board.continuedFrom;
+        int[] moves = new int[ChessMoves.MaxMoves];
+        ChessMoves.GenerateLegalMoves(board.board, board.state, moves, true);
+        CheckInt(board.PlayMove(moves[0]), ChessBoard.InputAccepted, "reset: continued: a move");
+        CheckInt(board.ResetBoardAs("Ana", false), ChessBoard.InputAccepted, "reset: continued: reset");
+        CheckLoggedOnReset(before, "*", "unterminated", "reset: continued");
+        CheckLogHas("[ContinuedFrom \"" + continuedFrom + "\"]\n", "reset: continued: ContinuedFrom");
+        CheckCleared("reset: continued");
     }
 }

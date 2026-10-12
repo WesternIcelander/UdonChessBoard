@@ -141,7 +141,7 @@ namespace SiggiChessBoard {
         }
 
         // Puts every state field back to the reset state: the standard starting position, no game, empty seats.
-        // The reset itself (who may, logging an unfinished game) comes in step 7.10.
+        // The reset button (who may, logging an unfinished game) is ResetBoardAs.
         public void ClearState() {
             int clock;
             int number;
@@ -1141,6 +1141,23 @@ namespace SiggiChessBoard {
         // seated player or an organizer. Everyone else once the board has been idle long enough comes with step 8.5.
         public bool CanResetAs(string name, bool organizer) {
             return lifecycle != LifecycleReset && (organizer || IsPlayer(name));
+        }
+
+        public int ResetBoard() {
+            return ResetBoardAs(LocalName(), LocalIsOrganizer());
+        }
+
+        // The reset button (CanResetAs; named ResetBoard since Reset is a Unity message): clears the board and both
+        // seats. A game in progress is logged as unfinished (*) if it had moves, after a fallen flag has ended it on
+        // time (CheckFlagFall), since that game is already over, not unfinished. An ended game was logged when it
+        // ended and a loaded one wasn't played here, so neither is logged.
+        public int ResetBoardAs(string name, bool organizer) {
+            if (!CanResetAs(name, organizer)) return InputRejected;
+            if (lifecycle == LifecycleInGame && !CheckFlagFall()) {
+                LogGame(ChessGame.EndingUnterminated, ChessRules.NoColor);
+            }
+            ClearState();
+            return InputAccepted;
         }
 
         // Whether a game can be loaded (a PGN import, or from the archive): only onto a reset board, by anyone.
