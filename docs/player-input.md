@@ -95,3 +95,7 @@ Like the input methods, each check has a plain form for the local player and an 
 ### Load it here (step 10.2b)
 
 - `ButtonLoadHere` (label `Load it here`, event `PressLoadHere`), on both ends' panels after the Join buttons: shown while `CanLoadGame()` holds and the local player has picked a game on the history wall (the view's `historyWall`); pressing it calls `LoadArchivedGame` with the picked game and clears the pick. See [Archive](archive.md#loading-a-game-step-102b).
+
+### PGN (step 11.2a)
+
+- `ButtonPgn` (event `PressPgn`), on both ends' panels just before Reset: shown while the game has moves (`moveCount > 0`: a game in progress or ended with moves, in replay too, or a loaded game), labelled `PGN`, or `Hide PGN` while the box is open. Pressing it opens or closes the view's PGN box for the local player only; nothing on the board changes and nothing is sent. See [PGN](pgn.md#input--output). The most one player sees at once is now 13, which the five-by-three grid still holds.

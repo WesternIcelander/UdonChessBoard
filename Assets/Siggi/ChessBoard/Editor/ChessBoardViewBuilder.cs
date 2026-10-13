@@ -13,10 +13,10 @@ using VRC.Udon;
 
 // Builds the physical board (PLAN.md 9.1, ChessBoardView.cs) in the open scene for the selected ChessBoard, or the
 // scene's only one: a table, the board's surface and squares, the 32 piece objects, the button panels (steps 9.4a and
-// 9.4b), the highlights and the promotion picker (step 9.5a) and the status panels (step 9.5c), wired to a
-// ChessBoardView. Players walk through all of it (no solid colliders but the pieces', on the Pickup layer); the view's
-// blocker keeps out those without a seat (step 9.5a2). An existing view for the same board is replaced, keeping its
-// place. The piece meshes, the highlight meshes and the materials are generated
+// 9.4b), the highlights and the promotion picker (step 9.5a), the status panels (step 9.5c) and the PGN box (step
+// 11.2a), wired to a ChessBoardView. Players walk through all of it (no solid colliders but the pieces', on the
+// Pickup layer); the view's blocker keeps out those without a seat (step 9.5a2). An existing view for the same board
+// is replaced, keeping its place. The piece meshes, the highlight meshes and the materials are generated
 // placeholders in Assets/Siggi/ChessBoard/Models/, made only when missing, so they can be replaced there (or other
 // meshes assigned in the view's Meshes field). Menu: Tools > Chess Board > Create Board View. Plain editor C#, not Udon.
 public static class ChessBoardViewBuilder {
@@ -132,6 +132,7 @@ public static class ChessBoardViewBuilder {
         AddButtons(root, view, boardWidth * TableDepthFactor);
         AddStatusPanels(root, view, boardWidth * TableDepthFactor);
         AddPromotionPicker(root, view);
+        AddPgnBox(root, view);
         UdonSharpEditorUtility.CopyProxyToUdon(view);
         // Read before old is destroyed, after which Unity compares it equal to null.
         bool replacing = old != null;
@@ -341,6 +342,90 @@ public static class ChessBoardViewBuilder {
         view.promotionPicker = canvasObject;
     }
 
+    // The PGN box's size in canvas pixels (a millimetre each; as wide as the board), the height of its hint line, and
+    // how far its bottom edge stands above the board's surface, clear of the pieces.
+    static readonly Vector2 PgnBoxSize = new Vector2(440, 560);
+    const float PgnHintHeight = 34;
+    const float PgnBoxLift = 0.1f;
+
+    // The PGN box (step 11.2a): a world-space canvas (with VRCUiShape, so the pointer reaches the text) standing upright
+    // over the far edge of the board from White's end, facing it unturned, with a hint line and a read-only multi-line
+    // text field the view fills with the game's PGN. 80 characters fit on a line, ChessPgn.LineWidth. Built hidden; the
+    // view shows it for the local player and turns it to face the end they opened it from.
+    static void AddPgnBox(GameObject root, ChessBoardView view) {
+        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        GameObject canvasObject = new GameObject("PGN Box", typeof(RectTransform));
+        canvasObject.layer = LayerMask.NameToLayer("Default");
+        canvasObject.transform.SetParent(root.transform, false);
+        Canvas canvas = canvasObject.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.WorldSpace;
+        RectTransform rect = canvasObject.GetComponent<RectTransform>();
+        rect.sizeDelta = PgnBoxSize;
+        rect.localScale = Vector3.one * 0.001f;
+        rect.localPosition = new Vector3(0, PgnBoxLift + PgnBoxSize.y * 0.001f / 2, 4 * SquareSize + Border);
+        canvasObject.AddComponent<CanvasScaler>();
+        canvasObject.AddComponent<GraphicRaycaster>();
+        canvasObject.AddComponent<VRCUiShape>();
+        AddTriggerCollider(canvasObject);
+        canvasObject.AddComponent<Image>().color = new Color(0.12f, 0.12f, 0.14f, 0.95f);
+
+        GameObject hintObject = new GameObject("Hint", typeof(RectTransform));
+        hintObject.layer = canvasObject.layer;
+        RectTransform hintRect = hintObject.GetComponent<RectTransform>();
+        hintRect.SetParent(canvasObject.transform, false);
+        hintRect.anchorMin = new Vector2(0, 1);
+        hintRect.anchorMax = Vector2.one;
+        hintRect.offsetMin = new Vector2(10, -PgnHintHeight);
+        hintRect.offsetMax = new Vector2(-10, 0);
+        Text hint = hintObject.AddComponent<Text>();
+        hint.font = font;
+        hint.fontSize = 12;
+        hint.alignment = TextAnchor.MiddleLeft;
+        hint.color = new Color(0.95f, 0.95f, 0.95f);
+        hint.raycastTarget = false;
+        hint.text = "PGN of this game. To copy it on desktop: click the text, then Ctrl+A and Ctrl+C.";
+
+        GameObject fieldObject = new GameObject("Field", typeof(RectTransform));
+        fieldObject.layer = canvasObject.layer;
+        RectTransform fieldRect = fieldObject.GetComponent<RectTransform>();
+        fieldRect.SetParent(canvasObject.transform, false);
+        fieldRect.anchorMin = Vector2.zero;
+        fieldRect.anchorMax = Vector2.one;
+        fieldRect.offsetMin = new Vector2(8, 8);
+        fieldRect.offsetMax = new Vector2(-8, -PgnHintHeight);
+        Image fieldImage = fieldObject.AddComponent<Image>();
+        fieldImage.color = new Color(0.95f, 0.95f, 0.93f);
+        GameObject textObject = new GameObject("Text", typeof(RectTransform));
+        textObject.layer = canvasObject.layer;
+        RectTransform textRect = textObject.GetComponent<RectTransform>();
+        textRect.SetParent(fieldObject.transform, false);
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.offsetMin = new Vector2(6, 4);
+        textRect.offsetMax = new Vector2(-6, -4);
+        Text text = textObject.AddComponent<Text>();
+        text.font = font;
+        text.fontSize = 10;
+        text.alignment = TextAnchor.UpperLeft;
+        text.horizontalOverflow = HorizontalWrapMode.Wrap;
+        text.verticalOverflow = VerticalWrapMode.Truncate;
+        text.color = Color.black;
+        // Names may hold anything; InputField draws its text raw.
+        text.supportRichText = false;
+        InputField field = fieldObject.AddComponent<InputField>();
+        field.textComponent = text;
+        field.targetGraphic = fieldImage;
+        field.lineType = InputField.LineType.MultiLineNewline;
+        field.readOnly = true;
+        field.characterLimit = 0;
+        field.navigation = new Navigation { mode = Navigation.Mode.None };
+        field.text = "";
+        canvasObject.SetActive(false);
+        view.pgnBox = canvasObject;
+        view.pgnField = field;
+    }
+
     // A UI canvas's collider: a trigger box over the whole canvas, so players walk through it. VRCUiShape uses a box
     // collider the canvas already has (and adds a solid one when there's none); a trigger still takes the pointer.
     static void AddTriggerCollider(GameObject canvasObject) {
@@ -360,10 +445,11 @@ public static class ChessBoardViewBuilder {
         "PressLeaveReplay", "PressStepFirst", "PressStepBack", "PressStepForward", "PressStepLast",
         "PressRequestTakebackWhite", "PressRequestTakebackBlack", "PressAcceptTakebackWhite",
         "PressAcceptTakebackBlack", "PressDeclineTakebackWhite", "PressDeclineTakebackBlack", "PressLoadHere",
+        "PressPgn",
     };
     // The order of the buttons on a panel (the grid packs the shown ones in this order): the lobby's, replay's and
     // the game's, Reset last. Each panel leaves out the other colour's. Load it here (step 10.2b) shows only on a reset
-    // board, with the Join buttons.
+    // board, with the Join buttons. PGN (step 11.2a) comes just before Reset.
     static readonly int[] ButtonOrder = {
         ChessBoardView.ButtonJoinWhite, ChessBoardView.ButtonJoinBlack, ChessBoardView.ButtonLoadHere,
         ChessBoardView.ButtonMode, ChessBoardView.ButtonClock, ChessBoardView.ButtonStart, ChessBoardView.ButtonContinue,
@@ -375,11 +461,11 @@ public static class ChessBoardViewBuilder {
         ChessBoardView.ButtonResignWhite, ChessBoardView.ButtonResignBlack, ChessBoardView.ButtonOfferDrawWhite,
         ChessBoardView.ButtonOfferDrawBlack, ChessBoardView.ButtonAcceptDrawWhite, ChessBoardView.ButtonAcceptDrawBlack,
         ChessBoardView.ButtonDeclineDrawWhite, ChessBoardView.ButtonDeclineDrawBlack, ChessBoardView.ButtonClaimDraw,
-        ChessBoardView.ButtonReset,
+        ChessBoardView.ButtonPgn, ChessBoardView.ButtonReset,
     };
     // A button panel's size in canvas pixels (a millimetre each), its grid cells and columns and how far it leans
-    // back from upright. Five columns by three rows fit the most buttons one player sees at once (12: in replay of
-    // their game, with an offer and a takeback request pending).
+    // back from upright. Five columns by three rows fit the most buttons one player sees at once (13: in replay of
+    // their game, with an offer and a takeback request pending, and PGN).
     const float PanelWidth = 544;
     const float PanelHeight = 160;
     const float PanelTilt = 70;

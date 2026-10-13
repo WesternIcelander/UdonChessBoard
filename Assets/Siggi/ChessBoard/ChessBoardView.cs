@@ -81,7 +81,9 @@ namespace SiggiChessBoard {
         public const int ButtonDeclineTakebackBlack = 27;
         // Step 10.2b: loads the game picked on the history wall onto this (reset) board.
         public const int ButtonLoadHere = 28;
-        public const int ButtonCount = 29;
+        // Step 11.2a: opens or closes the PGN box for the local player.
+        public const int ButtonPgn = 29;
+        public const int ButtonCount = 30;
         // The button objects in the world (any number: the builder puts a panel at each end of the table), with the
         // Button* action of each and its label at the same index. A button's UI Button calls the view's Press...
         // event for its action.
@@ -139,6 +141,14 @@ namespace SiggiChessBoard {
         public Text[] statusLabels = new Text[0];
         public const float StatusInterval = 0.1f;
         float nextStatusUpdate;
+        // The PGN box (step 11.2a): a child of this view, shown only to the local player once they open it with the PGN
+        // button, with the game's PGN as it stands (ChessBoard.GamePgn) in a read-only text field to copy it from. It
+        // stands upright over the far edge of the board, facing the end the player opened it from; the builder sets its
+        // height and distance, the view only which side of the board it stands on. Kept up to date while it shows, and
+        // closed when the game has no moves left (a reset).
+        public GameObject pgnBox;
+        public InputField pgnField;
+        [NonSerialized] public bool pgnShown;
 
         // Which object stands on each square (NoObject for none), and the other way round (NoSquare for an object
         // off the board: captured, or not needed by the position). objectType is the piece type each object stands
@@ -235,9 +245,11 @@ namespace SiggiChessBoard {
             if (Time.time >= nextStatusUpdate) UpdateStatus();
         }
 
-        // Only the move list's text changed: the replay line may name a move it didn't know before.
+        // Only the move list's text changed: the replay line may name a move it didn't know before, and the PGN box's move
+        // text may have had entries missing.
         public override void OnNotationFilled() {
             UpdateStatus();
+            UpdatePgnBox();
         }
 
         // A move one ply on from the position the mapping shows moves its objects now, so the right object travels
@@ -297,6 +309,7 @@ namespace SiggiChessBoard {
             UpdateLiftedMarks();
             UpdateLastMoveHighlight();
             UpdatePromotionPicker();
+            UpdatePgnBox();
             UpdateButtons();
             UpdateBlocker();
             UpdateStatus();
@@ -819,6 +832,10 @@ namespace SiggiChessBoard {
             PressButton(ButtonLoadHere);
         }
 
+        public void PressPgn() {
+            PressButton(ButtonPgn);
+        }
+
         // The colour the button for action acts for (ChessRules.White or Black), or ChessRules.NoColor for one that
         // acts for no colour (Claim draw is the side to move's).
         public static int ButtonColor(int action) {
@@ -900,6 +917,14 @@ namespace SiggiChessBoard {
                 }
                 // Loaded once: the other boards stop offering it.
                 if (result == ChessBoard.InputAccepted) historyWall.ClearSelection();
+            } else if (action == ButtonPgn) {
+                // Local to this player: nothing on the board changes.
+                if (ButtonApplies(ButtonPgn)) {
+                    pgnShown = !pgnShown;
+                    if (pgnShown) PlacePgnBox(LocalEnd());
+                    UpdatePgnBox();
+                    result = ChessBoard.InputAccepted;
+                }
             }
             // A refusal tells nobody, so the buttons are brought up to date here too.
             UpdateButtons();
@@ -929,6 +954,7 @@ namespace SiggiChessBoard {
             if (action == ButtonLoadHere) {
                 return board.CanLoadGame() && Utilities.IsValid(historyWall) && historyWall.HasSelection();
             }
+            if (action == ButtonPgn) return board.moveCount > 0;
             int color = ButtonColor(action);
             int step = StepTarget(action);
             if (step >= 0) return board.CanStepTo(step);
@@ -992,6 +1018,7 @@ namespace SiggiChessBoard {
                 return "Decline takeback";
             }
             if (action == ButtonLoadHere) return "Load it here";
+            if (action == ButtonPgn) return pgnShown ? "Hide PGN" : "PGN";
             return "";
         }
 
@@ -1017,6 +1044,40 @@ namespace SiggiChessBoard {
                 string text = ButtonText(action);
                 if (buttonLabels[i].text != text) buttonLabels[i].text = text;
             }
+        }
+
+        // ---- PGN box (step 11.2a; docs/pgn.md, Input / output) ----
+
+        // Shows the PGN box while the local player has it open and the game has moves, with the game's PGN as it stands
+        // (written only when it changed, so a selection survives a redraw that changed nothing); hides it otherwise, and
+        // closes it once the game has no moves (a reset), so it doesn't open again by itself on the next game. Called on
+        // every Refresh, when notation is filled in and after the PGN button.
+        public void UpdatePgnBox() {
+            if (pgnShown && !ButtonApplies(ButtonPgn)) pgnShown = false;
+            if (pgnShown && Utilities.IsValid(pgnField)) {
+                string pgn = board.GamePgn();
+                if (pgnField.text != pgn) pgnField.text = pgn;
+            }
+            if (Utilities.IsValid(pgnBox) && pgnBox.activeSelf != pgnShown) pgnBox.SetActive(pgnShown);
+        }
+
+        // Stands the PGN box over the far edge of the board from color's end of the table, facing that end (unturned it
+        // faces -z, White's end), at the height and distance the builder gave it.
+        public void PlacePgnBox(int color) {
+            if (!Utilities.IsValid(pgnBox)) return;
+            Transform box = pgnBox.transform;
+            Vector3 position = box.localPosition;
+            position.x = 0;
+            position.z = Mathf.Abs(position.z) * (color == ChessRules.White ? 1 : -1);
+            box.localPosition = position;
+            box.localRotation = color == ChessRules.White ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
+        }
+
+        // The end of the table the local player stands at: White's (-z) or Black's.
+        public int LocalEnd() {
+            VRCPlayerApi local = Networking.LocalPlayer;
+            if (!Utilities.IsValid(local)) return ChessRules.White;
+            return transform.InverseTransformPoint(local.GetPosition()).z <= 0 ? ChessRules.White : ChessRules.Black;
         }
 
         // ---- Status display (step 9.5c) ----

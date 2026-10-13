@@ -675,6 +675,7 @@ public class ViewTest : UdonSharpBehaviour {
         "OfferDrawWhite", "OfferDrawBlack", "AcceptDrawWhite", "AcceptDrawBlack", "DeclineDrawWhite", "DeclineDrawBlack",
         "ClaimDraw", "Replay", "Leave", "First", "Back", "Forward", "Last", "TakebackWhite", "TakebackBlack",
         "AcceptTakebackWhite", "AcceptTakebackBlack", "DeclineTakebackWhite", "DeclineTakebackBlack", "LoadHere",
+        "Pgn",
     };
 
     // The eighth frame: every action has its buttons, each with a label; in each state (a reset board, the local
@@ -1495,7 +1496,119 @@ public class ViewTest : UdonSharpBehaviour {
         CheckStatus("White: (open)\nBlack: (open)", "Join White or Black to play", s + ": cleared");
         view.Refresh();
         CheckView("cleared after the status checks");
+        SendCustomEventDelayedFrames(nameof(RunPgnBoxChecks), 1);
+    }
+
+    // ---- 11.2a: PGN box ----
+
+    // The thirteenth frame: the PGN button only for a game with moves, the box opened and closed by it, showing the
+    // game's PGN as it stands and kept up to date while open, the PGN logged when the game ends, the whole game in
+    // replay, turned to face either end, closed by a reset, and a loaded game's PGN.
+    public void RunPgnBoxChecks() {
+        string s = "PGN box";
+        bool wired = Utilities.IsValid(view.pgnBox) && Utilities.IsValid(view.pgnField);
+        Check(wired, s + ": box and field assigned", "rebuild the view (Tools > Chess Board > Create Board View)");
+        if (!wired) {
+            LogSummary();
+            return;
+        }
+        Check(view.pgnField.transform.IsChildOf(view.pgnBox.transform), s + ": the field in the box", "it isn't");
+        board.ClearState();
+        view.Refresh();
+        CheckPgnBox(false, s + ": reset board");
+        CheckInt(view.PressButton(ChessBoardView.ButtonPgn), ChessBoard.InputRejected, s + ": reset board: refused");
+        CheckPgnBox(false, s + ": reset board, refused");
+
+        StartUnforced(s);
+        CheckButtons(OwnGame, s + ": no moves yet");
+        CheckInt(view.PressButton(ChessBoardView.ButtonPgn), ChessBoard.InputRejected, s + ": no moves yet: refused");
+        PlayOnBoard("e2", "e4", s);
+        PlayOnBoard("e7", "e5", s);
+        CheckButtons(OwnGame + " Pgn", s + ": 1. e4 e5");
+        CheckLabel(ChessBoardView.ButtonPgn, "PGN", s + ": closed");
+        view.PressPgn();
+        CheckPgnBox(true, s + ": opened");
+        CheckLabel(ChessBoardView.ButtonPgn, "Hide PGN", s + ": opened");
+        string text = view.pgnField.text;
+        Check(text.Contains("[White \"" + localName + "\"]") && text.EndsWith("\n\n1. e4 e5 *\n"),
+            s + ": opened: the tags and 1. e4 e5 *", text);
+        bool white = view.LocalEnd() == ChessRules.White;
+        Check(view.pgnBox.transform.localPosition.z > 0 == white, s + ": opened: beyond the board from the local end ("
+            + (white ? "White" : "Black") + ")", "at " + view.pgnBox.transform.localPosition.ToString("F3"));
+        PlayOnBoard("g1", "f3", s);
+        CheckPgnBox(true, s + ": after Nf3");
+        text = view.pgnField.text;
+        Check(text.EndsWith("1. e4 e5 2. Nf3 *\n"), s + ": after Nf3: the move added", text);
+
+        // Facing either end, over the far edge of the board from it.
+        Vector3 placed = view.pgnBox.transform.localPosition;
+        view.PlacePgnBox(ChessRules.Black);
+        Transform box = view.pgnBox.transform;
+        Check(box.localPosition.z < 0 && Mathf.Abs(box.localPosition.z) == Mathf.Abs(placed.z)
+            && box.localPosition.y == placed.y
+            && Quaternion.Angle(box.localRotation, Quaternion.Euler(0, 180, 0)) < 0.01f,
+            s + ": for Black: on White's side, facing Black", "at " + box.localPosition.ToString("F3") + ", turned "
+            + box.localEulerAngles.ToString("F1"));
+        view.PlacePgnBox(ChessRules.White);
+        Check(box.localPosition.z > 0 && box.localPosition.y == placed.y
+            && Quaternion.Angle(box.localRotation, Quaternion.identity) < 0.01f,
+            s + ": for White: on Black's side, facing White", "at " + box.localPosition.ToString("F3") + ", turned "
+            + box.localEulerAngles.ToString("F1"));
+
+        // Ended: the PGN logged, also in replay.
+        int logged = board.loggedGames;
+        CheckInt(board.ResignAs(ChessRules.Black, localName), ChessBoard.InputAccepted, s + ": Black resigned");
+        view.Refresh();
+        CheckInt(board.loggedGames, logged + 1, s + ": resigned: logged once");
+        CheckPgnBox(true, s + ": resigned");
+        CheckString(view.pgnField.text, board.lastLoggedPgn, s + ": resigned: the PGN logged");
+        text = view.pgnField.text;
+        Check(text.Contains("[Result \"1-0\"]") && text.Contains("[Termination \"resignation\"]")
+            && text.EndsWith("2. Nf3 1-0\n"), s + ": resigned: 1-0 by resignation", text);
+        CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, s + ": entered replay");
+        CheckInt(board.StepToAs(localName, true, 1), ChessBoard.InputAccepted, s + ": replay at ply 1");
+        view.Refresh();
+        CheckPgnBox(true, s + ": replay at ply 1");
+        CheckString(view.pgnField.text, board.lastLoggedPgn, s + ": replay at ply 1: the whole game");
+
+        // Closed and opened again; a reset closes it, and the next game doesn't open it.
+        view.PressPgn();
+        CheckPgnBox(false, s + ": closed");
+        CheckLabel(ChessBoardView.ButtonPgn, "PGN", s + ": closed again");
+        view.PressPgn();
+        CheckPgnBox(true, s + ": opened again");
+        view.PressReset();
+        CheckInt(board.lifecycle, ChessBoard.LifecycleReset, s + ": reset");
+        view.Refresh();
+        CheckPgnBox(false, s + ": reset");
+        StartUnforced(s + ": next game");
+        PlayOnBoard("d2", "d4", s + ": next game");
+        CheckPgnBox(false, s + ": next game, 1. d4");
+
+        // A loaded game: its own tags.
+        if (LoadPgn(chess960Pgn, s + ": chess960.pgn")) {
+            view.Refresh();
+            view.PressPgn();
+            CheckPgnBox(true, s + ": chess960.pgn loaded");
+            text = view.pgnField.text;
+            Check(text.Contains("[Variant \"Chess960\"]") && text.Contains("[SetUp \"1\"]"),
+                s + ": chess960.pgn loaded: a Chess960 PGN", text);
+        }
+
+        board.ClearState();
+        view.Refresh();
+        CheckPgnBox(false, s + ": cleared");
+        CheckView("cleared after the PGN box checks");
         LogSummary();
+    }
+
+    // Whether the PGN box is shown, as the view says, and when shown holds the game's PGN as it stands.
+    void CheckPgnBox(bool shown, string name) {
+        string errors = "";
+        if (view.pgnShown != shown) errors += "pgnShown " + view.pgnShown + "; ";
+        if (view.pgnBox.activeSelf != shown) errors += "box " + (shown ? "hidden" : "shown") + "; ";
+        if (shown && view.pgnField.text != board.GamePgn()) errors += "text \"" + view.pgnField.text + "\"; ";
+        Check(errors.Length == 0, name + ": " + (shown ? "shown with the game's PGN" : "hidden"), errors);
     }
 
     // After a Refresh, the view's players text (unless null) and status text at the turn start are as expected, and
@@ -1759,6 +1872,8 @@ public class ViewTest : UdonSharpBehaviour {
             string actionName = buttonNames[action];
             bool want = padded.Contains(" " + actionName + " ");
             if (padded.Contains(" " + actionName + "? ")) want = OptionalShown(action);
+            // PGN (11.2a), unless named, is checked in every state: shown exactly when the game has moves.
+            if (action == ChessBoardView.ButtonPgn && !padded.Contains(" Pgn")) want = board.moveCount > 0;
             if (action == ChessBoardView.ButtonMode && board.IsModeForced()) want = false;
             if (action == ChessBoardView.ButtonClock && board.IsClockForced()) want = false;
             if (button.activeSelf != want) {
