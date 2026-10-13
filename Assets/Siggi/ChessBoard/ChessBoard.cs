@@ -77,6 +77,11 @@ namespace SiggiChessBoard {
         // under way on the same importer.
         [Tooltip("The ChessPgnImporter that runs this board's PGN imports. Give each board its own.")]
         public ChessPgnImporter importer;
+        // Where this board's logged games go (docs/archive.md): every client hands each game it logs to its own
+        // archive.
+        [Tooltip("The GameArchive this board's games are archived in. Set by Tools > Chess Board > Create Game "
+            + "Archive.")]
+        public GameArchive archive;
         // The PGN Event and Site tags of this board's games (docs/pgn.md, Export tags); empty is written "?".
         [Tooltip("The PGN Event tag of games played on this board. Empty is written \"?\".")]
         public string pgnEvent = "";
@@ -1324,12 +1329,16 @@ namespace SiggiChessBoard {
 
         // Writes the game's PGN, with this ending and winner, to the log as one entry: a "[ChessPGN]" line, then the
         // PGN, so a bot reading the output log finds every game (docs/game-endings.md: each client logs once, on the
-        // transition). A game with no moves isn't logged.
+        // transition), and hands it to the archive (docs/archive.md). A game with no moves isn't logged.
         void LogGame(int logEnding, int logWinner) {
             if (moveCount == 0) return;
             lastLoggedPgn = PgnWith(logEnding, logWinner);
             loggedGames++;
             Debug.Log("[ChessPGN]\n" + lastLoggedPgn);
+            if (Utilities.IsValid(archive)) {
+                archive.AddGame(gameId, continuedFrom, whitePlayer, blackPlayer, mode, logEnding, logWinner, startFen,
+                    baseTime, increment, moveHistory, clockHistory, moveCount);
+            }
         }
 
         public int Resign(int color) {

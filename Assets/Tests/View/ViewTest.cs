@@ -19,6 +19,8 @@ public class ViewTest : UdonSharpBehaviour {
     public ChessPgnImporter importer;
     public TextAsset chess960Pgn;
     public TextAsset promotionsPgn;
+    // Set once the checks are over (or skipped), so ArchiveTest (step 10) can use the board after them.
+    [System.NonSerialized] public bool finished;
 
     const string Files = "abcdefgh";
     const string Ranks = "12345678";
@@ -53,6 +55,7 @@ public class ViewTest : UdonSharpBehaviour {
         // As for BoardTest: the board is synced, so its changes would reach everyone else here.
         if (VRCPlayerApi.GetPlayerCount() > 1) {
             Debug.Log("[ViewTest] skipped: other players are in the instance");
+            finished = true;
             return;
         }
         if (!Utilities.IsValid(board) || !Utilities.IsValid(view)) {
@@ -2038,6 +2041,7 @@ public class ViewTest : UdonSharpBehaviour {
     }
 
     void LogSummary() {
+        finished = true;
         Debug.Log("[ViewTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }

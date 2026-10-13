@@ -22,7 +22,7 @@ This file holds the implementation steps. The design is split into topic files u
 | [game-ids.md](docs/game-ids.md) | Game ID format, `ContinuedFrom`, ply numbering |
 | [settings.md](docs/settings.md) | `ChessArbiter`, per-board overrides, snapshots |
 | [organizers.md](docs/organizers.md) | `SimpleAuth` and its built-in implementations, empty-field checks |
-| [archive.md](docs/archive.md) | `GameArchive`: paged storage, history wall, loading games |
+| [archive.md](docs/archive.md) | `GameArchive`: holders, one writer, history wall, loading games |
 | [networking.md](docs/networking.md) | Limits, synced fields, notation fill-in, imported games |
 | [ownership.md](docs/ownership.md) | Ownership rules, players by display name, organizers |
 | [inactivity.md](docs/inactivity.md) | Reset-available and auto-reset timers, activity timestamp |
@@ -460,15 +460,20 @@ Taking a board's snapshot of these settings depends on the board's lifecycle, so
 
 **Read:** [archive](docs/archive.md), [networking](docs/networking.md) (Limits), [game-ids](docs/game-ids.md), [replay](docs/replay.md) (continuing a loaded game), [board-lifecycle](docs/board-lifecycle.md) (Reset), [game-endings](docs/game-endings.md) (what gets logged/archived), [testing](docs/testing.md)
 
-- [ ] **10.1a** Paged storage (flattened arrays), capacity 200 with oldest dropped, appending whenever a game is logged (finished, or unfinished on reset or takeback).
-  - Verify: adding games fills the pages in order; the 201st game drops the oldest; each game reads back with the same data; adding a game reserializes only its page.
-- [ ] **10.1b** The retry check for simultaneous additions.
-  - Verify (several clients): two boards ending at the same moment both end up in the archive.
+- [x] **10.1a** Archive storage: one `GameArchive` controller with 10 synced `GameArchiveHolder`s of 5 games each (50 games, a circular log overwriting the oldest, read back in chronological order). Every board on every client hands each game it logs (finished, or unfinished on reset or takeback) to its own client's archive; only the archive's owner writes to the holders, and only it may own them. Each client also keeps the last 5 games it logged in a local-only holder, archived by whoever owns the archive if missing.
+  - Verify: adding games fills the holders in order; the 51st game overwrites the oldest and reading stays chronological; each game reads back with the same data; adding a game serializes only its holder; a game already archived (same ID) isn't added again; a game logged by a board arrives in the archive; recent games missing from the archive are added, oldest first, when the owner flushes (as on becoming the owner).
+  - Decided here (the user's design, replacing pages of 20 games with a 200-game capacity and a retry check for two boards adding at once): one writer, the archive's owner, so additions never race; the recent holder covers the owner leaving just as a game ends.
+  - On `GameArchive` (new): `holders`, `recent`, `changes`, `Capacity`, `AddGame`, `StoreRecent`, `Flush`, `AllReady`, `IsArchived`, `OnHolderChanged`, `ClearArchive` (tests), and the readers `GameCount`, `SlotAt`, `SequenceAt`, `GameIdAt`, `ContinuedFromAt`, `WhiteAt`, `BlackAt`, `StartFenAt`, `ModeAt`, `EndingAt`, `WinnerAt`, `BaseTimeAt`, `IncrementAt`, `MoveCountAt`, `CopyMovesAt`, `CopyClocksAt`. On `GameArchiveHolder` (new): `Capacity`, `Info*`, `archive`, `localOnly`, the slot arrays, `ready`, `sends`, `SlotOf`, `Info`, `MoveCount`, `MoveOffset`, `CopyMoves`, `CopyClocks`, `WriteSlot`, `Clear`, `Send`, `MayOwn`, `PackState`, `ReceiveState`. On `ChessBoard`: `archive`, handed every logged game by `LogGame`. On `ViewTest`: `finished`. Details under [Implementation](docs/archive.md#implementation).
+  - Setup: run **Tools > Chess Board > Create Game Archive** (builds the archive and its holders, and sets every board's `archive`), then **Tools > Chess Board > Create Archive Test**; each creates its program assets on the first run, so run it again once UdonSharp has compiled.
+  - Checks: `ArchiveTest`, after `BoardTest` and `ViewTest`; see [Testing](docs/testing.md#archive-test). Pre-checked outside Unity: the archive, holders, board and `ArchiveTest` run against stubs, all 229 checks passing; overwriting the wrong slot on wrap, archiving games already archived, reading unsorted, rebuilding the flattened moves wrongly, taking an invalid update and keeping duplicates in the recent games each fail checks. The builders are editor code and compile only in Unity.
+  - First run (2026-10-13): in Play Mode all 230 `ArchiveTest` checks pass (the one the pre-check skipped, the earlier tests' games archived, included), with all 4157 `BoardTest` and 1045 `ViewTest` checks.
+- [ ] **10.1b** Owner handover: when the archive's owner leaves, the new owner archives the recent games it logged that aren't in the archive.
+  - Verify (several clients): only the archive's owner sends holders, and a non-owner is refused a holder; with the owner leaving just as a game ends, the game ends up in the archive (added by the new owner); two boards ending at the same moment both end up in the archive.
 - [ ] **10.2a** History wall view.
-  - Verify: the wall lists every archived game across all pages, with players and result.
+  - Verify: the wall lists every archived game across all holders, oldest first, with players and result.
 - [ ] **10.2b** "Load it here" buttons on reset boards; loading through the board's load method from step 7, which puts the board in its loaded state.
   - Verify: picking a game shows "Load it here" only on reset boards and only to that player; loading puts the board in its loaded state with the game's notation filled in.
-- [ ] **10.3** **Test:** fill past 200 games; two boards ending at once; late joiner sees the full archive; loaded games continue with `ContinuedFrom`.
+- [ ] **10.3** **Test:** fill past 50 games; the archive's owner leaving as a game ends; two boards ending at once; late joiner sees the full archive; loaded games continue with `ContinuedFrom`.
   - Verify: every scenario listed behaves as described.
 
 ### 11. Remaining UI

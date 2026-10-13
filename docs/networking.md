@@ -14,7 +14,7 @@ Implications:
 
 - A board's synced state is a few KB at most (a long game's move history is ~1–2 KB, plus notation), far under the per-serialization limit.
 - Every serialization sends all of a behaviour's synced fields, not just the changed ones. So the board resends its whole state on every move *and* on every activity touch (pickups). That's still small, but it's why activity updates are throttled, e.g. at most one every few seconds while pieces are being handled.
-- The archive is the one large object, so it's split into pages (see [`GameArchive`](archive.md)).
+- The archive is the one large object, so it's split into holders of 5 games, written only by the archive's owner (see [`GameArchive`](archive.md)).
 
 No FEN or PGN goes over the network, so no client parses anything to stay in sync. Late joiners receive the last serialized state automatically.
 

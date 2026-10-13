@@ -54,4 +54,4 @@ The same split applies to the instance-wide objects: the archive's history wall 
 
 ## Instance-wide objects
 
-Besides the boards, the world has two shared objects, each one behaviour with its own synced fields: the settings object [`ChessArbiter`](settings.md) and the game archive [`GameArchive`](archive.md).
+Besides the boards, the world has two shared objects, the settings object [`ChessArbiter`](settings.md), one behaviour with its own synced fields, and the game archive [`GameArchive`](archive.md), a controller with 10 synced holders of games.
