@@ -1499,22 +1499,30 @@ public class ViewTest : UdonSharpBehaviour {
     }
 
     // After a Refresh, the view's players text (unless null) and status text at the turn start are as expected, and
-    // every panel shows the view's texts for now.
+    // every panel shows the view's texts for the moment it drew them. The server time can tick within a frame, so a
+    // panel may show the texts from just before or just after the Refresh (a clock at 5:00 there and 4:59 here).
     void CheckStatus(string players, string status, string name) {
+        double before = board.ServerTime();
         view.Refresh();
+        double after = board.ServerTime();
         double now = board.turnStart;
         if (players != null) CheckString(view.PlayersTextAt(now), players, name + ": players");
         CheckString(view.StatusTextAt(now), status, name + ": status");
-        double server = board.ServerTime();
-        string shownPlayers = view.PlayersTextAt(server);
-        string shownStatus = view.StatusTextAt(server);
+        string playersBefore = view.PlayersTextAt(before);
+        string playersAfter = view.PlayersTextAt(after);
+        string statusBefore = view.StatusTextAt(before);
+        string statusAfter = view.StatusTextAt(after);
         string errors = "";
         for (int i = 0; i < view.statusLabels.Length; i++) {
             Text label = view.statusLabels[i];
-            if (Utilities.IsValid(label) && label.text != shownStatus) errors += "status " + i + ": " + label.text + "; ";
+            if (Utilities.IsValid(label) && label.text != statusBefore && label.text != statusAfter) {
+                errors += "status " + i + ": " + label.text + "; ";
+            }
             if (i >= view.statusPlayerLabels.Length) continue;
             label = view.statusPlayerLabels[i];
-            if (Utilities.IsValid(label) && label.text != shownPlayers) errors += "players " + i + ": " + label.text + "; ";
+            if (Utilities.IsValid(label) && label.text != playersBefore && label.text != playersAfter) {
+                errors += "players " + i + ": " + label.text + "; ";
+            }
         }
         Check(errors.Length == 0, name + ": the panels show it", errors);
     }
