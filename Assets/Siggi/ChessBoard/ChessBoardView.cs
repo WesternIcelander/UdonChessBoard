@@ -83,7 +83,9 @@ namespace SiggiChessBoard {
         public const int ButtonLoadHere = 28;
         // Step 11.2a: opens or closes the PGN box for the local player.
         public const int ButtonPgn = 29;
-        public const int ButtonCount = 30;
+        // Step 11.2b: opens the PGN box to paste a PGN into and import it, on a reset board.
+        public const int ButtonLoadPgn = 30;
+        public const int ButtonCount = 31;
         // The button objects in the world (any number: the builder puts a panel at each end of the table), with the
         // Button* action of each and its label at the same index. A button's UI Button calls the view's Press...
         // event for its action.
@@ -149,6 +151,21 @@ namespace SiggiChessBoard {
         public GameObject pgnBox;
         public InputField pgnField;
         [NonSerialized] public bool pgnShown;
+        // The box's two parts (step 11.2b), one shown at a time: copying (its hint and pgnField) and pasting, opened
+        // with Load PGN on a reset board: its hint, an editable field (pgnPasteField), a line saying how the import is
+        // going or why it failed or was abandoned (pgnImportLabel), and the Import (pgnImportButton, shown while the
+        // board can take an import and none is under way) and Close buttons. pgnPasting is set while the box shows
+        // the paste part.
+        public GameObject pgnCopyPart;
+        public GameObject pgnPastePart;
+        public InputField pgnPasteField;
+        public Text pgnImportLabel;
+        public GameObject pgnImportButton;
+        [NonSerialized] public bool pgnPasting;
+        // Whether the board's import was started from this box (so its progress and outcome are shown here), and a
+        // note of the box's own (an empty paste), shown instead.
+        bool importWatched;
+        string importNote = "";
 
         // Which object stands on each square (NoObject for none), and the other way round (NoSquare for an object
         // off the board: captured, or not needed by the position). objectType is the piece type each object stands
@@ -243,6 +260,31 @@ namespace SiggiChessBoard {
             if (animatingCount > 0) StepAnimations();
             // The clocks run without the board changing.
             if (Time.time >= nextStatusUpdate) UpdateStatus();
+            // An import's progress moves on without the board changing.
+            if (pgnShown && pgnPasting && importWatched && Utilities.IsValid(board)
+                && board.importStatus == ChessBoard.ImportRunning) {
+                UpdatePgnBox();
+            }
+        }
+
+        // An import started from the PGN box (step 11.2b) moved on: once loaded the box closes (the board shows the
+        // game), and when it fails or is abandoned the box opens again if it was closed meanwhile, to say why.
+        public override void OnImportChanged() {
+            if (!importWatched || !Utilities.IsValid(board)) return;
+            int status = board.importStatus;
+            if (status == ChessBoard.ImportLoaded) {
+                importWatched = false;
+                pgnShown = false;
+                pgnPasting = false;
+                if (Utilities.IsValid(pgnPasteField)) pgnPasteField.text = "";
+            } else if ((status == ChessBoard.ImportFailed || status == ChessBoard.ImportAbandoned)
+                && !(pgnShown && pgnPasting)) {
+                pgnShown = true;
+                pgnPasting = true;
+                PlacePgnBox(LocalEnd());
+            }
+            UpdatePgnBox();
+            UpdateButtons();
         }
 
         // Only the move list's text changed: the replay line may name a move it didn't know before, and the PGN box's move
@@ -836,6 +878,20 @@ namespace SiggiChessBoard {
             PressButton(ButtonPgn);
         }
 
+        public void PressLoadPgn() {
+            PressButton(ButtonLoadPgn);
+        }
+
+        // The PGN box's own buttons (step 11.2b).
+        public void PressImport() {
+            ImportPasted();
+        }
+
+        public void PressPgnClose() {
+            OpenPgnBox(false, false);
+            UpdateButtons();
+        }
+
         // The colour the button for action acts for (ChessRules.White or Black), or ChessRules.NoColor for one that
         // acts for no colour (Claim draw is the side to move's).
         public static int ButtonColor(int action) {
@@ -920,9 +976,13 @@ namespace SiggiChessBoard {
             } else if (action == ButtonPgn) {
                 // Local to this player: nothing on the board changes.
                 if (ButtonApplies(ButtonPgn)) {
-                    pgnShown = !pgnShown;
-                    if (pgnShown) PlacePgnBox(LocalEnd());
-                    UpdatePgnBox();
+                    OpenPgnBox(!pgnShown || pgnPasting, false);
+                    result = ChessBoard.InputAccepted;
+                }
+            } else if (action == ButtonLoadPgn) {
+                // Local too: the board changes only once an import has finished.
+                if (ButtonApplies(ButtonLoadPgn)) {
+                    OpenPgnBox(!pgnShown || !pgnPasting, true);
                     result = ChessBoard.InputAccepted;
                 }
             }
@@ -955,6 +1015,7 @@ namespace SiggiChessBoard {
                 return board.CanLoadGame() && Utilities.IsValid(historyWall) && historyWall.HasSelection();
             }
             if (action == ButtonPgn) return board.moveCount > 0;
+            if (action == ButtonLoadPgn) return board.CanImport();
             int color = ButtonColor(action);
             int step = StepTarget(action);
             if (step >= 0) return board.CanStepTo(step);
@@ -1018,7 +1079,8 @@ namespace SiggiChessBoard {
                 return "Decline takeback";
             }
             if (action == ButtonLoadHere) return "Load it here";
-            if (action == ButtonPgn) return pgnShown ? "Hide PGN" : "PGN";
+            if (action == ButtonPgn) return pgnShown && !pgnPasting ? "Hide PGN" : "PGN";
+            if (action == ButtonLoadPgn) return pgnShown && pgnPasting ? "Hide PGN" : "Load PGN";
             return "";
         }
 
@@ -1048,17 +1110,89 @@ namespace SiggiChessBoard {
 
         // ---- PGN box (step 11.2a; docs/pgn.md, Input / output) ----
 
-        // Shows the PGN box while the local player has it open and the game has moves, with the game's PGN as it stands
-        // (written only when it changed, so a selection survives a redraw that changed nothing); hides it otherwise, and
-        // closes it once the game has no moves (a reset), so it doesn't open again by itself on the next game. Called on
-        // every Refresh, when notation is filled in and after the PGN button.
+        // Shows the PGN box while the local player has it open, hides it otherwise. Copying, it holds the game's PGN as
+        // it stands (written only when it changed, so a selection survives a redraw that changed nothing), and closes
+        // once the game has no moves (a reset), so it doesn't open again by itself on the next game. Pasting (11.2b), it
+        // stays open while the board can take an import or while it says how the last one went, and shows Import only
+        // while an import can start. Called on every Refresh, when notation is filled in, after the box's buttons and
+        // the board's import changes, and every frame while an import from it is under way.
         public void UpdatePgnBox() {
-            if (pgnShown && !ButtonApplies(ButtonPgn)) pgnShown = false;
-            if (pgnShown && Utilities.IsValid(pgnField)) {
+            if (!Utilities.IsValid(board)) return;
+            if (pgnShown && !pgnPasting && !ButtonApplies(ButtonPgn)) pgnShown = false;
+            if (pgnShown && pgnPasting && !board.CanImport() && ImportText().Length == 0) pgnShown = false;
+            if (!pgnShown) pgnPasting = false;
+            if (pgnShown && !pgnPasting && Utilities.IsValid(pgnField)) {
                 string pgn = board.GamePgn();
                 if (pgnField.text != pgn) pgnField.text = pgn;
             }
+            if (pgnPasting) {
+                string note = ImportText();
+                if (Utilities.IsValid(pgnImportLabel) && pgnImportLabel.text != note) pgnImportLabel.text = note;
+                bool canStart = board.CanImport() && board.importStatus != ChessBoard.ImportRunning;
+                if (Utilities.IsValid(pgnImportButton) && pgnImportButton.activeSelf != canStart) {
+                    pgnImportButton.SetActive(canStart);
+                }
+            }
+            if (Utilities.IsValid(pgnCopyPart) && pgnCopyPart.activeSelf == pgnPasting) {
+                pgnCopyPart.SetActive(!pgnPasting);
+            }
+            if (Utilities.IsValid(pgnPastePart) && pgnPastePart.activeSelf != pgnPasting) {
+                pgnPastePart.SetActive(pgnPasting);
+            }
             if (Utilities.IsValid(pgnBox) && pgnBox.activeSelf != pgnShown) pgnBox.SetActive(pgnShown);
+        }
+
+        // Opens the PGN box for the local player, to copy or (paste) to paste into, standing it over the far side of the
+        // board from them; or closes it. Closing it, or opening the paste part afresh, forgets how an earlier import
+        // went, unless one is still under way (which opens the box again if it fails).
+        void OpenPgnBox(bool open, bool paste) {
+            bool forget = !open || (paste && !(pgnShown && pgnPasting));
+            pgnShown = open;
+            pgnPasting = open && paste;
+            if (open) PlacePgnBox(LocalEnd());
+            if (forget) {
+                importNote = "";
+                if (!Utilities.IsValid(board) || board.importStatus != ChessBoard.ImportRunning) importWatched = false;
+            }
+            UpdatePgnBox();
+        }
+
+        // The Import button (step 11.2b): starts importing the text pasted into the box onto the board
+        // (ChessBoard.StartImport), which loads it once it has been read over the next frames. Refused with the box
+        // closed, with nothing pasted (the box says so) and where the board refuses. Public for tests.
+        public int ImportPasted() {
+            if (!Utilities.IsValid(board) || !pgnShown || !pgnPasting || !Utilities.IsValid(pgnPasteField)) {
+                return ChessBoard.InputRejected;
+            }
+            string text = pgnPasteField.text;
+            int result = ChessBoard.InputRejected;
+            if (text == null || text.Trim().Length == 0) {
+                importNote = "Paste a PGN into the box first.";
+            } else {
+                importNote = "";
+                // Set first: the board tells its listeners the import started before it returns.
+                importWatched = true;
+                result = board.StartImport(text);
+                if (result != ChessBoard.InputAccepted) importWatched = false;
+            }
+            UpdatePgnBox();
+            UpdateButtons();
+            return result;
+        }
+
+        // The paste part's line: the box's own note, or how the import started from it is going: the moves read so
+        // far, why it failed ("Import failed at move 2...: illegal move") or that it was abandoned; "" otherwise.
+        public string ImportText() {
+            if (importNote.Length > 0) return importNote;
+            if (!importWatched || !Utilities.IsValid(board)) return "";
+            int status = board.importStatus;
+            if (status == ChessBoard.ImportRunning) {
+                int read = Utilities.IsValid(board.importer) ? board.importer.MoveCount() : 0;
+                return "Importing: " + read + (read == 1 ? " move" : " moves") + " read";
+            }
+            if (status == ChessBoard.ImportFailed) return "Import " + board.importMessage;
+            if (status == ChessBoard.ImportAbandoned) return "Import abandoned: " + board.importMessage;
+            return "";
         }
 
         // Stands the PGN box over the far edge of the board from color's end of the table, facing that end (unturned it

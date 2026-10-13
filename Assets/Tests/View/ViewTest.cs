@@ -675,7 +675,7 @@ public class ViewTest : UdonSharpBehaviour {
         "OfferDrawWhite", "OfferDrawBlack", "AcceptDrawWhite", "AcceptDrawBlack", "DeclineDrawWhite", "DeclineDrawBlack",
         "ClaimDraw", "Replay", "Leave", "First", "Back", "Forward", "Last", "TakebackWhite", "TakebackBlack",
         "AcceptTakebackWhite", "AcceptTakebackBlack", "DeclineTakebackWhite", "DeclineTakebackBlack", "LoadHere",
-        "Pgn",
+        "Pgn", "LoadPgn",
     };
 
     // The eighth frame: every action has its buttons, each with a label; in each state (a reset board, the local
@@ -1599,7 +1599,178 @@ public class ViewTest : UdonSharpBehaviour {
         view.Refresh();
         CheckPgnBox(false, s + ": cleared");
         CheckView("cleared after the PGN box checks");
+        SendCustomEventDelayedFrames(nameof(RunLoadPgnChecks), 1);
+    }
+
+    // ---- 11.2b: Load PGN ----
+
+    ChessPgnImporter savedImporter;
+    int loadPgnStart;
+    bool progressSeen;
+
+    // The fourteenth frame: the box's paste part wired; Load PGN only on a reset board, opening and closing the box to
+    // paste into; an empty paste refused with a note; Siggi-vs-Nuka pasted and imported over the next frames
+    // (PollLoadPgn) on the test's own importer, the board's put back afterwards.
+    public void RunLoadPgnChecks() {
+        string s = "Load PGN";
+        bool wired = Utilities.IsValid(view.pgnCopyPart) && Utilities.IsValid(view.pgnPastePart)
+            && Utilities.IsValid(view.pgnPasteField) && Utilities.IsValid(view.pgnImportLabel)
+            && Utilities.IsValid(view.pgnImportButton);
+        Check(wired, s + ": the box's copy and paste parts assigned",
+            "rebuild the view (Tools > Chess Board > Create Board View)");
+        TextAsset nuka = Utilities.IsValid(boardTest) ? boardTest.siggiVsNuka : null;
+        Check(Utilities.IsValid(importer) && nuka != null, s + ": importer and Siggi-vs-Nuka assigned",
+            "assign ViewTest's Importer and BoardTest's Siggi Vs Nuka in the Inspector");
+        if (!wired || !Utilities.IsValid(importer) || nuka == null) {
+            LogSummary();
+            return;
+        }
+        Transform box = view.pgnBox.transform;
+        Check(view.pgnField.transform.IsChildOf(view.pgnCopyPart.transform)
+            && view.pgnPasteField.transform.IsChildOf(view.pgnPastePart.transform)
+            && view.pgnImportButton.transform.IsChildOf(view.pgnPastePart.transform)
+            && view.pgnCopyPart.transform.IsChildOf(box) && view.pgnPastePart.transform.IsChildOf(box),
+            s + ": each field in its part, both parts in the box", "they aren't");
+        savedImporter = board.importer;
+        board.importer = importer;
+
+        board.ClearState();
+        view.Refresh();
+        CheckButtons("JoinWhite JoinBlack LoadPgn", s + ": reset board");
+        CheckLabel(ChessBoardView.ButtonLoadPgn, "Load PGN", s + ": closed");
+        view.PressLoadPgn();
+        CheckPasteBox(true, true, "", s + ": opened");
+        CheckLabel(ChessBoardView.ButtonLoadPgn, "Hide PGN", s + ": opened");
+        bool white = view.LocalEnd() == ChessRules.White;
+        Check(box.localPosition.z > 0 == white, s + ": opened: beyond the board from the local end",
+            "at " + box.localPosition.ToString("F3"));
+        view.PressLoadPgn();
+        CheckPasteBox(false, false, "", s + ": closed by the button");
+        CheckLabel(ChessBoardView.ButtonLoadPgn, "Load PGN", s + ": closed again");
+        view.PressLoadPgn();
+        view.PressPgnClose();
+        CheckPasteBox(false, false, "", s + ": closed by Close");
+        CheckInt(view.ImportPasted(), ChessBoard.InputRejected, s + ": closed: Import refused");
+
+        // Nothing pasted: refused, and the box says so.
+        view.PressLoadPgn();
+        view.pgnPasteField.text = "  \n";
+        int status = board.importStatus;
+        CheckInt(view.ImportPasted(), ChessBoard.InputRejected, s + ": nothing pasted: refused");
+        CheckPasteBox(true, true, "Paste a PGN into the box first.", s + ": nothing pasted");
+        CheckInt(board.importStatus, status, s + ": nothing pasted: no import");
+
+        // Siggi-vs-Nuka over the next frames, run by the importer's Update.
+        view.pgnPasteField.text = nuka.text;
+        CheckInt(view.ImportPasted(), ChessBoard.InputAccepted, s + ": Siggi-vs-Nuka: started");
+        CheckInt(board.importStatus, ChessBoard.ImportRunning, s + ": Siggi-vs-Nuka: under way");
+        CheckPasteBox(true, false, "Importing: 0 moves read", s + ": Siggi-vs-Nuka: started");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleReset, s + ": Siggi-vs-Nuka: the board still reset");
+        progressSeen = false;
+        loadPgnStart = Time.frameCount;
+        SendCustomEventDelayedFrames(nameof(PollLoadPgn), 1);
+    }
+
+    // Each frame while the import runs: the box's line counting the moves read. Then: loaded, the box closed and
+    // emptied, the loaded game's buttons, its PGN in the copy part; then a failed import (the move and the reason, the
+    // box opened again to say so when it was closed meanwhile) and an abandoned one (a join), by hand.
+    public void PollLoadPgn() {
+        string s = "Load PGN";
+        int frames = Time.frameCount - loadPgnStart;
+        if (board.importStatus == ChessBoard.ImportRunning && frames < 600) {
+            string label = view.pgnImportLabel.text;
+            if (label.StartsWith("Importing: ") && label != "Importing: 0 moves read") progressSeen = true;
+            SendCustomEventDelayedFrames(nameof(PollLoadPgn), 1);
+            return;
+        }
+        string n = s + ": Siggi-vs-Nuka";
+        Check(progressSeen, n + ": progress shown while importing", "never more than 0 moves read in "
+            + frames + " frames");
+        CheckInt(board.importStatus, ChessBoard.ImportLoaded, n + ": loaded");
+        CheckInt(board.lifecycle * 1000 + board.moveCount, ChessBoard.LifecycleLoaded * 1000 + 54,
+            n + ": the board loaded with 54 plies");
+        CheckString(board.gameId, "20250710001921", n + ": its GameID");
+        view.Refresh();
+        CheckPasteBox(false, false, "", n + ": loaded: the box closed");
+        CheckString(view.pgnPasteField.text, "", n + ": loaded: the paste emptied");
+        CheckButtons("JoinWhite JoinBlack First Back Reset?", n + ": loaded");
+        view.PressPgn();
+        CheckPgnBox(true, n + ": PGN opens the copy part");
+        Check(view.pgnCopyPart.activeSelf && !view.pgnPastePart.activeSelf, n + ": PGN: the copy part shown",
+            "copy " + view.pgnCopyPart.activeSelf + ", paste " + view.pgnPastePart.activeSelf);
+        string text = view.pgnField.text;
+        Check(text.Contains("[GameID \"20250710001921\"]") && text.Contains("[Result \"0-1\"]"),
+            n + ": PGN: the imported game's", text);
+
+        // Failed: the move it failed at and why; the board unchanged.
+        string f = s + ": failed";
+        board.ClearState();
+        view.Refresh();
+        CheckPgnBox(false, f + ": reset closed the copy part");
+        view.PressLoadPgn();
+        view.pgnPasteField.text = "1. e4 e5 2. Ke3 *";
+        CheckInt(view.ImportPasted(), ChessBoard.InputAccepted, f + ": started");
+        importer.ImportFor(float.MaxValue);
+        board._ImportFinished();
+        CheckPasteBox(true, true, "Import failed at move 2.: illegal move", f);
+        CheckInt(board.lifecycle * 1000 + board.moveCount, ChessBoard.LifecycleReset * 1000, f + ": the board reset");
+        CheckString(view.pgnPasteField.text, "1. e4 e5 2. Ke3 *", f + ": the paste kept");
+        // Closed while it runs: opened again to say why.
+        view.pgnPasteField.text = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ke3 *";
+        CheckInt(view.ImportPasted(), ChessBoard.InputAccepted, f + " while closed: started");
+        view.PressLoadPgn();
+        CheckPasteBox(false, false, "", f + " while closed: closed");
+        importer.ImportFor(float.MaxValue);
+        board._ImportFinished();
+        CheckPasteBox(true, true, "Import failed at move 4.: illegal move", f + " while closed: opened again");
+        // Opened afresh, the old outcome is gone.
+        view.PressLoadPgn();
+        view.PressLoadPgn();
+        CheckPasteBox(true, true, "", f + ": opened afresh");
+
+        // Abandoned: someone joins meanwhile.
+        string a = s + ": abandoned";
+        view.pgnPasteField.text = boardTest.siggiVsNuka.text;
+        CheckInt(view.ImportPasted(), ChessBoard.InputAccepted, a + ": started");
+        importer.ImportFor(0f);
+        CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, a + ": Ana joins");
+        CheckInt(board.importStatus, ChessBoard.ImportAbandoned, a);
+        view.Refresh();
+        CheckPasteBox(true, false, "Import abandoned: the board changed before the import finished", a);
+        CheckButtons("JoinBlack Reset?", a + ": Ana's lobby");
+        view.PressPgnClose();
+        CheckPasteBox(false, false, "", a + ": closed");
+        CheckInt(view.PressButton(ChessBoardView.ButtonLoadPgn), ChessBoard.InputRejected, a + ": Load PGN refused");
+
+        board.importer = savedImporter;
+        board.ClearState();
+        view.Refresh();
+        CheckPgnBox(false, s + ": cleared");
+        CheckView("cleared after the Load PGN checks");
         LogSummary();
+    }
+
+    // Whether the PGN box shows its paste part (shown) or is hidden; shown, with the Import button as importShown
+    // says and the status line reading note.
+    void CheckPasteBox(bool shown, bool importShown, string note, string name) {
+        view.Refresh();
+        string errors = "";
+        if (view.pgnShown != shown || view.pgnPasting != shown) {
+            errors += "pgnShown " + view.pgnShown + ", pgnPasting " + view.pgnPasting + "; ";
+        }
+        if (view.pgnBox.activeSelf != shown) errors += "box " + (shown ? "hidden" : "shown") + "; ";
+        if (shown) {
+            if (!view.pgnPastePart.activeSelf || view.pgnCopyPart.activeSelf) {
+                errors += "paste part " + view.pgnPastePart.activeSelf + ", copy part " + view.pgnCopyPart.activeSelf
+                    + "; ";
+            }
+            if (view.pgnImportButton.activeSelf != importShown) {
+                errors += "Import " + (importShown ? "hidden" : "shown") + "; ";
+            }
+            if (view.pgnImportLabel.text != note) errors += "line \"" + view.pgnImportLabel.text + "\"; ";
+        }
+        Check(errors.Length == 0, name + ": " + (shown ? "the paste box shown" + (note.Length > 0 ? ", \"" + note
+            + "\"" : "") : "the box hidden"), errors);
     }
 
     // Whether the PGN box is shown, as the view says, and when shown holds the game's PGN as it stands.
@@ -1874,6 +2045,8 @@ public class ViewTest : UdonSharpBehaviour {
             if (padded.Contains(" " + actionName + "? ")) want = OptionalShown(action);
             // PGN (11.2a), unless named, is checked in every state: shown exactly when the game has moves.
             if (action == ChessBoardView.ButtonPgn && !padded.Contains(" Pgn")) want = board.moveCount > 0;
+            // Load PGN (11.2b), unless named, likewise: shown exactly when the board can take an import.
+            if (action == ChessBoardView.ButtonLoadPgn && !padded.Contains(" LoadPgn")) want = board.CanImport();
             if (action == ChessBoardView.ButtonMode && board.IsModeForced()) want = false;
             if (action == ChessBoardView.ButtonClock && board.IsClockForced()) want = false;
             if (button.activeSelf != want) {

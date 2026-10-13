@@ -13,8 +13,8 @@ using VRC.Udon;
 
 // Builds the physical board (PLAN.md 9.1, ChessBoardView.cs) in the open scene for the selected ChessBoard, or the
 // scene's only one: a table, the board's surface and squares, the 32 piece objects, the button panels (steps 9.4a and
-// 9.4b), the highlights and the promotion picker (step 9.5a), the status panels (step 9.5c) and the PGN box (step
-// 11.2a), wired to a ChessBoardView. Players walk through all of it (no solid colliders but the pieces', on the
+// 9.4b), the highlights and the promotion picker (step 9.5a), the status panels (step 9.5c) and the PGN box (steps
+// 11.2a, 11.2b), wired to a ChessBoardView. Players walk through all of it (no solid colliders but the pieces', on the
 // Pickup layer); the view's blocker keeps out those without a seat (step 9.5a2). An existing view for the same board
 // is replaced, keeping its place. The piece meshes, the highlight meshes and the materials are generated
 // placeholders in Assets/Siggi/ChessBoard/Models/, made only when missing, so they can be replaced there (or other
@@ -347,12 +347,18 @@ public static class ChessBoardViewBuilder {
     static readonly Vector2 PgnBoxSize = new Vector2(440, 560);
     const float PgnHintHeight = 34;
     const float PgnBoxLift = 0.1f;
+    // The paste part's bottom bar (step 11.2b): its height and its buttons' width.
+    const float PgnBarHeight = 40;
+    const float PgnBarButtonWidth = 80;
 
-    // The PGN box (step 11.2a): a world-space canvas (with VRCUiShape, so the pointer reaches the text) standing upright
-    // over the far edge of the board from White's end, facing it unturned, with a hint line and a read-only multi-line
-    // text field the view fills with the game's PGN. 80 characters fit on a line, ChessPgn.LineWidth. Built hidden; the
-    // view shows it for the local player and turns it to face the end they opened it from.
+    // The PGN box (steps 11.2a, 11.2b): a world-space canvas (with VRCUiShape, so the pointer reaches the text)
+    // standing upright over the far edge of the board from White's end, facing it unturned, holding two parts the view
+    // shows one at a time. Copying: a hint line and a read-only multi-line text field the view fills with the game's
+    // PGN, 80 characters a line (ChessPgn.LineWidth). Pasting: a hint line, an editable field to paste into, and a bar
+    // with the import's status line and the Import and Close buttons. Built hidden; the view shows it for the local
+    // player and turns it to face the end they opened it from.
     static void AddPgnBox(GameObject root, ChessBoardView view) {
+        UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(view);
         Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
         GameObject canvasObject = new GameObject("PGN Box", typeof(RectTransform));
@@ -370,40 +376,79 @@ public static class ChessBoardViewBuilder {
         AddTriggerCollider(canvasObject);
         canvasObject.AddComponent<Image>().color = new Color(0.12f, 0.12f, 0.14f, 0.95f);
 
-        GameObject hintObject = new GameObject("Hint", typeof(RectTransform));
-        hintObject.layer = canvasObject.layer;
-        RectTransform hintRect = hintObject.GetComponent<RectTransform>();
-        hintRect.SetParent(canvasObject.transform, false);
-        hintRect.anchorMin = new Vector2(0, 1);
-        hintRect.anchorMax = Vector2.one;
-        hintRect.offsetMin = new Vector2(10, -PgnHintHeight);
-        hintRect.offsetMax = new Vector2(-10, 0);
+        GameObject copy = AddStretched(canvasObject, "Copy", Vector2.zero, Vector2.zero);
+        AddPgnHint(copy, font, "PGN of this game. To copy it on desktop: click the text, then Ctrl+A and Ctrl+C.");
+        InputField field = AddPgnField(copy, font, 8, true);
+
+        GameObject paste = AddStretched(canvasObject, "Paste", Vector2.zero, Vector2.zero);
+        AddPgnHint(paste, font, "Paste a PGN here, then press Import. On desktop: click the box, then Ctrl+V.");
+        InputField pasteField = AddPgnField(paste, font, 8 + PgnBarHeight, false);
+        GameObject bar = AddAnchored(paste, "Bar", Vector2.zero, new Vector2(1, 0), new Vector2(8, 4),
+            new Vector2(-8, PgnBarHeight));
+        GameObject statusObject = AddStretched(bar, "Status", Vector2.zero,
+            new Vector2(-2 * (PgnBarButtonWidth + 6), 0));
+        Text status = statusObject.AddComponent<Text>();
+        status.font = font;
+        status.fontSize = 12;
+        status.alignment = TextAnchor.MiddleLeft;
+        status.color = new Color(0.95f, 0.95f, 0.95f);
+        status.raycastTarget = false;
+        status.supportRichText = false;
+        status.text = "";
+        GameObject importButton = AddBarButton(bar, font, udon, "Import", "PressImport", 1);
+        AddBarButton(bar, font, udon, "Close", "PressPgnClose", 0);
+        paste.SetActive(false);
+
+        canvasObject.SetActive(false);
+        view.pgnBox = canvasObject;
+        view.pgnField = field;
+        view.pgnCopyPart = copy;
+        view.pgnPastePart = paste;
+        view.pgnPasteField = pasteField;
+        view.pgnImportLabel = status;
+        view.pgnImportButton = importButton;
+    }
+
+    // A child of parent filling it, inset by offsetMin and offsetMax.
+    static GameObject AddStretched(GameObject parent, string name, Vector2 offsetMin, Vector2 offsetMax) {
+        return AddAnchored(parent, name, Vector2.zero, Vector2.one, offsetMin, offsetMax);
+    }
+
+    // A child of parent between the anchors (fractions of parent), inset by offsetMin and offsetMax. The anchors are
+    // set first: setting them afterwards would move the offsets.
+    static GameObject AddAnchored(GameObject parent, string name, Vector2 anchorMin, Vector2 anchorMax,
+        Vector2 offsetMin, Vector2 offsetMax) {
+        GameObject child = new GameObject(name, typeof(RectTransform));
+        child.layer = parent.layer;
+        RectTransform rect = child.GetComponent<RectTransform>();
+        rect.SetParent(parent.transform, false);
+        rect.anchorMin = anchorMin;
+        rect.anchorMax = anchorMax;
+        rect.offsetMin = offsetMin;
+        rect.offsetMax = offsetMax;
+        return child;
+    }
+
+    // The PGN box's hint line, along the top of part.
+    static void AddPgnHint(GameObject part, Font font, string text) {
+        GameObject hintObject = AddAnchored(part, "Hint", new Vector2(0, 1), Vector2.one,
+            new Vector2(10, -PgnHintHeight), new Vector2(-10, 0));
         Text hint = hintObject.AddComponent<Text>();
         hint.font = font;
         hint.fontSize = 12;
         hint.alignment = TextAnchor.MiddleLeft;
         hint.color = new Color(0.95f, 0.95f, 0.95f);
         hint.raycastTarget = false;
-        hint.text = "PGN of this game. To copy it on desktop: click the text, then Ctrl+A and Ctrl+C.";
+        hint.text = text;
+    }
 
-        GameObject fieldObject = new GameObject("Field", typeof(RectTransform));
-        fieldObject.layer = canvasObject.layer;
-        RectTransform fieldRect = fieldObject.GetComponent<RectTransform>();
-        fieldRect.SetParent(canvasObject.transform, false);
-        fieldRect.anchorMin = Vector2.zero;
-        fieldRect.anchorMax = Vector2.one;
-        fieldRect.offsetMin = new Vector2(8, 8);
-        fieldRect.offsetMax = new Vector2(-8, -PgnHintHeight);
+    // The PGN box's multi-line text field, filling part under the hint line down to bottom: read-only for copying,
+    // editable for pasting.
+    static InputField AddPgnField(GameObject part, Font font, float bottom, bool readOnly) {
+        GameObject fieldObject = AddStretched(part, "Field", new Vector2(8, bottom), new Vector2(-8, -PgnHintHeight));
         Image fieldImage = fieldObject.AddComponent<Image>();
         fieldImage.color = new Color(0.95f, 0.95f, 0.93f);
-        GameObject textObject = new GameObject("Text", typeof(RectTransform));
-        textObject.layer = canvasObject.layer;
-        RectTransform textRect = textObject.GetComponent<RectTransform>();
-        textRect.SetParent(fieldObject.transform, false);
-        textRect.anchorMin = Vector2.zero;
-        textRect.anchorMax = Vector2.one;
-        textRect.offsetMin = new Vector2(6, 4);
-        textRect.offsetMax = new Vector2(-6, -4);
+        GameObject textObject = AddStretched(fieldObject, "Text", new Vector2(6, 4), new Vector2(-6, -4));
         Text text = textObject.AddComponent<Text>();
         text.font = font;
         text.fontSize = 10;
@@ -417,13 +462,36 @@ public static class ChessBoardViewBuilder {
         field.textComponent = text;
         field.targetGraphic = fieldImage;
         field.lineType = InputField.LineType.MultiLineNewline;
-        field.readOnly = true;
+        field.readOnly = readOnly;
         field.characterLimit = 0;
         field.navigation = new Navigation { mode = Navigation.Mode.None };
         field.text = "";
-        canvasObject.SetActive(false);
-        view.pgnBox = canvasObject;
-        view.pgnField = field;
+        return field;
+    }
+
+    // A button at the right end of the PGN box's bar, slot places from the right (0 the rightmost), calling the view's
+    // eventName.
+    static GameObject AddBarButton(GameObject bar, Font font, UdonBehaviour udon, string label, string eventName,
+        int slot) {
+        float right = -slot * (PgnBarButtonWidth + 6);
+        GameObject buttonObject = AddAnchored(bar, label, new Vector2(1, 0), Vector2.one,
+            new Vector2(right - PgnBarButtonWidth, 4), new Vector2(right, -4));
+        Image image = buttonObject.AddComponent<Image>();
+        image.color = new Color(0.85f, 0.85f, 0.88f);
+        Button button = buttonObject.AddComponent<Button>();
+        button.targetGraphic = image;
+        button.navigation = new Navigation { mode = Navigation.Mode.None };
+        UnityEventTools.AddStringPersistentListener(button.onClick,
+            new UnityAction<string>(udon.SendCustomEvent), eventName);
+        GameObject labelObject = AddStretched(buttonObject, "Label", Vector2.zero, Vector2.zero);
+        Text text = labelObject.AddComponent<Text>();
+        text.font = font;
+        text.fontSize = 14;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.color = Color.black;
+        text.raycastTarget = false;
+        text.text = label;
+        return buttonObject;
     }
 
     // A UI canvas's collider: a trigger box over the whole canvas, so players walk through it. VRCUiShape uses a box
@@ -445,13 +513,14 @@ public static class ChessBoardViewBuilder {
         "PressLeaveReplay", "PressStepFirst", "PressStepBack", "PressStepForward", "PressStepLast",
         "PressRequestTakebackWhite", "PressRequestTakebackBlack", "PressAcceptTakebackWhite",
         "PressAcceptTakebackBlack", "PressDeclineTakebackWhite", "PressDeclineTakebackBlack", "PressLoadHere",
-        "PressPgn",
+        "PressPgn", "PressLoadPgn",
     };
     // The order of the buttons on a panel (the grid packs the shown ones in this order): the lobby's, replay's and
-    // the game's, Reset last. Each panel leaves out the other colour's. Load it here (step 10.2b) shows only on a reset
-    // board, with the Join buttons. PGN (step 11.2a) comes just before Reset.
+    // the game's, Reset last. Each panel leaves out the other colour's. Load it here (step 10.2b) and Load PGN (step
+    // 11.2b) show only on a reset board, with the Join buttons. PGN (step 11.2a) comes just before Reset.
     static readonly int[] ButtonOrder = {
         ChessBoardView.ButtonJoinWhite, ChessBoardView.ButtonJoinBlack, ChessBoardView.ButtonLoadHere,
+        ChessBoardView.ButtonLoadPgn,
         ChessBoardView.ButtonMode, ChessBoardView.ButtonClock, ChessBoardView.ButtonStart, ChessBoardView.ButtonContinue,
         ChessBoardView.ButtonEnterReplay, ChessBoardView.ButtonLeaveReplay, ChessBoardView.ButtonStepFirst,
         ChessBoardView.ButtonStepBack, ChessBoardView.ButtonStepForward, ChessBoardView.ButtonStepLast,
