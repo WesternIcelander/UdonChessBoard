@@ -2216,6 +2216,27 @@ namespace SiggiChessBoard {
             return InputAccepted;
         }
 
+        // The "Load it here" button (step 10.2b, docs/archive.md): loads the game with this ID from the board's
+        // archive (LoadGame), its moves and clocks copied straight from it, its ending as its PGN result. The archive
+        // keeps no notation: every entry starts empty and the fill-in works it out over the next frames, on this
+        // client and on each one receiving the load. Refused unless CanLoadGame, and for a game not in the archive.
+        public int LoadArchivedGame(string archivedGameId) {
+            if (!CanLoadGame() || !Utilities.IsValid(archive)) return InputRejected;
+            int index = archive.IndexOf(archivedGameId);
+            if (index < 0) return InputRejected;
+            int count = archive.MoveCountAt(index);
+            int[] moves = new int[count];
+            int[] clocks = new int[count];
+            string[] sans = new string[count];
+            for (int i = 0; i < count; i++) sans[i] = "";
+            archive.CopyMovesAt(index, moves);
+            archive.CopyClocksAt(index, clocks);
+            return LoadGame(archive.StartFenAt(index), moves, sans, clocks, count, archive.ModeAt(index),
+                archive.WhiteAt(index), archive.BlackAt(index),
+                ChessPgn.ResultText(archive.EndingAt(index), archive.WinnerAt(index)), archive.GameIdAt(index),
+                archive.BaseTimeAt(index), archive.IncrementAt(index));
+        }
+
         public int ContinueGame() {
             return ContinueGameAs(LocalName());
         }

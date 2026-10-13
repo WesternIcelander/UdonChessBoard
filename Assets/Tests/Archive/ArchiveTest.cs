@@ -3,9 +3,10 @@ using UdonSharp;
 using UnityEngine;
 using VRC.SDKBase;
 
-// Step 10.1a test behaviour (PLAN.md section 10): the GameArchive and its holders (docs/archive.md). The holders are
-// synced, so like BoardTest it runs only with no one else in the instance; it uses the board once BoardTest and
-// ViewTest have finished with it, and empties the archive when done (their games are archived too). Logs
+// Steps 10.1a to 10.2b test behaviour (PLAN.md section 10): the GameArchive and its holders, the history wall and
+// loading an archived game onto the board (docs/archive.md). The holders are synced, so like BoardTest it runs only
+// with no one else in the instance; it uses the board once BoardTest and ViewTest have finished with it, and puts
+// back the games it found archived when done. Logs
 // "[ArchiveTest] PASS: <check>" or "[ArchiveTest] FAIL: <check>: <details>" per check, then a summary line.
 // Built in the scene by Tools > Chess Board > Create Archive Test (Editor/ArchiveTestBuilder.cs).
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
@@ -18,6 +19,8 @@ public class ArchiveTest : UdonSharpBehaviour {
     public ViewTest viewTest;
     // The scene's history wall on this archive (step 10.2a).
     public GameHistoryWall wall;
+    // The board's view, for its Load it here button (step 10.2b).
+    public ChessBoardView view;
 
     const int HolderCount = 10;
     const int Capacity = HolderCount * GameArchiveHolder.Capacity;
@@ -79,11 +82,13 @@ public class ArchiveTest : UdonSharpBehaviour {
         if (hasWall) RunWallSetupChecks();
         RunBoardChecks();
         if (hasWall) RunWallBoardChecks();
+        if (hasWall) RunLoadChecks();
         RunAddChecks();
         if (hasWall) RunWallAddChecks();
         RunWrapChecks();
         if (hasWall) RunWallFullChecks();
         RunRecentChecks();
+        if (hasWall) RunWallPickGoneChecks();
         RunSyncChecks();
         archive.ClearArchive();
         CheckInt(archive.GameCount(), 0, "end: archive emptied");
@@ -402,6 +407,9 @@ public class ArchiveTest : UdonSharpBehaviour {
         CheckString(wall.title.text, "Previous games", "wall: full, title");
         CheckWallRows(4, Capacity, "wall: full, test-4 to test-53");
         CheckString(wall.rows[Capacity - 1].text, ExpectedRow(Capacity + 3), "wall: full, the newest last");
+        // Picked for RunWallPickGoneChecks, after RunRecentChecks overwrites it.
+        wall.SelectRow(0);
+        CheckString(wall.selectedGameId, "test-4", "pick: the oldest game picked");
     }
 
     // The wall's first count rows are test-first onwards, oldest first, and the rest empty.
@@ -424,6 +432,159 @@ public class ArchiveTest : UdonSharpBehaviour {
         return "#" + n + "  White " + n + " vs Black " + n + ": " + ChessGame.EndingDescription(ending, winner)
             + " (" + ChessPgn.ResultText(ending, winner) + "), " + moves + (moves == 1 ? " move" : " moves")
             + (n % 2 == ChessGame.ModeChess960 ? ", Chess960" : "");
+    }
+
+    // ---- Picking a game and loading it (step 10.2b) ----
+
+    // After RunWallBoardChecks, with the board's unfinished game archived: a fool's mate is played and archived too,
+    // then the wall's rows pick games, Load it here shows only on a reset board with a game picked, and loading puts
+    // the board in its loaded state with the game's moves, players and result, its notation filled in.
+    void RunLoadChecks() {
+        if (!Utilities.IsValid(board) || board.archive != archive || archive.GameCount() != 1) {
+            Check(false, "load: the board's game archived", "no board, or " + archive.GameCount() + " games");
+            return;
+        }
+        string firstId = archive.GameIdAt(0);
+        board.ClearState();
+        string white = "Load Ana";
+        string black = "Load Bo";
+        board.JoinAs(ChessRules.White, white);
+        board.JoinAs(ChessRules.Black, black);
+        CheckInt(board.StartGameAs(white), ChessBoard.InputAccepted, "load: fool's mate started");
+        CheckInt(board.PieceDroppedAs(white, Sq("f2"), Sq("f3")), ChessBoard.InputAccepted, "load: f3");
+        CheckInt(board.PieceDroppedAs(black, Sq("e7"), Sq("e5")), ChessBoard.InputAccepted, "load: e5");
+        CheckInt(board.PieceDroppedAs(white, Sq("g2"), Sq("g4")), ChessBoard.InputAccepted, "load: g4");
+        CheckInt(board.PieceDroppedAs(black, Sq("d8"), Sq("h4")), ChessBoard.InputAccepted, "load: Qh4#");
+        CheckInt(board.ending, ChessGame.EndingCheckmate, "load: fool's mate ended by checkmate");
+        string mateId = board.gameId;
+        board.ClearState();
+        CheckInt(archive.GameCount(), 2, "load: fool's mate archived");
+        if (archive.GameCount() != 2 || archive.GameIdAt(1) != mateId) return;
+        wall.RefreshIfChanged();
+
+        // Picking on the wall.
+        bool targets = wall.rowTargets.Length == wall.rows.Length;
+        for (int i = 0; i < wall.rowTargets.Length; i++) {
+            GameHistoryRow target = wall.rowTargets[i];
+            if (!Utilities.IsValid(target) || target.wall != wall || target.index != i) targets = false;
+        }
+        Check(targets, "pick: every row has its target", "a row's target is missing or wrong (Create History Wall)");
+        wall.ClearSelection();
+        int changes = wall.selectionChanges;
+        wall.SelectRow(5);
+        Check(!wall.HasSelection() && wall.selectionChanges == changes, "pick: an empty row picks nothing",
+            "picked " + wall.selectedGameId);
+        if (targets) wall.rowTargets[1].Press();
+        else wall.SelectRow(1);
+        CheckString(wall.selectedGameId, mateId, "pick: row 2 picks the fool's mate");
+        CheckInt(wall.SelectedIndex(), 1, "pick: its index");
+        Check(wall.selectionChanges == changes + 1, "pick: counted as a change", "changes " + wall.selectionChanges);
+        Check(wall.rows[1].color == wall.selectedColor && wall.rows[0].color == wall.rowColor,
+            "pick: only the picked row coloured", "row 1 " + wall.rows[0].color + ", row 2 " + wall.rows[1].color);
+        wall.SelectRow(1);
+        Check(!wall.HasSelection() && wall.selectedGameId == "", "pick: pressed again, unpicked",
+            "still " + wall.selectedGameId);
+        Check(wall.rows[1].color == wall.rowColor, "pick: unpicked, its row uncoloured", "" + wall.rows[1].color);
+        wall.SelectRow(0);
+        CheckString(wall.selectedGameId, firstId, "pick: row 1 picks the board's first game");
+        wall.SelectRow(1);
+        CheckString(wall.selectedGameId, mateId, "pick: another row replaces the pick");
+        Check(wall.rows[0].color == wall.rowColor, "pick: replaced, the first row uncoloured", "" + wall.rows[0].color);
+
+        // Load it here: only on a reset board with a game picked.
+        bool hasView = Utilities.IsValid(view) && view.board == board && view.historyWall == wall;
+        Check(hasView, "view: assigned, on this board and the wall", "assign ArchiveTest's View (Create Board View, "
+            + "then Create Archive Test again)");
+        if (hasView) {
+            CheckLoadButton(true, "Load it here: shown on a reset board with a game picked");
+            CheckString(view.ButtonText(ChessBoardView.ButtonLoadHere), "Load it here", "Load it here: label");
+            board.JoinAs(ChessRules.White, white);
+            CheckLoadButton(false, "Load it here: hidden in the lobby");
+            CheckInt(view.PressButton(ChessBoardView.ButtonLoadHere), ChessBoard.InputRejected,
+                "Load it here: refused in the lobby");
+            CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "Load it here: refused, still in the lobby");
+            CheckInt(board.LoadArchivedGame(mateId), ChessBoard.InputRejected, "load: refused in the lobby");
+            board.ClearState();
+            wall.ClearSelection();
+            CheckLoadButton(false, "Load it here: hidden with nothing picked");
+            CheckInt(view.PressButton(ChessBoardView.ButtonLoadHere), ChessBoard.InputRejected,
+                "Load it here: refused with nothing picked");
+            CheckInt(board.lifecycle, ChessBoard.LifecycleReset, "Load it here: refused, the board still reset");
+            wall.SelectRow(1);
+        }
+        CheckInt(board.LoadArchivedGame("no-such-game"), ChessBoard.InputRejected, "load: a game not archived refused");
+        CheckInt(board.LoadArchivedGame(""), ChessBoard.InputRejected, "load: no ID refused");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleReset, "load: refused, the board still reset");
+
+        // The fool's mate, loaded through the button.
+        int loaded = hasView ? view.PressButton(ChessBoardView.ButtonLoadHere) : board.LoadArchivedGame(mateId);
+        CheckInt(loaded, ChessBoard.InputAccepted, "load: fool's mate loaded");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "load: the board in its loaded state");
+        Check(board.replayMode, "load: in replay", "not in replay");
+        CheckInt(board.moveCount, 4, "load: four moves");
+        CheckInt(board.replayIndex, 4, "load: showing the last position");
+        archive.CopyMovesAt(1, scratch);
+        bool sameMoves = true;
+        for (int i = 0; i < 4; i++) {
+            if (board.moveHistory[i] != scratch[i]) sameMoves = false;
+        }
+        Check(sameMoves, "load: the archived moves", "moves differ");
+        CheckString(board.gameId, mateId, "load: the game's ID");
+        CheckString(board.continuedFrom, "", "load: no ContinuedFrom");
+        CheckString(board.replaySourceWhite, white, "load: White");
+        CheckString(board.replaySourceBlack, black, "load: Black");
+        CheckString(board.replaySourceResult, "0-1", "load: result 0-1");
+        CheckInt(board.ending, ChessGame.EndingCheckmate, "load: ended by checkmate");
+        CheckInt(board.winner, ChessRules.Black, "load: Black won");
+        if (hasView) {
+            Check(!wall.HasSelection(), "Load it here: the pick cleared once loaded", "still " + wall.selectedGameId);
+            CheckLoadButton(false, "Load it here: hidden on the loaded board");
+        }
+        CheckInt(board.FirstMissingNotation(), 0, "notation: none on loading (the archive keeps none)");
+        Check(board.FillNotationFor(float.MaxValue), "notation: filled in", "gaps left");
+        CheckString(NotationText(4), "f3 e5 g4 Qh4#", "notation: the fool's mate's");
+        CheckInt(board.LoadArchivedGame(firstId), ChessBoard.InputRejected, "load: refused on a loaded board");
+
+        // The unfinished game: no result.
+        board.ClearState();
+        CheckInt(board.LoadArchivedGame(firstId), ChessBoard.InputAccepted, "load: the unfinished game loaded");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "load: unfinished, the loaded state");
+        CheckString(board.replaySourceResult, "*", "load: unfinished, result *");
+        CheckInt(board.ending, ChessGame.EndingNone, "load: unfinished, no result");
+        Check(board.FillNotationFor(float.MaxValue), "notation: unfinished, filled in", "gaps left");
+        CheckString(NotationText(2), "e4 c5", "notation: unfinished, the game's");
+        board.ClearState();
+        if (hasView) view.UpdateButtons();
+    }
+
+    // After RunWallFullChecks picked the oldest game (test-4) and RunRecentChecks overwrote it: the pick is gone.
+    void RunWallPickGoneChecks() {
+        wall.RefreshIfChanged();
+        Check(!wall.HasSelection() && wall.selectedGameId == "", "pick: overwritten in the archive, unpicked",
+            "still " + wall.selectedGameId);
+    }
+
+    // Every Load it here button is shown (or hidden) after the view brings its buttons up to date, and the view's
+    // ButtonApplies agrees.
+    void CheckLoadButton(bool shown, string name) {
+        view.UpdateButtons();
+        string errors = "";
+        int found = 0;
+        for (int i = 0; i < view.buttons.Length && i < view.buttonActions.Length; i++) {
+            if (view.buttonActions[i] != ChessBoardView.ButtonLoadHere || !Utilities.IsValid(view.buttons[i])) continue;
+            found++;
+            if (view.buttons[i].activeSelf != shown) errors += "button " + i + (shown ? " hidden; " : " shown; ");
+        }
+        if (found == 0) errors += "no Load it here button (Create Board View); ";
+        if (view.ButtonApplies(ChessBoardView.ButtonLoadHere) != shown) errors += "applies " + !shown + "; ";
+        Check(errors.Length == 0, name, errors);
+    }
+
+    // The board's first count notation entries, separated by spaces.
+    string NotationText(int count) {
+        string text = "";
+        for (int i = 0; i < count; i++) text += (i == 0 ? "" : " ") + board.notation[i];
+        return text;
     }
 
     // ---- Test games ----

@@ -218,6 +218,16 @@ namespace SiggiChessBoard {
             return orderCount;
         }
 
+        // The index (oldest first) of the archived game with this ID, -1 when it isn't archived.
+        public int IndexOf(string gameId) {
+            if (gameId == null || gameId.Length == 0) return -1;
+            int count = GameCount();
+            for (int i = 0; i < count; i++) {
+                if (GameIdAt(i) == gameId) return i;
+            }
+            return -1;
+        }
+
         // The holder slot (holder * Capacity + slot) of the index-th game, oldest first.
         public int SlotAt(int index) {
             UpdateOrder();

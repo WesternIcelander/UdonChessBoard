@@ -79,7 +79,9 @@ namespace SiggiChessBoard {
         public const int ButtonAcceptTakebackBlack = 25;
         public const int ButtonDeclineTakebackWhite = 26;
         public const int ButtonDeclineTakebackBlack = 27;
-        public const int ButtonCount = 28;
+        // Step 10.2b: loads the game picked on the history wall onto this (reset) board.
+        public const int ButtonLoadHere = 28;
+        public const int ButtonCount = 29;
         // The button objects in the world (any number: the builder puts a panel at each end of the table), with the
         // Button* action of each and its label at the same index. A button's UI Button calls the view's Press...
         // event for its action.
@@ -89,6 +91,10 @@ namespace SiggiChessBoard {
         // The time controls the Clock button steps through, in seconds (base ChessArbiter.NoClock for none).
         public int[] clockBases = { ChessArbiter.NoClock, 60, 180, 300, 600, 900, 1800 };
         public int[] clockIncrements = { 0, 0, 2, 3, 0, 10, 0 };
+        // The history wall whose picked game Load it here loads (step 10.2b); none hides the button.
+        public GameHistoryWall historyWall;
+        // The wall's selectionChanges when the buttons last saw it.
+        int seenSelectionChanges;
         // The promotion picker (step 9.5a): a panel of buttons (Queen, Rook, Bishop, Knight, Cancel, each calling its
         // PressPromote... event), a child of this view, shown only to the local player while their promotion waits for
         // its piece, standing over the promotion square and facing the promoting side.
@@ -219,6 +225,9 @@ namespace SiggiChessBoard {
             } else if (Time.time >= nextPickupCheck) {
                 UpdatePickupable();
                 // Being an organizer and the board's idle time (for Reset) change without the board changing.
+                UpdateButtons();
+            } else if (Utilities.IsValid(historyWall) && historyWall.selectionChanges != seenSelectionChanges) {
+                // A game picked on the wall shows Load it here at once.
                 UpdateButtons();
             }
             if (animatingCount > 0) StepAnimations();
@@ -806,6 +815,10 @@ namespace SiggiChessBoard {
             PressButton(ButtonDeclineTakebackBlack);
         }
 
+        public void PressLoadHere() {
+            PressButton(ButtonLoadHere);
+        }
+
         // The colour the button for action acts for (ChessRules.White or Black), or ChessRules.NoColor for one that
         // acts for no colour (Claim draw is the side to move's).
         public static int ButtonColor(int action) {
@@ -881,6 +894,12 @@ namespace SiggiChessBoard {
                 result = board.ContinueGame();
             } else if (action == ButtonReset) {
                 result = board.ResetBoard();
+            } else if (action == ButtonLoadHere) {
+                if (Utilities.IsValid(historyWall) && historyWall.HasSelection()) {
+                    result = board.LoadArchivedGame(historyWall.selectedGameId);
+                }
+                // Loaded once: the other boards stop offering it.
+                if (result == ChessBoard.InputAccepted) historyWall.ClearSelection();
             }
             // A refusal tells nobody, so the buttons are brought up to date here too.
             UpdateButtons();
@@ -907,6 +926,9 @@ namespace SiggiChessBoard {
             if (action == ButtonStart) return board.CanStartGame();
             if (action == ButtonContinue) return board.CanContinue();
             if (action == ButtonReset) return board.CanReset();
+            if (action == ButtonLoadHere) {
+                return board.CanLoadGame() && Utilities.IsValid(historyWall) && historyWall.HasSelection();
+            }
             int color = ButtonColor(action);
             int step = StepTarget(action);
             if (step >= 0) return board.CanStepTo(step);
@@ -969,6 +991,7 @@ namespace SiggiChessBoard {
             if (action == ButtonDeclineTakebackWhite || action == ButtonDeclineTakebackBlack) {
                 return "Decline takeback";
             }
+            if (action == ButtonLoadHere) return "Load it here";
             return "";
         }
 
@@ -983,6 +1006,7 @@ namespace SiggiChessBoard {
         // Shows each button whose action applies to the local player and hides the rest, with its label. Called on
         // every Refresh, once a second and after every press.
         public void UpdateButtons() {
+            if (Utilities.IsValid(historyWall)) seenSelectionChanges = historyWall.selectionChanges;
             for (int i = 0; i < buttons.Length; i++) {
                 GameObject button = buttons[i];
                 if (!Utilities.IsValid(button) || i >= buttonActions.Length) continue;

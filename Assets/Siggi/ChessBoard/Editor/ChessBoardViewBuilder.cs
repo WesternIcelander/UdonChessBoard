@@ -99,6 +99,7 @@ public static class ChessBoardViewBuilder {
         view.squareSize = SquareSize;
         view.meshes = meshes;
         view.blocker = blockerBox;
+        view.historyWall = HistoryWallFor(board);
         view.pieces = new Transform[ChessBoardView.PieceCount];
         view.pieceFilters = new MeshFilter[ChessBoardView.PieceCount];
         view.piecePickups = new VRCPickup[ChessBoardView.PieceCount];
@@ -132,7 +133,11 @@ public static class ChessBoardViewBuilder {
         AddStatusPanels(root, view, boardWidth * TableDepthFactor);
         AddPromotionPicker(root, view);
         UdonSharpEditorUtility.CopyProxyToUdon(view);
+        // Read before old is destroyed, after which Unity compares it equal to null.
+        bool replacing = old != null;
+        int repointed = 0;
         if (old != null) {
+            repointed = RepointReferences(old.GetComponent<ChessBoardView>(), view);
             root.transform.SetParent(old.transform.parent, false);
             root.transform.SetSiblingIndex(old.transform.GetSiblingIndex());
             root.transform.position = old.transform.position;
@@ -142,8 +147,39 @@ public static class ChessBoardViewBuilder {
         }
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
-        Debug.Log("[ChessBoardViewBuilder] " + (old != null ? "Replaced " : "Created ") + root.name + " for "
-            + board.gameObject.name + ". Move it where you like and save the scene.");
+        Debug.Log("[ChessBoardViewBuilder] " + (replacing ? "Replaced " : "Created ") + root.name + " for "
+            + board.gameObject.name + (replacing ? " (" + repointed + " behaviour(s) pointed at the new view)" : "")
+            + (view.historyWall != null ? ", with the history wall" : "")
+            + ". Move it where you like and save the scene.");
+    }
+
+    // Points every other behaviour's field holding the old view (ViewTest's, a debug view's, ArchiveTest's) at the
+    // new one, so replacing a view doesn't leave them on a destroyed object. Returns how many behaviours changed.
+    // GameHistoryWallBuilder uses it for the wall too.
+    public static int RepointReferences(UdonSharpBehaviour oldView, UdonSharpBehaviour newView) {
+        if (oldView == null) return 0;
+        int changed = 0;
+        UdonSharpBehaviour[] behaviours = Object.FindObjectsOfType<UdonSharpBehaviour>(true);
+        for (int i = 0; i < behaviours.Length; i++) {
+            UdonSharpBehaviour behaviour = behaviours[i];
+            // The old view's own pieces and squares go with it.
+            if (behaviour == newView || behaviour.transform.IsChildOf(oldView.transform)) continue;
+            SerializedObject serialized = new SerializedObject(behaviour);
+            SerializedProperty property = serialized.GetIterator();
+            bool found = false;
+            while (property.Next(true)) {
+                if (property.propertyType == SerializedPropertyType.ObjectReference
+                    && property.objectReferenceValue == oldView) {
+                    property.objectReferenceValue = newView;
+                    found = true;
+                }
+            }
+            if (!found) continue;
+            serialized.ApplyModifiedProperties();
+            UdonSharpEditorUtility.CopyProxyToUdon(behaviour);
+            changed++;
+        }
+        return changed;
     }
 
     // Makes a piece object something to carry (PLAN.md 9.2, docs/physical-pieces.md): a kinematic rigidbody (the
@@ -323,13 +359,14 @@ public static class ChessBoardViewBuilder {
         "PressAcceptDrawBlack", "PressDeclineDrawWhite", "PressDeclineDrawBlack", "PressClaimDraw", "PressEnterReplay",
         "PressLeaveReplay", "PressStepFirst", "PressStepBack", "PressStepForward", "PressStepLast",
         "PressRequestTakebackWhite", "PressRequestTakebackBlack", "PressAcceptTakebackWhite",
-        "PressAcceptTakebackBlack", "PressDeclineTakebackWhite", "PressDeclineTakebackBlack",
+        "PressAcceptTakebackBlack", "PressDeclineTakebackWhite", "PressDeclineTakebackBlack", "PressLoadHere",
     };
     // The order of the buttons on a panel (the grid packs the shown ones in this order): the lobby's, replay's and
-    // the game's, Reset last. Each panel leaves out the other colour's.
+    // the game's, Reset last. Each panel leaves out the other colour's. Load it here (step 10.2b) shows only on a reset
+    // board, with the Join buttons.
     static readonly int[] ButtonOrder = {
-        ChessBoardView.ButtonJoinWhite, ChessBoardView.ButtonJoinBlack, ChessBoardView.ButtonMode,
-        ChessBoardView.ButtonClock, ChessBoardView.ButtonStart, ChessBoardView.ButtonContinue,
+        ChessBoardView.ButtonJoinWhite, ChessBoardView.ButtonJoinBlack, ChessBoardView.ButtonLoadHere,
+        ChessBoardView.ButtonMode, ChessBoardView.ButtonClock, ChessBoardView.ButtonStart, ChessBoardView.ButtonContinue,
         ChessBoardView.ButtonEnterReplay, ChessBoardView.ButtonLeaveReplay, ChessBoardView.ButtonStepFirst,
         ChessBoardView.ButtonStepBack, ChessBoardView.ButtonStepForward, ChessBoardView.ButtonStepLast,
         ChessBoardView.ButtonRequestTakebackWhite, ChessBoardView.ButtonRequestTakebackBlack,
@@ -498,6 +535,17 @@ public static class ChessBoardViewBuilder {
         ChessBoardView[] views = Object.FindObjectsOfType<ChessBoardView>(true);
         for (int i = 0; i < views.Length; i++) {
             if (views[i].board == board) return views[i].gameObject;
+        }
+        return null;
+    }
+
+    // The scene's history wall on the board's archive (step 10.2b), or null; Create History Wall wires views built
+    // before the wall.
+    static GameHistoryWall HistoryWallFor(ChessBoard board) {
+        if (board.archive == null) return null;
+        GameHistoryWall[] walls = Object.FindObjectsOfType<GameHistoryWall>(true);
+        for (int i = 0; i < walls.Length; i++) {
+            if (walls[i].archive == board.archive) return walls[i];
         }
         return null;
     }

@@ -2,17 +2,25 @@ using SiggiChessBoard;
 using UdonSharp;
 using UdonSharpEditor;
 using UnityEditor;
+using UnityEditor.Events;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.UI;
+using VRC.SDK3.Components;
+using VRC.Udon;
 
 // Builds the history wall (docs/archive.md, GameHistoryWall.cs) in the open scene for its only GameArchive: a
 // world-space canvas with a title and one row per game the archive holds, in Columns columns, oldest first down each
-// column. Placed to the left of the boards (along -x), facing them; an existing wall is replaced in place (same parent, position, rotation
-// and scale). Menu: Tools > Chess Board > Create History Wall. Plain editor C#, not Udon.
+// column. Each row is a UI Button (step 10.2b) whose GameHistoryRow picks its game, so the canvas takes the pointer
+// (VRCUiShape, a trigger collider). Placed to the left of the boards (along -x), facing them; an existing wall is
+// replaced in place (same parent, position, rotation and scale). Every board view on the archive's boards gets the
+// wall for its Load it here button. Menu: Tools > Chess Board > Create History Wall. Plain editor C#, not Udon.
 public static class GameHistoryWallBuilder {
     const string WallScriptPath = "Assets/Siggi/ChessBoard/GameHistoryWall.cs";
     const string WallProgramPath = "Assets/Siggi/ChessBoard/GameHistoryWall.asset";
+    const string RowScriptPath = "Assets/Siggi/ChessBoard/GameHistoryRow.cs";
+    const string RowProgramPath = "Assets/Siggi/ChessBoard/GameHistoryRow.asset";
 
     const int Columns = 2;
     const float CanvasWidth = 3000;
@@ -22,6 +30,8 @@ public static class GameHistoryWallBuilder {
     const float ColumnGap = 40;
     const int TitleFontSize = 60;
     const int RowFontSize = 30;
+    // A row's text inset from its button's edges, in canvas pixels.
+    const float RowInset = 12;
     // Where a new wall goes: this far to the left of the leftmost board (along -x, beside the spawn's view, which
     // looks along +z from behind the boards), its centre this high above them.
     const float WallDistance = 2.5f;
@@ -36,7 +46,7 @@ public static class GameHistoryWallBuilder {
                 : "There are several GameArchives in the scene; the wall needs exactly one.", "OK");
             return;
         }
-        if (!EnsureProgramAsset()) return;
+        if (!EnsureProgramAssets()) return;
         GameArchive archive = archives[0];
         int rowCount = archive.holders.Length * GameArchiveHolder.Capacity;
         int rowsPerColumn = (rowCount + Columns - 1) / Columns;
@@ -57,6 +67,9 @@ public static class GameHistoryWallBuilder {
         // Facing the boards: seen from them, looking along -x.
         rootRect.rotation = Quaternion.Euler(0, -90, 0);
         root.AddComponent<CanvasScaler>();
+        root.AddComponent<GraphicRaycaster>();
+        root.AddComponent<VRCUiShape>();
+        AddTriggerCollider(root);
         Image background = root.AddComponent<Image>();
         background.color = new Color(0.1f, 0.1f, 0.12f, 1f);
         background.raycastTarget = false;
@@ -70,14 +83,12 @@ public static class GameHistoryWallBuilder {
         float columnWidth = (CanvasWidth - 2 * Margin - (Columns - 1) * ColumnGap) / Columns;
         float rowsTop = Margin + TitleHeight + Margin / 2;
         wall.rows = new Text[rowCount];
+        wall.rowTargets = new GameHistoryRow[rowCount];
         for (int i = 0; i < rowCount; i++) {
             int column = i / rowsPerColumn;
             int row = i % rowsPerColumn;
-            wall.rows[i] = NewText(root, "Row " + (i + 1), font, RowFontSize,
-                new Vector2(Margin + column * (columnWidth + ColumnGap), rowsTop + row * RowHeight),
-                new Vector2(columnWidth, RowHeight));
-            wall.rows[i].horizontalOverflow = HorizontalWrapMode.Wrap;
-            wall.rows[i].verticalOverflow = VerticalWrapMode.Truncate;
+            Vector2 topLeft = new Vector2(Margin + column * (columnWidth + ColumnGap), rowsTop + row * RowHeight);
+            AddRow(root, wall, i, font, topLeft, new Vector2(columnWidth, RowHeight));
         }
         UdonSharpEditorUtility.CopyProxyToUdon(wall);
 
@@ -89,12 +100,84 @@ public static class GameHistoryWallBuilder {
                 rootRect.rotation = olds[i].transform.rotation;
                 rootRect.localScale = olds[i].transform.localScale;
             }
+            // ArchiveTest's wall, and anything else pointing at the old one.
+            ChessBoardViewBuilder.RepointReferences(olds[i], wall);
             Undo.DestroyObjectImmediate(olds[i].gameObject);
         }
+        int views = WireViews(wall);
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[GameHistoryWallBuilder] " + (olds.Length > 0 ? "Replaced" : "Created") + " the history wall with "
-            + rowCount + " rows. Move it where you like and save the scene.");
+            + rowCount + " rows, for " + views + " board view(s). Move it where you like and save the scene.");
+    }
+
+    // A row: a button over the row's area (clear until pointed at) with a GameHistoryRow calling the wall's
+    // SelectRow, and the row's text inside it.
+    static void AddRow(GameObject root, GameHistoryWall wall, int index, Font font, Vector2 topLeft, Vector2 extent) {
+        GameObject rowObject = new GameObject("Row " + (index + 1), typeof(RectTransform));
+        rowObject.layer = root.layer;
+        RectTransform rect = rowObject.GetComponent<RectTransform>();
+        rect.SetParent(root.transform, false);
+        rect.anchorMin = new Vector2(0, 1);
+        rect.anchorMax = new Vector2(0, 1);
+        rect.pivot = new Vector2(0, 1);
+        rect.anchoredPosition = new Vector2(topLeft.x, -topLeft.y);
+        rect.sizeDelta = extent;
+        Image image = rowObject.AddComponent<Image>();
+        image.color = Color.white;
+        Button button = rowObject.AddComponent<Button>();
+        button.targetGraphic = image;
+        button.navigation = new Navigation { mode = Navigation.Mode.None };
+        // The tint multiplies the white image: clear normally, faint while pointed at or pressed.
+        ColorBlock colors = button.colors;
+        colors.normalColor = new Color(1, 1, 1, 0);
+        colors.highlightedColor = new Color(1, 1, 1, 0.12f);
+        colors.pressedColor = new Color(1, 1, 1, 0.22f);
+        colors.selectedColor = new Color(1, 1, 1, 0);
+        colors.disabledColor = new Color(1, 1, 1, 0);
+        colors.colorMultiplier = 1;
+        button.colors = colors;
+
+        GameHistoryRow target = UdonSharpUndo.AddComponent<GameHistoryRow>(rowObject);
+        target.wall = wall;
+        target.index = index;
+        UdonSharpEditorUtility.CopyProxyToUdon(target);
+        UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(target);
+        UnityEventTools.AddStringPersistentListener(button.onClick, new UnityAction<string>(udon.SendCustomEvent),
+            "Press");
+
+        Text text = NewText(rowObject, "Label", font, RowFontSize, new Vector2(RowInset, 0),
+            new Vector2(extent.x - 2 * RowInset, extent.y));
+        text.horizontalOverflow = HorizontalWrapMode.Wrap;
+        text.verticalOverflow = VerticalWrapMode.Truncate;
+        wall.rows[index] = text;
+        wall.rowTargets[index] = target;
+    }
+
+    // Gives every board view on the wall's archive's boards the wall (step 10.2b). Returns how many.
+    static int WireViews(GameHistoryWall wall) {
+        int count = 0;
+        ChessBoardView[] views = Object.FindObjectsOfType<ChessBoardView>(true);
+        for (int i = 0; i < views.Length; i++) {
+            ChessBoardView view = views[i];
+            if (view.board == null || view.board.archive != wall.archive) continue;
+            Undo.RecordObject(view, "Create History Wall");
+            view.historyWall = wall;
+            UdonSharpEditorUtility.CopyProxyToUdon(view);
+            count++;
+        }
+        return count;
+    }
+
+    // As ChessBoardViewBuilder.AddTriggerCollider: a trigger box over the whole canvas, so players walk through it
+    // and the pointer still hits it.
+    static void AddTriggerCollider(GameObject canvasObject) {
+        BoxCollider box = canvasObject.GetComponent<BoxCollider>();
+        if (box == null) box = canvasObject.AddComponent<BoxCollider>();
+        Vector2 size = canvasObject.GetComponent<RectTransform>().sizeDelta;
+        box.center = Vector3.zero;
+        box.size = new Vector3(size.x, size.y, 1);
+        box.isTrigger = true;
     }
 
     // Left of the leftmost board, level with the boards' middle along z; beside the origin when there are none.
@@ -112,7 +195,7 @@ public static class GameHistoryWallBuilder {
         return new Vector3(minX - WallDistance, middle.y + WallHeight, middle.z);
     }
 
-    // A text at a position from the canvas's top left, in canvas pixels.
+    // A text at a position from the parent's top left, in canvas pixels.
     static Text NewText(GameObject parent, string name, Font font, int size, Vector2 topLeft, Vector2 extent) {
         GameObject child = new GameObject(name, typeof(RectTransform));
         child.layer = parent.layer;
@@ -132,21 +215,31 @@ public static class GameHistoryWallBuilder {
         return text;
     }
 
-    // As ChessBoardViewBuilder.EnsureProgramAsset.
-    static bool EnsureProgramAsset() {
-        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(WallProgramPath) != null) return true;
-        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(WallScriptPath);
+    // As ChessBoardViewBuilder.EnsureProgramAssets: the wall's and the rows' program assets, created and compiled
+    // when missing, after which the menu item has to be run again.
+    static bool EnsureProgramAssets() {
+        bool created = CreateProgramAssetIfMissing(WallScriptPath, WallProgramPath);
+        created |= CreateProgramAssetIfMissing(RowScriptPath, RowProgramPath);
+        if (!created) return true;
+        AssetDatabase.SaveAssets();
+        UdonSharpProgramAsset.CompileAllCsPrograms(true);
+        EditorUtility.DisplayDialog("Create History Wall", "Created the missing program assets next to "
+            + WallScriptPath + ". Once UdonSharp has finished compiling, run Tools > Chess Board > Create History "
+            + "Wall again.", "OK");
+        return false;
+    }
+
+    // Whether the menu item has to stop: an asset created, or a script missing.
+    static bool CreateProgramAssetIfMissing(string scriptPath, string programPath) {
+        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(programPath) != null) return false;
+        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(scriptPath);
         if (script == null) {
-            Debug.LogError("[GameHistoryWallBuilder] " + WallScriptPath + " not found.");
-            return false;
+            Debug.LogError("[GameHistoryWallBuilder] " + scriptPath + " not found.");
+            return true;
         }
         UdonSharpProgramAsset program = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();
         program.sourceCsScript = script;
-        AssetDatabase.CreateAsset(program, WallProgramPath);
-        AssetDatabase.SaveAssets();
-        UdonSharpProgramAsset.CompileAllCsPrograms(true);
-        EditorUtility.DisplayDialog("Create History Wall", "Created the wall's program asset (" + WallProgramPath
-            + "). Once UdonSharp has finished compiling, run Tools > Chess Board > Create History Wall again.", "OK");
-        return false;
+        AssetDatabase.CreateAsset(program, programPath);
+        return true;
     }
 }
