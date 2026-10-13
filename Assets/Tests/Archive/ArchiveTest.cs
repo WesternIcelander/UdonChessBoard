@@ -90,6 +90,7 @@ public class ArchiveTest : UdonSharpBehaviour {
         RunRecentChecks();
         if (hasWall) RunWallPickGoneChecks();
         RunSyncChecks();
+        RunOverwrittenRecentChecks();
         archive.ClearArchive();
         CheckInt(archive.GameCount(), 0, "end: archive emptied");
         if (hasWall) {
@@ -291,6 +292,52 @@ public class ArchiveTest : UdonSharpBehaviour {
         CheckInt(recent.SlotOf("rec-2"), recentSlot, "sync: the recent holder ignores updates");
         recent.PackState();
         CheckInt(recent.syncedMoves.Length, 0, "sync: the recent holder packs nothing");
+    }
+
+    // ---- Recent games overwritten in the archive (10.3): once seen archived, never archived again ----
+
+    // The recent games (test-51 to test-53, rec-1, rec-2) are all archived. Holder updates then replace every game
+    // (the owner archiving 50 others, as in a busy instance): the recent games have left the archive, but a client
+    // that saw them archived mustn't add them back as the newest when it flushes (as on becoming the owner).
+    void RunOverwrittenRecentChecks() {
+        GameArchiveHolder recent = archive.recent;
+        bool noneWaiting = true;
+        for (int i = 0; i < GameArchiveHolder.Capacity; i++) {
+            if (archive.IsRecentWaiting(i)) noneWaiting = false;
+        }
+        Check(noneWaiting, "overwritten: the archived recent games aren't waiting", "one is");
+        SaveSends();
+        int[] one = { 1 };
+        for (int h = 0; h < HolderCount; h++) {
+            for (int s = 0; s < GameArchiveHolder.Capacity; s++) {
+                int k = h * GameArchiveHolder.Capacity + s;
+                archive.holders[h].WriteSlot(s, 1001 + k, "other-" + k, "", "Other W", "Other B", 0, 0,
+                    ChessRules.NoColor, "", ChessArbiter.NoClock, 0, one, one, 1);
+            }
+            archive.OnHolderChanged();
+        }
+        CheckInt(archive.GameCount(), Capacity, "overwritten: 50 other games");
+        CheckString(archive.GameIdAt(Capacity - 1), "other-" + (Capacity - 1), "overwritten: the newest is other-49");
+        Check(!archive.IsArchived("rec-2") && !archive.IsArchived("test-53"),
+            "overwritten: the recent games not archived again", "archived again");
+        CheckSends(0, 0, "overwritten: nothing sent");
+        CheckInt(archive.Flush(), 0, "overwritten: a flush adds nothing");
+        noneWaiting = true;
+        for (int i = 0; i < GameArchiveHolder.Capacity; i++) {
+            if (archive.IsRecentWaiting(i)) noneWaiting = false;
+        }
+        Check(noneWaiting, "overwritten: none waiting", "one is");
+
+        // A game stored and never seen archived still waits and goes in; one already archived when stored doesn't.
+        archive.StoreRecent("rec-3", "", "R W", "R B", 0, 0, 0, "", -1, 0, one, one, 1);
+        Check(archive.IsRecentWaiting(recent.SlotOf("rec-3")), "overwritten: rec-3 stored, waiting", "not waiting");
+        CheckInt(archive.Flush(), 1, "overwritten: rec-3 archived");
+        CheckString(archive.GameIdAt(Capacity - 1), "rec-3", "overwritten: rec-3 newest");
+        Check(!archive.IsRecentWaiting(recent.SlotOf("rec-3")), "overwritten: rec-3 no longer waiting", "waiting");
+        archive.StoreRecent("other-49", "", "Other W", "Other B", 0, 0, 0, "", -1, 0, one, one, 1);
+        Check(!archive.IsRecentWaiting(recent.SlotOf("other-49")), "overwritten: an archived game stored, not waiting",
+            "waiting");
+        CheckInt(archive.Flush(), 0, "overwritten: nothing more to add");
     }
 
     // ---- The games archived before the checks, kept and put back, so the wall shows them afterwards ----

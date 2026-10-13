@@ -37,8 +37,8 @@ public static class ChessDebugViewBuilder {
         { "Take board", "TakeBoard" }, { "Fidget", "Fidget" }, { "Forget notation", "ForgetNotation" },
         { "Import PGN", "ImportPgn" }, { "Import PGN (paused)", "ImportPaused" }, { "Resume import", "ResumeImport" },
         { "Input style", "CycleInputStyle" }, { "Take piece", "TakePiece" }, { "Check pieces", "CheckPieces" },
-        { "Take holder", "TakeHolder" }, { "Hold archive", "HoldArchive" }, { "Resign at :x0", "ResignAtTen" },
-        { "Check archive", "CheckArchive" },
+        { "Take holder", "TakeHolder" }, { "Hold archive", "HoldArchive" }, { "Resign at :00", "ResignAtMinute" },
+        { "Check archive", "CheckArchive" }, { "Add 10 games", "AddTenGames" },
     };
     const int ButtonColumns = 7;
 

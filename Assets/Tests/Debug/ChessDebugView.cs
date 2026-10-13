@@ -457,13 +457,16 @@ public class ChessDebugView : ChessBoardListener {
             + (Networking.IsOwner(archive.gameObject) ? "" : " (not the archive's owner)"), true);
     }
 
-    // Resigns for the local player at the next whole ten seconds of server time (at least 3 s away), so players on two
-    // boards pressing it within the same ten seconds end their games at the same moment.
-    public void ResignAtTen() {
+    // Resigns for the local player at the next whole minute of server time (at least 3 s away), so players on two
+    // boards pressing it within the same minute end their games at the same moment. (It was the next ten seconds, but
+    // two presses a couple of seconds apart too often fell either side of the 3 s cutoff, 10.3.) A game with no moves
+    // isn't logged, so it says when there's none yet.
+    public void ResignAtMinute() {
         double now = board.ServerTime();
-        double at = System.Math.Floor(now / 10) * 10 + 10;
-        if (at - now < 3) at += 10;
-        ReportDone("Resign at server time " + at.ToString("F0") + " (in " + (at - now).ToString("F1") + " s)", true);
+        double at = System.Math.Floor(now / 60) * 60 + 60;
+        if (at - now < 3) at += 60;
+        ReportDone("Resign at server time " + at.ToString("F0") + " (in " + (at - now).ToString("F1") + " s)"
+            + (board.moveCount == 0 ? "; no moves yet, so the game won't be logged or archived" : ""), true);
         SendCustomEventDelayedSeconds(nameof(ResignNow), (float)(at - now));
     }
 
@@ -484,10 +487,87 @@ public class ChessDebugView : ChessBoardListener {
         text += "\n  recent here:";
         for (int i = 0; Utilities.IsValid(recent) && i < GameArchiveHolder.Capacity; i++) {
             if (recent.sequences[i] <= 0) continue;
-            text += " " + recent.gameIds[i] + (archive.IsArchived(recent.gameIds[i]) ? "" : " (WAITING)");
+            text += " " + recent.gameIds[i] + (archive.IsRecentWaiting(i) ? " (WAITING)" : "");
         }
         Debug.Log(text);
         ReportDone("Check archive: " + ArchiveText(), true);
+    }
+
+    // ---- Filling the archive (10.3): Add 10 games hands the archive 10 random legal games of up to FillMaxPlies
+    // plies from the standard start, one a frame (a game's moves are a frame's work), as a board logging them would.
+    // On the archive's owner each is archived at once; elsewhere they wait in the recent games (the last 5 kept). ----
+
+    const int FillGames = 10;
+    const int FillMaxPlies = 80;
+    int fillLeft;
+    // Games added by this client so far, numbering their players' names.
+    int fillNumber;
+    byte[] fillBoard = new byte[64];
+    int[] fillState = new int[ChessPosition.StateLength];
+    int[] fillMoves = new int[FillMaxPlies];
+    int[] fillClocks = new int[FillMaxPlies];
+
+    public void AddTenGames() {
+        if (!HasArchive("Add 10 games")) return;
+        if (fillLeft > 0) {
+            ReportDone("Add 10 games (still adding the last 10)", false);
+            return;
+        }
+        fillLeft = FillGames;
+        ReportDone("Add 10 games: adding one a frame"
+            + (Networking.IsOwner(board.archive.gameObject) ? "" : " (not the archive's owner)"), true);
+        SendCustomEventDelayedFrames(nameof(AddFillGame), 1);
+    }
+
+    public void AddFillGame() {
+        if (fillLeft <= 0) return;
+        fillLeft--;
+        fillNumber++;
+        int ending;
+        int winner;
+        int count = RandomGame(out ending, out winner);
+        string gameId = board.NewGameIdAt(board.NetworkDateTime());
+        string white = "Fill White " + fillNumber;
+        string black = "Fill Black " + fillNumber;
+        bool added = board.archive.AddGame(gameId, "", white, black, ChessGame.ModeStandard, ending, winner,
+            ChessFen.StartFen, ChessArbiter.NoClock, 0, fillMoves, fillClocks, count);
+        Debug.Log("[ChessDebugView] Add 10 games: " + gameId + " (" + white + " vs " + black + ", "
+            + ChessPgn.ResultText(ending, winner) + ", " + count + " plies) " + (added ? "added" : "REFUSED")
+            + (fillLeft > 0 ? ", " + fillLeft + " to go" : ", done"));
+        if (fillLeft > 0) SendCustomEventDelayedFrames(nameof(AddFillGame), 1);
+        else Refresh();
+    }
+
+    // Plays random legal moves from the standard start into fillMoves (clocks unknown) until the game ends or
+    // reaches FillMaxPlies, and returns the count: a checkmate or stalemate ends it (on the last ply too), otherwise
+    // it's unfinished.
+    int RandomGame(out int ending, out int winner) {
+        int halfmoveClock;
+        int fullmoveNumber;
+        ChessFen.ParseFen(ChessFen.StartFen, fillBoard, fillState, out halfmoveClock, out fullmoveNumber);
+        ending = ChessGame.EndingUnterminated;
+        winner = ChessRules.NoColor;
+        int count = 0;
+        while (true) {
+            int legal = ChessMoves.GenerateLegalMoves(fillBoard, fillState, legalMoves, true);
+            if (legal == 0) {
+                int side = fillState[ChessPosition.StateSideToMove];
+                if (ChessMoves.IsInCheck(fillBoard, fillState, side)) {
+                    ending = ChessGame.EndingCheckmate;
+                    winner = ChessRules.OtherColor(side);
+                } else {
+                    ending = ChessGame.EndingStalemate;
+                }
+                break;
+            }
+            if (count >= FillMaxPlies) break;
+            int move = legalMoves[Random.Range(0, legal)];
+            ChessPosition.MakeMove(fillBoard, fillState, move);
+            fillMoves[count] = move;
+            fillClocks[count] = -1;
+            count++;
+        }
+        return count;
     }
 
     bool HasArchive(string label) {
@@ -542,19 +622,20 @@ public class ChessDebugView : ChessBoardListener {
         for (int i = 0; Utilities.IsValid(recent) && i < GameArchiveHolder.Capacity; i++) {
             if (recent.sequences[i] <= 0) continue;
             recentCount++;
-            if (!archive.IsArchived(recent.gameIds[i])) waiting++;
+            if (archive.IsRecentWaiting(i)) waiting++;
         }
         return archive.GameCount() + "/" + archive.Capacity() + " games, owner " + OwnerName(archive.gameObject)
             + ", holders ready " + ready + "/" + archive.holders.Length + " (owners: " + ownersText + "), recent "
             + recentCount + (waiting > 0 ? " (" + waiting + " WAITING)" : "") + (archive.held ? ", HELD" : "");
     }
 
-    // The index-th archived game (0 the oldest): its sequence, ID, players, result and move count.
+    // The index-th archived game (0 the oldest): its sequence, ID, players, result, move count and ContinuedFrom.
     string ArchivedGameText(int index) {
         GameArchive archive = board.archive;
         return "#" + archive.SequenceAt(index) + " " + archive.GameIdAt(index) + " (" + archive.WhiteAt(index) + " vs "
             + archive.BlackAt(index) + ", " + ChessPgn.ResultText(archive.EndingAt(index), archive.WinnerAt(index))
-            + ", " + archive.MoveCountAt(index) + " plies)";
+            + ", " + archive.MoveCountAt(index) + " plies"
+            + (archive.ContinuedFromAt(index) == "" ? "" : ", continued from " + archive.ContinuedFromAt(index)) + ")";
     }
 
     public void Resnapshot() {

@@ -24,6 +24,11 @@ namespace SiggiChessBoard {
         // For tests (the debug view's Hold archive): while set, this client archives nothing, even as the owner, and
         // the games it's handed wait in the recent games, as if the owner had left before archiving them.
         [NonSerialized] public bool held;
+        // Per recent slot: whether this client has seen that game in the archive (archived here or in a holder
+        // update). A seen game is never archived again, though it may have left the archive since: once full, the
+        // archive overwrites its oldest games, and a client becoming the owner mustn't add them back as the newest
+        // (found in 10.3).
+        bool[] recentSeen = new bool[GameArchiveHolder.Capacity];
 
         // The holders' slots (holder * Capacity + slot) holding games, oldest first; rebuilt when orderDirty.
         int[] order = new int[0];
@@ -80,12 +85,14 @@ namespace SiggiChessBoard {
             int slot = OldestSlot(recent);
             recent.WriteSlot(slot, HighestSequence(recent) + 1, gameId, continuedFrom, white, black, mode, ending,
                 winner, startFen, baseTime, increment, moves, clocks, count);
+            recentSeen[slot] = IsArchived(gameId);
             return true;
         }
 
         // On the archive's owner, once every holder is ready (and unless held): archives each recent game, oldest
-        // first, that no holder has. Returns how many were added.
+        // first, that no holder has and this client hasn't seen archived (recentSeen). Returns how many were added.
         public int Flush() {
+            MarkRecentSeen();
             if (held || !Utilities.IsValid(recent) || !Networking.IsOwner(gameObject) || !AllReady()) return 0;
             int added = 0;
             int last = 0;
@@ -98,9 +105,26 @@ namespace SiggiChessBoard {
                 }
                 if (next < 0) break;
                 last = recent.sequences[next];
-                if (!IsArchived(recent.gameIds[next]) && Archive(next)) added++;
+                if (!recentSeen[next] && !IsArchived(recent.gameIds[next]) && Archive(next)) {
+                    recentSeen[next] = true;
+                    added++;
+                }
             }
             return added;
+        }
+
+        // Marks each recent game found in the archive as seen.
+        void MarkRecentSeen() {
+            if (!Utilities.IsValid(recent)) return;
+            for (int i = 0; i < GameArchiveHolder.Capacity; i++) {
+                if (!recentSeen[i] && recent.sequences[i] > 0 && IsArchived(recent.gameIds[i])) recentSeen[i] = true;
+            }
+        }
+
+        // Whether the recent game in slot still waits to be archived: there, not in the archive and never seen in it.
+        public bool IsRecentWaiting(int slot) {
+            return Utilities.IsValid(recent) && slot >= 0 && slot < GameArchiveHolder.Capacity
+                && recent.sequences[slot] > 0 && !recentSeen[slot] && !IsArchived(recent.gameIds[slot]);
         }
 
         // Whether every holder has the instance's games (GameArchiveHolder.ready).
@@ -206,6 +230,7 @@ namespace SiggiChessBoard {
                 holders[i].Send();
             }
             if (Utilities.IsValid(recent)) recent.Clear();
+            recentSeen = new bool[GameArchiveHolder.Capacity];
             orderDirty = true;
             changes++;
             return true;
