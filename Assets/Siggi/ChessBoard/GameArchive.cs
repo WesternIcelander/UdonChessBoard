@@ -21,6 +21,9 @@ namespace SiggiChessBoard {
 
         // Counts every change to the archived games (an addition here or a holder update arriving), for views.
         [NonSerialized] public int changes;
+        // For tests (the debug view's Hold archive): while set, this client archives nothing, even as the owner, and
+        // the games it's handed wait in the recent games, as if the owner had left before archiving them.
+        [NonSerialized] public bool held;
 
         // The holders' slots (holder * Capacity + slot) holding games, oldest first; rebuilt when orderDirty.
         int[] order = new int[0];
@@ -80,10 +83,10 @@ namespace SiggiChessBoard {
             return true;
         }
 
-        // On the archive's owner, once every holder is ready: archives each recent game, oldest first, that no
-        // holder has. Returns how many were added.
+        // On the archive's owner, once every holder is ready (and unless held): archives each recent game, oldest
+        // first, that no holder has. Returns how many were added.
         public int Flush() {
-            if (!Utilities.IsValid(recent) || !Networking.IsOwner(gameObject) || !AllReady()) return 0;
+            if (held || !Utilities.IsValid(recent) || !Networking.IsOwner(gameObject) || !AllReady()) return 0;
             int added = 0;
             int last = 0;
             // The recent games by sequence, oldest first.
@@ -145,6 +148,9 @@ namespace SiggiChessBoard {
                 recent.Info(recentSlot, GameArchiveHolder.InfoBaseTime),
                 recent.Info(recentSlot, GameArchiveHolder.InfoIncrement), scratchMoves, scratchClocks, count);
             holder.Send();
+            Debug.Log("[GameArchive] archived game " + sequence + ", " + recent.gameIds[recentSlot] + " ("
+                + recent.whites[recentSlot] + " vs " + recent.blacks[recentSlot] + "), in " + holder.gameObject.name
+                + " slot " + holderSlot);
             // Not OnHolderChanged: it flushes, and Udon methods mustn't recurse.
             orderDirty = true;
             changes++;
@@ -177,8 +183,13 @@ namespace SiggiChessBoard {
             Flush();
         }
 
+        // The previous owner left (nobody asks for the archive): this client's recent games missing from the archive go
+        // in, perhaps a game that ended as the owner left. Logged, so the clients' logs show the handover.
         public override void OnOwnershipTransferred(VRCPlayerApi player) {
-            if (Utilities.IsValid(player) && player.isLocal) Flush();
+            if (!Utilities.IsValid(player) || !player.isLocal) return;
+            int added = Flush();
+            Debug.Log("[GameArchive] " + gameObject.name + " now owned here: " + added + " recent game(s) added"
+                + (AllReady() ? "" : ", waiting for holders") + (held ? ", held" : ""));
         }
 
         // Nobody asks for the archive: VRChat hands it on when its owner leaves.

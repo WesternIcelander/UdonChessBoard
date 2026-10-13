@@ -42,6 +42,9 @@ public class ChessDebugView : ChessBoardListener {
     string lastArbiterSettings = "";
     // The board's owner as last logged (8.8).
     string lastBoardOwner = "";
+    // The archive's changes and owner as last logged (10.1b).
+    int lastArchiveChanges = -1;
+    string lastArchiveOwner = "";
     float nextRefresh;
     bool dirty;
 
@@ -419,6 +422,141 @@ public class ChessDebugView : ChessBoardListener {
         ReportDone("Take board, 3 s later (owner " + BoardOwnerName() + ")", Networking.IsOwner(board.gameObject));
     }
 
+    // ---- Archive (10.1b): the board's GameArchive. The text's Archive line shows its games, owner, holders and the
+    // recent games waiting; each change to it (made here or arriving) is logged as "archive: …". ----
+
+    // Asks VRChat for ownership of the archive's first holder directly, to see that a holder refuses anyone but the
+    // archive's owner. The owner is reported now and again after a few seconds, once the current owner has answered.
+    public void TakeHolder() {
+        if (!HasArchive("Take holder")) return;
+        GameArchiveHolder holder = board.archive.holders[0];
+        Networking.SetOwner(Networking.LocalPlayer, holder.gameObject);
+        ReportDone("Take holder (owner now " + OwnerName(holder.gameObject) + ")", Networking.IsOwner(holder.gameObject));
+        SendCustomEventDelayedSeconds(nameof(ReportHolderOwner), 3);
+    }
+
+    public void ReportHolderOwner() {
+        GameArchiveHolder holder = board.archive.holders[0];
+        ReportDone("Take holder, 3 s later (owner " + OwnerName(holder.gameObject) + ")",
+            Networking.IsOwner(holder.gameObject));
+    }
+
+    // Holds this client's archive (GameArchive.held): even as the owner it archives nothing, and the games it logs
+    // wait in its recent games, as if the owner had left before archiving them. The owner holding it and then leaving
+    // has the next owner archive them. Pressed again, it lets go and archives what waited.
+    public void HoldArchive() {
+        if (!HasArchive("Hold archive")) return;
+        GameArchive archive = board.archive;
+        archive.held = !archive.held;
+        if (archive.held) {
+            ReportDone("Hold archive: held, games logged here wait in the recent games", true);
+            return;
+        }
+        int added = archive.Flush();
+        ReportDone("Hold archive: let go, " + added + " recent game(s) added"
+            + (Networking.IsOwner(archive.gameObject) ? "" : " (not the archive's owner)"), true);
+    }
+
+    // Resigns for the local player at the next whole ten seconds of server time (at least 3 s away), so players on two
+    // boards pressing it within the same ten seconds end their games at the same moment.
+    public void ResignAtTen() {
+        double now = board.ServerTime();
+        double at = System.Math.Floor(now / 10) * 10 + 10;
+        if (at - now < 3) at += 10;
+        ReportDone("Resign at server time " + at.ToString("F0") + " (in " + (at - now).ToString("F1") + " s)", true);
+        SendCustomEventDelayedSeconds(nameof(ResignNow), (float)(at - now));
+    }
+
+    public void ResignNow() {
+        int color = ChooseColor(board.SideToMove(), board.CanResign(board.SideToMove()));
+        Report("Resign " + ColorName(color) + " at server time " + board.ServerTime().ToString("F3"),
+            board.Resign(color));
+    }
+
+    // Logs every archived game, oldest first, and the recent games.
+    public void CheckArchive() {
+        if (!HasArchive("Check archive")) return;
+        GameArchive archive = board.archive;
+        string text = "[ChessDebugView] archive games:";
+        int count = archive.GameCount();
+        for (int i = 0; i < count; i++) text += "\n  " + ArchivedGameText(i);
+        GameArchiveHolder recent = archive.recent;
+        text += "\n  recent here:";
+        for (int i = 0; Utilities.IsValid(recent) && i < GameArchiveHolder.Capacity; i++) {
+            if (recent.sequences[i] <= 0) continue;
+            text += " " + recent.gameIds[i] + (archive.IsArchived(recent.gameIds[i]) ? "" : " (WAITING)");
+        }
+        Debug.Log(text);
+        ReportDone("Check archive: " + ArchiveText(), true);
+    }
+
+    bool HasArchive(string label) {
+        if (Utilities.IsValid(board.archive) && board.archive.holders.Length > 0) return true;
+        ReportDone(label + " (the board has no archive)", false);
+        return false;
+    }
+
+    // Logs the archive when its games or its owner change (polled on each redraw), with the newest games.
+    void LogArchive() {
+        GameArchive archive = board.archive;
+        if (!Utilities.IsValid(archive)) return;
+        string owner = OwnerName(archive.gameObject);
+        if (archive.changes == lastArchiveChanges && owner == lastArchiveOwner) return;
+        lastArchiveChanges = archive.changes;
+        lastArchiveOwner = owner;
+        string text = "[ChessDebugView] archive: " + ArchiveText();
+        int count = archive.GameCount();
+        int first = count > 3 ? count - 3 : 0;
+        if (count > 0) text += "; newest:";
+        for (int i = count - 1; i >= first; i--) text += " " + ArchivedGameText(i) + (i > first ? ";" : "");
+        Debug.Log(text);
+    }
+
+    // The archive in one line: games, owner, holders ready and their owners, the recent games and how many of them
+    // aren't archived.
+    string ArchiveText() {
+        GameArchive archive = board.archive;
+        if (!Utilities.IsValid(archive)) return "none";
+        int ready = 0;
+        string[] owners = new string[archive.holders.Length];
+        int[] ownerCounts = new int[archive.holders.Length];
+        int ownerKinds = 0;
+        for (int i = 0; i < archive.holders.Length; i++) {
+            GameArchiveHolder holder = archive.holders[i];
+            if (!Utilities.IsValid(holder)) continue;
+            if (holder.ready) ready++;
+            string name = OwnerName(holder.gameObject);
+            int at = 0;
+            while (at < ownerKinds && owners[at] != name) at++;
+            if (at == ownerKinds) {
+                owners[at] = name;
+                ownerKinds++;
+            }
+            ownerCounts[at]++;
+        }
+        string ownersText = "";
+        for (int i = 0; i < ownerKinds; i++) ownersText += (i > 0 ? ", " : "") + owners[i] + " " + ownerCounts[i];
+        int recentCount = 0;
+        int waiting = 0;
+        GameArchiveHolder recent = archive.recent;
+        for (int i = 0; Utilities.IsValid(recent) && i < GameArchiveHolder.Capacity; i++) {
+            if (recent.sequences[i] <= 0) continue;
+            recentCount++;
+            if (!archive.IsArchived(recent.gameIds[i])) waiting++;
+        }
+        return archive.GameCount() + "/" + archive.Capacity() + " games, owner " + OwnerName(archive.gameObject)
+            + ", holders ready " + ready + "/" + archive.holders.Length + " (owners: " + ownersText + "), recent "
+            + recentCount + (waiting > 0 ? " (" + waiting + " WAITING)" : "") + (archive.held ? ", HELD" : "");
+    }
+
+    // The index-th archived game (0 the oldest): its sequence, ID, players, result and move count.
+    string ArchivedGameText(int index) {
+        GameArchive archive = board.archive;
+        return "#" + archive.SequenceAt(index) + " " + archive.GameIdAt(index) + " (" + archive.WhiteAt(index) + " vs "
+            + archive.BlackAt(index) + ", " + ChessPgn.ResultText(archive.EndingAt(index), archive.WinnerAt(index))
+            + ", " + archive.MoveCountAt(index) + " plies)";
+    }
+
     public void Resnapshot() {
         Report("Re-snapshot", board.Resnapshot());
     }
@@ -786,6 +924,7 @@ public class ChessDebugView : ChessBoardListener {
         if (Utilities.IsValid(statusText)) statusText.text = StatusText();
         LogArbiterSettings();
         LogBoardOwner();
+        LogArchive();
         LogPieces();
         WatchPieces();
     }
@@ -885,6 +1024,7 @@ public class ChessDebugView : ChessBoardListener {
         }
         text += "Claimable: " + EndingName(board.ClaimableDraw()) + "\n";
         text += "Import: " + ImportText() + "\n";
+        text += "Archive: " + ArchiveText() + "\n";
         text += "Moves (" + board.moveCount + "): " + MovesText() + "\n";
         text += "Applies to you: " + ApplicableButtons(name) + "\n";
         text += "Last action: " + lastAction;

@@ -159,14 +159,23 @@ namespace SiggiChessBoard {
             if (localOnly) return false;
             VRCPlayerApi local = Networking.LocalPlayer;
             if (!Networking.IsOwner(gameObject)) Networking.SetOwner(local, gameObject);
-            if (!Networking.IsOwner(gameObject)) return false;
+            if (!Networking.IsOwner(gameObject)) {
+                Debug.LogWarning("[GameArchiveHolder] " + gameObject.name + ": not sent, the holder isn't ours");
+                return false;
+            }
             sends++;
             RequestSerialization();
             return true;
         }
 
+        // Asked on the requesting client and on the owner. A refusal is logged, so a client's log shows it.
         public override bool OnOwnershipRequest(VRCPlayerApi requestingPlayer, VRCPlayerApi requestedOwner) {
-            return MayOwn(requestedOwner);
+            bool allowed = MayOwn(requestedOwner);
+            if (!allowed) {
+                Debug.Log("[GameArchiveHolder] " + gameObject.name + ": ownership refused for "
+                    + (Utilities.IsValid(requestedOwner) ? requestedOwner.displayName : "nobody"));
+            }
+            return allowed;
         }
 
         // Whether a player may own this holder: the archive's owner, and nobody for a localOnly holder.

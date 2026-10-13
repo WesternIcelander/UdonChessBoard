@@ -55,3 +55,7 @@ The same split applies to the instance-wide objects: the archive's history wall 
 ## Instance-wide objects
 
 Besides the boards, the world has two shared objects, the settings object [`ChessArbiter`](settings.md), one behaviour with its own synced fields, and the game archive [`GameArchive`](archive.md), a controller with 10 synced holders of games.
+
+## More boards
+
+**Tools > Chess Board > Create Board** (`Editor/ChessBoardBuilder.cs`, step 10.1b) adds another `ChessBoard` 2.5 m along x from the last one: the next free `boardNumber` (warning when it's beyond the arbiter's `boardCount`), the scene's arbiter and archive, and a `ChessPgnImporter` of its own as a child. Its view and debug view are then built with the new board selected (**Create Board View**, **Create Debug View**). The test builders that want the scene's only board view (**Create View Test**) refuse once there are two, so the tests stay on the first board.

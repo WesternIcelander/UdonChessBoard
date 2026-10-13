@@ -37,15 +37,19 @@ public static class ChessDebugViewBuilder {
         { "Take board", "TakeBoard" }, { "Fidget", "Fidget" }, { "Forget notation", "ForgetNotation" },
         { "Import PGN", "ImportPgn" }, { "Import PGN (paused)", "ImportPaused" }, { "Resume import", "ResumeImport" },
         { "Input style", "CycleInputStyle" }, { "Take piece", "TakePiece" }, { "Check pieces", "CheckPieces" },
+        { "Take holder", "TakeHolder" }, { "Hold archive", "HoldArchive" }, { "Resign at :x0", "ResignAtTen" },
+        { "Check archive", "CheckArchive" },
     };
     const int ButtonColumns = 7;
 
     const float CanvasWidth = 1600;
-    const float CanvasHeight = 1040;
+    const float CanvasHeight = 1140;
     const float Margin = 20;
     const float SquareSize = 60;
     const float ButtonHeight = 56;
     const float ButtonGap = 8;
+    // The status text's height below the board's, for the lines that don't fit beside it.
+    const float StatusExtra = 160;
 
     [MenuItem("Tools/Chess Board/Create Debug View")]
     static void Create() {
@@ -100,14 +104,14 @@ public static class ChessDebugViewBuilder {
 
         float statusLeft = Margin * 2 + 8 * SquareSize;
         GameObject status = NewChild(root, "Status", new Vector2(statusLeft, Margin),
-            new Vector2(CanvasWidth - statusLeft - Margin, 8 * SquareSize + 100));
+            new Vector2(CanvasWidth - statusLeft - Margin, 8 * SquareSize + StatusExtra));
         view.statusText = NewText(status, "Text", font, 20, TextAnchor.UpperLeft);
         view.statusText.supportRichText = true;
         view.statusText.horizontalOverflow = HorizontalWrapMode.Wrap;
         view.statusText.verticalOverflow = VerticalWrapMode.Overflow;
 
         UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(view);
-        float buttonsTop = Margin * 2 + 8 * SquareSize + 100;
+        float buttonsTop = Margin * 2 + 8 * SquareSize + StatusExtra;
         float buttonWidth = (CanvasWidth - 2 * Margin - (ButtonColumns - 1) * ButtonGap) / ButtonColumns;
         for (int i = 0; i < Buttons.GetLength(0); i++) {
             int column = i % ButtonColumns;
