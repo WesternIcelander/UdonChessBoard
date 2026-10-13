@@ -53,6 +53,7 @@ public class SettingsTest : UdonSharpBehaviour {
         TestCombinations();
         TestChanging();
         TestMenu();
+        TestMenuResnapshot();
         Debug.Log("[SettingsTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
@@ -521,7 +522,15 @@ public class SettingsTest : UdonSharpBehaviour {
         CheckText(missing, "", "menu: every item has its buttons, each with its image");
         Check(Utilities.IsValid(menu.controls) && Utilities.IsValid(menu.notice) && Utilities.IsValid(menu.scopeLabel),
             "menu: controls, notice and scope label assigned", "");
+        Check(MenuButton(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn) >= 0
+                && Utilities.IsValid(menu.resnapshotLabel),
+            "menu: the re-snapshot button and its outcome text assigned", "");
         SimpleAuth auth = arbiter.simpleAuth;
+        if (arbiter.simpleAuthMissing) {
+            menu.UpdateVisibility();
+            CheckText(menu.notice.text, ChessSettingsMenu.SimpleAuthMissingText,
+                "menu: the empty Simple Auth field shown in the notice");
+        }
         if (!Utilities.IsValid(auth) || !arbiter.IsOrganizer(local)) {
             Check(false, "menu", "the local player isn't an organizer");
             return;
@@ -567,6 +576,19 @@ public class SettingsTest : UdonSharpBehaviour {
             Check(!pressed && takebacks, "menu: a non-organizer's press changes nothing", "");
             Check(menu.controlsShown && menu.controls.activeSelf && menu.notice.text == "",
                 "menu: controls shown again to the organizer", "");
+            // The empty field, as the arbiter's Start finds it (11.1b).
+            arbiter.simpleAuth = null;
+            arbiter.simpleAuthMissing = true;
+            menu.UpdateVisibility();
+            bool hiddenMissing = !menu.controlsShown && !menu.controls.activeSelf;
+            string noticeMissing = menu.notice.text;
+            arbiter.simpleAuth = auth;
+            arbiter.simpleAuthMissing = false;
+            menu.UpdateVisibility();
+            Check(hiddenMissing, "menu: controls hidden while the Simple Auth field is empty", "");
+            CheckText(noticeMissing, ChessSettingsMenu.SimpleAuthMissingText,
+                "menu: the empty Simple Auth field shown in the notice");
+            CheckText(menu.notice.text, "", "menu: no notice once the field is set again");
         } else {
             Check(false, "menu: non-organizer", "no NoOneAuth on the test object");
         }
@@ -790,6 +812,134 @@ public class SettingsTest : UdonSharpBehaviour {
         arbiter.changes++;
         arbiter.EndChange();
         menu.scope = savedScope;
+        menu.Refresh();
+    }
+
+    // ---- 11.1b ----
+
+    // Re-snapshot from the menu, on the menu's boards numbered 0 and 1: nothing for reset boards; with both in the
+    // lobby, a changed default taken only by the board chosen, then by both for All boards (board 1's own overrides
+    // with it, forcing its lobby to Chess960); refused for a non-organizer. The boards are synced, so like BoardTest
+    // this runs only with nobody else in the instance; it needs both boards reset to start with, and resets them at
+    // the end (no moves, so nothing is logged). Settings are put back and sent.
+    void TestMenuResnapshot() {
+        CheckText(ChessSettingsMenu.ResnapshotText(0, 0, 0) + "|" + ChessSettingsMenu.ResnapshotText(1, 2, 0) + "|"
+                + ChessSettingsMenu.ResnapshotText(2, 0, 1) + "|" + ChessSettingsMenu.ResnapshotText(0, 3, 0),
+            "No such board|1 board updated, 2 not in use|2 boards updated, 1 refused|No board in use: each takes the "
+                + "settings when next used", "re-snapshot: outcome texts");
+        if (!Utilities.IsValid(menu) || !Utilities.IsValid(arbiter)) return;
+        VRCPlayerApi local = Networking.LocalPlayer;
+        if (!arbiter.IsOrganizer(local)) {
+            Check(false, "re-snapshot", "the local player isn't an organizer");
+            return;
+        }
+        if (VRCPlayerApi.GetPlayerCount() > 1) {
+            Debug.Log("[SettingsTest] re-snapshot checks skipped: other players are in the instance, and the checks "
+                + "would send the boards to them");
+            return;
+        }
+        string wiring = "";
+        ChessBoard first = null;
+        ChessBoard second = null;
+        for (int i = 0; i < menu.boards.Length; i++) {
+            ChessBoard b = menu.boards[i];
+            if (!Utilities.IsValid(b)) {
+                wiring += " board " + i + " missing;";
+                continue;
+            }
+            if (b.arbiter != arbiter) wiring += " " + b.gameObject.name + " on another arbiter;";
+            if (b.boardNumber == 0 && first == null) first = b;
+            if (b.boardNumber == 1 && second == null) second = b;
+        }
+        CheckText(wiring, "", "re-snapshot: the menu's boards are on its arbiter");
+        if (first == null || second == null) {
+            Check(false, "re-snapshot: boards numbered 0 and 1", "the menu has " + menu.boards.Length + " board(s); "
+                + "create a second board (Tools > Chess Board > Create Board) and run Create Settings Menu again");
+            return;
+        }
+        if (first.lifecycle != ChessBoard.LifecycleReset || second.lifecycle != ChessBoard.LifecycleReset) {
+            Check(false, "re-snapshot", "both boards must be reset when the checks start");
+            return;
+        }
+        int others = 0;
+        for (int i = 0; i < menu.boards.Length; i++) {
+            ChessBoard b = menu.boards[i];
+            if (Utilities.IsValid(b) && b != first && b != second && b.lifecycle == ChessBoard.LifecycleReset) others++;
+        }
+
+        int savedSettings = arbiter.defaultSettings;
+        int[] savedNumbers = Copy(arbiter.defaultNumbers);
+        int[] savedMask = Copy(arbiter.overrideMask);
+        int[] savedOverrideSettings = Copy(arbiter.overrideSettings);
+        int[] savedOverrideNumbers = Copy(arbiter.overrideNumbers);
+        int savedScope = menu.scope;
+        int t = ChessArbiter.SettingTakebacks;
+        arbiter.defaultSettings = t;
+        arbiter.ClearOverrides(0);
+        arbiter.ClearOverrides(1);
+        menu.scope = ChessSettingsMenu.ScopeAllBoards;
+        menu.Refresh();
+
+        Check(!menu.Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn),
+            "re-snapshot: nothing taken with every board reset", "");
+        CheckText(menu.resnapshotText, ChessSettingsMenu.ResnapshotText(0, others + 2, 0),
+            "re-snapshot: reset boards reported not in use");
+        CheckText(menu.resnapshotLabel.text, menu.resnapshotText, "re-snapshot: the outcome shown");
+        Check(first.lifecycle == ChessBoard.LifecycleReset && first.gameSettings == 0,
+            "re-snapshot: a reset board left without a snapshot", "");
+
+        CheckInt(first.JoinAs(ChessRules.White, "Snapshot Ana"), ChessBoard.InputAccepted,
+            "re-snapshot: board 1 joined");
+        CheckInt(second.JoinAs(ChessRules.White, "Snapshot Bo"), ChessBoard.InputAccepted,
+            "re-snapshot: board 2 joined");
+        Check(first.IsGameSettingOn(t) && second.IsGameSettingOn(t), "re-snapshot: both snapshots with takebacks", "");
+        arbiter.SetDefaultSetting(t, false);
+        Check(first.IsGameSettingOn(t), "re-snapshot: a changed default doesn't reach a board in use by itself", "");
+
+        menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionNext);
+        CheckText(menu.resnapshotText, "", "re-snapshot: the outcome cleared when the scope changes");
+        Check(menu.Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn),
+            "re-snapshot: board 1 pressed", "");
+        CheckText(menu.resnapshotText, "1 board updated", "re-snapshot: board 1's outcome");
+        Check(!first.IsGameSettingOn(t), "re-snapshot: board 1 took the new default", "");
+        Check(second.IsGameSettingOn(t), "re-snapshot: board 2 kept its snapshot", "");
+        Check(Networking.IsOwner(first.gameObject), "re-snapshot: the organizer owns board 1 after it", "");
+
+        arbiter.SetSettingOverride(1, ChessArbiter.SettingModeForced, true);
+        arbiter.SetNumberOverride(1, ChessArbiter.NumberForcedMode, ChessGame.ModeChess960);
+        menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionPrevious);
+        Check(menu.Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn),
+            "re-snapshot: all boards pressed", "");
+        CheckText(menu.resnapshotText, ChessSettingsMenu.ResnapshotText(2, others, 0),
+            "re-snapshot: all boards' outcome");
+        Check(!second.IsGameSettingOn(t), "re-snapshot: board 2 took the new default", "");
+        Check(second.IsModeForced() && second.mode == ChessGame.ModeChess960,
+            "re-snapshot: board 2's own forced Chess960 applied to its lobby", "mode " + second.mode);
+        Check(!first.IsModeForced() && first.mode == ChessGame.ModeStandard,
+            "re-snapshot: board 1 not forced by board 2's override", "");
+
+        if (Utilities.IsValid(noOneAuth)) {
+            SimpleAuth auth = arbiter.simpleAuth;
+            arbiter.SetDefaultSetting(t, true);
+            arbiter.simpleAuth = noOneAuth;
+            bool pressed = menu.Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn);
+            bool kept = !first.IsGameSettingOn(t) && !second.IsGameSettingOn(t);
+            arbiter.simpleAuth = auth;
+            menu.UpdateVisibility();
+            Check(!pressed && kept, "re-snapshot: refused for a non-organizer, the snapshots kept", "");
+        }
+
+        CheckInt(first.ResetBoardAs("Snapshot Ana", true), ChessBoard.InputAccepted, "re-snapshot: board 1 reset");
+        CheckInt(second.ResetBoardAs("Snapshot Bo", true), ChessBoard.InputAccepted, "re-snapshot: board 2 reset");
+        arbiter.defaultSettings = savedSettings;
+        arbiter.defaultNumbers = savedNumbers;
+        arbiter.overrideMask = savedMask;
+        arbiter.overrideSettings = savedOverrideSettings;
+        arbiter.overrideNumbers = savedOverrideNumbers;
+        arbiter.changes++;
+        arbiter.EndChange();
+        menu.scope = savedScope;
+        menu.resnapshotText = "";
         menu.Refresh();
     }
 

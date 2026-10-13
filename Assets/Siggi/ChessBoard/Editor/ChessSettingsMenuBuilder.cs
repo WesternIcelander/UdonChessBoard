@@ -13,11 +13,12 @@ using VRC.Udon;
 // Builds the settings menu (docs/settings.md, ChessSettingsMenu.cs) in the open scene for its only ChessArbiter: a
 // world-space canvas with a title, a notice, and the controls only organizers see: the scope row (All boards or one
 // board, and All default to clear a board's overrides), then one row per setting with its value and its buttons (On,
-// Off and Default for a setting, < > and Default for a time or the forced mode). Every button has a
-// ChessSettingsButton calling the menu's Press. Placed to the right of the boards (along +x), facing them; an existing
-// menu is replaced in place (same parent, position, rotation and scale), and whatever pointed at it (SettingsTest's
-// menu) is pointed at the new one; an empty ChessSettingsMenu field (SettingsTest's menu) gets it. Menu:
-// Tools > Chess Board > Create Settings Menu. Plain editor C#, not Udon.
+// Off and Default for a setting, < > and Default for a time or the forced mode). Below them, Apply now re-snapshots
+// the boards shown (every board on the arbiter for All boards; step 11.1b), with its outcome on the line under it.
+// Every button has a ChessSettingsButton calling the menu's Press. Placed to the right of the boards (along +x), facing
+// them; an existing menu is replaced in place (same parent, position, rotation and scale), and whatever pointed at it
+// (SettingsTest's menu) is pointed at the new one; an empty ChessSettingsMenu field (SettingsTest's menu) gets it.
+// Menu: Tools > Chess Board > Create Settings Menu. Plain editor C#, not Udon.
 public static class ChessSettingsMenuBuilder {
     const string MenuScriptPath = "Assets/Siggi/ChessBoard/ChessSettingsMenu.cs";
     const string MenuProgramPath = "Assets/Siggi/ChessBoard/ChessSettingsMenu.asset";
@@ -29,6 +30,8 @@ public static class ChessSettingsMenuBuilder {
     const float TitleHeight = 90;
     const float NoticeHeight = 60;
     const float ScopeHeight = 76;
+    // The space above the re-snapshot row (step 11.1b), setting it apart from the settings.
+    const float SectionGap = 30;
     const float RowHeight = 60;
     const float LabelWidth = 580;
     const float ValueWidth = 400;
@@ -54,7 +57,8 @@ public static class ChessSettingsMenuBuilder {
         if (!EnsureProgramAssets()) return;
         ChessArbiter arbiter = arbiters[0];
         float itemsTop = Margin + TitleHeight + NoticeHeight + ScopeHeight;
-        float canvasHeight = itemsTop + ChessSettingsMenu.ItemCount * RowHeight + Margin;
+        float resnapshotTop = itemsTop + ChessSettingsMenu.ItemCount * RowHeight + SectionGap;
+        float canvasHeight = resnapshotTop + 2 * RowHeight + Margin;
 
         Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
@@ -99,7 +103,8 @@ public static class ChessSettingsMenuBuilder {
         controlsRect.offsetMax = Vector2.zero;
         menu.controls = controls;
 
-        int buttonCount = 3 * (ChessSettingsMenu.ItemCount + 1);
+        // Three per row and the scope row, and the re-snapshot row's one.
+        int buttonCount = 3 * (ChessSettingsMenu.ItemCount + 1) + 1;
         menu.buttons = new GameObject[buttonCount];
         menu.buttonImages = new Image[buttonCount];
         menu.buttonItems = new int[buttonCount];
@@ -114,6 +119,15 @@ public static class ChessSettingsMenuBuilder {
             menu.values[item] = AddRow(controls, menu, item, ChessSettingsMenu.ItemText(item), font,
                 itemsTop + item * RowHeight, ref next);
         }
+        // The re-snapshot row: its label and Apply now, and the outcome across the line below.
+        NewText(controls, "Label resnapshot", font, TextFontSize, new Vector2(Margin, resnapshotTop),
+            new Vector2(LabelWidth + ValueWidth, RowHeight)).text =
+            ChessSettingsMenu.ItemText(ChessSettingsMenu.ItemResnapshot);
+        AddButton(controls, menu, ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn, font,
+            new Vector2(Margin + LabelWidth + ValueWidth, resnapshotTop + (RowHeight - ButtonHeight) / 2), next++);
+        menu.resnapshotLabel = NewText(controls, "Value resnapshot", font, TextFontSize,
+            new Vector2(Margin, resnapshotTop + RowHeight), new Vector2(CanvasWidth - 2 * Margin, RowHeight));
+        menu.boards = BoardsOn(arbiter);
         UdonSharpEditorUtility.CopyProxyToUdon(menu);
 
         int repointed = 0;
@@ -132,14 +146,25 @@ public static class ChessSettingsMenuBuilder {
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[ChessSettingsMenuBuilder] " + (olds.Length > 0 ? "Replaced" : "Created") + " the settings menu for "
-            + arbiter.gameObject.name + " (" + (repointed + filled) + " behaviour(s) pointed at it). Move it where you "
-            + "like and save the scene.");
+            + arbiter.gameObject.name + " (" + menu.boards.Length + " board(s); " + (repointed + filled)
+            + " behaviour(s) pointed at it). Move it where you like and save the scene.");
+    }
+
+    // Every board on the arbiter, by board number, for re-snapshots (step 11.1b).
+    static ChessBoard[] BoardsOn(ChessArbiter arbiter) {
+        System.Collections.Generic.List<ChessBoard> list = new System.Collections.Generic.List<ChessBoard>();
+        foreach (ChessBoard board in Object.FindObjectsOfType<ChessBoard>(true)) {
+            if (board.arbiter == arbiter) list.Add(board);
+        }
+        list.Sort((a, b) => a.boardNumber.CompareTo(b.boardNumber));
+        return list.ToArray();
     }
 
     // A row: its label, its value text (returned), and its three buttons, each a ChessSettingsButton calling Press.
     static Text AddRow(GameObject parent, ChessSettingsMenu menu, int item, string label, Font font, float top,
             ref int next) {
-        NewText(parent, "Label " + item, font, TextFontSize, new Vector2(Margin, top), new Vector2(LabelWidth, RowHeight))
+        NewText(parent, "Label " + item, font, TextFontSize, new Vector2(Margin, top),
+                new Vector2(LabelWidth, RowHeight))
             .text = label;
         Text value = NewText(parent, "Value " + item, font, TextFontSize, new Vector2(Margin + LabelWidth, top),
             new Vector2(ValueWidth, RowHeight));
@@ -149,7 +174,8 @@ public static class ChessSettingsMenuBuilder {
             : new[] { ChessSettingsMenu.ActionPrevious, ChessSettingsMenu.ActionNext, ChessSettingsMenu.ActionDefault };
         float left = Margin + LabelWidth + ValueWidth;
         for (int slot = 0; slot < actions.Length; slot++) {
-            Vector2 topLeft = new Vector2(left + slot * (ButtonWidth + ButtonGap), top + (RowHeight - ButtonHeight) / 2);
+            Vector2 topLeft = new Vector2(left + slot * (ButtonWidth + ButtonGap),
+                top + (RowHeight - ButtonHeight) / 2);
             AddButton(parent, menu, item, actions[slot], font, topLeft, next++);
         }
         return value;

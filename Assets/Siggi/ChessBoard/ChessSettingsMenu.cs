@@ -7,11 +7,13 @@ using VRC.SDKBase;
 namespace SiggiChessBoard {
     // The settings menu (docs/settings.md, Settings menu): a view of the ChessArbiter, where an organizer sets each
     // setting for all boards (the instance defaults: on or off) or for one board (on, off, or the default), the
-    // inactivity times (with Never) and the forced mode and time control. Only organizers see the controls; everyone
-    // else sees a notice. Each change goes through the arbiter's BeginChange and EndChange, so it reaches every client,
-    // and the menu redraws whenever the arbiter's changes count moves on (a change here, or one arriving). Holds no
-    // settings and no synced fields: which board it shows is the local player's own. Built in the scene by
-    // Tools > Chess Board > Create Settings Menu (Editor/ChessSettingsMenuBuilder.cs).
+    // inactivity times (with Never) and the forced mode and time control, and makes the boards in use take the new
+    // settings (a re-snapshot, step 11.1b). Only organizers see the controls; everyone else sees a notice, which also
+    // says when the arbiter's Simple Auth field is empty. Each change goes through the arbiter's BeginChange and
+    // EndChange, so it reaches every client, and the menu redraws whenever the arbiter's changes count moves on (a
+    // change here, or one arriving). Holds no settings and no synced fields: which board it shows is the local
+    // player's own. Built in the scene by Tools > Chess Board > Create Settings Menu
+    // (Editor/ChessSettingsMenuBuilder.cs).
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class ChessSettingsMenu : UdonSharpBehaviour {
         // The menu's items, one row each. Setting items are on/off (one or several setting bits), number items step
@@ -35,6 +37,8 @@ namespace SiggiChessBoard {
         public const int ItemCount = 15;
         // The scope row: Previous and Next pick the boards the menu shows, Default clears the board's overrides.
         public const int ItemScope = -1;
+        // The re-snapshot row (step 11.1b): On makes the boards shown that are in use take the settings now.
+        public const int ItemResnapshot = -2;
 
         // A button's action. Setting items have On, Off and Default; number items Previous, Next and Default; Default
         // only for a single board, where it makes the board use the instance default again.
@@ -51,12 +55,18 @@ namespace SiggiChessBoard {
         public Text title;
         // Which boards the menu shows ("All boards", "Board 2").
         public Text scopeLabel;
-        // Shown to everyone but organizers: why the controls are missing.
+        // Shown to everyone but organizers: why the controls are missing (or, for everyone, that the arbiter's Simple
+        // Auth field is empty).
         public Text notice;
         // Everything an organizer works with, hidden from everyone else.
         public GameObject controls;
         // Each item's current value, by item.
         public Text[] values = new Text[0];
+        // The last re-snapshot's outcome, beside its button.
+        public Text resnapshotLabel;
+        // Every board on this arbiter, for re-snapshots: all of them for All boards, those with the board number shown
+        // otherwise.
+        public ChessBoard[] boards = new ChessBoard[0];
         // Every button: its object, image (tinted when it's the current choice), item and action, at the same index.
         public GameObject[] buttons = new GameObject[0];
         public Image[] buttonImages = new Image[0];
@@ -75,6 +85,8 @@ namespace SiggiChessBoard {
         [NonSerialized] public int drawnChanges = -1;
         // Whether the controls are shown to the local player (an organizer).
         [NonSerialized] public bool controlsShown;
+        // The last re-snapshot's outcome ("" before any, and again once the scope or the settings change).
+        [NonSerialized] public string resnapshotText = "";
 
         // How often being an organizer is checked again (FirstJoinerAuth's name arrives, the master changes).
         const float OrganizerCheckInterval = 1f;
@@ -113,6 +125,7 @@ namespace SiggiChessBoard {
             SetText(title, "Chess settings");
             SetText(scopeLabel, ScopeText());
             for (int item = 0; item < ItemCount && item < values.Length; item++) SetText(values[item], ValueText(item));
+            SetText(resnapshotLabel, resnapshotText);
             for (int i = 0; i < buttons.Length; i++) {
                 GameObject button = buttons[i];
                 if (!Utilities.IsValid(button) || i >= buttonItems.Length || i >= buttonActions.Length) continue;
@@ -140,6 +153,7 @@ namespace SiggiChessBoard {
                 StepScope(action == ActionNext ? 1 : -1);
                 return true;
             }
+            if (item == ItemResnapshot) return action == ActionOn && ResnapshotBoards();
             if (!ButtonShown(item, action) || !WouldChange(item, action)) return false;
             if (!arbiter.BeginChange()) {
                 // No longer an organizer: hide the controls now rather than at the next check.
@@ -148,6 +162,7 @@ namespace SiggiChessBoard {
             }
             bool done = Apply(item, action);
             arbiter.EndChange();
+            resnapshotText = "";
             Debug.Log("[ChessSettingsMenu] " + LocalName() + ": " + ScopeText() + ", " + ChangeText(item, action)
                 + (done ? "" : " (not changed)"));
             Refresh();
@@ -166,7 +181,51 @@ namespace SiggiChessBoard {
             if (next >= count) next = ScopeAllBoards;
             if (next < ScopeAllBoards) next = count - 1;
             scope = next;
+            resnapshotText = "";
             Refresh();
+        }
+
+        // ---- Re-snapshot (step 11.1b) ----
+
+        // Makes the boards shown (every board for All boards, otherwise those with the board number shown) take a new
+        // snapshot of the settings as the local organizer (ChessBoard.ResnapshotAs, which takes ownership of each and
+        // sends it). A reset board has no snapshot and takes the settings when it's next used, so it's only counted.
+        // Returns whether any board took one; the outcome is shown beside the button and logged.
+        public bool ResnapshotBoards() {
+            VRCPlayerApi local = Networking.LocalPlayer;
+            if (!arbiter.IsOrganizer(local)) {
+                UpdateVisibility();
+                return false;
+            }
+            int updated = 0;
+            int unused = 0;
+            int refused = 0;
+            for (int i = 0; i < boards.Length; i++) {
+                ChessBoard board = boards[i];
+                if (!Utilities.IsValid(board)) continue;
+                if (scope != ScopeAllBoards && board.boardNumber != scope) continue;
+                if (board.lifecycle == ChessBoard.LifecycleReset) {
+                    unused++;
+                } else if (board.ResnapshotAs(local) == ChessBoard.InputAccepted) {
+                    updated++;
+                } else {
+                    refused++;
+                }
+            }
+            resnapshotText = ResnapshotText(updated, unused, refused);
+            SetText(resnapshotLabel, resnapshotText);
+            Debug.Log("[ChessSettingsMenu] " + LocalName() + ": " + ScopeText() + ", re-snapshot: " + resnapshotText);
+            return updated > 0;
+        }
+
+        // "2 boards updated, 1 not in use", "No board in use: each takes the settings when next used", "No such board".
+        public static string ResnapshotText(int updated, int unused, int refused) {
+            if (updated + unused + refused == 0) return "No such board";
+            if (updated == 0 && refused == 0) return "No board in use: each takes the settings when next used";
+            string text = updated + (updated == 1 ? " board updated" : " boards updated");
+            if (unused > 0) text += ", " + unused + " not in use";
+            if (refused > 0) text += ", " + refused + " refused";
+            return text;
         }
 
         // Makes the change on the arbiter's local copy (the caller sends it).
@@ -252,6 +311,7 @@ namespace SiggiChessBoard {
                 case ItemForcedIncrement: return "  Forced increment";
                 case ItemResetAvailableTime: return "Anyone can reset after idle";
                 case ItemAutoResetTime: return "Board resets itself after idle";
+                case ItemResnapshot: return "Apply to boards in use";
             }
             return "";
         }
@@ -259,7 +319,7 @@ namespace SiggiChessBoard {
         // A button's label.
         public static string ActionText(int item, int action) {
             switch (action) {
-                case ActionOn: return "On";
+                case ActionOn: return item == ItemResnapshot ? "Apply now" : "On";
                 case ActionOff: return item == ItemDrawRules ? "No draws" : "Off";
                 case ActionDefault: return item == ItemScope ? "All default" : "Default";
                 case ActionPrevious: return "<";
@@ -271,6 +331,7 @@ namespace SiggiChessBoard {
         // Whether a button is shown: Default only for a single board, and each item's own buttons (setting items On and
         // Off, number items and the scope Previous and Next).
         public bool ButtonShown(int item, int action) {
+            if (item == ItemResnapshot) return action == ActionOn;
             if (action == ActionDefault) return scope != ScopeAllBoards;
             if (item == ItemScope) return action == ActionPrevious || action == ActionNext;
             if (IsSettingItem(item)) return action == ActionOn || action == ActionOff;
@@ -388,9 +449,15 @@ namespace SiggiChessBoard {
             return (seconds / 60) + " min " + (seconds % 60) + " s";
         }
 
-        // Why the controls are hidden; "" when they're shown.
+        // The notice while the arbiter's Simple Auth field is empty (docs/organizers.md, In-game fallback): nobody is
+        // an organizer then, so nobody sees the controls.
+        public const string SimpleAuthMissingText = "Settings can't be changed: the Chess Arbiter's Simple Auth field "
+            + "is empty, so nobody is an organizer. Set it in the editor (NoOneAuth if nobody should change settings).";
+
+        // Why the controls are hidden (the empty Simple Auth field first); "" when they're shown.
         public string NoticeText() {
             if (!Utilities.IsValid(arbiter)) return "No arbiter assigned.";
+            if (arbiter.simpleAuthMissing) return SimpleAuthMissingText;
             if (!controlsShown) return "Only organizers can change these settings.";
             return "";
         }
