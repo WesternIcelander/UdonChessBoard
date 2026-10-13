@@ -101,6 +101,10 @@ namespace SiggiChessBoard {
         // and the settings menu (step 11) shows a message.
         [NonSerialized] public bool simpleAuthMissing;
 
+        // Counts every change to the settings seen here: a setter below, or a serialization arriving. The settings menu
+        // (step 11.1a) redraws when it moves on.
+        [NonSerialized] public int changes;
+
         // Whether a serialization has arrived; the editor values then mustn't overwrite it.
         bool received;
 
@@ -132,6 +136,7 @@ namespace SiggiChessBoard {
 
         public override void OnDeserialization() {
             received = true;
+            changes++;
         }
 
         // The setting bits from the editor fields.
@@ -219,6 +224,7 @@ namespace SiggiChessBoard {
             settings &= OverrideSettingsMask;
             if (on) defaultSettings |= settings;
             else defaultSettings &= ~settings;
+            changes++;
         }
 
         // Sets a numeric setting's instance default, corrected by FixNumbers (which can change another one: an
@@ -227,6 +233,7 @@ namespace SiggiChessBoard {
             if (number < 0 || number >= NumberCount) return false;
             defaultNumbers[number] = value;
             FixNumbers(defaultNumbers);
+            changes++;
             return true;
         }
 
@@ -260,6 +267,7 @@ namespace SiggiChessBoard {
             overrideMask[board] |= settings;
             if (on) overrideSettings[board] |= settings;
             else overrideSettings[board] &= ~settings;
+            changes++;
             return true;
         }
 
@@ -269,6 +277,7 @@ namespace SiggiChessBoard {
             settings &= OverrideSettingsMask;
             overrideMask[board] &= ~settings;
             overrideSettings[board] &= ~settings;
+            changes++;
             return true;
         }
 
@@ -277,6 +286,7 @@ namespace SiggiChessBoard {
             if (!HasBoard(board) || number < 0 || number >= NumberCount) return false;
             overrideMask[board] |= OverrideNumberBit(number);
             overrideNumbers[board * NumberCount + number] = value;
+            changes++;
             return true;
         }
 
@@ -285,6 +295,7 @@ namespace SiggiChessBoard {
             if (!HasBoard(board) || number < 0 || number >= NumberCount) return false;
             overrideMask[board] &= ~OverrideNumberBit(number);
             overrideNumbers[board * NumberCount + number] = 0;
+            changes++;
             return true;
         }
 
@@ -294,6 +305,7 @@ namespace SiggiChessBoard {
             overrideMask[board] = 0;
             overrideSettings[board] = 0;
             for (int i = 0; i < NumberCount; i++) overrideNumbers[board * NumberCount + i] = 0;
+            changes++;
             return true;
         }
 
