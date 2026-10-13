@@ -138,6 +138,29 @@ namespace SiggiChessBoard {
             return gameId + "/" + ply.ToString();
         }
 
+        // How a game ended, for players: "White wins by checkmate", "Draw by agreement", "Black wins" (a loaded game's
+        // result tag, EndingUnknown); "Unfinished" for a game without a result (in progress or unterminated). A time
+        // forfeit drawn is "Draw on time": the board's view says who ran out, knowing the side to move.
+        public static string EndingDescription(int ending, int winner) {
+            if (ending == EndingNone || ending == EndingUnterminated) return "Unfinished";
+            string wins = winner == ChessRules.NoColor ? "Draw"
+                : (winner == ChessRules.White ? "White" : "Black") + " wins";
+            switch (ending) {
+                case EndingCheckmate: return wins + " by checkmate";
+                case EndingResignation: return wins + " by resignation";
+                case EndingKingCaptured: return wins + " by capturing the king";
+                case EndingTimeForfeit: return winner == ChessRules.NoColor ? "Draw on time" : wins + " on time";
+                case EndingStalemate: return "Draw by stalemate";
+                case EndingDrawAgreement: return "Draw by agreement";
+                case EndingThreefoldRepetition: return "Draw by threefold repetition";
+                case EndingFivefoldRepetition: return "Draw by fivefold repetition";
+                case EndingFiftyMoveRule: return "Draw by the fifty-move rule";
+                case EndingSeventyFiveMoveRule: return "Draw by the seventy-five-move rule";
+                case EndingInsufficientMaterial: return "Draw: insufficient material";
+            }
+            return wins;
+        }
+
         // value (not negative) in decimal, zero-padded to at least count digits.
         static string Digits(int value, int count) {
             string text = value.ToString();

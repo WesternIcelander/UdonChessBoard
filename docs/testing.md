@@ -50,7 +50,7 @@ Only one VR headset is available, so a check may need at most one client in VR; 
 
 ## Archive test
 
-`ArchiveTest` (`Assets/Tests/Archive/`, step 10.1a) checks `GameArchive` and its holders. The holders are synced, so like `BoardTest` it skips itself with anyone else in the instance; it waits for `BoardTest` and `ViewTest` (their `finished`), since it uses the board, and empties the archive when done (their games are archived too). **Tools > Chess Board > Create Archive Test** adds it for the scene's only archive, wired to a board using it and to the scene's `BoardTest` and `ViewTest`. All its checks run in one frame.
+`ArchiveTest` (`Assets/Tests/Archive/`, step 10.1a) checks `GameArchive` and its holders. The holders are synced, so like `BoardTest` it skips itself with anyone else in the instance; it waits for `BoardTest` and `ViewTest` (their `finished`), since it uses the board, and empties the archive for its checks (their games are archived too), keeping the games it found and putting them back when done (numbered from #1 again), so the history wall shows them afterwards. **Tools > Chess Board > Create Archive Test** adds it for the scene's only archive, wired to a board using it, the scene's history wall on it (10.2a) and the scene's `BoardTest` and `ViewTest`. All its checks run in one frame.
 
 - **Wiring:** 10 synced holders pointing at the archive, the recent holder local only, capacity 50, the board's `archive`; the local player owning the archive, every holder ready, a holder ownable by the archive's owner (`MayOwn`) and the recent holder by nobody.
 - **A board's game:** the earlier tests' games archived; after clearing, a game of two names (e4 c5) reset by White arrives as one archived game, unfinished, with its ID, players, starting FEN, mode and moves, sending only holder 0.
@@ -58,6 +58,7 @@ Only one VR headset is available, so a check may need at most one client in VR; 
 - **Full:** 50 games, then the 51st overwrites the oldest in holder 0 slot 0 (only holder 0 sent), and reading stays oldest first (test-2 to test-51), two more moving the oldest on.
 - **Recent games:** the last 5 kept locally; two games only stored (`StoreRecent`, as on a client not owning the archive) aren't archived or sent, and `Flush` (as on becoming the owner) archives both, oldest first, then has nothing more to add.
 - **Updates:** a holder packed, emptied and receiving its own update reads back the same; an update with the wrong number of moves or a `null` string is ignored; the recent holder takes no update and packs nothing.
+- **History wall** (10.2a): the scene's wall on the archive (`wall`, set by the builder), a row per game it holds; `ChessGame.EndingDescription` for a few endings; after the board's game, the wall redrawn (and not again without a change) showing `Previous games` and `#1  Archive Ana vs Archive Bo: Unfinished (*), 1 move`, the other rows empty; after the 7 test games, test-1's row in full (`#1  White 1 vs Black 1: Black wins by checkmate (0-1), 1 move, Chess960`) and the 7 rows in order; full and wrapped, all 50 rows test-4 to test-53 oldest first across the holders; emptied at the end, every row empty and `Previous games: none yet`; then the games kept from before the checks put back, read back oldest first and shown on the wall's first rows.
 
 ## PGN test set
 

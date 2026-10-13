@@ -5,9 +5,9 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
-// Adds ArchiveTest (PLAN.md step 10.1a) to the open scene for the scene's only GameArchive: a board using it, and the
-// scene's BoardTest and ViewTest to wait for. An existing ArchiveTest is replaced. Menu: Tools > Chess Board > Create
-// Archive Test. Plain editor C#, not Udon.
+// Adds ArchiveTest (PLAN.md step 10.1a) to the open scene for the scene's only GameArchive: a board using it, its
+// history wall (10.2a), and the scene's BoardTest and ViewTest to wait for. An existing ArchiveTest is replaced. Menu:
+// Tools > Chess Board > Create Archive Test. Plain editor C#, not Udon.
 public static class ArchiveTestBuilder {
     const string TestScriptPath = "Assets/Tests/Archive/ArchiveTest.cs";
     const string TestProgramPath = "Assets/Tests/Archive/ArchiveTest.asset";
@@ -37,6 +37,10 @@ public static class ArchiveTestBuilder {
         test.boardTest = boardTests.Length > 0 ? boardTests[0] : null;
         ViewTest[] viewTests = Object.FindObjectsOfType<ViewTest>(true);
         test.viewTest = viewTests.Length > 0 ? viewTests[0] : null;
+        GameHistoryWall[] walls = Object.FindObjectsOfType<GameHistoryWall>(true);
+        for (int i = 0; i < walls.Length && test.wall == null; i++) {
+            if (walls[i].archive == archive) test.wall = walls[i];
+        }
         UdonSharpEditorUtility.CopyProxyToUdon(test);
 
         for (int i = 0; i < olds.Length; i++) {
@@ -51,7 +55,9 @@ public static class ArchiveTestBuilder {
         Debug.Log("[ArchiveTestBuilder] " + (olds.Length > 0 ? "Replaced" : "Created") + " ArchiveTest"
             + (test.board != null ? " with board " + test.board.gameObject.name : " with no board using the archive")
             + ", waiting for " + (test.boardTest != null ? "BoardTest" : "no BoardTest") + " and "
-            + (test.viewTest != null ? "ViewTest" : "no ViewTest") + ". Save the scene.");
+            + (test.viewTest != null ? "ViewTest" : "no ViewTest") + ", "
+            + (test.wall != null ? "with the history wall" : "with no history wall (Create History Wall first)")
+            + ". Save the scene.");
     }
 
     // As ChessBoardViewBuilder.EnsureProgramAsset.

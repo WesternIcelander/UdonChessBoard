@@ -1077,27 +1077,14 @@ namespace SiggiChessBoard {
                 return lifecycle == ChessBoard.LifecycleLoaded ? "Unfinished game (*)" : "";
             }
             string result = " (" + board.ResultText() + ")";
-            string wins = winner == ChessRules.NoColor ? "Draw" : ColorText(winner) + " wins";
-            // A time forfeit drawn: the side out of time is the one that was to move, and its opponent couldn't mate.
-            int flagged = board.SideToMove();
-            switch (ending) {
-                case ChessGame.EndingCheckmate: return wins + " by checkmate" + result;
-                case ChessGame.EndingResignation: return wins + " by resignation" + result;
-                case ChessGame.EndingKingCaptured: return wins + " by capturing the king" + result;
-                case ChessGame.EndingTimeForfeit:
-                    if (winner != ChessRules.NoColor) return wins + " on time" + result;
-                    return "Draw: " + ColorText(flagged) + " ran out of time, "
-                        + ColorText(ChessRules.OtherColor(flagged)) + " can't checkmate" + result;
-                case ChessGame.EndingStalemate: return "Draw by stalemate" + result;
-                case ChessGame.EndingDrawAgreement: return "Draw by agreement" + result;
-                case ChessGame.EndingThreefoldRepetition: return "Draw by threefold repetition" + result;
-                case ChessGame.EndingFivefoldRepetition: return "Draw by fivefold repetition" + result;
-                case ChessGame.EndingFiftyMoveRule: return "Draw by the fifty-move rule" + result;
-                case ChessGame.EndingSeventyFiveMoveRule: return "Draw by the seventy-five-move rule" + result;
-                case ChessGame.EndingInsufficientMaterial: return "Draw: insufficient material" + result;
+            if (ending == ChessGame.EndingTimeForfeit && winner == ChessRules.NoColor) {
+                // A time forfeit drawn: the side out of time is the one that was to move, and its opponent couldn't
+                // mate.
+                int flagged = board.SideToMove();
+                return "Draw: " + ColorText(flagged) + " ran out of time, "
+                    + ColorText(ChessRules.OtherColor(flagged)) + " can't checkmate" + result;
             }
-            // A loaded game's result tag (EndingUnknown).
-            return wins + result;
+            return ChessGame.EndingDescription(ending, winner) + result;
         }
 
         // The replay position: "Replay: 2. Nf3 (3 of 4)" (the move that led to it, numbered as PGN numbers it, "?"

@@ -16,9 +16,13 @@ public class ArchiveTest : UdonSharpBehaviour {
     // Waited for, since they change the board; none to start at once.
     public BoardTest boardTest;
     public ViewTest viewTest;
+    // The scene's history wall on this archive (step 10.2a).
+    public GameHistoryWall wall;
 
     const int HolderCount = 10;
     const int Capacity = HolderCount * GameArchiveHolder.Capacity;
+    // A kept game's numbers: mode, ending, winner, base time, increment.
+    const int InfoLength = 5;
 
     int passed;
     int failed;
@@ -27,6 +31,17 @@ public class ArchiveTest : UdonSharpBehaviour {
     int waitedFrames;
     int[] sendsBefore = new int[HolderCount];
     int[] scratch = new int[16];
+    // The games archived before the checks (by BoardTest, ViewTest, or played), put back when done (SaveGames).
+    int savedCount;
+    string[] savedIds;
+    string[] savedContinuedFroms;
+    string[] savedWhites;
+    string[] savedBlacks;
+    string[] savedFens;
+    int[] savedInfos;
+    int[] savedOffsets;
+    int[] savedMoves;
+    int[] savedClocks;
 
     void Start() {
         SendCustomEventDelayedFrames(nameof(WaitForTests), 1);
@@ -57,13 +72,27 @@ public class ArchiveTest : UdonSharpBehaviour {
             return;
         }
         RunWiringChecks();
+        SaveGames();
+        bool hasWall = Utilities.IsValid(wall) && wall.archive == archive;
+        Check(hasWall, "wall: assigned on this archive", "assign ArchiveTest's Wall (Create History Wall, then "
+            + "Create Archive Test again)");
+        if (hasWall) RunWallSetupChecks();
         RunBoardChecks();
+        if (hasWall) RunWallBoardChecks();
         RunAddChecks();
+        if (hasWall) RunWallAddChecks();
         RunWrapChecks();
+        if (hasWall) RunWallFullChecks();
         RunRecentChecks();
         RunSyncChecks();
         archive.ClearArchive();
         CheckInt(archive.GameCount(), 0, "end: archive emptied");
+        if (hasWall) {
+            Check(wall.RefreshIfChanged(), "wall: redrawn once emptied", "not redrawn");
+            CheckWallRows(0, 0, "wall: emptied");
+            CheckString(wall.title.text, "Previous games: none yet", "wall: emptied, title");
+        }
+        RestoreGames(hasWall);
         LogSummary();
     }
 
@@ -257,6 +286,144 @@ public class ArchiveTest : UdonSharpBehaviour {
         CheckInt(recent.SlotOf("rec-2"), recentSlot, "sync: the recent holder ignores updates");
         recent.PackState();
         CheckInt(recent.syncedMoves.Length, 0, "sync: the recent holder packs nothing");
+    }
+
+    // ---- The games archived before the checks, kept and put back, so the wall shows them afterwards ----
+
+    void SaveGames() {
+        savedCount = archive.GameCount();
+        savedIds = new string[savedCount];
+        savedContinuedFroms = new string[savedCount];
+        savedWhites = new string[savedCount];
+        savedBlacks = new string[savedCount];
+        savedFens = new string[savedCount];
+        savedInfos = new int[savedCount * InfoLength];
+        savedOffsets = new int[savedCount + 1];
+        for (int i = 0; i < savedCount; i++) savedOffsets[i + 1] = savedOffsets[i] + archive.MoveCountAt(i);
+        savedMoves = new int[savedOffsets[savedCount]];
+        savedClocks = new int[savedOffsets[savedCount]];
+        for (int i = 0; i < savedCount; i++) {
+            savedIds[i] = archive.GameIdAt(i);
+            savedContinuedFroms[i] = archive.ContinuedFromAt(i);
+            savedWhites[i] = archive.WhiteAt(i);
+            savedBlacks[i] = archive.BlackAt(i);
+            savedFens[i] = archive.StartFenAt(i);
+            int at = i * InfoLength;
+            savedInfos[at] = archive.ModeAt(i);
+            savedInfos[at + 1] = archive.EndingAt(i);
+            savedInfos[at + 2] = archive.WinnerAt(i);
+            savedInfos[at + 3] = archive.BaseTimeAt(i);
+            savedInfos[at + 4] = archive.IncrementAt(i);
+            int count = archive.MoveCountAt(i);
+            int[] moves = new int[count];
+            int[] clocks = new int[count];
+            archive.CopyMovesAt(i, moves);
+            archive.CopyClocksAt(i, clocks);
+            System.Array.Copy(moves, 0, savedMoves, savedOffsets[i], count);
+            System.Array.Copy(clocks, 0, savedClocks, savedOffsets[i], count);
+        }
+        Debug.Log("[ArchiveTest] kept the " + savedCount + " game(s) archived before the checks, to put back after");
+    }
+
+    // Puts the kept games back, oldest first (numbered from #1 again), and checks they all read back.
+    void RestoreGames(bool hasWall) {
+        bool same = true;
+        for (int i = 0; i < savedCount; i++) {
+            int count = savedOffsets[i + 1] - savedOffsets[i];
+            int[] moves = new int[count];
+            int[] clocks = new int[count];
+            System.Array.Copy(savedMoves, savedOffsets[i], moves, 0, count);
+            System.Array.Copy(savedClocks, savedOffsets[i], clocks, 0, count);
+            int at = i * InfoLength;
+            archive.AddGame(savedIds[i], savedContinuedFroms[i], savedWhites[i], savedBlacks[i], savedInfos[at],
+                savedInfos[at + 1], savedInfos[at + 2], savedFens[i], savedInfos[at + 3], savedInfos[at + 4], moves,
+                clocks, count);
+        }
+        CheckInt(archive.GameCount(), savedCount, "end: the games archived before the checks put back");
+        for (int i = 0; i < savedCount && i < archive.GameCount(); i++) {
+            if (archive.GameIdAt(i) != savedIds[i] || archive.WhiteAt(i) != savedWhites[i]
+                || archive.MoveCountAt(i) != savedOffsets[i + 1] - savedOffsets[i]) {
+                same = false;
+            }
+        }
+        Check(same, "end: the games put back read back oldest first", "a game differs");
+        if (!hasWall) return;
+        wall.RefreshIfChanged();
+        bool shown = savedCount == 0 || wall.rows[savedCount - 1].text != "";
+        if (savedCount < wall.rows.Length && wall.rows[savedCount].text != "") shown = false;
+        Check(shown, "end: the wall shows the " + savedCount + " game(s) put back", "its rows don't");
+    }
+
+    // ---- The history wall (step 10.2a) ----
+
+    void RunWallSetupChecks() {
+        CheckInt(wall.rows.Length, Capacity, "wall: a row per game the archive holds");
+        bool assigned = Utilities.IsValid(wall.title);
+        for (int i = 0; i < wall.rows.Length; i++) {
+            if (!Utilities.IsValid(wall.rows[i])) assigned = false;
+        }
+        Check(assigned, "wall: title and rows assigned", "a text is missing");
+        CheckString(ChessGame.EndingDescription(ChessGame.EndingUnterminated, ChessRules.NoColor), "Unfinished",
+            "wall: ending text, unfinished");
+        CheckString(ChessGame.EndingDescription(ChessGame.EndingResignation, ChessRules.White),
+            "White wins by resignation", "wall: ending text, resignation");
+        CheckString(ChessGame.EndingDescription(ChessGame.EndingTimeForfeit, ChessRules.NoColor), "Draw on time",
+            "wall: ending text, time forfeit drawn");
+        CheckString(ChessGame.EndingDescription(ChessGame.EndingUnknown, ChessRules.Black), "Black wins",
+            "wall: ending text, a loaded game's result");
+    }
+
+    // After RunBoardChecks: the board's game alone on the wall.
+    void RunWallBoardChecks() {
+        Check(wall.RefreshIfChanged(), "wall: redrawn after the board's game", "not redrawn");
+        Check(!wall.RefreshIfChanged(), "wall: not redrawn again without a change", "redrawn");
+        CheckString(wall.title.text, "Previous games", "wall: board's game, title");
+        CheckString(wall.rows[0].text, "#1  Archive Ana vs Archive Bo: Unfinished (*), 1 move",
+            "wall: board's game, row");
+        bool rest = true;
+        for (int i = 1; i < wall.rows.Length; i++) {
+            if (wall.rows[i].text != "") rest = false;
+        }
+        Check(rest, "wall: board's game, the other rows empty", "a row isn't empty");
+    }
+
+    // After RunAddChecks: test-1 to test-7.
+    void RunWallAddChecks() {
+        Check(wall.RefreshIfChanged(), "wall: redrawn after adding", "not redrawn");
+        CheckString(wall.title.text, "Previous games", "wall: 7 games, title");
+        CheckString(wall.rows[0].text, "#1  White 1 vs Black 1: Black wins by checkmate (0-1), 1 move, Chess960",
+            "wall: 7 games, test-1's row");
+        CheckWallRows(1, 7, "wall: 7 games");
+    }
+
+    // After RunWrapChecks: full and wrapped, test-4 to test-53, oldest first across every holder.
+    void RunWallFullChecks() {
+        Check(wall.RefreshIfChanged(), "wall: redrawn after wrapping", "not redrawn");
+        CheckString(wall.title.text, "Previous games", "wall: full, title");
+        CheckWallRows(4, Capacity, "wall: full, test-4 to test-53");
+        CheckString(wall.rows[Capacity - 1].text, ExpectedRow(Capacity + 3), "wall: full, the newest last");
+    }
+
+    // The wall's first count rows are test-first onwards, oldest first, and the rest empty.
+    void CheckWallRows(int first, int count, string name) {
+        string differs = "";
+        for (int i = 0; i < wall.rows.Length && differs == ""; i++) {
+            string expected = i < count ? ExpectedRow(first + i) : "";
+            if (wall.rows[i].text != expected) {
+                differs = "row " + i + " is \"" + wall.rows[i].text + "\", expected \"" + expected + "\"";
+            }
+        }
+        Check(differs == "", name + ": rows", differs);
+    }
+
+    // Test game n's row (AddTestGame): its sequence is n, as each was archived in turn.
+    string ExpectedRow(int n) {
+        int ending = n % 11;
+        int winner = n % 3 - 1 < 0 ? ChessRules.NoColor : n % 2;
+        int moves = (n % 7 + 2) / 2;
+        return "#" + n + "  White " + n + " vs Black " + n + ": " + ChessGame.EndingDescription(ending, winner)
+            + " (" + ChessPgn.ResultText(ending, winner) + "), " + moves + (moves == 1 ? " move" : " moves")
+            + (n % 2 == ChessGame.ModeChess960 ? ", Chess960" : "");
     }
 
     // ---- Test games ----
