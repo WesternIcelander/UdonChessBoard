@@ -67,6 +67,7 @@ public class ViewTest : UdonSharpBehaviour {
             return;
         }
         Check(view.board == board && ui.board == board, "the view and the UI on the board", "they aren't");
+        CheckString(view.LocalSpaceProblem(), "", "the view's objects in its local space (step 12.2)");
         localName = Networking.LocalPlayer.displayName;
         // Every check but the animation checks (9.5b) looks at pieces in place straight after a change.
         savedAnimate = view.animateMoves;
@@ -2304,6 +2305,10 @@ public class ViewTest : UdonSharpBehaviour {
                 error = "object " + obj + " has the wrong mesh";
             } else if ((view.pieces[obj].localPosition - view.SquarePosition(square)).sqrMagnitude > 1e-8f) {
                 error = "object " + obj + " is at " + view.pieces[obj].localPosition.ToString("F3");
+            } else if (view.DropSquare(view.pieces[obj].position) != square) {
+                // In the world too, whatever the view's scale (step 12.2).
+                error = "object " + obj + " stands over " + SquareText(view.DropSquare(view.pieces[obj].position))
+                    + " in the world";
             }
             if (error.Length > 0 && count++ < 3) errors += SquareText(square) + ": " + error + "; ";
         }

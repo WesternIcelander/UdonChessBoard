@@ -17,7 +17,8 @@ using VRC.Udon;
 // beside the view, standing where the view does (the board's centre): the button panels (steps 9.4a and 9.4b), the
 // status panels (step 9.5c) and the PGN box (steps 11.2a, 11.2b). Players walk through all of it (no solid colliders
 // but the pieces', on the Pickup layer); the view's blocker keeps out those without a seat (step 9.5a2). An existing
-// view for the same board is replaced, keeping its place, and so is its UI. The piece meshes, the highlight meshes
+// view for the same board is replaced, keeping its place, and so is its UI; a world creator's own model in it, and
+// the model parts they deleted, are kept (step 12.2, KeepCustomModel). The piece meshes, the highlight meshes
 // and the materials are generated placeholders in Assets/Siggi/ChessBoard/Models/, made only when missing, so they
 // can be replaced there (or other meshes assigned in the view's Meshes field). Menu: Tools > Chess Board > Create
 // Board View. Plain editor C#, not Udon.
@@ -152,6 +153,7 @@ public static class ChessBoardViewBuilder {
         // Read before old is destroyed, after which Unity compares it equal to null.
         bool replacing = old != null;
         int repointed = 0;
+        string kept = "";
         ChessBoardUI oldUi = ExistingUI(board, ui);
         // An earlier UI inside the old view (as the first 12.1 builds made it) goes with the view.
         bool oldUiBeside = oldUi != null && (old == null || !oldUi.transform.IsChildOf(old.transform));
@@ -163,6 +165,7 @@ public static class ChessBoardViewBuilder {
             root.transform.position = old.transform.position;
             root.transform.rotation = old.transform.rotation;
             root.transform.localScale = old.transform.localScale;
+            kept = KeepCustomModel(old.transform, root.transform);
             Undo.DestroyObjectImmediate(old);
         }
         // An earlier UI beside the view is replaced where it stands; otherwise the UI stands beside the view, just
@@ -177,9 +180,43 @@ public static class ChessBoardViewBuilder {
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[ChessBoardViewBuilder] " + (replacing ? "Replaced " : "Created ") + root.name + " for "
-            + board.gameObject.name + (replacing ? " (" + repointed + " behaviour(s) pointed at the new view)" : "")
+            + board.gameObject.name + (replacing ? " (" + repointed + " behaviour(s) pointed at the new view" + kept
+                + ")" : "")
             + " and " + uiObject.name + (ui.historyWall != null ? ", with the history wall" : "")
             + ". Move them where you like (the UI's origin at the board's centre) and save the scene.");
+    }
+
+    // The parts of the table and board model a world creator may delete (step 12.2, docs/customizing.md), and every
+    // child the builder makes.
+    static readonly string[] ModelParts = { "Table", "Board", "Squares" };
+    static readonly string[] BuiltChildren = {
+        "Table", "Player Blocker", "Board", "Squares", "Pieces", "Square Targets", "Highlights", "Promotion Picker",
+    };
+
+    // Keeps a world creator's changes to the model when a view is rebuilt (step 12.2): a model part deleted from the
+    // old view is left out of the new one, and the old view's children the builder didn't make (their own model) move
+    // to the new view, keeping their local place. An earlier UI inside the old view goes with it. Returns what was
+    // kept, for the log ("" for nothing).
+    static string KeepCustomModel(Transform old, Transform root) {
+        string kept = "";
+        for (int i = 0; i < ModelParts.Length; i++) {
+            if (old.Find(ModelParts[i]) != null) continue;
+            Transform part = root.Find(ModelParts[i]);
+            if (part != null) Object.DestroyImmediate(part.gameObject);
+            kept += ", " + ModelParts[i] + " left out";
+        }
+        List<Transform> custom = new List<Transform>();
+        foreach (Transform child in old) {
+            if (System.Array.IndexOf(BuiltChildren, child.name) < 0
+                && child.GetComponentInChildren<ChessBoardUI>(true) == null) {
+                custom.Add(child);
+            }
+        }
+        for (int i = 0; i < custom.Count; i++) {
+            Undo.SetTransformParent(custom[i], root, "Create Board View");
+            kept += ", " + custom[i].name + " kept";
+        }
+        return kept;
     }
 
     // Points every other behaviour's field holding the old view (ViewTest's, a debug view's, ArchiveTest's; or the old

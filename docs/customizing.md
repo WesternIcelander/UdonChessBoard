@@ -1,0 +1,29 @@
+# Customizing a board
+
+What a world creator can change on a board built by **Tools > Chess Board > Create Board View**, without touching the code.
+
+## The board model and scale (step 12.2)
+
+A view (`ChessBoardView (<board>)`) holds these children:
+
+| Child | What it is | May it go? |
+|---|---|---|
+| **Table** | the placeholder table | yes |
+| **Board**, **Squares** | the placeholder board: its frame, and the 64 squares as one mesh | yes |
+| **Player Blocker** | the solid box keeping players without a seat out of the table ([Physical pieces](physical-pieces.md#walking-through-the-board-step-95a2)) | keep it; resize its `BoxCollider` to a table of your own |
+| **Pieces**, **Square Targets**, **Highlights**, **Promotion Picker** | the pieces, desktop mode's click targets, the highlights and the picker | no: the view uses them |
+
+The view reads nothing from **Table**, **Board** or **Squares**, so delete them and put your own model in their place, as a child of the view so it scales with it:
+
+- **The playing surface** at the view's y = 0 (the pieces stand on it).
+- **a1** at the view's −x −z corner, files a to h along +x, ranks 1 to 8 along +z (White at −z), the board's centre at the view's origin.
+- **Each square** `squareSize` wide (0.05 view units: the whole board 0.4 units across), so the model's squares lie under the square targets.
+- **No colliders** on it, or triggers only, so players can walk up to the board and clicks reach the square targets and pieces. The square targets stay separate from the model: they take the clicks, so a model needs none of its own.
+
+**Rebuilding** the view (**Create Board View** again, which later steps ask for) keeps these changes: a **Table**, **Board** or **Squares** deleted from the old view is left out of the new one, and the old view's children the builder didn't make (your model) move to the new one where they stood.
+
+**Scaling:** scale the view's transform, uniformly (the same on x, y and z). Everything the view places (pieces, highlights, click targets, animations, captured pieces) is in its local space, so it all scales with it, and drops are read through the view's transform. `squareSize` isn't for resizing: the square targets and highlights are built for it.
+
+- Give the board's UI (`ChessBoardUI (<board>)`, beside the view) the same scale and place, so its panels stay around the table.
+- The table scales too: a view at 0.5 has a table half as tall, so lower the view (or use your own table) to stand it on the floor.
+- Leave the view's groups (**Pieces**, **Square Targets**, **Highlights**) unmoved, unturned and unscaled: the view places their children in its own space. On Start it logs a warning naming the first object whose group isn't (`ChessBoardView.LocalSpaceProblem`).

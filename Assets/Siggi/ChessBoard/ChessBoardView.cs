@@ -13,7 +13,9 @@ namespace SiggiChessBoard {
     // (Editor/ChessBoardViewBuilder.cs).
     //
     // The view's local space: the playing surface at y = 0, files a to h along +x, ranks 1 to 8 along +z (White at
-    // -z), the board's centre at the origin.
+    // -z), the board's centre at the origin. Everything is placed in it, so the view can be scaled as a whole, and
+    // nothing reads the board model (Board, Squares), so a world creator can replace it (step 12.2,
+    // docs/customizing.md).
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class ChessBoardView : ChessBoardListener {
         public const int PieceCount = 32;
@@ -37,7 +39,9 @@ namespace SiggiChessBoard {
         // Each piece object's pickup and collider (the same index). The collider is fitted to the piece's mesh.
         public VRCPickup[] piecePickups = new VRCPickup[PieceCount];
         public BoxCollider[] pieceColliders = new BoxCollider[PieceCount];
-        // The width of a square, in the view's local units.
+        // The width of a square, in the view's local units. The builder's square targets and highlights are made for
+        // it, so it isn't for resizing: scale the view's transform instead (step 12.2, docs/customizing.md).
+        [Tooltip("The builder's square size, in the view's units. Don't change it to resize the board: scale the view.")]
         public float squareSize = 0.05f;
         // InputAuto, InputPickups or InputClicks, the same for every client of a build; CycleInputStyle changes it on
         // one client.
@@ -160,8 +164,54 @@ namespace SiggiChessBoard {
                 Debug.LogError("[ChessBoardView] " + gameObject.name + ": the Board field is empty.");
                 return;
             }
+            string problem = LocalSpaceProblem();
+            if (problem.Length > 0) Debug.LogWarning("[ChessBoardView] " + gameObject.name + ": " + problem);
             board.AddListener(this);
             Refresh();
+        }
+
+        // ---- Local space (step 12.2, docs/customizing.md) ----
+
+        // The view places its objects in its own local space, so it can be scaled as a whole, and its board model
+        // (Board, Squares) replaced: nothing reads the model. The groups holding its objects (Pieces, Square Targets,
+        // Highlights) must leave that space as it is. "" when they do; otherwise what's wrong, which Start logs.
+        public string LocalSpaceProblem() {
+            for (int i = 0; i < pieces.Length; i++) {
+                string problem = ParentProblem(pieces[i]);
+                if (problem.Length > 0) return problem;
+            }
+            for (int i = 0; i < squareTargets.Length; i++) {
+                string problem = Utilities.IsValid(squareTargets[i]) ? ParentProblem(squareTargets[i].transform) : "";
+                if (problem.Length > 0) return problem;
+            }
+            for (int i = 0; i < targetHighlights.Length; i++) {
+                string problem = Utilities.IsValid(targetHighlights[i])
+                    ? ParentProblem(targetHighlights[i].transform) : "";
+                if (problem.Length > 0) return problem;
+            }
+            for (int i = 0; i < lastMoveHighlights.Length; i++) {
+                string problem = Utilities.IsValid(lastMoveHighlights[i])
+                    ? ParentProblem(lastMoveHighlights[i].transform) : "";
+                if (problem.Length > 0) return problem;
+            }
+            return Utilities.IsValid(promotionPicker) ? ParentProblem(promotionPicker.transform) : "";
+        }
+
+        // "" when every group between obj and the view is unmoved, unturned and unscaled.
+        string ParentProblem(Transform obj) {
+            if (!Utilities.IsValid(obj)) return "";
+            Transform parent = obj.parent;
+            while (Utilities.IsValid(parent) && parent != transform) {
+                if (parent.localPosition.sqrMagnitude > 1e-10f
+                    || Quaternion.Angle(parent.localRotation, Quaternion.identity) > 0.01f
+                    || (parent.localScale - Vector3.one).sqrMagnitude > 1e-8f) {
+                    return obj.name + " is misplaced: " + parent.name + " is moved, turned or scaled. Scale or move the "
+                        + "whole view instead.";
+                }
+                parent = parent.parent;
+            }
+            if (!Utilities.IsValid(parent)) return obj.name + " isn't inside the view.";
+            return "";
         }
 
         void Update() {
