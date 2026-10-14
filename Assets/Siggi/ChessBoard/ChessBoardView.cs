@@ -75,6 +75,14 @@ namespace SiggiChessBoard {
         // client unless the local player has a seat (UpdateBlocker). Players collide only on their own client, so
         // each client's blocker stops only its own player. Below the surface, so it doesn't catch pointing or clicks.
         public Collider blocker;
+        // Captured-piece places (step 12.4, docs/customizing.md): where each colour's captured pieces stand, in the
+        // order they were captured, placed by the world creator anywhere (read through their world position, so they
+        // needn't be children of the view). A captured piece stands on its place as on a square: its template's offset
+        // and turn, in the view's space. Empty entries are skipped; pieces beyond the last place are hidden.
+        [Tooltip("Where White's captured pieces stand, in capture order. Pieces beyond the last are hidden.")]
+        public Transform[] whiteCapturedPlaces = new Transform[PiecesPerColor];
+        [Tooltip("Where Black's captured pieces stand, in capture order. Pieces beyond the last are hidden.")]
+        public Transform[] blackCapturedPlaces = new Transform[PiecesPerColor];
         // Move animations (step 9.5b): after a change that moves a few pieces (a move, a replay step, a free move, a
         // takeback, a rejection), each object whose place changed travels there over moveSeconds in a low arc
         // (MoveLift squares high for two squares or more), the ones leaving the board starting once the others have
@@ -105,6 +113,17 @@ namespace SiggiChessBoard {
         // The type each object's model was last set to, so a model is only swapped when it changes (-1 to set it on
         // the next placing, as after a set change).
         int[] objectMeshType = new int[PieceCount];
+
+        // The captured pieces of the position shown (CaptureOrder): each colour's piece types in place order
+        // (colour * MaxCaptured + place) and how many; the place each object off the board stands in (NoPlace for
+        // none: on the board, or hidden as not needed); and the places' targets that exist, in order, by colour.
+        public const int MaxCaptured = 64;
+        public const int NoPlace = -1;
+        [NonSerialized] public int[] capturedTypes = new int[2 * MaxCaptured];
+        [NonSerialized] public int[] capturedCounts = new int[2];
+        [NonSerialized] public int[] objectPlace = new int[PieceCount];
+        Transform[] placeTargets = new Transform[2 * MaxCaptured];
+        int[] placeTargetCounts = new int[2];
 
         // The piece set applied (null for none) and the arbiter whose default it follows while pieceSet is empty, and
         // the set's templates copied by TemplateIndex (colour * 6 + type - 1): mesh, materials, offset from the
@@ -178,6 +197,7 @@ namespace SiggiChessBoard {
                 objectLastSquare[i] = ChessRules.NoSquare;
                 objectType[i] = ChessRules.NoPieceType;
                 objectMeshType[i] = -1;
+                objectPlace[i] = NoPlace;
                 placedSquare[i] = NeverPlaced;
             }
             if (!Utilities.IsValid(board)) {
@@ -403,7 +423,14 @@ namespace SiggiChessBoard {
             if (!Utilities.IsValid(board)) return;
             bool replay = board.replayMode;
             byte[] shown = replay ? board.replayBoard : board.board;
+            // The captured pieces first, so the mapping takes pieces coming back to the board from the places that
+            // empty.
+            CaptureOrder(board.board, board.SideToMove(), board.moveHistory, board.moveCount,
+                replay ? board.replayIndex : board.moveCount, replay && board.replayCustom ? board.replayBoard : null,
+                capturedTypes, capturedCounts);
+            CollectPlaceTargets();
             Reconcile(shown);
+            AssignPlaces();
             shownReplay = replay;
             shownPly = replay ? board.replayIndex : board.moveCount;
             shownCustom = replay && board.replayCustom;
@@ -912,8 +939,8 @@ namespace SiggiChessBoard {
         }
 
         // Makes the mapping the position shown: objects standing on a square that holds something else leave the
-        // board, then each square without its object gets a free one of its colour, preferring one already of its
-        // type, then the one that stood nearest.
+        // board, then each square without its object gets a free one of its colour, preferring one not standing in a
+        // captured place that stays (KeepsPlace), then one already of its type, then the one that stood nearest.
         void Reconcile(byte[] shown) {
             for (int square = 0; square < 64; square++) {
                 int obj = squareObject[square];
@@ -928,7 +955,8 @@ namespace SiggiChessBoard {
                 int bestScore = int.MaxValue;
                 for (int obj = first; obj < first + PiecesPerColor; obj++) {
                     if (objectSquare[obj] != ChessRules.NoSquare) continue;
-                    int score = (objectType[obj] == type ? 0 : 1000) + Distance(objectLastSquare[obj], square);
+                    int score = (KeepsPlace(obj) ? 2000 : 0) + (objectType[obj] == type ? 0 : 1000)
+                        + Distance(objectLastSquare[obj], square);
                     if (score < bestScore) {
                         best = obj;
                         bestScore = score;
@@ -952,6 +980,204 @@ namespace SiggiChessBoard {
             squareObject[square] = obj;
             objectSquare[obj] = square;
             objectLastSquare[obj] = square;
+            objectPlace[obj] = NoPlace;
+        }
+
+        // ---- Captured pieces (step 12.4, docs/physical-pieces.md) ----
+
+        // Fills captured (colour * MaxCaptured + place) with the piece types standing in each colour's captured-piece
+        // places, in place order, and counts with how many, for the position shown: the game's after ply of its
+        // moves, or custom (null for none), a replay position the free moves made from it. Everything comes from the
+        // game's board and history, which every client has, so every client, a late joiner too, shows the same
+        // places; no history is made up for a position without one. In order:
+        // - The pieces the starting position lacks (from a FEN), short of the standard set, in the fixed order
+        //   (PlaceOrderType); each piece beyond a type's standard count (a promotion the FEN doesn't record) counts
+        //   against the missing pawns. The starting counts are the game's board's with its moves undone.
+        // - The captures of the moves before ply. A promoted pawn is captured as a pawn; a piece whose promotion the
+        //   history can't show (an extra queen in the starting FEN) keeps its type.
+        // - For a custom position, the pieces of the ply's position missing from it (kings too), in the fixed order:
+        //   the free moves took them, whatever they were.
+        // gameBoard and sideToMove are the game's after its moveCount moves (whatever replay shows).
+        public static void CaptureOrder(byte[] gameBoard, int sideToMove, int[] moves, int moveCount, int ply,
+            byte[] custom, int[] captured, int[] counts) {
+            counts[ChessRules.White] = 0;
+            counts[ChessRules.Black] = 0;
+            if (gameBoard == null || moves == null) return;
+            if (moveCount > moves.Length) moveCount = moves.Length;
+            if (ply < 0) ply = 0;
+            if (ply > moveCount) ply = moveCount;
+            // Pieces per colour * 8 + type: the game's, then the starting position's (its moves undone).
+            int[] pieceCounts = new int[16];
+            for (int square = 0; square < 64; square++) {
+                int piece = gameBoard[square];
+                if (piece != ChessRules.Empty) pieceCounts[ChessRules.PieceColorOf(piece) * 8 + (piece & 7)]++;
+            }
+            for (int i = moveCount - 1; i >= 0; i--) {
+                int move = moves[i];
+                int mover = MoverAt(sideToMove, moveCount, i);
+                int capturedType = ChessRules.MoveIsCastle(move) ? ChessRules.NoPieceType : ChessRules.MoveCaptured(move);
+                if (capturedType != ChessRules.NoPieceType) pieceCounts[ChessRules.OtherColor(mover) * 8 + capturedType]++;
+                int promotion = ChessRules.MovePromotion(move);
+                if (promotion != ChessRules.NoPieceType) {
+                    pieceCounts[mover * 8 + promotion]--;
+                    pieceCounts[mover * 8 + ChessRules.Pawn]++;
+                }
+            }
+            for (int color = ChessRules.White; color <= ChessRules.Black; color++) {
+                int extra = 0;
+                for (int type = ChessRules.Knight; type <= ChessRules.Queen; type++) {
+                    int over = pieceCounts[color * 8 + type] - StandardCount(type);
+                    if (over > 0) extra += over;
+                }
+                for (int i = 0; i < 5; i++) {
+                    int type = PlaceOrderType(i);
+                    int missing = StandardCount(type) - pieceCounts[color * 8 + type];
+                    if (type == ChessRules.Pawn) missing -= extra;
+                    for (int n = 0; n < missing; n++) AddCaptured(captured, counts, color, type);
+                }
+            }
+            // The game's captures up to ply, following which pieces are promoted pawns, and the counts brought to ply.
+            bool[] promoted = new bool[64];
+            for (int i = 0; i < ply; i++) {
+                int move = moves[i];
+                int mover = MoverAt(sideToMove, moveCount, i);
+                int from = ChessRules.MoveFrom(move);
+                int to = ChessRules.MoveTo(move);
+                if (ChessRules.MoveIsCastle(move)) {
+                    promoted[from] = false;
+                    promoted[to] = false;
+                    continue;
+                }
+                int capturedType = ChessRules.MoveCaptured(move);
+                if (capturedType != ChessRules.NoPieceType) {
+                    int square = ChessRules.IsEnPassantCapture(move)
+                        ? ChessRules.SquareOf(ChessRules.FileOf(to), ChessRules.RankOf(from)) : to;
+                    int other = ChessRules.OtherColor(mover);
+                    AddCaptured(captured, counts, other, promoted[square] ? ChessRules.Pawn : capturedType);
+                    pieceCounts[other * 8 + capturedType]--;
+                    promoted[square] = false;
+                }
+                int promotion = ChessRules.MovePromotion(move);
+                if (promotion != ChessRules.NoPieceType) {
+                    pieceCounts[mover * 8 + ChessRules.Pawn]--;
+                    pieceCounts[mover * 8 + promotion]++;
+                }
+                promoted[to] = promoted[from] || promotion != ChessRules.NoPieceType;
+                promoted[from] = false;
+            }
+            if (custom == null) return;
+            // The free moves only move pieces and take them off, so each type has at most the ply's count.
+            int[] customCounts = new int[16];
+            for (int square = 0; square < 64; square++) {
+                int piece = custom[square];
+                if (piece != ChessRules.Empty) customCounts[ChessRules.PieceColorOf(piece) * 8 + (piece & 7)]++;
+            }
+            for (int color = ChessRules.White; color <= ChessRules.Black; color++) {
+                for (int i = 0; i < 6; i++) {
+                    int type = PlaceOrderType(i);
+                    int missing = pieceCounts[color * 8 + type] - customCounts[color * 8 + type];
+                    for (int n = 0; n < missing; n++) AddCaptured(captured, counts, color, type);
+                }
+            }
+        }
+
+        // The colour that played move i of a game of moveCount moves with sideToMove to move after them.
+        static int MoverAt(int sideToMove, int moveCount, int i) {
+            return ((moveCount - i) & 1) == 1 ? ChessRules.OtherColor(sideToMove) : sideToMove;
+        }
+
+        // The fixed order of pieces put in places without a capture to order them: queen, rook, bishop, knight, pawn,
+        // then king (only a free move takes one).
+        public static int PlaceOrderType(int i) {
+            if (i < 4) return ChessRules.Queen - i;
+            return i == 4 ? ChessRules.Pawn : ChessRules.King;
+        }
+
+        // How many of a piece type a side starts a standard game with.
+        public static int StandardCount(int type) {
+            if (type == ChessRules.Pawn) return 8;
+            if (type == ChessRules.Queen || type == ChessRules.King) return 1;
+            return 2;
+        }
+
+        static void AddCaptured(int[] captured, int[] counts, int color, int type) {
+            if (counts[color] >= MaxCaptured) return;
+            captured[color * MaxCaptured + counts[color]] = type;
+            counts[color]++;
+        }
+
+        // The places' targets that exist (a world creator may delete some), in order, by colour.
+        void CollectPlaceTargets() {
+            for (int color = ChessRules.White; color <= ChessRules.Black; color++) {
+                Transform[] places = color == ChessRules.White ? whiteCapturedPlaces : blackCapturedPlaces;
+                int count = 0;
+                if (places != null) {
+                    for (int i = 0; i < places.Length && count < MaxCaptured; i++) {
+                        if (Utilities.IsValid(places[i])) placeTargets[color * MaxCaptured + count++] = places[i];
+                    }
+                }
+                placeTargetCounts[color] = count;
+            }
+        }
+
+        // Whether obj stands in a captured place it keeps: one the position shown still has, for its type.
+        bool KeepsPlace(int obj) {
+            int place = objectPlace[obj];
+            if (place == NoPlace || objectSquare[obj] != ChessRules.NoSquare) return false;
+            int color = ObjectColor(obj);
+            return place < capturedCounts[color] && capturedTypes[color * MaxCaptured + place] == objectType[obj];
+        }
+
+        // Puts the objects off the board in the captured places: each keeps a place it still has, and each empty place
+        // takes a free object of its colour, preferring one that has just left the board (the piece captured), then
+        // one already of its type, and wears the place's type. Free objects left over have no place (hidden).
+        void AssignPlaces() {
+            for (int obj = 0; obj < PieceCount; obj++) {
+                if (!KeepsPlace(obj)) objectPlace[obj] = NoPlace;
+            }
+            for (int color = ChessRules.White; color <= ChessRules.Black; color++) {
+                int first = color == ChessRules.White ? 0 : PiecesPerColor;
+                for (int place = 0; place < capturedCounts[color]; place++) {
+                    bool taken = false;
+                    for (int obj = first; obj < first + PiecesPerColor && !taken; obj++) {
+                        taken = objectPlace[obj] == place;
+                    }
+                    if (taken) continue;
+                    int type = capturedTypes[color * MaxCaptured + place];
+                    int best = NoObject;
+                    int bestScore = int.MaxValue;
+                    for (int obj = first; obj < first + PiecesPerColor; obj++) {
+                        if (objectSquare[obj] != ChessRules.NoSquare || objectPlace[obj] != NoPlace) continue;
+                        if (obj == promotionObject) continue;
+                        bool justLeft = placedSquare[obj] >= 0;
+                        int score = (justLeft ? 0 : 2000) + (objectType[obj] == type ? 0 : 1000);
+                        if (score < bestScore) {
+                            best = obj;
+                            bestScore = score;
+                        }
+                    }
+                    // More captured than objects off the board (a hand-made position): that place stays empty.
+                    if (best == NoObject) continue;
+                    objectPlace[best] = place;
+                    objectType[best] = type;
+                }
+            }
+        }
+
+        // Whether obj is shown: on the board (or waiting for its promotion piece), or in a captured place with a
+        // target. Objects not needed by the position and captured pieces beyond the last target are hidden.
+        public bool IsObjectShown(int obj) {
+            if (objectType[obj] == ChessRules.NoPieceType) return false;
+            if (objectSquare[obj] != ChessRules.NoSquare || obj == promotionObject) return true;
+            int place = objectPlace[obj];
+            return place != NoPlace && place < placeTargetCounts[ObjectColor(obj)];
+        }
+
+        // Where a captured place stands in the view's local space (its target's world position brought into it).
+        public Vector3 CapturedPlacePosition(int color, int place) {
+            Transform target = placeTargets[color * MaxCaptured + place];
+            if (!Utilities.IsValid(target)) return Vector3.zero;
+            return transform.InverseTransformPoint(target.position);
         }
 
         void Unmap(int square) {
@@ -1005,10 +1231,21 @@ namespace SiggiChessBoard {
                     if (obj == heldObject || !Utilities.IsValid(pieces[obj])) continue;
                     bool onBoard = objectSquare[obj] != ChessRules.NoSquare || obj == promotionObject;
                     if (onBoard != (pass == 0)) continue;
+                    Transform piece = pieces[obj];
+                    GameObject pieceObject = piece.gameObject;
+                    // Not needed by the position, or captured beyond the last place: hidden until it is.
+                    if (!IsObjectShown(obj)) {
+                        StopAnimation(obj);
+                        placedSquare[obj] = objectSquare[obj];
+                        if (pieceObject.activeSelf) pieceObject.SetActive(false);
+                        continue;
+                    }
+                    // Coming back from hidden: put straight in place, from wherever it was left.
+                    bool appearing = !pieceObject.activeSelf;
+                    if (appearing) pieceObject.SetActive(true);
                     Vector3 target = PrepareObject(obj);
                     placedSquare[obj] = objectSquare[obj];
-                    Transform piece = pieces[obj];
-                    bool snap = snapNext[obj] || !animateMoves;
+                    bool snap = snapNext[obj] || !animateMoves || appearing;
                     if (!snap && animating[obj] && (animationTo[obj] - target).sqrMagnitude < 1e-10f) continue;
                     if (!snap && animate && (piece.localPosition - target).sqrMagnitude > 1e-10f) {
                         AnimateObject(obj, target, pass == 1 && landing ? moveSeconds : 0);
@@ -1103,14 +1340,18 @@ namespace SiggiChessBoard {
             return ObjectPlace(obj);
         }
 
-        // Where obj's origin belongs now (local space), changing nothing: on its square, or beside the board when it's
-        // off it, moved by its template's offset. Public for the debug view's placement check (step 9.6).
+        // Where obj's origin belongs now (local space), changing nothing: on its square, or in its captured place when
+        // it's off the board, moved by its template's offset; where it is when it's hidden. Public for the debug view's
+        // placement check (step 9.6).
         public Vector3 ObjectPlace(int obj) {
             int square = objectSquare[obj];
             // A pawn waiting for its promotion piece stands where it was dropped.
             if (obj == promotionObject) square = promotionTo;
-            Vector3 position = (square != ChessRules.NoSquare ? SquarePosition(square) : SparePosition(obj))
-                + PieceOffset(obj);
+            if (square == ChessRules.NoSquare && !IsObjectShown(obj)) {
+                return Utilities.IsValid(pieces[obj]) ? pieces[obj].localPosition : Vector3.zero;
+            }
+            Vector3 position = (square != ChessRules.NoSquare ? SquarePosition(square)
+                : CapturedPlacePosition(ObjectColor(obj), objectPlace[obj])) + PieceOffset(obj);
             // A selected piece (desktop mode) stands lifted over its square.
             if (obj == selectedObject) position += new Vector3(0, SelectLift * squareSize, 0);
             return position;
@@ -1120,22 +1361,6 @@ namespace SiggiChessBoard {
         public Vector3 SquarePosition(int square) {
             return new Vector3((ChessRules.FileOf(square) - 3.5f) * squareSize, 0,
                 (ChessRules.RankOf(square) - 3.5f) * squareSize);
-        }
-
-        // Where an object off the board stands: its colour's pieces off the board in two columns beside the board,
-        // White's to White's right (+x) from White's end, Black's to Black's right (-x) from Black's end, in object
-        // order.
-        public Vector3 SparePosition(int obj) {
-            int color = ObjectColor(obj);
-            int first = color == ChessRules.White ? 0 : PiecesPerColor;
-            int slot = 0;
-            for (int i = first; i < obj; i++) {
-                if (objectSquare[i] == ChessRules.NoSquare) slot++;
-            }
-            float column = 4.75f + (slot / 8) * 0.9f;
-            float row = (slot % 8) - 3.5f;
-            if (color == ChessRules.White) return new Vector3(column * squareSize, 0, row * squareSize);
-            return new Vector3(-column * squareSize, 0, -row * squareSize);
         }
     }
 }

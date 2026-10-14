@@ -12,6 +12,7 @@ A view (`ChessBoardView (<board>)`) holds these children:
 | **Board**, **Squares** | the placeholder board: its frame, and the 64 squares as one mesh | yes |
 | **Player Blocker** | the solid box keeping players without a seat out of the table ([Physical pieces](physical-pieces.md#walking-through-the-board-step-95a2)) | keep it; resize its `BoxCollider` to a table of your own |
 | **Pieces**, **Square Targets**, **Highlights**, **Promotion Picker** | the pieces, desktop mode's click targets, the highlights and the picker | no: the view uses them |
+| **Captured Places** | where captured pieces stand ([below](#captured-piece-places-step-124)) | move them freely; delete some for fewer places |
 
 The view reads nothing from **Table**, **Board** or **Squares**, so delete them and put your own model in their place, as a child of the view so it scales with it:
 
@@ -46,3 +47,14 @@ The pieces' models come from a **chess piece set**: a `ChessPieceSet` behaviour 
 **Assigning a set.** Put it in the arbiter's **Default Piece Set** for every board, or in a board view's **Piece Set** (on `ChessBoardView (<board>)`) for that board only; an empty **Piece Set** uses the arbiter's.
 
 **Changing sets at run time,** for example pieces only a world's supporters see: from your own UdonSharp script, call `ChessBoardView.SetChessPieces(set)` to give one board a set (`null` goes back to the arbiter's), or `ChessArbiter.SetDefaultChessPieces(set)` to change the default for every board without a set of its own (`null` is refused). Both change only what the local player sees: nothing is synced, so each player can see their own set. The pieces change in place, at once.
+
+## Captured-piece places (step 12.4)
+
+Captured pieces stand on **places**: objects in the board view's **White Captured Places** and **Black Captured Places** fields (on `ChessBoardView (<board>)`), one list per colour of the pieces captured, filled in order: the first piece captured stands on the first place, the second on the second, and so on. **Create Board View** builds 16 per colour under **Captured Places** (**White 1** … **Black 16**), in two columns of 8 beside the board on the table, each colour's on the side of the player who captures it (White's pieces by Black, to Black's right).
+
+- **Move them anywhere:** each place is just a position, read in the world, so it may be at another height than the board (a captured piece's trip arcs from the board to it), on a shelf or on the table, inside the view or elsewhere in the scene. Put the place where the piece's base should stand, as the square's centre on the playing surface is for a piece on the board: the piece set's offset, turn and size apply there too. The place's own rotation isn't used.
+- **Fewer places:** delete places (or leave entries empty); the rest are filled in order, and captured pieces beyond the last place are hidden until a takeback or a replay step frees a place for them. 16 per colour is enough for every piece a side can lose.
+- **Your own objects:** put any objects in the two fields instead, in the order you want them filled.
+- **Rebuilding** the view keeps your places: the old view's **Captured Places** moves to the new one, and the fields keep pointing at the same objects.
+
+Every player sees the same pieces in the same places, late joiners too: the order comes from the game's moves. A game from a position with pieces missing starts with those pieces in the first places (queen, rooks, bishops, knights, pawns), and a promoted pawn that's captured goes to its place as a pawn.

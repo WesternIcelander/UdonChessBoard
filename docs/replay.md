@@ -9,6 +9,7 @@ Players can enter replay mode at any time to review the game.
 - **Stepping** through the game uses the move history: undoing and redoing packed moves gives any earlier position, without the starting FEN.
 - **Free moves** are plain piece placement on the replay board: no move generation, no packed moves, no legality checks. The replay board is just an array.
 - **Custom flag:** any free move or deviation from the game's moves marks the replay position as *custom*. Stepping back onto a position from the game history clears the flag.
+- **Captured pieces** (step 12.4): the physical board shows the captured pieces of the position shown: stepping back returns the pieces taken since to the board, and free moves add the pieces they take after the places of the ply they started from, in a fixed order (queen, rooks, bishops, knights, pawns, king). See [Physical pieces](physical-pieces.md#captured-piece-places-step-124).
 
 ## Continuing from an earlier position (takeback)
 

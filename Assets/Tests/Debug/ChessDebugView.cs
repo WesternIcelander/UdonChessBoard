@@ -931,7 +931,9 @@ public class ChessDebugView : ChessBoardListener {
     string PlaceName(int obj) {
         int square = boardView.objectSquare[obj];
         if (obj == boardView.promotionObject) return "promoting on " + ChessRules.SquareName(boardView.promotionTo);
-        return square == ChessRules.NoSquare ? "beside the board" : ChessRules.SquareName(square);
+        if (square != ChessRules.NoSquare) return ChessRules.SquareName(square);
+        if (!boardView.IsObjectShown(obj)) return "hidden";
+        return "captured place " + (boardView.objectPlace[obj] + 1);
     }
 
     // The owner, and whether this client holds, has selected or is animating obj.
@@ -981,8 +983,26 @@ public class ChessDebugView : ChessBoardListener {
         Debug.Log("[ChessDebugView] pieces " + label + ": " + (away == 0 ? "all in place" : away + " AWAY") + awayText
             + " (owners: " + ownersText + "; " + board.moveCount + " moves"
             + (board.replayMode ? ", replay at ply " + board.replayIndex : "") + ", "
-            + ChessFen.WriteFen(board.board, board.state, board.halfmoveClock, board.moveNumber) + ")");
+            + ChessFen.WriteFen(board.board, board.state, board.halfmoveClock, board.moveNumber) + "; captured: White "
+            + CapturedText(ChessRules.White) + ", Black " + CapturedText(ChessRules.Black) + ")");
         if (full) Debug.Log("[ChessDebugView] places" + placesText);
+    }
+
+    // What stands in color's captured places (step 12.4), as piece letters in place order: "-" for a place no object
+    // stands in, lower case for one hidden (beyond the last target). The same on every client, late joiners too.
+    string CapturedText(int color) {
+        string text = "";
+        int first = color == ChessRules.White ? 0 : ChessBoardView.PiecesPerColor;
+        for (int place = 0; place < boardView.capturedCounts[color]; place++) {
+            string letter = "-";
+            for (int obj = first; obj < first + ChessBoardView.PiecesPerColor; obj++) {
+                if (boardView.objectSquare[obj] != ChessRules.NoSquare || boardView.objectPlace[obj] != place) continue;
+                letter = ChessRules.PieceTypeLetter(boardView.objectType[obj]);
+                if (!boardView.IsObjectShown(obj)) letter = letter.ToLower();
+            }
+            text += letter;
+        }
+        return text.Length > 0 ? text : "none";
     }
 
     // Logs every object's place and owner, and any standing away from its place.

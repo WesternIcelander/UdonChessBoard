@@ -12,9 +12,10 @@ using VRC.SDK3.Components;
 using VRC.Udon;
 
 // Builds the physical board (PLAN.md 9.1, ChessBoardView.cs) in the open scene for the selected ChessBoard, or the
-// scene's only one: a table, the board's surface and squares, the 32 piece objects, the highlights and the promotion
-// picker (step 9.5a), wired to a ChessBoardView; and its UI (step 12.1, ChessBoardUI.cs) on an object of its own
-// beside the view, standing where the view does (the board's centre): the button panels (steps 9.4a and 9.4b), the
+// scene's only one: a table, the board's surface and squares, the 32 piece objects, the highlights, the promotion
+// picker (step 9.5a) and the captured-piece places (step 12.4), wired to a ChessBoardView; and its UI (step 12.1,
+// ChessBoardUI.cs) on an object of its own beside the view, standing where the view does (the board's centre): the
+// button panels (steps 9.4a and 9.4b), the
 // status panels (step 9.5c) and the PGN box (steps 11.2a, 11.2b). Players walk through all of it (no solid colliders
 // but the pieces', on the Pickup layer); the view's blocker keeps out those without a seat (step 9.5a2). An existing
 // view for the same board is replaced, keeping its place, and so is its UI; a world creator's own model in it, and
@@ -139,6 +140,7 @@ public static class ChessBoardViewBuilder {
         AddSquareTargets(root, view);
         AddHighlights(root, view);
         AddPromotionPicker(root, view);
+        AddCapturedPlaces(root, view);
         UdonSharpEditorUtility.CopyProxyToUdon(view);
 
         // The UI (step 12.1), a behaviour of its own on an object beside the view, standing where the view does (the
@@ -171,6 +173,7 @@ public static class ChessBoardViewBuilder {
             root.transform.rotation = old.transform.rotation;
             root.transform.localScale = old.transform.localScale;
             kept = KeepCustomModel(old.transform, root.transform);
+            kept += KeepCapturedPlaces(old.GetComponent<ChessBoardView>(), view, root.transform);
             Undo.DestroyObjectImmediate(old);
         }
         // An earlier UI beside the view is replaced where it stands; otherwise the UI stands beside the view, just
@@ -196,7 +199,66 @@ public static class ChessBoardViewBuilder {
     static readonly string[] ModelParts = { "Table", "Board", "Squares" };
     static readonly string[] BuiltChildren = {
         "Table", "Player Blocker", "Board", "Squares", "Pieces", "Square Targets", "Highlights", "Promotion Picker",
+        CapturedPlacesName,
     };
+
+    // The captured-piece places (step 12.4), under "Captured Places": 16 per colour (enough for every piece a side
+    // can lose, a king taken by a free move included), in two columns of 8 beside the board on the table's surface,
+    // below the board's, on the side of the player who captures them: White's pieces to Black's right (-x) from
+    // Black's end, Black's to White's right (+x) from White's end. Empty objects; a world creator moves them, or puts
+    // their own in the view's fields.
+    const string CapturedPlacesName = "Captured Places";
+
+    static void AddCapturedPlaces(GameObject root, ChessBoardView view) {
+        GameObject parent = new GameObject(CapturedPlacesName);
+        parent.transform.SetParent(root.transform, false);
+        view.whiteCapturedPlaces = new Transform[ChessBoardView.PiecesPerColor];
+        view.blackCapturedPlaces = new Transform[ChessBoardView.PiecesPerColor];
+        for (int color = ChessRules.White; color <= ChessRules.Black; color++) {
+            bool white = color == ChessRules.White;
+            Transform[] places = white ? view.whiteCapturedPlaces : view.blackCapturedPlaces;
+            for (int place = 0; place < places.Length; place++) {
+                float column = 4.75f + (place / 8) * 0.9f;
+                float row = (place % 8) - 3.5f;
+                GameObject target = new GameObject((white ? "White " : "Black ") + (place + 1));
+                target.transform.SetParent(parent.transform, false);
+                // Beside the capturer: Black takes White's pieces, so they line up from Black's end.
+                target.transform.localPosition = white
+                    ? new Vector3(-column * SquareSize, -BoardThickness, -row * SquareSize)
+                    : new Vector3(column * SquareSize, -BoardThickness, row * SquareSize);
+                places[place] = target.transform;
+            }
+        }
+    }
+
+    // Keeps a world creator's captured places when a view is rebuilt (step 12.4): when the old view has any, the new
+    // view uses the same objects (its own Captured Places replaced by the old view's, which moves over keeping its
+    // place). Returns what was kept, for the log ("" for nothing).
+    static string KeepCapturedPlaces(ChessBoardView oldView, ChessBoardView view, Transform root) {
+        if (oldView == null || !HasPlace(oldView.whiteCapturedPlaces) && !HasPlace(oldView.blackCapturedPlaces)) {
+            return "";
+        }
+        Transform built = root.Find(CapturedPlacesName);
+        Transform oldPlaces = oldView.transform.Find(CapturedPlacesName);
+        if (oldPlaces != null) {
+            if (built != null) Object.DestroyImmediate(built.gameObject);
+            Undo.SetTransformParent(oldPlaces, root, "Create Board View");
+        }
+        view.whiteCapturedPlaces = oldView.whiteCapturedPlaces;
+        view.blackCapturedPlaces = oldView.blackCapturedPlaces;
+        // Built places nothing points at any more (the old view's are elsewhere) go.
+        if (oldPlaces == null && built != null) Object.DestroyImmediate(built.gameObject);
+        UdonSharpEditorUtility.CopyProxyToUdon(view);
+        return ", captured places kept";
+    }
+
+    static bool HasPlace(Transform[] places) {
+        if (places == null) return false;
+        for (int i = 0; i < places.Length; i++) {
+            if (places[i] != null) return true;
+        }
+        return false;
+    }
 
     // Keeps a world creator's changes to the model when a view is rebuilt (step 12.2): a model part deleted from the
     // old view is left out of the new one, and the old view's children the builder didn't make (their own model) move

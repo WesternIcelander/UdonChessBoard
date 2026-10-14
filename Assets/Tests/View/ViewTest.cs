@@ -1841,8 +1841,8 @@ public class ViewTest : UdonSharpBehaviour {
         DropOver("e4", "d5", t + ": exd5 dropped");
         CheckDropped(3, ChessBoard.ChangeMove, t + ": exd5");
         Check(view.objectSquare[blackPawn] == ChessRules.NoSquare && (view.pieces[blackPawn].localPosition
-            - view.SparePosition(blackPawn) - view.PieceOffset(blackPawn)).sqrMagnitude < 1e-8f,
-            t + ": the captured pawn beside the board, offset as on a square", "at "
+            - view.CapturedPlacePosition(ChessRules.Black, 0) - view.PieceOffset(blackPawn)).sqrMagnitude < 1e-8f,
+            t + ": the captured pawn in its place, offset as on a square", "at "
             + view.pieces[blackPawn].localPosition.ToString("F3"));
         Play("c7", "c6", "c6", t + ": c6");
         view.SetInputStyle(ChessBoardView.InputClicks);
@@ -1911,8 +1911,222 @@ public class ViewTest : UdonSharpBehaviour {
         board.ClearState();
         Redraw();
         CheckView(s + ": cleared");
+        SendCustomEventDelayedFrames(nameof(RunCapturedPlaceChecks), 1);
+    }
+
+    // ---- 12.4: captured-piece places ----
+
+    // The last frame: captured pieces stand in their colour's places in capture order, from the game's history (in
+    // replay the shown ply's, free moves' captures appended in the fixed order), a takeback empties the last place,
+    // pieces beyond the last target are hidden, a promoted pawn is captured as a pawn, and a FEN's missing pieces come
+    // first. Animations: a captured piece travels between the board and its place, whose height differs.
+    public void RunCapturedPlaceChecks() {
+        string c = "captured places";
+        view.animateMoves = false;
+        Check(view.whiteCapturedPlaces.Length == ChessBoardView.PiecesPerColor
+            && view.blackCapturedPlaces.Length == ChessBoardView.PiecesPerColor, c + ": 16 places per colour built",
+            view.whiteCapturedPlaces.Length + " and " + view.blackCapturedPlaces.Length);
+
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, c);
+        int blackD = view.squareObject[Sq("d7")];
+        int whiteE = view.squareObject[Sq("e2")];
+        int whiteA = view.squareObject[Sq("a2")];
+        int blackQ = view.squareObject[Sq("d8")];
+        Play("e2", "e4", "e4", c + ": e4");
+        Play("d7", "d5", "d5", c + ": d5");
+        Play("e4", "d5", "d5", c + ": exd5");
+        CheckPlaces("", "P", c + ": exd5");
+        Check(Mathf.Abs(view.CapturedPlacePosition(ChessRules.Black, 0).y) > 0.001f, c + ": the places at another "
+            + "height than the board", "at " + view.CapturedPlacePosition(ChessRules.Black, 0).ToString("F3"));
+        Play("d8", "d5", "d5", c + ": Qxd5");
+        Play("b1", "c3", "c3", c + ": Nc3");
+        Play("d5", "a2", "a2", c + ": Qxa2");
+        Play("a1", "a2", "a2", c + ": Rxa2");
+        CheckPlaces("PP", "PQ", c + ": Rxa2");
+        CheckInt(view.objectPlace[blackD], 0, c + ": the d pawn in Black's first place");
+        CheckInt(view.objectPlace[whiteE], 0, c + ": the e pawn in White's first place");
+        CheckInt(view.objectPlace[whiteA], 1, c + ": the a pawn in White's second place");
+        CheckInt(view.objectPlace[blackQ], 1, c + ": the queen in Black's second place");
+
+        // Replay: the places of the ply shown, the same objects in the same places stepping back and forth.
+        string r = c + ": replay";
+        CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, r + ": entered");
+        CheckInt(board.StepToAs(localName, true, 5), ChessBoard.InputAccepted, r + ": stepped to Nc3");
+        Redraw();
+        CheckView(r + ": Nc3");
+        CheckPlaces("P", "P", r + ": Nc3");
+        CheckInt(view.squareObject[Sq("a2")], whiteA, r + ": Nc3: the a pawn back on a2");
+        CheckInt(view.squareObject[Sq("d5")], blackQ, r + ": Nc3: the queen back on d5");
+        CheckInt(view.objectPlace[blackD], 0, r + ": Nc3: the d pawn kept its place");
+        CheckInt(board.StepToAs(localName, true, 7), ChessBoard.InputAccepted, r + ": stepped to Rxa2");
+        Redraw();
+        CheckView(r + ": Rxa2");
+        CheckPlaces("PP", "PQ", r + ": Rxa2");
+        CheckInt(view.objectPlace[whiteA], 1, r + ": Rxa2: the a pawn in its place again");
+        CheckInt(view.objectPlace[blackQ], 1, r + ": Rxa2: the queen in its place again");
+        // Free moves: their captures after the ply's places, in the fixed order (the king last, though taken first).
+        CheckInt(board.PieceDroppedAs(localName, Sq("d1"), Sq("e8")), ChessBoard.InputAccepted, r + ": Qd1 takes the "
+            + "king");
+        CheckInt(board.PieceDroppedAs(localName, Sq("a2"), Sq("a7")), ChessBoard.InputAccepted, r + ": Ra2 takes a7");
+        Redraw();
+        CheckView(r + ": free moves");
+        CheckPlaces("PP", "PQPK", r + ": free moves");
+        CheckInt(board.StepToAs(localName, true, 7), ChessBoard.InputAccepted, r + ": back to Rxa2");
+        Redraw();
+        CheckView(r + ": back to Rxa2");
+        CheckPlaces("PP", "PQ", r + ": back to Rxa2");
+
+        // A takeback after a capture empties the last place.
+        SetRequestRules(true);
+        CheckInt(board.StepToAs(localName, true, 6), ChessBoard.InputAccepted, c + ": takeback: stepped to Qxa2");
+        CheckInt(board.RequestTakebackAs(ChessRules.White, localName), ChessBoard.InputAccepted,
+            c + ": takeback: asked");
+        CheckInt(board.AcceptTakebackAs(ChessRules.Black, localName), ChessBoard.InputAccepted,
+            c + ": takeback: accepted");
+        Redraw();
+        CheckView(c + ": takeback");
+        CheckPlaces("PP", "P", c + ": takeback");
+        CheckInt(view.squareObject[Sq("a2")], blackQ, c + ": takeback: the queen back on a2");
+
+        // Fewer targets than captured pieces: the ones beyond are hidden, and come back when a place frees.
+        string f = c + ": one Black target";
+        Transform[] savedBlack = view.blackCapturedPlaces;
+        Transform[] oneTarget = new Transform[1];
+        oneTarget[0] = savedBlack[0];
+        view.blackCapturedPlaces = oneTarget;
+        Play("a1", "a2", "a2", f + ": Rxa2");
+        CheckPlaces("PP", "PQ", f + ": Rxa2");
+        Check(!view.IsObjectShown(blackQ) && !view.pieces[blackQ].gameObject.activeSelf, f + ": the queen hidden",
+            "shown");
+        CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, f + ": replay");
+        CheckInt(board.StepToAs(localName, true, 6), ChessBoard.InputAccepted, f + ": stepped to Qxa2");
+        Redraw();
+        CheckView(f + ": Qxa2");
+        Check(view.squareObject[Sq("a2")] == blackQ && view.pieces[blackQ].gameObject.activeSelf,
+            f + ": the queen back on a2, shown", "object " + view.squareObject[Sq("a2")]);
+        CheckInt(board.StepToAs(localName, true, 7), ChessBoard.InputAccepted, f + ": stepped to Rxa2");
+        Redraw();
+        CheckView(f + ": Rxa2 again");
+        view.blackCapturedPlaces = savedBlack;
+        Redraw();
+        CheckView(c + ": all targets again");
+        Check(view.pieces[blackQ].gameObject.activeSelf, c + ": all targets again: the queen shown", "hidden");
+
+        // The trip between the board and a place, at another height: back to the board, then off it again.
+        string a = c + ": animation";
+        Settle();
+        RecordPositions();
+        CheckInt(board.StepToAs(localName, true, 6), ChessBoard.InputAccepted, a + ": stepped to Qxa2");
+        Redraw();
+        CheckTravel(blackQ, "a2", false, a + ": the queen from its place");
+        Settle();
+        RecordPositions();
+        CheckInt(board.StepToAs(localName, true, 7), ChessBoard.InputAccepted, a + ": stepped to Rxa2");
+        Redraw();
+        CheckTravelOff(blackQ, true, a + ": the queen to its place");
+        Check(Mathf.Abs(view.animationTo[blackQ].y - view.animationFrom[blackQ].y) > 0.001f,
+            a + ": the queen's trip changes height", "from " + view.animationFrom[blackQ].ToString("F3") + " to "
+            + view.animationTo[blackQ].ToString("F3"));
+        Settle();
+        view.animateMoves = false;
+        CheckInt(board.LeaveReplayAs(localName, true), ChessBoard.InputAccepted, c + ": left replay");
+        SetRequestRules(false);
+
+        // A promoted pawn captured goes to its place as a pawn.
+        string p = c + ": promotion";
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, p);
+        int aPawn = view.squareObject[Sq("a2")];
+        PlayMoves("a2a4 b7b5 a4b5 a7a6 b5a6 c8b7 a6b7 b8c6", p);
+        CheckInt(board.PieceDroppedAs(localName, Sq("b7"), Sq("a8")), ChessBoard.InputPromotionNeeded,
+            p + ": bxa8 asks for a piece");
+        CheckInt(board.PromotionChosenAs(localName, Sq("b7"), Sq("a8"), ChessRules.Queen), ChessBoard.InputAccepted,
+            p + ": bxa8=Q");
+        PlayMoves("d8a8", p);
+        CheckView(p + ": Qxa8");
+        CheckPlaces("P", "PPBR", p + ": Qxa8");
+        Check(view.objectPlace[aPawn] == 0 && view.objectType[aPawn] == ChessRules.Pawn
+            && view.pieceFilters[aPawn].sharedMesh == SetMesh(ChessRules.PieceOf(ChessRules.White, ChessRules.Pawn)),
+            p + ": the promoted pawn in its place as a pawn", "place " + view.objectPlace[aPawn] + ", type "
+            + view.objectType[aPawn]);
+
+        // A FEN's missing pieces fill the first places in the fixed order, the game's captures after them.
+        string m = c + ": FEN missing pieces";
+        LoadFen("4k3/pppppppp/8/8/8/8/PPPPPPPP/RN2K1NR w - - 0 1", m);
+        CheckView(m);
+        CheckPlaces("QBB", "QRRBBNN", m);
+        ContinueLoaded(m);
+        PlayMoves("e2e4 d7d5 e4d5", m);
+        CheckView(m + ": exd5");
+        CheckPlaces("QBB", "QRRBBNNP", m + ": exd5");
+
+        // An extra queen counts against the missing pawn, and is captured as a queen.
+        string q = c + ": FEN extra queen";
+        LoadFen("rnbqkbnr/pppppppp/7Q/8/8/8/PPPPPPP1/RNBQKBNR b KQkq - 0 1", q);
+        CheckView(q);
+        CheckPlaces("", "", q + ": no pawn captured");
+        ContinueLoaded(q);
+        PlayMoves("g7h6", q);
+        CheckView(q + ": gxh6");
+        CheckPlaces("Q", "", q + ": gxh6");
+
+        board.ClearState();
+        Redraw();
+        CheckView(c + ": cleared");
+        CheckPlaces("", "", c + ": cleared");
         view.animateMoves = savedAnimate;
         LogSummary();
+    }
+
+    // Loads fen as a game with no moves (the board then in replay, loaded).
+    void LoadFen(string fen, string name) {
+        board.ClearState();
+        CheckInt(board.LoadGame(fen, new int[0], new string[0], new int[0], 0, ChessGame.ModeStandard, "", "", "*",
+            "", ChessArbiter.NoClock, 0), ChessBoard.InputAccepted, name + ": loaded");
+        Redraw();
+    }
+
+    // Joins both seats of a loaded game and continues it from the position shown.
+    void ContinueLoaded(string name) {
+        CheckInt(board.JoinAs(ChessRules.White, localName), ChessBoard.InputAccepted, name + ": joined White");
+        CheckInt(board.JoinAs(ChessRules.Black, localName), ChessBoard.InputAccepted, name + ": joined Black");
+        CheckInt(board.ContinueGameAs(localName), ChessBoard.InputAccepted, name + ": continued");
+        Redraw();
+    }
+
+    // Whether each colour's captured places are expected (piece letters in place order, "PQ"): the view's capture
+    // order, and the objects standing in the places.
+    void CheckPlaces(string white, string black, string name) {
+        CheckString(CapturedText(ChessRules.White), white, name + ": White's captured pieces");
+        CheckString(CapturedText(ChessRules.Black), black, name + ": Black's captured pieces");
+        CheckString(PlacesText(ChessRules.White), white, name + ": White's places");
+        CheckString(PlacesText(ChessRules.Black), black, name + ": Black's places");
+    }
+
+    // The view's capture order for color, as piece letters.
+    string CapturedText(int color) {
+        string text = "";
+        for (int place = 0; place < view.capturedCounts[color]; place++) {
+            text += ChessRules.PieceTypeLetter(view.capturedTypes[color * ChessBoardView.MaxCaptured + place]);
+        }
+        return text;
+    }
+
+    // What stands in color's captured places, as piece letters ("-" for a place no object stands in).
+    string PlacesText(int color) {
+        string text = "";
+        int first = color == ChessRules.White ? 0 : ChessBoardView.PiecesPerColor;
+        for (int place = 0; place < view.capturedCounts[color]; place++) {
+            string letter = "-";
+            for (int obj = first; obj < first + ChessBoardView.PiecesPerColor; obj++) {
+                if (view.objectSquare[obj] == ChessRules.NoSquare && view.objectPlace[obj] == place) {
+                    letter = ChessRules.PieceTypeLetter(view.objectType[obj]);
+                }
+            }
+            text += letter;
+        }
+        return text;
     }
 
     // Picks the piece on from up as the local player, moves it so its base is over to (off the square's centre and
@@ -2107,14 +2321,14 @@ public class ViewTest : UdonSharpBehaviour {
         CheckTravelTo(obj, view.SquarePosition(Sq(square)), waits, name + ": travels to " + square);
     }
 
-    // The same for a captured piece, to its place beside the board: once the mover has landed (waits), or at once
+    // The same for a captured piece, to its captured place (step 12.4): once the mover has landed (waits), or at once
     // when the mover was dropped in place.
     void CheckTravelOff(int obj, bool waits, string name) {
         if (obj == ChessBoardView.NoObject) {
             Check(false, name + ": travels off the board", "no object");
             return;
         }
-        CheckTravelTo(obj, view.SparePosition(obj), waits,
+        CheckTravelTo(obj, view.ObjectPlace(obj), waits,
             name + ": travels off the board, " + (waits ? "once the mover has landed" : "without waiting"));
     }
 
@@ -2509,11 +2723,11 @@ public class ViewTest : UdonSharpBehaviour {
     }
 
     // Whether the view shows the position the board shows: each square's object standing for its piece, with that
-    // piece's mesh, on that square; no object on an empty square; every object off the board placed beside it.
+    // piece's mesh, on that square; no object on an empty square; every object off the board on its captured place,
+    // or hidden when it has none with a target, and every captured place filled (step 12.4).
     void CheckView(string name) {
         string errors = "";
         int count = 0;
-        float half = 4 * view.squareSize;
         for (int square = 0; square < 64; square++) {
             int piece = board.PieceAt(square);
             int obj = view.squareObject[square];
@@ -2538,11 +2752,30 @@ public class ViewTest : UdonSharpBehaviour {
             }
             if (error.Length > 0 && count++ < 3) errors += SquareText(square) + ": " + error + "; ";
         }
+        // Off the board (step 12.4): shown in a captured place with a target, standing on it; otherwise hidden.
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
-            if (view.objectSquare[obj] != ChessRules.NoSquare) continue;
-            Vector3 position = view.pieces[obj].localPosition - view.PieceOffset(obj);
-            if (Mathf.Abs(position.x) < half && Mathf.Abs(position.z) < half && count++ < 3) {
-                errors += "object " + obj + " is off the board but at " + position.ToString("F3") + "; ";
+            if (view.objectSquare[obj] != ChessRules.NoSquare || obj == view.promotionObject) continue;
+            int color = view.ObjectColor(obj);
+            int place = view.objectPlace[obj];
+            bool active = view.pieces[obj].gameObject.activeSelf;
+            string error = "";
+            if (!view.IsObjectShown(obj)) {
+                if (active) error = "is shown, with no place to stand in";
+            } else if (!active) {
+                error = "is hidden in place " + place;
+            } else if (place >= view.capturedCounts[color]
+                || view.capturedTypes[color * ChessBoardView.MaxCaptured + place] != view.objectType[obj]) {
+                error = "stands in place " + place + ", which isn't its";
+            } else if ((view.pieces[obj].localPosition - view.CapturedPlacePosition(color, place)
+                - view.PieceOffset(obj)).sqrMagnitude > 1e-8f) {
+                error = "isn't on place " + place + " but at " + view.pieces[obj].localPosition.ToString("F3");
+            }
+            if (error.Length > 0 && count++ < 3) errors += "object " + obj + " " + error + "; ";
+        }
+        for (int color = ChessRules.White; color <= ChessRules.Black; color++) {
+            string text = PlacesText(color);
+            if (text.IndexOf('-') >= 0 && count++ < 3) {
+                errors += (color == ChessRules.White ? "White" : "Black") + "'s places " + text + "; ";
             }
         }
         Check(count == 0, name + ": the pieces match the board", count + " wrong: " + errors);
