@@ -1768,8 +1768,9 @@ public class ViewTest : UdonSharpBehaviour {
 
     // A fifteenth frame: the test set put on the view at once (meshes, both material slots, turn, size, collider, the
     // pieces standing exactly as the starting set's do), a game played with it by drops and clicks with captures and
-    // a promotion; back to the arbiter's set with SetChessPieces(null); SetDefaultChessPieces(null) refused, then the
-    // test set made the arbiter's default, picked up by the view on a later frame (RunPieceSetPollChecks).
+    // a promotion; back to the arbiter's set with SetChessPieces(null); the view one of the arbiter's piece set
+    // listeners, once; SetDefaultChessPieces(null) refused, and each change of the arbiter's default worn at once,
+    // unless the view has a set of its own or isn't a listener; everything put back.
     public void RunPieceSetChecks() {
         string s = "piece sets";
         ChessArbiter arbiter = board.arbiter;
@@ -1867,33 +1868,45 @@ public class ViewTest : UdonSharpBehaviour {
         CheckPieceSet(savedDefaultSet, b + ": the arbiter's set, at once");
         CheckView(b);
 
-        // The arbiter's default: null refused; the test set picked up on a later frame.
+        // The arbiter's default: the view a listener of the arbiter's, once; null refused; each change worn at once.
+        int listeners = arbiter.PieceSetListenerCount();
+        int found = 0;
+        for (int i = 0; i < arbiter.pieceSetListeners.Length; i++) {
+            if (arbiter.pieceSetListeners[i] == view) found++;
+        }
+        CheckInt(found, 1, s + ": the view among the arbiter's piece set listeners");
+        arbiter.AddPieceSetListener(view);
+        CheckInt(arbiter.PieceSetListenerCount(), listeners, s + ": the view added again: no change");
         Check(!arbiter.SetDefaultChessPieces(null), s + ": SetDefaultChessPieces(null) refused", "accepted");
         Check(arbiter.defaultPieceSet == savedDefaultSet, s + ": SetDefaultChessPieces(null): the default kept",
             "changed");
-        Check(arbiter.SetDefaultChessPieces(testPieceSet), s + ": SetDefaultChessPieces(test set) accepted",
-            "refused");
-        SendCustomEventDelayedFrames(nameof(RunPieceSetPollChecks), 2);
-    }
+        string d = s + ": SetDefaultChessPieces";
+        Check(arbiter.SetDefaultChessPieces(testPieceSet), d + "(test set) accepted", "refused");
+        CheckPieceSet(testPieceSet, d + "(test set): worn at once");
+        CheckView(d + "(test set)");
+        Check(arbiter.SetDefaultChessPieces(savedDefaultSet), d + "(default) accepted", "refused");
+        CheckPieceSet(savedDefaultSet, d + "(default): worn at once");
 
-    // The frame after the arbiter's change: the view wears the arbiter's new default by itself; then a set of the
-    // view's own wins over the arbiter's (RunPieceSetEndChecks, a later frame).
-    public void RunPieceSetPollChecks() {
-        string s = "piece sets";
-        CheckPieceSet(testPieceSet, s + ": the arbiter's new default, on its own");
-        CheckView(s + ": the arbiter's new default");
-        view.SetChessPieces(savedDefaultSet);
-        CheckPieceSet(savedDefaultSet, s + ": the view's own set over the arbiter's");
-        SendCustomEventDelayedFrames(nameof(RunPieceSetEndChecks), 2);
-    }
+        // A set of the view's own wins over the arbiter's changes.
+        view.SetChessPieces(testPieceSet);
+        arbiter.SetDefaultChessPieces(testPieceSet);
+        arbiter.SetDefaultChessPieces(savedDefaultSet);
+        CheckPieceSet(testPieceSet, s + ": the view's own set kept through the arbiter's changes");
+        view.SetChessPieces(null);
+        CheckPieceSet(savedDefaultSet, s + ": the view's own set dropped: the arbiter's");
 
-    // Frames later, the view's own set still worn; then everything put back as it was.
-    public void RunPieceSetEndChecks() {
-        string s = "piece sets";
-        CheckPieceSet(savedDefaultSet, s + ": the view's own set kept frames later");
-        board.arbiter.SetDefaultChessPieces(savedDefaultSet);
+        // A listener removed isn't told.
+        arbiter.RemovePieceSetListener(view);
+        CheckInt(arbiter.PieceSetListenerCount(), listeners - 1, s + ": the view removed as a listener");
+        arbiter.SetDefaultChessPieces(testPieceSet);
+        CheckPieceSet(savedDefaultSet, s + ": the view removed: not told of the arbiter's change");
+        arbiter.AddPieceSetListener(view);
+        CheckInt(arbiter.PieceSetListenerCount(), listeners, s + ": the view added back");
+
+        // Put back as it was.
+        arbiter.SetDefaultChessPieces(savedDefaultSet);
         view.SetChessPieces(savedViewSet);
-        Check(view.AppliedPieceSet() == view.CurrentPieceSet() && board.arbiter.defaultPieceSet == savedDefaultSet,
+        Check(view.AppliedPieceSet() == view.CurrentPieceSet() && arbiter.defaultPieceSet == savedDefaultSet,
             s + ": put back", "they aren't");
         board.ClearState();
         Redraw();

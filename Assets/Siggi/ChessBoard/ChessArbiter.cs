@@ -84,6 +84,8 @@ namespace SiggiChessBoard {
         [Tooltip("The chess piece set every board view uses unless it has its own (docs/customizing.md). Must not be "
             + "empty.")]
         public ChessPieceSet defaultPieceSet;
+        // The board views told when defaultPieceSet changes (SetDefaultChessPieces); each adds itself on Start.
+        [NonSerialized] public ChessBoardView[] pieceSetListeners = new ChessBoardView[0];
 
         [Header("Boards")]
         [Tooltip("How many boards can have their own overrides: board numbers 0 to this minus 1.")]
@@ -144,13 +146,52 @@ namespace SiggiChessBoard {
             changes++;
         }
 
-        // Makes set the default chess piece set (step 12.3), on this client only: every board view without a set of
-        // its own wears it from the next frame (the views poll defaultPieceSet). The arbiter only holds it. Refuses
-        // null (false): a view needs a set to fall back on.
+        // Makes set the default chess piece set (step 12.3), on this client only, and tells each piece set listener
+        // (the board views, OnDefaultPieceSetChanged), so a view without a set of its own wears it at once. The arbiter
+        // only holds the set. Refuses null (false): a view needs a set to fall back on. Setting the same set again
+        // tells nobody.
         public bool SetDefaultChessPieces(ChessPieceSet set) {
             if (!Utilities.IsValid(set)) return false;
+            if (set == defaultPieceSet) return true;
             defaultPieceSet = set;
+            for (int i = 0; i < pieceSetListeners.Length; i++) {
+                if (Utilities.IsValid(pieceSetListeners[i])) pieceSetListeners[i].OnDefaultPieceSetChanged();
+            }
             return true;
+        }
+
+        // Tells view of every change to defaultPieceSet from now on (each board view adds itself on Start); adding
+        // one twice changes nothing.
+        public void AddPieceSetListener(ChessBoardView view) {
+            if (!Utilities.IsValid(view)) return;
+            int count = pieceSetListeners.Length;
+            for (int i = 0; i < count; i++) {
+                if (pieceSetListeners[i] == view) return;
+            }
+            ChessBoardView[] grown = new ChessBoardView[count + 1];
+            for (int i = 0; i < count; i++) grown[i] = pieceSetListeners[i];
+            grown[count] = view;
+            pieceSetListeners = grown;
+        }
+
+        // Stops telling view of changes to defaultPieceSet.
+        public void RemovePieceSetListener(ChessBoardView view) {
+            int count = pieceSetListeners.Length;
+            int index = -1;
+            for (int i = 0; i < count && index < 0; i++) {
+                if (pieceSetListeners[i] == view) index = i;
+            }
+            if (index < 0) return;
+            ChessBoardView[] shrunk = new ChessBoardView[count - 1];
+            for (int i = 0, j = 0; i < count; i++) {
+                if (i != index) shrunk[j++] = pieceSetListeners[i];
+            }
+            pieceSetListeners = shrunk;
+        }
+
+        // How many piece set listeners there are, for tests.
+        public int PieceSetListenerCount() {
+            return pieceSetListeners.Length;
         }
 
         // The setting bits from the editor fields.

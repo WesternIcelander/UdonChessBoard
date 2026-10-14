@@ -186,7 +186,9 @@ namespace SiggiChessBoard {
             }
             string problem = LocalSpaceProblem();
             if (problem.Length > 0) Debug.LogWarning("[ChessBoardView] " + gameObject.name + ": " + problem);
+            // Told when the arbiter's default piece set changes (OnDefaultPieceSetChanged).
             arbiter = board.arbiter;
+            if (Utilities.IsValid(arbiter)) arbiter.AddPieceSetListener(this);
             ApplyPieceSet();
             board.AddListener(this);
             Refresh();
@@ -257,11 +259,10 @@ namespace SiggiChessBoard {
             return appliedSet;
         }
 
-        // Applies the arbiter's default set once it changes while this view has none of its own. Called every frame:
-        // the arbiter doesn't know the views (one field read, as the settings menu polls the arbiter's changes).
-        public void CheckPieceSet() {
-            if (Utilities.IsValid(pieceSet) || !Utilities.IsValid(arbiter)) return;
-            if (arbiter.defaultPieceSet != appliedSet) ApplyPieceSet();
+        // The arbiter's default set changed (ChessArbiter.SetDefaultChessPieces tells its piece set listeners): worn at
+        // once unless this view has a set of its own.
+        public void OnDefaultPieceSetChanged() {
+            if (!Utilities.IsValid(pieceSet)) ApplyPieceSet();
         }
 
         // Copies the current set's templates and puts them on every piece object at once, each staying where the
@@ -355,7 +356,6 @@ namespace SiggiChessBoard {
         }
 
         void Update() {
-            CheckPieceSet();
             if (dirty) {
                 Refresh();
             } else if (Time.time >= nextPickupCheck) {
