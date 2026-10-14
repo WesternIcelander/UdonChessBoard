@@ -14,7 +14,7 @@ using VRC.Udon;
 // world-space canvas with a title and one row per game the archive holds, in Columns columns, oldest first down each
 // column. Each row is a UI Button (step 10.2b) whose GameHistoryRow picks its game, so the canvas takes the pointer
 // (VRCUiShape, a trigger collider). Placed to the left of the boards (along -x), facing them; an existing wall is
-// replaced in place (same parent, position, rotation and scale). Every board view on the archive's boards gets the
+// replaced in place (same parent, position, rotation and scale). Every board UI on the archive's boards gets the
 // wall for its Load it here button. Menu: Tools > Chess Board > Create History Wall. Plain editor C#, not Udon.
 public static class GameHistoryWallBuilder {
     const string WallScriptPath = "Assets/Siggi/ChessBoard/GameHistoryWall.cs";
@@ -104,11 +104,11 @@ public static class GameHistoryWallBuilder {
             ChessBoardViewBuilder.RepointReferences(olds[i], wall);
             Undo.DestroyObjectImmediate(olds[i].gameObject);
         }
-        int views = WireViews(wall);
+        int uis = WireUIs(wall);
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[GameHistoryWallBuilder] " + (olds.Length > 0 ? "Replaced" : "Created") + " the history wall with "
-            + rowCount + " rows, for " + views + " board view(s). Move it where you like and save the scene.");
+            + rowCount + " rows, for " + uis + " board UI(s). Move it where you like and save the scene.");
     }
 
     // A row: a button over the row's area (clear until pointed at) with a GameHistoryRow calling the wall's
@@ -154,16 +154,16 @@ public static class GameHistoryWallBuilder {
         wall.rowTargets[index] = target;
     }
 
-    // Gives every board view on the wall's archive's boards the wall (step 10.2b). Returns how many.
-    static int WireViews(GameHistoryWall wall) {
+    // Gives every board UI on the wall's archive's boards the wall (steps 10.2b, 12.1). Returns how many.
+    static int WireUIs(GameHistoryWall wall) {
         int count = 0;
-        ChessBoardView[] views = Object.FindObjectsOfType<ChessBoardView>(true);
-        for (int i = 0; i < views.Length; i++) {
-            ChessBoardView view = views[i];
-            if (view.board == null || view.board.archive != wall.archive) continue;
-            Undo.RecordObject(view, "Create History Wall");
-            view.historyWall = wall;
-            UdonSharpEditorUtility.CopyProxyToUdon(view);
+        ChessBoardUI[] uis = Object.FindObjectsOfType<ChessBoardUI>(true);
+        for (int i = 0; i < uis.Length; i++) {
+            ChessBoardUI ui = uis[i];
+            if (ui.board == null || ui.board.archive != wall.archive) continue;
+            Undo.RecordObject(ui, "Create History Wall");
+            ui.historyWall = wall;
+            UdonSharpEditorUtility.CopyProxyToUdon(ui);
             count++;
         }
         return count;

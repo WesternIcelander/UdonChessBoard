@@ -433,7 +433,7 @@ namespace SiggiChessBoard {
 
         // A number item's value: "Standard", "No clock", "Never", "5 min", "0 s".
         public static string NumberText(int item, int value) {
-            if (item == ItemForcedMode) return ChessBoardView.ModeText(value);
+            if (item == ItemForcedMode) return ChessBoardUI.ModeText(value);
             if (item == ItemForcedBaseTime && value == ChessArbiter.NoClock) return "No clock";
             if ((item == ItemResetAvailableTime || item == ItemAutoResetTime) && value == ChessArbiter.Never) {
                 return "Never";

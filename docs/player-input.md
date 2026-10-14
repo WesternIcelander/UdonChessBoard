@@ -77,6 +77,10 @@ Like the input methods, each check has a plain form for the local player and an 
 - **The game can continue from the replay position** when it's a position of the game history (not custom) with at least one move after it (a takeback takes back at least one move), and the game is running or ended. A loaded game continues with "Continue from here" instead, which needs no agreement and can also start from the last position.
 - Anyone else may reset the board once it has been idle for the reset-available time ([Inactivity](inactivity.md#implementation)).
 
+### The board's UI (step 12.1)
+
+The buttons below (their `Button*` actions, `Press…` events, `PressButton`, `ButtonApplies`, `ButtonText`, `ButtonColor`, `ClockText`, `clockBases`/`clockIncrements`, `historyWall`) and the PGN box were built on `ChessBoardView`; since 12.1 they are `ChessBoardUI`'s (see [Architecture](architecture.md#logical-board-and-physical-board)), and "the view" in the sections below means the UI for them. The UI brings its buttons, the PGN box and the status display up to date on the frame after each change (`Refresh`, public for tests), its buttons once a second too, and on its own `OnNotationFilled` and `OnImportChanged`; the view no longer does any of it.
+
 ### Board buttons (step 9.4a)
 
 - **Objects:** **Create Board View** puts a world-space canvas (with `VRCUiShape`, like the debug view's) at each end of the table, leaning back towards that side's player, each with one UI button per action: its own colour's Join (Join White at White's end, Join Black at Black's), Mode, Clock, Start, Continue from here, Reset. A grid packs the buttons shown. The view holds them in `buttons`, with each one's action (`ButtonJoinWhite` … `ButtonReset`) in `buttonActions` and its label in `buttonLabels`; any number of buttons per action works. The table is deeper to make room for the panels.

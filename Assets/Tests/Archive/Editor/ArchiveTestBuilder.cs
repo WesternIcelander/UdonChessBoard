@@ -6,7 +6,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 
 // Adds ArchiveTest (PLAN.md step 10.1a) to the open scene for the scene's only GameArchive: a board using it, its
-// history wall (10.2a), the board's view (10.2b), and the scene's BoardTest and ViewTest to wait for. An existing
+// history wall (10.2a), the board's UI (10.2b, 12.1), and the scene's BoardTest and ViewTest to wait for. An existing
 // ArchiveTest is replaced. Menu: Tools > Chess Board > Create Archive Test. Plain editor C#, not Udon.
 public static class ArchiveTestBuilder {
     const string TestScriptPath = "Assets/Tests/Archive/ArchiveTest.cs";
@@ -33,9 +33,9 @@ public static class ArchiveTestBuilder {
         for (int i = 0; i < boards.Length && test.board == null; i++) {
             if (boards[i].archive == archive) test.board = boards[i];
         }
-        ChessBoardView[] views = Object.FindObjectsOfType<ChessBoardView>(true);
-        for (int i = 0; i < views.Length && test.view == null; i++) {
-            if (views[i].board != null && views[i].board == test.board) test.view = views[i];
+        ChessBoardUI[] uis = Object.FindObjectsOfType<ChessBoardUI>(true);
+        for (int i = 0; i < uis.Length && test.ui == null; i++) {
+            if (uis[i].board != null && uis[i].board == test.board) test.ui = uis[i];
         }
         BoardTest[] boardTests = Object.FindObjectsOfType<BoardTest>(true);
         test.boardTest = boardTests.Length > 0 ? boardTests[0] : null;
@@ -61,7 +61,7 @@ public static class ArchiveTestBuilder {
             + ", waiting for " + (test.boardTest != null ? "BoardTest" : "no BoardTest") + " and "
             + (test.viewTest != null ? "ViewTest" : "no ViewTest") + ", "
             + (test.wall != null ? "with the history wall" : "with no history wall (Create History Wall first)")
-            + (test.view != null ? ", with its view" : ", with no view of the board")
+            + (test.ui != null ? ", with its UI" : ", with no UI of the board")
             + ". Save the scene.");
     }
 

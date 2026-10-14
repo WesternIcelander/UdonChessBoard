@@ -59,7 +59,7 @@ A king castles by being dropped on its rook, which is never ambiguous (see [Play
 - **Fields:** `animateMoves` (Inspector; off puts everything in place at once, which the earlier `ViewTest` frames use, since they check positions straight after each change), `moveSeconds`, and per object `animating`, `animationFrom`, `animationTo`, `animationStart` (later than now while it waits), stepped in `Update` (`StepAnimations`) while any travels.
 - Decided in 9.5b: every client animates every move, its own included (a click placement, the captured piece of a drop, a castle's rook), except the dropped piece itself; a reset or a load never animates, even when it moves only one piece.
 
-### Status display (step 9.5c)
+### Status display (step 9.5c; on `ChessBoardUI` since 12.1)
 
 - **Objects:** `statusPlayerLabels` and `statusLabels`, two UI texts per panel at the same index. **Create Board View** puts a panel (a world-space canvas, leaning back like the button panels, with no collider or `VRCUiShape`, since nothing on it is clicked) at each end of the table, between the board and that end's buttons, which move out to the table's edge; the table is deeper again (2.4 board widths). The players' column is on the left, the status on the right; both shrink their text to fit (best fit), so long names don't overflow.
 - **Players** (`PlayersTextAt(now)`, a line per seat from `PlayerTextAt(color, now)`): `White: Ana`, `(open)` for an empty seat, with the side's remaining time (`RemainingTimeAt`) during and after a game with a clock: `White: Ana  4:58`. `ClockDisplay(ms)` writes `M:SS`, `H:MM:SS` from an hour, and tenths under ten seconds (`0:09.8`). The lobby and a loaded game show no times (the time control is on the status line, or the Clock button).

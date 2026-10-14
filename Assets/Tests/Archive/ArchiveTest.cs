@@ -19,8 +19,8 @@ public class ArchiveTest : UdonSharpBehaviour {
     public ViewTest viewTest;
     // The scene's history wall on this archive (step 10.2a).
     public GameHistoryWall wall;
-    // The board's view, for its Load it here button (step 10.2b).
-    public ChessBoardView view;
+    // The board's UI, for its Load it here button (steps 10.2b, 12.1).
+    public ChessBoardUI ui;
 
     const int HolderCount = 10;
     const int Capacity = HolderCount * GameArchiveHolder.Capacity;
@@ -539,22 +539,22 @@ public class ArchiveTest : UdonSharpBehaviour {
         Check(wall.rows[0].color == wall.rowColor, "pick: replaced, the first row uncoloured", "" + wall.rows[0].color);
 
         // Load it here: only on a reset board with a game picked.
-        bool hasView = Utilities.IsValid(view) && view.board == board && view.historyWall == wall;
-        Check(hasView, "view: assigned, on this board and the wall", "assign ArchiveTest's View (Create Board View, "
+        bool hasUI = Utilities.IsValid(ui) && ui.board == board && ui.historyWall == wall;
+        Check(hasUI, "UI: assigned, on this board and the wall", "assign ArchiveTest's UI (Create Board View, "
             + "then Create Archive Test again)");
-        if (hasView) {
+        if (hasUI) {
             CheckLoadButton(true, "Load it here: shown on a reset board with a game picked");
-            CheckString(view.ButtonText(ChessBoardView.ButtonLoadHere), "Load it here", "Load it here: label");
+            CheckString(ui.ButtonText(ChessBoardUI.ButtonLoadHere), "Load it here", "Load it here: label");
             board.JoinAs(ChessRules.White, white);
             CheckLoadButton(false, "Load it here: hidden in the lobby");
-            CheckInt(view.PressButton(ChessBoardView.ButtonLoadHere), ChessBoard.InputRejected,
+            CheckInt(ui.PressButton(ChessBoardUI.ButtonLoadHere), ChessBoard.InputRejected,
                 "Load it here: refused in the lobby");
             CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "Load it here: refused, still in the lobby");
             CheckInt(board.LoadArchivedGame(mateId), ChessBoard.InputRejected, "load: refused in the lobby");
             board.ClearState();
             wall.ClearSelection();
             CheckLoadButton(false, "Load it here: hidden with nothing picked");
-            CheckInt(view.PressButton(ChessBoardView.ButtonLoadHere), ChessBoard.InputRejected,
+            CheckInt(ui.PressButton(ChessBoardUI.ButtonLoadHere), ChessBoard.InputRejected,
                 "Load it here: refused with nothing picked");
             CheckInt(board.lifecycle, ChessBoard.LifecycleReset, "Load it here: refused, the board still reset");
             wall.SelectRow(1);
@@ -564,7 +564,7 @@ public class ArchiveTest : UdonSharpBehaviour {
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, "load: refused, the board still reset");
 
         // The fool's mate, loaded through the button.
-        int loaded = hasView ? view.PressButton(ChessBoardView.ButtonLoadHere) : board.LoadArchivedGame(mateId);
+        int loaded = hasUI ? ui.PressButton(ChessBoardUI.ButtonLoadHere) : board.LoadArchivedGame(mateId);
         CheckInt(loaded, ChessBoard.InputAccepted, "load: fool's mate loaded");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "load: the board in its loaded state");
         Check(board.replayMode, "load: in replay", "not in replay");
@@ -583,7 +583,7 @@ public class ArchiveTest : UdonSharpBehaviour {
         CheckString(board.replaySourceResult, "0-1", "load: result 0-1");
         CheckInt(board.ending, ChessGame.EndingCheckmate, "load: ended by checkmate");
         CheckInt(board.winner, ChessRules.Black, "load: Black won");
-        if (hasView) {
+        if (hasUI) {
             Check(!wall.HasSelection(), "Load it here: the pick cleared once loaded", "still " + wall.selectedGameId);
             CheckLoadButton(false, "Load it here: hidden on the loaded board");
         }
@@ -601,7 +601,7 @@ public class ArchiveTest : UdonSharpBehaviour {
         Check(board.FillNotationFor(float.MaxValue), "notation: unfinished, filled in", "gaps left");
         CheckString(NotationText(2), "e4 c5", "notation: unfinished, the game's");
         board.ClearState();
-        if (hasView) view.UpdateButtons();
+        if (hasUI) ui.UpdateButtons();
     }
 
     // After RunWallFullChecks picked the oldest game (test-4) and RunRecentChecks overwrote it: the pick is gone.
@@ -611,19 +611,19 @@ public class ArchiveTest : UdonSharpBehaviour {
             "still " + wall.selectedGameId);
     }
 
-    // Every Load it here button is shown (or hidden) after the view brings its buttons up to date, and the view's
+    // Every Load it here button is shown (or hidden) after the UI brings its buttons up to date, and the UI's
     // ButtonApplies agrees.
     void CheckLoadButton(bool shown, string name) {
-        view.UpdateButtons();
+        ui.UpdateButtons();
         string errors = "";
         int found = 0;
-        for (int i = 0; i < view.buttons.Length && i < view.buttonActions.Length; i++) {
-            if (view.buttonActions[i] != ChessBoardView.ButtonLoadHere || !Utilities.IsValid(view.buttons[i])) continue;
+        for (int i = 0; i < ui.buttons.Length && i < ui.buttonActions.Length; i++) {
+            if (ui.buttonActions[i] != ChessBoardUI.ButtonLoadHere || !Utilities.IsValid(ui.buttons[i])) continue;
             found++;
-            if (view.buttons[i].activeSelf != shown) errors += "button " + i + (shown ? " hidden; " : " shown; ");
+            if (ui.buttons[i].activeSelf != shown) errors += "button " + i + (shown ? " hidden; " : " shown; ");
         }
         if (found == 0) errors += "no Load it here button (Create Board View); ";
-        if (view.ButtonApplies(ChessBoardView.ButtonLoadHere) != shown) errors += "applies " + !shown + "; ";
+        if (ui.ButtonApplies(ChessBoardUI.ButtonLoadHere) != shown) errors += "applies " + !shown + "; ";
         Check(errors.Length == 0, name, errors);
     }
 

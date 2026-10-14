@@ -12,16 +12,20 @@ using VRC.SDK3.Components;
 using VRC.Udon;
 
 // Builds the physical board (PLAN.md 9.1, ChessBoardView.cs) in the open scene for the selected ChessBoard, or the
-// scene's only one: a table, the board's surface and squares, the 32 piece objects, the button panels (steps 9.4a and
-// 9.4b), the highlights and the promotion picker (step 9.5a), the status panels (step 9.5c) and the PGN box (steps
-// 11.2a, 11.2b), wired to a ChessBoardView. Players walk through all of it (no solid colliders but the pieces', on the
-// Pickup layer); the view's blocker keeps out those without a seat (step 9.5a2). An existing view for the same board
-// is replaced, keeping its place. The piece meshes, the highlight meshes and the materials are generated
-// placeholders in Assets/Siggi/ChessBoard/Models/, made only when missing, so they can be replaced there (or other
-// meshes assigned in the view's Meshes field). Menu: Tools > Chess Board > Create Board View. Plain editor C#, not Udon.
+// scene's only one: a table, the board's surface and squares, the 32 piece objects, the highlights and the promotion
+// picker (step 9.5a), wired to a ChessBoardView; and its UI (step 12.1, ChessBoardUI.cs) on an object of its own
+// beside the view, standing where the view does (the board's centre): the button panels (steps 9.4a and 9.4b), the
+// status panels (step 9.5c) and the PGN box (steps 11.2a, 11.2b). Players walk through all of it (no solid colliders
+// but the pieces', on the Pickup layer); the view's blocker keeps out those without a seat (step 9.5a2). An existing
+// view for the same board is replaced, keeping its place, and so is its UI. The piece meshes, the highlight meshes
+// and the materials are generated placeholders in Assets/Siggi/ChessBoard/Models/, made only when missing, so they
+// can be replaced there (or other meshes assigned in the view's Meshes field). Menu: Tools > Chess Board > Create
+// Board View. Plain editor C#, not Udon.
 public static class ChessBoardViewBuilder {
     const string ViewScriptPath = "Assets/Siggi/ChessBoard/ChessBoardView.cs";
     const string ViewProgramPath = "Assets/Siggi/ChessBoard/ChessBoardView.asset";
+    const string UIScriptPath = "Assets/Siggi/ChessBoard/ChessBoardUI.cs";
+    const string UIProgramPath = "Assets/Siggi/ChessBoard/ChessBoardUI.asset";
     const string PieceScriptPath = "Assets/Siggi/ChessBoard/ChessPiece.cs";
     const string PieceProgramPath = "Assets/Siggi/ChessBoard/ChessPiece.asset";
     const string SquareScriptPath = "Assets/Siggi/ChessBoard/ChessSquare.cs";
@@ -99,7 +103,6 @@ public static class ChessBoardViewBuilder {
         view.squareSize = SquareSize;
         view.meshes = meshes;
         view.blocker = blockerBox;
-        view.historyWall = HistoryWallFor(board);
         view.pieces = new Transform[ChessBoardView.PieceCount];
         view.pieceFilters = new MeshFilter[ChessBoardView.PieceCount];
         view.piecePickups = new VRCPickup[ChessBoardView.PieceCount];
@@ -129,16 +132,32 @@ public static class ChessBoardViewBuilder {
         }
         AddSquareTargets(root, view);
         AddHighlights(root, view);
-        AddButtons(root, view, boardWidth * TableDepthFactor);
-        AddStatusPanels(root, view, boardWidth * TableDepthFactor);
         AddPromotionPicker(root, view);
-        AddPgnBox(root, view);
         UdonSharpEditorUtility.CopyProxyToUdon(view);
+
+        // The UI (step 12.1), a behaviour of its own on an object beside the view, standing where the view does (the
+        // board's centre), so the view's local space is its too: its parts are placed around the table as before, and
+        // neither behaviour knows the other.
+        GameObject uiObject = new GameObject("ChessBoardUI (" + board.gameObject.name + ")");
+        Undo.RegisterCreatedObjectUndo(uiObject, "Create Board View");
+        uiObject.transform.position = root.transform.position;
+        ChessBoardUI ui = UdonSharpUndo.AddComponent<ChessBoardUI>(uiObject);
+        ui.board = board;
+        ui.historyWall = HistoryWallFor(board);
+        AddButtons(uiObject, ui, boardWidth * TableDepthFactor);
+        AddStatusPanels(uiObject, ui, boardWidth * TableDepthFactor);
+        AddPgnBox(uiObject, ui);
+        UdonSharpEditorUtility.CopyProxyToUdon(ui);
+
         // Read before old is destroyed, after which Unity compares it equal to null.
         bool replacing = old != null;
         int repointed = 0;
+        ChessBoardUI oldUi = ExistingUI(board, ui);
+        // An earlier UI inside the old view (as the first 12.1 builds made it) goes with the view.
+        bool oldUiBeside = oldUi != null && (old == null || !oldUi.transform.IsChildOf(old.transform));
+        if (oldUi != null) repointed += RepointReferences(oldUi, ui);
         if (old != null) {
-            repointed = RepointReferences(old.GetComponent<ChessBoardView>(), view);
+            repointed += RepointReferences(old.GetComponent<ChessBoardView>(), view);
             root.transform.SetParent(old.transform.parent, false);
             root.transform.SetSiblingIndex(old.transform.GetSiblingIndex());
             root.transform.position = old.transform.position;
@@ -146,16 +165,26 @@ public static class ChessBoardViewBuilder {
             root.transform.localScale = old.transform.localScale;
             Undo.DestroyObjectImmediate(old);
         }
+        // An earlier UI beside the view is replaced where it stands; otherwise the UI stands beside the view, just
+        // after it, where the view stands.
+        Transform place = oldUiBeside ? oldUi.transform : root.transform;
+        uiObject.transform.SetParent(place.parent, false);
+        uiObject.transform.SetSiblingIndex(place.GetSiblingIndex() + (oldUiBeside ? 0 : 1));
+        uiObject.transform.position = place.position;
+        uiObject.transform.rotation = place.rotation;
+        uiObject.transform.localScale = place.localScale;
+        if (oldUiBeside) Undo.DestroyObjectImmediate(oldUi.gameObject);
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[ChessBoardViewBuilder] " + (replacing ? "Replaced " : "Created ") + root.name + " for "
             + board.gameObject.name + (replacing ? " (" + repointed + " behaviour(s) pointed at the new view)" : "")
-            + (view.historyWall != null ? ", with the history wall" : "")
-            + ". Move it where you like and save the scene.");
+            + " and " + uiObject.name + (ui.historyWall != null ? ", with the history wall" : "")
+            + ". Move them where you like (the UI's origin at the board's centre) and save the scene.");
     }
 
-    // Points every other behaviour's field holding the old view (ViewTest's, a debug view's, ArchiveTest's) at the
-    // new one, so replacing a view doesn't leave them on a destroyed object. Returns how many behaviours changed.
+    // Points every other behaviour's field holding the old view (ViewTest's, a debug view's, ArchiveTest's; or the old
+    // UI) at the new one, so replacing a view doesn't leave them on a destroyed object. Returns how many behaviours
+    // changed.
     // GameHistoryWallBuilder uses it for the wall too.
     public static int RepointReferences(UdonSharpBehaviour oldView, UdonSharpBehaviour newView) {
         if (oldView == null) return 0;
@@ -352,13 +381,13 @@ public static class ChessBoardViewBuilder {
     const float PgnBarButtonWidth = 80;
 
     // The PGN box (steps 11.2a, 11.2b): a world-space canvas (with VRCUiShape, so the pointer reaches the text)
-    // standing upright over the far edge of the board from White's end, facing it unturned, holding two parts the view
-    // shows one at a time. Copying: a hint line and a read-only multi-line text field the view fills with the game's
+    // standing upright over the far edge of the board from White's end, facing it unturned, holding two parts the UI
+    // shows one at a time. Copying: a hint line and a read-only multi-line text field the UI fills with the game's
     // PGN, 80 characters a line (ChessPgn.LineWidth). Pasting: a hint line, an editable field to paste into, and a bar
-    // with the import's status line and the Import and Close buttons. Built hidden; the view shows it for the local
+    // with the import's status line and the Import and Close buttons. Built hidden; the UI shows it for the local
     // player and turns it to face the end they opened it from.
-    static void AddPgnBox(GameObject root, ChessBoardView view) {
-        UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(view);
+    static void AddPgnBox(GameObject root, ChessBoardUI ui) {
+        UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(ui);
         Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
         GameObject canvasObject = new GameObject("PGN Box", typeof(RectTransform));
@@ -400,13 +429,13 @@ public static class ChessBoardViewBuilder {
         paste.SetActive(false);
 
         canvasObject.SetActive(false);
-        view.pgnBox = canvasObject;
-        view.pgnField = field;
-        view.pgnCopyPart = copy;
-        view.pgnPastePart = paste;
-        view.pgnPasteField = pasteField;
-        view.pgnImportLabel = status;
-        view.pgnImportButton = importButton;
+        ui.pgnBox = canvasObject;
+        ui.pgnField = field;
+        ui.pgnCopyPart = copy;
+        ui.pgnPastePart = paste;
+        ui.pgnPasteField = pasteField;
+        ui.pgnImportLabel = status;
+        ui.pgnImportButton = importButton;
     }
 
     // A child of parent filling it, inset by offsetMin and offsetMax.
@@ -469,7 +498,7 @@ public static class ChessBoardViewBuilder {
         return field;
     }
 
-    // A button at the right end of the PGN box's bar, slot places from the right (0 the rightmost), calling the view's
+    // A button at the right end of the PGN box's bar, slot places from the right (0 the rightmost), calling the UI's
     // eventName.
     static GameObject AddBarButton(GameObject bar, Font font, UdonBehaviour udon, string label, string eventName,
         int slot) {
@@ -505,7 +534,7 @@ public static class ChessBoardViewBuilder {
         box.isTrigger = true;
     }
 
-    // The view's Press... event for each ChessBoardView.Button* action, by action.
+    // The UI's Press... event for each ChessBoardUI.Button* action, by action.
     static readonly string[] ButtonEvents = {
         "PressJoinWhite", "PressJoinBlack", "PressMode", "PressClock", "PressStart", "PressContinue", "PressReset",
         "PressResignWhite", "PressResignBlack", "PressOfferDrawWhite", "PressOfferDrawBlack", "PressAcceptDrawWhite",
@@ -519,18 +548,18 @@ public static class ChessBoardViewBuilder {
     // the game's, Reset last. Each panel leaves out the other colour's. Load it here (step 10.2b) and Load PGN (step
     // 11.2b) show only on a reset board, with the Join buttons. PGN (step 11.2a) comes just before Reset.
     static readonly int[] ButtonOrder = {
-        ChessBoardView.ButtonJoinWhite, ChessBoardView.ButtonJoinBlack, ChessBoardView.ButtonLoadHere,
-        ChessBoardView.ButtonLoadPgn,
-        ChessBoardView.ButtonMode, ChessBoardView.ButtonClock, ChessBoardView.ButtonStart, ChessBoardView.ButtonContinue,
-        ChessBoardView.ButtonEnterReplay, ChessBoardView.ButtonLeaveReplay, ChessBoardView.ButtonStepFirst,
-        ChessBoardView.ButtonStepBack, ChessBoardView.ButtonStepForward, ChessBoardView.ButtonStepLast,
-        ChessBoardView.ButtonRequestTakebackWhite, ChessBoardView.ButtonRequestTakebackBlack,
-        ChessBoardView.ButtonAcceptTakebackWhite, ChessBoardView.ButtonAcceptTakebackBlack,
-        ChessBoardView.ButtonDeclineTakebackWhite, ChessBoardView.ButtonDeclineTakebackBlack,
-        ChessBoardView.ButtonResignWhite, ChessBoardView.ButtonResignBlack, ChessBoardView.ButtonOfferDrawWhite,
-        ChessBoardView.ButtonOfferDrawBlack, ChessBoardView.ButtonAcceptDrawWhite, ChessBoardView.ButtonAcceptDrawBlack,
-        ChessBoardView.ButtonDeclineDrawWhite, ChessBoardView.ButtonDeclineDrawBlack, ChessBoardView.ButtonClaimDraw,
-        ChessBoardView.ButtonPgn, ChessBoardView.ButtonReset,
+        ChessBoardUI.ButtonJoinWhite, ChessBoardUI.ButtonJoinBlack, ChessBoardUI.ButtonLoadHere,
+        ChessBoardUI.ButtonLoadPgn,
+        ChessBoardUI.ButtonMode, ChessBoardUI.ButtonClock, ChessBoardUI.ButtonStart, ChessBoardUI.ButtonContinue,
+        ChessBoardUI.ButtonEnterReplay, ChessBoardUI.ButtonLeaveReplay, ChessBoardUI.ButtonStepFirst,
+        ChessBoardUI.ButtonStepBack, ChessBoardUI.ButtonStepForward, ChessBoardUI.ButtonStepLast,
+        ChessBoardUI.ButtonRequestTakebackWhite, ChessBoardUI.ButtonRequestTakebackBlack,
+        ChessBoardUI.ButtonAcceptTakebackWhite, ChessBoardUI.ButtonAcceptTakebackBlack,
+        ChessBoardUI.ButtonDeclineTakebackWhite, ChessBoardUI.ButtonDeclineTakebackBlack,
+        ChessBoardUI.ButtonResignWhite, ChessBoardUI.ButtonResignBlack, ChessBoardUI.ButtonOfferDrawWhite,
+        ChessBoardUI.ButtonOfferDrawBlack, ChessBoardUI.ButtonAcceptDrawWhite, ChessBoardUI.ButtonAcceptDrawBlack,
+        ChessBoardUI.ButtonDeclineDrawWhite, ChessBoardUI.ButtonDeclineDrawBlack, ChessBoardUI.ButtonClaimDraw,
+        ChessBoardUI.ButtonPgn, ChessBoardUI.ButtonReset,
     };
     // A button panel's size in canvas pixels (a millimetre each), its grid cells and columns and how far it leans
     // back from upright. Five columns by three rows fit the most buttons one player sees at once (13: in replay of
@@ -542,20 +571,20 @@ public static class ChessBoardViewBuilder {
     static readonly Vector2 ButtonCell = new Vector2(100, 44);
 
     // The board's buttons (steps 9.4a, 9.4b): a world-space canvas at each end of the table, leaning back towards
-    // that side's player, each with one button per action but the other colour's (ChessBoardView.ButtonColor), so
-    // each end joins, resigns, offers and answers for its own colour. Every button calls the view's Press... event for
-    // its action; the view shows only those whose action applies, and the grid packs the shown ones together.
-    static void AddButtons(GameObject root, ChessBoardView view, float tableDepth) {
-        UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(view);
+    // that side's player, each with one button per action but the other colour's (ChessBoardUI.ButtonColor), so
+    // each end joins, resigns, offers and answers for its own colour. Every button calls the UI's Press... event for
+    // its action; the UI shows only those whose action applies, and the grid packs the shown ones together.
+    static void AddButtons(GameObject root, ChessBoardUI ui, float tableDepth) {
+        UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(ui);
         Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
         int perPanel = 0;
         foreach (int action in ButtonOrder) {
-            if (ChessBoardView.ButtonColor(action) != ChessRules.Black) perPanel++;
+            if (ChessBoardUI.ButtonColor(action) != ChessRules.Black) perPanel++;
         }
-        view.buttons = new GameObject[2 * perPanel];
-        view.buttonActions = new int[2 * perPanel];
-        view.buttonLabels = new Text[2 * perPanel];
+        ui.buttons = new GameObject[2 * perPanel];
+        ui.buttonActions = new int[2 * perPanel];
+        ui.buttonLabels = new Text[2 * perPanel];
         int next = 0;
         float z = ButtonPanelZ(tableDepth);
         for (int panel = 0; panel < 2; panel++) {
@@ -584,7 +613,7 @@ public static class ChessBoardViewBuilder {
             grid.constraintCount = PanelColumns;
             foreach (int action in ButtonOrder) {
                 // Each end acts only for its own colour.
-                if (ChessBoardView.ButtonColor(action) == (white ? ChessRules.Black : ChessRules.White)) continue;
+                if (ChessBoardUI.ButtonColor(action) == (white ? ChessRules.Black : ChessRules.White)) continue;
                 int index = next++;
                 GameObject buttonObject = new GameObject(ButtonEvents[action].Substring(5), typeof(RectTransform));
                 buttonObject.layer = canvasObject.layer;
@@ -610,10 +639,10 @@ public static class ChessBoardViewBuilder {
                 label.alignment = TextAnchor.MiddleCenter;
                 label.color = Color.black;
                 label.raycastTarget = false;
-                label.text = view.ButtonText(action);
-                view.buttons[index] = buttonObject;
-                view.buttonActions[index] = action;
-                view.buttonLabels[index] = label;
+                label.text = ui.ButtonText(action);
+                ui.buttons[index] = buttonObject;
+                ui.buttonActions[index] = action;
+                ui.buttonLabels[index] = label;
             }
         }
     }
@@ -629,12 +658,12 @@ public static class ChessBoardViewBuilder {
 
     // The status display (step 9.5c): a world-space canvas at each end of the table, between the board and that end's
     // buttons, leaning back as they do, with the players' names and clocks on the left and the board's status on the
-    // right. Nothing on it is clickable, so it has no collider and no VRCUiShape. The view writes both texts.
-    static void AddStatusPanels(GameObject root, ChessBoardView view, float tableDepth) {
+    // right. Nothing on it is clickable, so it has no collider and no VRCUiShape. The UI writes both texts.
+    static void AddStatusPanels(GameObject root, ChessBoardUI ui, float tableDepth) {
         Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        view.statusPlayerLabels = new Text[2];
-        view.statusLabels = new Text[2];
+        ui.statusPlayerLabels = new Text[2];
+        ui.statusLabels = new Text[2];
         // Nearer the board than the buttons, the gap measured along the leaning panels; its near edge stays clear of
         // the board.
         float z = ButtonPanelZ(tableDepth) - (PanelHeight + StatusHeight) * 0.001f / 2 - 0.008f;
@@ -654,10 +683,10 @@ public static class ChessBoardViewBuilder {
             Image background = canvasObject.AddComponent<Image>();
             background.color = new Color(0.12f, 0.12f, 0.14f, 0.9f);
             background.raycastTarget = false;
-            view.statusPlayerLabels[panel] = StatusText(canvasObject, "Players", font, 0, PlayersWidth, 17,
-                view.PlayersTextAt(0));
-            view.statusLabels[panel] = StatusText(canvasObject, "Status", font, PlayersWidth, 1, 14,
-                view.StatusTextAt(0));
+            ui.statusPlayerLabels[panel] = StatusText(canvasObject, "Players", font, 0, PlayersWidth, 17,
+                ui.PlayersTextAt(0));
+            ui.statusLabels[panel] = StatusText(canvasObject, "Status", font, PlayersWidth, 1, 14,
+                ui.StatusTextAt(0));
         }
     }
 
@@ -694,6 +723,15 @@ public static class ChessBoardViewBuilder {
         return null;
     }
 
+    // The scene's UI for a board (built earlier) other than ui, or null.
+    static ChessBoardUI ExistingUI(ChessBoard board, ChessBoardUI ui) {
+        ChessBoardUI[] uis = Object.FindObjectsOfType<ChessBoardUI>(true);
+        for (int i = 0; i < uis.Length; i++) {
+            if (uis[i] != ui && uis[i].board == board) return uis[i];
+        }
+        return null;
+    }
+
     // The scene's history wall on the board's archive (step 10.2b), or null; Create History Wall wires views built
     // before the wall.
     static GameHistoryWall HistoryWallFor(ChessBoard board) {
@@ -720,18 +758,19 @@ public static class ChessBoardViewBuilder {
     }
 
     // UdonSharp needs a compiled program asset next to a script before its behaviour can be added. The repository
-    // has them (the view's, the pieces' and the squares'); any that's missing is created and compiled, and the menu item has to be
-    // run again afterwards.
+    // has them (the view's, the UI's, the pieces' and the squares'); any that's missing is created and compiled, and the
+    // menu item has to be run again afterwards.
     static bool EnsureProgramAssets() {
         bool created = CreateProgramAssetIfMissing(ViewScriptPath, ViewProgramPath);
+        created |= CreateProgramAssetIfMissing(UIScriptPath, UIProgramPath);
         created |= CreateProgramAssetIfMissing(PieceScriptPath, PieceProgramPath);
         created |= CreateProgramAssetIfMissing(SquareScriptPath, SquareProgramPath);
         if (!created) return true;
         AssetDatabase.SaveAssets();
         UdonSharpProgramAsset.CompileAllCsPrograms(true);
         EditorUtility.DisplayDialog("Create Board View", "Created the missing program assets next to "
-            + ViewScriptPath + ", " + PieceScriptPath + " or " + SquareScriptPath + ". Once UdonSharp has finished compiling, run Tools > Chess Board > "
-            + "Create Board View again.", "OK");
+            + ViewScriptPath + ", " + UIScriptPath + ", " + PieceScriptPath + " or " + SquareScriptPath
+            + ". Once UdonSharp has finished compiling, run Tools > Chess Board > Create Board View again.", "OK");
         return false;
     }
 

@@ -5,14 +5,16 @@ using UnityEngine.UI;
 using VRC.SDKBase;
 
 // Step 9 test behaviour (PLAN.md section 9): the physical board (ChessBoardView) checked against the logical one it
-// shows. It changes the board, so it runs once BoardTest has finished with it, and only with no one else in the
+// shows, and since step 12.1 the board's UI (ChessBoardUI: buttons, status display, PGN box), each checked on its own
+// behaviour. It changes the board, so it runs once BoardTest has finished with it, and only with no one else in the
 // instance. Logs "[ViewTest] PASS: <check>" or "[ViewTest] FAIL: <check>: <details>" per check, then a summary line.
 // Built in the scene by Tools > Chess Board > Create View Test (Editor/ViewTestBuilder.cs).
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
 public class ViewTest : UdonSharpBehaviour {
-    // The board and its view under test.
+    // The board, its view and its UI under test.
     public ChessBoard board;
     public ChessBoardView view;
+    public ChessBoardUI ui;
     // Waited for, since both change the board; none to start at once.
     public BoardTest boardTest;
     // For the loaded games: an importer and Assets/Tests/PGN/chess960.pgn.txt and promotions.pgn.txt.
@@ -58,11 +60,13 @@ public class ViewTest : UdonSharpBehaviour {
             finished = true;
             return;
         }
-        if (!Utilities.IsValid(board) || !Utilities.IsValid(view)) {
-            Check(false, "board and view assigned", "assign ViewTest's Board and View in the Inspector");
+        if (!Utilities.IsValid(board) || !Utilities.IsValid(view) || !Utilities.IsValid(ui)) {
+            Check(false, "board, view and UI assigned", "assign ViewTest's Board, View and UI in the Inspector "
+                + "(Tools > Chess Board > Create View Test)");
             LogSummary();
             return;
         }
+        Check(view.board == board && ui.board == board, "the view and the UI on the board", "they aren't");
         localName = Networking.LocalPlayer.displayName;
         // Every check but the animation checks (9.5b) looks at pieces in place straight after a change.
         savedAnimate = view.animateMoves;
@@ -76,7 +80,7 @@ public class ViewTest : UdonSharpBehaviour {
     // view's own redraw on the next frame (RunResetChecks).
     void RunGameChecks() {
         board.ClearState();
-        view.Refresh();
+        Redraw();
         CheckView("a cleared board");
         CheckInt(OnBoardCount(), 32, "a cleared board: all 32 objects on the board");
 
@@ -113,7 +117,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckView("Nc6 drawn on the next frame, without Refresh");
 
         CheckInt(board.ResetBoardAs(localName, true), ChessBoard.InputAccepted, "reset: accepted");
-        view.Refresh();
+        Redraw();
         CheckView("after a reset");
         CheckInt(OnBoardCount(), 32, "after a reset: all 32 objects back on the board");
 
@@ -130,18 +134,18 @@ public class ViewTest : UdonSharpBehaviour {
         Play("b8", "c6", "c6", "Nc6");
         CheckInt(board.PieceDroppedAs(localName, Sq("b7"), Sq("a8")), ChessBoard.InputPromotionNeeded,
             "bxa8: asks for a piece");
-        view.Refresh();
+        Redraw();
         CheckView("bxa8: nothing played yet");
         CheckInt(board.PromotionChosenAs(localName, Sq("b7"), Sq("a8"), ChessRules.Queen), ChessBoard.InputAccepted,
             "bxa8=Q: played");
-        view.Refresh();
+        Redraw();
         CheckView("bxa8=Q");
         CheckInt(view.squareObject[Sq("a8")], aPawn, "bxa8=Q: the a2 pawn's object is the queen");
         CheckInt(view.objectType[aPawn], ChessRules.Queen, "bxa8=Q: the object stands for a queen");
 
         board.ClearState();
         StartGame(ChessGame.ModeChess960, "Chess960 game");
-        view.Refresh();
+        Redraw();
         CheckView("a Chess960 game started (" + ChessFen.WriteFen(board.board, board.state, 0, 1) + ")");
         board.ClearState();
         SendCustomEventDelayedFrames(nameof(RunLoadChecks), 1);
@@ -152,7 +156,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckReplay(chess960Pgn, "chess960.pgn", 6);
         CheckReplay(promotionsPgn, "promotions.pgn", 9);
         board.ClearState();
-        view.Refresh();
+        Redraw();
         CheckView("cleared after the loaded games");
         SendCustomEventDelayedFrames(nameof(RunPickupChecks), 1);
     }
@@ -168,22 +172,22 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, name + ": imported");
         CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, name + ": loaded");
         CheckInt(board.moveCount, plies, name + ": " + plies + " plies");
-        view.Refresh();
+        Redraw();
         CheckView(name + ": loaded, the last position");
         CheckInt(board.StepToAs(localName, true, 0), ChessBoard.InputAccepted, name + ": step to the start");
-        view.Refresh();
+        Redraw();
         CheckView(name + ": the start");
         for (int ply = 1; ply <= board.moveCount; ply++) {
             int move = board.moveHistory[ply - 1];
             int mover = view.squareObject[ChessRules.MoveFrom(move)];
             string label = name + ": ply " + ply + " (" + board.notation[ply - 1] + ")";
             CheckInt(board.StepToAs(localName, true, ply), ChessBoard.InputAccepted, label + ": stepped");
-            view.Refresh();
+            Redraw();
             CheckView(label);
             CheckInt(view.squareObject[Landing(move)], mover, label + ": the mover's object travelled");
         }
         CheckInt(board.StepToAs(localName, true, 0), ChessBoard.InputAccepted, name + ": back to the start");
-        view.Refresh();
+        Redraw();
         CheckView(name + ": back to the start");
     }
 
@@ -207,7 +211,7 @@ public class ViewTest : UdonSharpBehaviour {
 
         board.ClearState();
         view.SetInputStyle(ChessBoardView.InputClicks);
-        view.Refresh();
+        Redraw();
         Check(!view.UsesPickups(), "Clicks: no pickups", "uses pickups");
         CheckPickupable(0, "Clicks: a reset board");
         view.SetInputStyle(ChessBoardView.InputAuto);
@@ -223,33 +227,33 @@ public class ViewTest : UdonSharpBehaviour {
 
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "Ana joined White");
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "Bob joined Black");
-        view.Refresh();
+        Redraw();
         CheckPickupable(0, "Pickups: the lobby of others");
         CheckOwnership(false, "the lobby of others");
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, "Ana and Bob started");
-        view.Refresh();
+        Redraw();
         CheckPickupable(0, "Pickups: others' game");
         CheckOwnership(false, "others' game");
         CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "Ana resigned");
-        view.Refresh();
+        Redraw();
         CheckPickupable(0, "Pickups: others' ended game");
 
         board.ClearState();
         CheckInt(board.JoinAs(ChessRules.White, localName), ChessBoard.InputAccepted, "pickups game: joined White");
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "pickups game: Bob joined Black");
         CheckInt(board.StartGameAs(localName), ChessBoard.InputAccepted, "pickups game: started");
-        view.Refresh();
+        Redraw();
         CheckPickupable(32, "Pickups: own game");
         CheckOwnership(true, "own game");
         CheckInt(board.PieceDroppedAs(localName, Sq("e2"), Sq("e4")), ChessBoard.InputAccepted, "e4: played");
-        view.Refresh();
+        Redraw();
         CheckPickupable(32, "Pickups: own game, the other side to move");
         CheckInt(board.PieceDroppedAs("Bob", Sq("d7"), Sq("d5")), ChessBoard.InputAccepted, "d5: played");
         CheckInt(board.PieceDroppedAs(localName, Sq("e4"), Sq("d5")), ChessBoard.InputAccepted, "exd5: played");
-        view.Refresh();
+        Redraw();
         CheckPickupable(31, "Pickups: the captured pawn isn't a pickup");
         CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, "pickups game: resigned");
-        view.Refresh();
+        Redraw();
         CheckPickupable(31, "Pickups: own ended game");
         CheckOwnership(true, "own ended game");
         view.SetInputStyle(ChessBoardView.InputClicks);
@@ -259,7 +263,7 @@ public class ViewTest : UdonSharpBehaviour {
 
         board.ClearState();
         view.SetInputStyle(savedStyle);
-        view.Refresh();
+        Redraw();
         CheckView("cleared after the pickup checks");
         SendCustomEventDelayedFrames(nameof(RunDropChecks), 1);
     }
@@ -286,7 +290,7 @@ public class ViewTest : UdonSharpBehaviour {
         view.OnPiecePickedUp(pawn);
         CheckInt(view.heldObject, pawn, "e2 picked up: held");
         view.pieces[pawn].localPosition = Over("e4");
-        view.Refresh();
+        Redraw();
         Check((view.pieces[pawn].localPosition - Over("e4")).sqrMagnitude < 1e-8f, "e2 held: not placed by Refresh",
             "at " + view.pieces[pawn].localPosition.ToString("F3"));
         view.OnPieceDropped(pawn);
@@ -312,7 +316,7 @@ public class ViewTest : UdonSharpBehaviour {
         view.OnPiecePickedUp(d2);
         CheckInt(view.heldObject, d2, "d2 picked up");
         CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, "White resigned while holding d2");
-        view.Refresh();
+        Redraw();
         CheckInt(view.heldObject, d2, "d2 still held after the game ended, its square unchanged");
         view.pieces[d2].localPosition = Over("d4");
         view.OnPieceDropped(d2);
@@ -320,7 +324,7 @@ public class ViewTest : UdonSharpBehaviour {
 
         // In replay: free moves, and a held piece whose square another free move takes.
         CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, "entered replay");
-        view.Refresh();
+        Redraw();
         CheckInt(ViewDrop("a1", Over("a5")), ChessBoard.InputAccepted, "replay: a1 picked up");
         CheckDropped(2, ChessBoard.ChangeFreeMove, "replay: a1 dropped over a5, a free move");
         CheckInt(board.replayBoard[Sq("a5")], ChessRules.PieceOf(ChessRules.White, ChessRules.Rook),
@@ -330,7 +334,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(view.heldObject, e4, "replay: e4 picked up");
         CheckInt(board.PieceDroppedAs(localName, Sq("d8"), Sq("e4")), ChessBoard.InputAccepted,
             "replay: the queen freely to e4 while e4 is held");
-        view.Refresh();
+        Redraw();
         CheckInt(view.heldObject, ChessBoardView.NoObject, "replay: e4 let go once the queen took its square");
         CheckView("replay: e4 let go");
 
@@ -349,7 +353,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(ViewDrop("b7", Over("a8")), ChessBoard.InputAccepted, "b7 picked up");
         CheckInt(view.promotionObject, promoting, "b7 dropped over a8: waits for a piece");
         CheckInt(board.moveCount, 8, "b7 dropped over a8: nothing played yet");
-        view.Refresh();
+        Redraw();
         Check((view.pieces[promoting].localPosition - view.SquarePosition(Sq("a8"))).sqrMagnitude < 1e-8f,
             "b7 dropped over a8: the pawn stands on a8 meanwhile",
             "at " + view.pieces[promoting].localPosition.ToString("F3"));
@@ -367,7 +371,7 @@ public class ViewTest : UdonSharpBehaviour {
 
         board.ClearState();
         view.SetInputStyle(savedStyle);
-        view.Refresh();
+        Redraw();
         CheckView("cleared after the drop checks");
         SendCustomEventDelayedFrames(nameof(RunCastleDropChecks), 1);
     }
@@ -449,7 +453,7 @@ public class ViewTest : UdonSharpBehaviour {
 
         board.ClearState();
         view.SetInputStyle(savedStyle);
-        view.Refresh();
+        Redraw();
         CheckView("cleared at the end");
         SendCustomEventDelayedFrames(nameof(RunClickChecks), 1);
     }
@@ -486,7 +490,7 @@ public class ViewTest : UdonSharpBehaviour {
 
         // Nobody's game: nothing to click.
         board.ClearState();
-        view.Refresh();
+        Redraw();
         CheckClickables("", "", "clicks: a reset board");
 
         string c = "click game";
@@ -501,7 +505,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(view.selectedObject, pawn, c + ": e2 clicked: selected");
         Check(Networking.IsOwner(Networking.LocalPlayer, view.pieces[pawn].gameObject),
             c + ": e2 clicked: its ownership taken", "not the owner");
-        view.Refresh();
+        Redraw();
         CheckLifted(pawn, "e2", c + ": e2 selected");
         CheckClickables(WhitePieces, "e2 e3 e4", c + ": e2 selected");
         CheckText(Sq("e2"), "Put back", c + ": e2 selected");
@@ -521,7 +525,7 @@ public class ViewTest : UdonSharpBehaviour {
         ClickPiece("e2");
         ClickPiece("g1");
         CheckInt(view.selectedObject, knight, c + ": g1 clicked with e2 selected: g1 selected");
-        view.Refresh();
+        Redraw();
         CheckLifted(knight, "g1", c + ": g1 selected");
         Check((view.pieces[pawn].localPosition - view.SquarePosition(Sq("e2"))).sqrMagnitude < 1e-8f,
             c + ": g1 selected: e2 back down", "at " + view.pieces[pawn].localPosition.ToString("F3"));
@@ -537,7 +541,7 @@ public class ViewTest : UdonSharpBehaviour {
 
         // Capturing by clicking the opponent's piece.
         ClickPiece("f3");
-        view.Refresh();
+        Redraw();
         CheckText(Sq("e5"), "Capture", c + ": f3 selected, e5");
         Check(view.IsPieceClickable(view.squareObject[Sq("e5")]), c + ": f3 selected: e5 clickable", "it isn't");
         Check(!view.IsPieceClickable(view.squareObject[Sq("d7")]), c + ": f3 selected: d7 not clickable", "it is");
@@ -561,7 +565,7 @@ public class ViewTest : UdonSharpBehaviour {
         ClickPiece("d7");
         CheckInt(view.selectedObject, view.squareObject[Sq("d7")], c + ": d7 selected");
         CheckInt(board.ResignAs(ChessRules.Black, localName), ChessBoard.InputAccepted, c + ": resigned with d7 selected");
-        view.Refresh();
+        Redraw();
         CheckView(c + ": resigned: d7 down on that Refresh");
         CheckUnselected(3, c + ": resigned: d7 put back");
         CheckClickables("", "", c + ": ended");
@@ -569,11 +573,11 @@ public class ViewTest : UdonSharpBehaviour {
         // In replay: free moves of any piece; another piece of the selected one's colour is selected instead, one of
         // the other colour captured; leaving replay puts a selection back.
         CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, c + ": entered replay");
-        view.Refresh();
+        Redraw();
         CheckInt(ClickableCount(), OnBoardCount(), c + ": replay: every piece on the board clickable");
         ClickPiece("a1");
         CheckInt(view.selectedObject, view.squareObject[Sq("a1")], c + ": replay: a1 selected");
-        view.Refresh();
+        Redraw();
         CheckInt(SquareTargetCount(), 64, c + ": replay: a1 selected, every square clickable");
         CheckText(Sq("a8"), "Capture", c + ": replay: a1 selected, a8");
         CheckText(Sq("b1"), "Select", c + ": replay: a1 selected, b1");
@@ -593,7 +597,7 @@ public class ViewTest : UdonSharpBehaviour {
         ClickPiece("c1");
         CheckInt(view.selectedObject, view.squareObject[Sq("c1")], c + ": replay: c1 selected");
         CheckInt(board.LeaveReplayAs(localName, true), ChessBoard.InputAccepted, c + ": left replay with c1 selected");
-        view.Refresh();
+        Redraw();
         CheckUnselected(3, c + ": left replay: c1 put back");
 
         // Castling on the rook (labelled Castle) and on the destination.
@@ -601,7 +605,7 @@ public class ViewTest : UdonSharpBehaviour {
         int king = view.squareObject[Sq("e1")];
         int rook = view.squareObject[Sq("h1")];
         ClickPiece("e1");
-        view.Refresh();
+        Redraw();
         CheckClickables("a1 e1 h1", "a1 c1 d1 e1 f1 g1 h1 d2 e2 f2", "click castling: e1 selected");
         CheckText(Sq("h1"), "Castle", "click castling: e1 selected, h1");
         ClickPiece("h1");
@@ -640,7 +644,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(view.promotionObject, promoting, "click promotion: e8 clicked: waits for a piece");
         CheckInt(view.selectedObject, ChessBoardView.NoObject, "click promotion: nothing selected");
         CheckInt(board.moveCount, 0, "click promotion: nothing played yet");
-        view.Refresh();
+        Redraw();
         Check((view.pieces[promoting].localPosition - view.SquarePosition(Sq("e8"))).sqrMagnitude < 1e-8f,
             "click promotion: the pawn stands on e8 meanwhile", "at " + view.pieces[promoting].localPosition.ToString("F3"));
         CheckInt(view.ChoosePromotion(ChessRules.Rook), ChessBoard.InputAccepted, "click promotion: e8=R chosen");
@@ -653,7 +657,7 @@ public class ViewTest : UdonSharpBehaviour {
         ClickPiece("e2");
         CheckInt(view.selectedObject, view.squareObject[Sq("e2")], "pickups, no clicks: e2 selected with Clicks");
         view.SetInputStyle(ChessBoardView.InputPickups);
-        view.Refresh();
+        Redraw();
         CheckUnselected(0, "pickups, no clicks: switched to Pickups: e2 put back");
         CheckClickables("", "", "pickups, no clicks: Pickups");
         CheckPickupable(32, "pickups, no clicks: Pickups");
@@ -662,7 +666,7 @@ public class ViewTest : UdonSharpBehaviour {
 
         board.ClearState();
         view.SetInputStyle(savedStyle);
-        view.Refresh();
+        Redraw();
         CheckView("cleared after the click checks");
         SendCustomEventDelayedFrames(nameof(RunButtonChecks), 1);
     }
@@ -683,68 +687,68 @@ public class ViewTest : UdonSharpBehaviour {
     // buttons shown are exactly the ones that apply, and pressing one does what the board's method does, a hidden
     // one being refused.
     public void RunButtonChecks() {
-        int count = view.buttons.Length;
-        Check(count > 0 && view.buttonActions.Length == count && view.buttonLabels.Length == count,
-            "buttons: wired, each with its action and label", count + " buttons, " + view.buttonActions.Length
-            + " actions, " + view.buttonLabels.Length + " labels");
+        int count = ui.buttons.Length;
+        Check(count > 0 && ui.buttonActions.Length == count && ui.buttonLabels.Length == count,
+            "buttons: wired, each with its action and label", count + " buttons, " + ui.buttonActions.Length
+            + " actions, " + ui.buttonLabels.Length + " labels");
         string missing = "";
-        for (int action = 0; action < ChessBoardView.ButtonCount; action++) {
+        for (int action = 0; action < ChessBoardUI.ButtonCount; action++) {
             bool found = false;
-            for (int i = 0; i < count && i < view.buttonActions.Length; i++) {
-                if (view.buttonActions[i] == action && Utilities.IsValid(view.buttons[i])
-                    && i < view.buttonLabels.Length && Utilities.IsValid(view.buttonLabels[i])) {
+            for (int i = 0; i < count && i < ui.buttonActions.Length; i++) {
+                if (ui.buttonActions[i] == action && Utilities.IsValid(ui.buttons[i])
+                    && i < ui.buttonLabels.Length && Utilities.IsValid(ui.buttonLabels[i])) {
                     found = true;
                 }
             }
             if (!found) missing += buttonNames[action] + " ";
         }
         Check(missing.Length == 0, "buttons: every action has a button", "none for " + missing);
-        CheckString(ChessBoardView.ClockText(ChessArbiter.NoClock, 0), "No clock", "clock text: none");
-        CheckString(ChessBoardView.ClockText(300, 3), "5+3", "clock text: 5+3");
-        CheckString(ChessBoardView.ClockText(45, 0), "45s+0", "clock text: 45 s");
+        CheckString(ChessBoardUI.ClockText(ChessArbiter.NoClock, 0), "No clock", "clock text: none");
+        CheckString(ChessBoardUI.ClockText(300, 3), "5+3", "clock text: 5+3");
+        CheckString(ChessBoardUI.ClockText(45, 0), "45s+0", "clock text: 45 s");
 
         board.ClearState();
         CheckButtons("JoinWhite JoinBlack", "reset board");
-        CheckInt(view.PressButton(ChessBoardView.ButtonStart), ChessBoard.InputRejected, "reset board: Start refused");
-        CheckInt(view.PressButton(ChessBoardView.ButtonReset), ChessBoard.InputRejected, "reset board: Reset refused");
+        CheckInt(ui.PressButton(ChessBoardUI.ButtonStart), ChessBoard.InputRejected, "reset board: Start refused");
+        CheckInt(ui.PressButton(ChessBoardUI.ButtonReset), ChessBoard.InputRejected, "reset board: Reset refused");
 
         // The local player's lobby, White first.
-        view.PressJoinWhite();
+        ui.PressJoinWhite();
         CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "Join White: in the lobby");
         CheckString(board.whitePlayer, localName, "Join White: seated as White");
         CheckButtons("JoinBlack Mode Clock Reset", "lobby, White joined");
-        CheckInt(view.PressButton(ChessBoardView.ButtonStart), ChessBoard.InputRejected,
+        CheckInt(ui.PressButton(ChessBoardUI.ButtonStart), ChessBoard.InputRejected,
             "lobby, White joined: Start refused");
         if (!board.IsModeForced()) {
-            CheckInt(view.PressButton(ChessBoardView.ButtonMode), ChessBoard.InputAccepted, "Mode pressed");
+            CheckInt(ui.PressButton(ChessBoardUI.ButtonMode), ChessBoard.InputAccepted, "Mode pressed");
             CheckInt(board.mode, ChessGame.ModeChess960, "Mode pressed: Chess960");
-            CheckLabel(ChessBoardView.ButtonMode, "Mode: Chess960", "Mode pressed");
-            view.PressMode();
+            CheckLabel(ChessBoardUI.ButtonMode, "Mode: Chess960", "Mode pressed");
+            ui.PressMode();
             CheckInt(board.mode, ChessGame.ModeStandard, "Mode pressed again: Standard");
-            CheckLabel(ChessBoardView.ButtonMode, "Mode: Standard", "Mode pressed again");
+            CheckLabel(ChessBoardUI.ButtonMode, "Mode: Standard", "Mode pressed again");
         }
         if (!board.IsClockForced()) {
-            CheckLabel(ChessBoardView.ButtonClock, "Clock: No clock", "lobby, no clock");
-            CheckInt(view.PressButton(ChessBoardView.ButtonClock), ChessBoard.InputAccepted, "Clock pressed");
+            CheckLabel(ChessBoardUI.ButtonClock, "Clock: No clock", "lobby, no clock");
+            CheckInt(ui.PressButton(ChessBoardUI.ButtonClock), ChessBoard.InputAccepted, "Clock pressed");
             CheckInt(board.baseTime * 1000 + board.increment, 60000, "Clock pressed: 1+0");
-            CheckLabel(ChessBoardView.ButtonClock, "Clock: 1+0", "Clock pressed");
-            view.PressClock();
+            CheckLabel(ChessBoardUI.ButtonClock, "Clock: 1+0", "Clock pressed");
+            ui.PressClock();
             CheckInt(board.baseTime * 1000 + board.increment, 180002, "Clock pressed again: 3+2");
-            CheckLabel(ChessBoardView.ButtonClock, "Clock: 3+2", "Clock pressed again");
+            CheckLabel(ChessBoardUI.ButtonClock, "Clock: 3+2", "Clock pressed again");
         }
-        view.PressJoinBlack();
+        ui.PressJoinBlack();
         CheckString(board.blackPlayer, localName, "Join Black: seated as Black too");
         CheckButtons("Mode Clock Start Reset", "lobby, both seats");
         int baseTime = board.baseTime;
-        view.PressStart();
+        ui.PressStart();
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Start: in game");
         CheckInt(board.baseTime, baseTime, "Start: with the clock chosen");
         CheckButtons(OwnGame, "own game");
-        CheckInt(view.PressButton(ChessBoardView.ButtonJoinWhite), ChessBoard.InputRejected,
+        CheckInt(ui.PressButton(ChessBoardUI.ButtonJoinWhite), ChessBoard.InputRejected,
             "own game: Join White refused");
         CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, "own game: resigned");
         CheckButtons("Replay Reset", "own game ended");
-        view.PressReset();
+        ui.PressReset();
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, "Reset: the board is reset");
         CheckButtons("JoinWhite JoinBlack", "after Reset");
 
@@ -753,10 +757,10 @@ public class ViewTest : UdonSharpBehaviour {
         CheckButtons("JoinBlack Reset?", "others' lobby, Black open");
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "others: Bob joined Black");
         CheckButtons("Reset?", "others' lobby");
-        CheckInt(view.PressButton(ChessBoardView.ButtonMode), ChessBoard.InputRejected, "others' lobby: Mode refused");
-        CheckInt(view.PressButton(ChessBoardView.ButtonClock), ChessBoard.InputRejected,
+        CheckInt(ui.PressButton(ChessBoardUI.ButtonMode), ChessBoard.InputRejected, "others' lobby: Mode refused");
+        CheckInt(ui.PressButton(ChessBoardUI.ButtonClock), ChessBoard.InputRejected,
             "others' lobby: Clock refused");
-        CheckInt(view.PressButton(ChessBoardView.ButtonStart), ChessBoard.InputRejected,
+        CheckInt(ui.PressButton(ChessBoardUI.ButtonStart), ChessBoard.InputRejected,
             "others' lobby: Start refused");
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, "others: Ana started");
         CheckButtons("Replay? Reset?", "others' game");
@@ -770,24 +774,24 @@ public class ViewTest : UdonSharpBehaviour {
             CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, "loaded game: imported");
             CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, "loaded game: loaded");
             CheckButtons("JoinWhite JoinBlack First Back Reset?", "loaded game");
-            view.PressJoinWhite();
+            ui.PressJoinWhite();
             CheckButtons("JoinBlack Clock First Back Reset", "loaded game, White joined");
-            CheckInt(view.PressButton(ChessBoardView.ButtonContinue), ChessBoard.InputRejected,
+            CheckInt(ui.PressButton(ChessBoardUI.ButtonContinue), ChessBoard.InputRejected,
                 "loaded game, White joined: Continue refused");
-            view.PressJoinBlack();
+            ui.PressJoinBlack();
             CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "loaded game, both seats: still loaded");
             CheckButtons("Clock Continue First Back Reset", "loaded game, both seats");
-            CheckInt(view.PressButton(ChessBoardView.ButtonMode), ChessBoard.InputRejected,
+            CheckInt(ui.PressButton(ChessBoardUI.ButtonMode), ChessBoard.InputRejected,
                 "loaded game: Mode refused");
             if (!board.IsClockForced()) {
-                CheckInt(view.PressButton(ChessBoardView.ButtonClock), ChessBoard.InputAccepted,
+                CheckInt(ui.PressButton(ChessBoardUI.ButtonClock), ChessBoard.InputAccepted,
                     "loaded game: Clock pressed");
-                CheckLabel(ChessBoardView.ButtonClock, "Clock: " + ChessBoardView.ClockText(board.baseTime,
+                CheckLabel(ChessBoardUI.ButtonClock, "Clock: " + ChessBoardUI.ClockText(board.baseTime,
                     board.increment), "loaded game: Clock pressed");
             }
             CheckInt(board.StepToAs(localName, true, 3), ChessBoard.InputAccepted, "loaded game: stepped to ply 3");
             CheckButtons("Clock Continue First Back Forward Last Reset", "loaded game at ply 3");
-            view.PressContinue();
+            ui.PressContinue();
             CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Continue: in game");
             CheckInt(board.moveCount, 3, "Continue: from ply 3");
             CheckButtons(OwnGame, "continued game");
@@ -817,38 +821,38 @@ public class ViewTest : UdonSharpBehaviour {
         StartGame(ChessGame.ModeStandard, "resign button");
         SetRequestRules(true);
         CheckButtons(OwnGame, "resign button: own game");
-        CheckRefused(ChessBoardView.ButtonAcceptDrawBlack, "no offer");
-        CheckRefused(ChessBoardView.ButtonDeclineDrawWhite, "no offer");
-        CheckRefused(ChessBoardView.ButtonClaimDraw, "nothing to claim");
-        CheckRefused(ChessBoardView.ButtonLeaveReplay, "not in replay");
-        CheckRefused(ChessBoardView.ButtonStepBack, "not in replay");
-        CheckRefused(ChessBoardView.ButtonRequestTakebackWhite, "not in replay");
-        CheckRefused(ChessBoardView.ButtonAcceptTakebackBlack, "no request");
-        view.PressResignBlack();
+        CheckRefused(ChessBoardUI.ButtonAcceptDrawBlack, "no offer");
+        CheckRefused(ChessBoardUI.ButtonDeclineDrawWhite, "no offer");
+        CheckRefused(ChessBoardUI.ButtonClaimDraw, "nothing to claim");
+        CheckRefused(ChessBoardUI.ButtonLeaveReplay, "not in replay");
+        CheckRefused(ChessBoardUI.ButtonStepBack, "not in replay");
+        CheckRefused(ChessBoardUI.ButtonRequestTakebackWhite, "not in replay");
+        CheckRefused(ChessBoardUI.ButtonAcceptTakebackBlack, "no request");
+        ui.PressResignBlack();
         CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "Resign (Black): the game ended");
         CheckInt(board.ending, ChessGame.EndingResignation, "Resign (Black): by resignation");
         CheckInt(board.winner, ChessRules.White, "Resign (Black): White won");
         CheckButtons("Replay Reset", "resigned");
-        CheckRefused(ChessBoardView.ButtonResignWhite, "resigned");
-        CheckRefused(ChessBoardView.ButtonOfferDrawWhite, "resigned");
+        CheckRefused(ChessBoardUI.ButtonResignWhite, "resigned");
+        CheckRefused(ChessBoardUI.ButtonOfferDrawWhite, "resigned");
 
         // Draw offers.
         board.ClearState();
         StartGame(ChessGame.ModeStandard, "draw buttons");
         SetRequestRules(true);
-        view.PressOfferDrawWhite();
+        ui.PressOfferDrawWhite();
         CheckInt(board.drawOfferColor, ChessRules.White, "Offer draw (White): offered");
         CheckButtons("ResignWhite ResignBlack AcceptDrawBlack DeclineDrawBlack Replay Reset", "White's offer");
-        CheckRefused(ChessBoardView.ButtonOfferDrawBlack, "White's offer");
-        CheckRefused(ChessBoardView.ButtonAcceptDrawWhite, "White's offer");
-        view.PressDeclineDrawBlack();
+        CheckRefused(ChessBoardUI.ButtonOfferDrawBlack, "White's offer");
+        CheckRefused(ChessBoardUI.ButtonAcceptDrawWhite, "White's offer");
+        ui.PressDeclineDrawBlack();
         CheckInt(board.drawOfferColor, ChessRules.NoColor, "Decline draw (Black): no offer");
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Decline draw (Black): still in game");
         CheckButtons(OwnGame, "offer declined");
-        view.PressOfferDrawBlack();
+        ui.PressOfferDrawBlack();
         CheckButtons("ResignWhite ResignBlack AcceptDrawWhite DeclineDrawWhite Replay Reset", "Black's offer");
-        CheckLabel(ChessBoardView.ButtonAcceptDrawWhite, "Accept draw", "Black's offer");
-        view.PressAcceptDrawWhite();
+        CheckLabel(ChessBoardUI.ButtonAcceptDrawWhite, "Accept draw", "Black's offer");
+        ui.PressAcceptDrawWhite();
         CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "Accept draw (White): the game ended");
         CheckInt(board.ending, ChessGame.EndingDrawAgreement, "Accept draw (White): drawn by agreement");
         CheckButtons("Replay Reset", "draw accepted");
@@ -858,63 +862,63 @@ public class ViewTest : UdonSharpBehaviour {
         StartGame(ChessGame.ModeStandard, "replay buttons");
         SetRequestRules(true);
         PlayMoves("e2e4 e7e5 g1f3 b8c6", "replay buttons");
-        view.PressEnterReplay();
+        ui.PressEnterReplay();
         Check(board.replayMode, "Replay: in replay", "not in replay");
         CheckInt(board.replayIndex, 4, "Replay: at the current position");
         CheckButtons(OwnReplay + " First Back", "replay at ply 4");
-        CheckRefused(ChessBoardView.ButtonStepForward, "replay at ply 4");
-        CheckRefused(ChessBoardView.ButtonStepLast, "replay at ply 4");
-        CheckRefused(ChessBoardView.ButtonEnterReplay, "in replay");
-        view.PressStepBack();
+        CheckRefused(ChessBoardUI.ButtonStepForward, "replay at ply 4");
+        CheckRefused(ChessBoardUI.ButtonStepLast, "replay at ply 4");
+        CheckRefused(ChessBoardUI.ButtonEnterReplay, "in replay");
+        ui.PressStepBack();
         CheckInt(board.replayIndex, 3, "< : ply 3");
-        view.Refresh();
+        Redraw();
         CheckView("< : ply 3");
         CheckButtons(OwnReplay + " First Back Forward Last TakebackWhite TakebackBlack", "replay at ply 3");
-        view.PressStepFirst();
+        ui.PressStepFirst();
         CheckInt(board.replayIndex, 0, "<< : ply 0");
-        view.Refresh();
+        Redraw();
         CheckView("<< : ply 0");
         CheckButtons(OwnReplay + " Forward Last TakebackWhite TakebackBlack", "replay at ply 0");
-        CheckRefused(ChessBoardView.ButtonStepBack, "replay at ply 0");
-        view.PressStepForward();
+        CheckRefused(ChessBoardUI.ButtonStepBack, "replay at ply 0");
+        ui.PressStepForward();
         CheckInt(board.replayIndex, 1, "> : ply 1");
-        view.PressStepLast();
+        ui.PressStepLast();
         CheckInt(board.replayIndex, 4, ">> : ply 4");
-        view.Refresh();
+        Redraw();
         CheckView(">> : ply 4");
-        view.PressStepBack();
-        view.PressStepBack();
+        ui.PressStepBack();
+        ui.PressStepBack();
         CheckInt(board.replayIndex, 2, "< twice: ply 2");
 
         // Takeback requests, from ply 2.
-        CheckLabel(ChessBoardView.ButtonRequestTakebackWhite, "Take back to here", "replay at ply 2");
-        view.PressRequestTakebackWhite();
+        CheckLabel(ChessBoardUI.ButtonRequestTakebackWhite, "Take back to here", "replay at ply 2");
+        ui.PressRequestTakebackWhite();
         CheckInt(board.takebackColor, ChessRules.White, "Take back (White): requested");
         CheckInt(board.takebackPly, 2, "Take back (White): for ply 2");
         CheckButtons(OwnReplay + " First Back Forward Last AcceptTakebackBlack DeclineTakebackBlack",
             "White's request");
-        CheckRefused(ChessBoardView.ButtonRequestTakebackBlack, "White's request");
-        CheckRefused(ChessBoardView.ButtonAcceptTakebackWhite, "White's request");
-        view.PressDeclineTakebackBlack();
+        CheckRefused(ChessBoardUI.ButtonRequestTakebackBlack, "White's request");
+        CheckRefused(ChessBoardUI.ButtonAcceptTakebackWhite, "White's request");
+        ui.PressDeclineTakebackBlack();
         CheckInt(board.takebackColor, ChessRules.NoColor, "Decline takeback (Black): no request");
         CheckInt(board.moveCount, 4, "Decline takeback (Black): the game unchanged");
         CheckButtons(OwnReplay + " First Back Forward Last TakebackWhite TakebackBlack", "request declined");
-        view.PressRequestTakebackBlack();
+        ui.PressRequestTakebackBlack();
         CheckButtons(OwnReplay + " First Back Forward Last AcceptTakebackWhite DeclineTakebackWhite",
             "Black's request");
-        view.PressAcceptTakebackWhite();
+        ui.PressAcceptTakebackWhite();
         CheckInt(board.moveCount, 2, "Accept takeback (White): back to ply 2");
         Check(!board.replayMode, "Accept takeback (White): out of replay", "in replay");
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Accept takeback (White): in game");
-        view.Refresh();
+        Redraw();
         CheckView("takeback accepted");
         CheckButtons(OwnGame, "takeback accepted");
-        view.PressEnterReplay();
-        view.PressStepFirst();
-        view.PressLeaveReplay();
+        ui.PressEnterReplay();
+        ui.PressStepFirst();
+        ui.PressLeaveReplay();
         Check(!board.replayMode, "Back to game: out of replay", "in replay");
         CheckInt(board.moveCount, 2, "Back to game: the game unchanged");
-        view.Refresh();
+        Redraw();
         CheckView("back to game");
         CheckButtons(OwnGame, "back to game");
 
@@ -927,8 +931,8 @@ public class ViewTest : UdonSharpBehaviour {
         PlayMoves("f6g8", "claim button");
         CheckButtons("ResignWhite ResignBlack OfferDrawWhite OfferDrawBlack ClaimDraw Replay Reset",
             "claim button: three times");
-        CheckLabel(ChessBoardView.ButtonClaimDraw, "Claim draw (threefold)", "claim button: three times");
-        view.PressClaimDraw();
+        CheckLabel(ChessBoardUI.ButtonClaimDraw, "Claim draw (threefold)", "claim button: three times");
+        ui.PressClaimDraw();
         CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "Claim draw: the game ended");
         CheckInt(board.ending, ChessGame.EndingThreefoldRepetition, "Claim draw: by threefold repetition");
         CheckButtons("Replay Reset", "draw claimed");
@@ -938,14 +942,14 @@ public class ViewTest : UdonSharpBehaviour {
         StartGame(ChessGame.ModeStandard, "rules off");
         SetRequestRules(false);
         CheckButtons("ResignWhite ResignBlack Replay Reset", "rules off: own game");
-        CheckRefused(ChessBoardView.ButtonOfferDrawWhite, "rules off");
+        CheckRefused(ChessBoardUI.ButtonOfferDrawWhite, "rules off");
         PlayMoves("g1f3 g8f6 f3g1 f6g8 g1f3 g8f6 f3g1 f6g8", "rules off");
         CheckButtons("ResignWhite ResignBlack Replay Reset", "rules off: three times");
-        CheckRefused(ChessBoardView.ButtonClaimDraw, "rules off");
-        view.PressEnterReplay();
-        view.PressStepBack();
+        CheckRefused(ChessBoardUI.ButtonClaimDraw, "rules off");
+        ui.PressEnterReplay();
+        ui.PressStepBack();
         CheckButtons("ResignWhite ResignBlack Leave First Back Forward Last Reset", "rules off: replay at ply 7");
-        CheckRefused(ChessBoardView.ButtonRequestTakebackWhite, "rules off");
+        CheckRefused(ChessBoardUI.ButtonRequestTakebackWhite, "rules off");
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "rules off: still in game");
 
         // Someone else's game: none of the players' buttons.
@@ -955,11 +959,11 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, "others: Ana started");
         SetRequestRules(true);
         CheckButtons("Replay? Reset?", "others' game");
-        CheckRefused(ChessBoardView.ButtonResignWhite, "others' game");
-        CheckRefused(ChessBoardView.ButtonOfferDrawBlack, "others' game");
+        CheckRefused(ChessBoardUI.ButtonResignWhite, "others' game");
+        CheckRefused(ChessBoardUI.ButtonOfferDrawBlack, "others' game");
         CheckInt(board.OfferDrawAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "others: Ana offered");
         CheckButtons("Replay? Reset?", "others' game, Ana's offer");
-        CheckRefused(ChessBoardView.ButtonAcceptDrawBlack, "others' game, Ana's offer");
+        CheckRefused(ChessBoardUI.ButtonAcceptDrawBlack, "others' game, Ana's offer");
 
         board.ClearState();
         CheckButtons("JoinWhite JoinBlack", "cleared after the game button checks");
@@ -1000,7 +1004,7 @@ public class ViewTest : UdonSharpBehaviour {
         // The last move.
         string g = "last move";
         board.ClearState();
-        view.Refresh();
+        Redraw();
         CheckLastMove("", "", g + ": a cleared board");
         StartGame(ChessGame.ModeStandard, g);
         CheckLastMove("", "", g + ": started");
@@ -1011,13 +1015,13 @@ public class ViewTest : UdonSharpBehaviour {
         PlayMoves("e1h1", g);
         CheckLastMove("e1", "g1", g + ": O-O on the rook");
         CheckInt(board.EnterReplayAs(localName, false), ChessBoard.InputAccepted, g + ": replay entered");
-        view.Refresh();
+        Redraw();
         CheckLastMove("e1", "g1", g + ": replay entered");
         CheckInt(board.StepToAs(localName, false, 1), ChessBoard.InputAccepted, g + ": stepped to ply 1");
-        view.Refresh();
+        Redraw();
         CheckLastMove("e2", "e4", g + ": replay at ply 1");
         CheckInt(board.StepToAs(localName, false, 0), ChessBoard.InputAccepted, g + ": stepped to the start");
-        view.Refresh();
+        Redraw();
         CheckLastMove("", "", g + ": replay at the start");
 
         // No target marks in replay, where every square is a target.
@@ -1028,7 +1032,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckTargets("", g + ": e2 held in replay");
         view.OnPieceDropped(replayPawn);
         view.SetInputStyle(ChessBoardView.InputClicks);
-        view.Refresh();
+        Redraw();
         ClickPiece("e2");
         CheckInt(view.selectedObject, replayPawn, g + ": e2 selected in replay");
         CheckTargets("", g + ": e2 selected in replay");
@@ -1037,7 +1041,7 @@ public class ViewTest : UdonSharpBehaviour {
         CastleGame(KingStaysFen, g + " (king stays)");
         CheckInt(board.PieceDroppedAs(localName, Sq("g1"), Sq("h1")), ChessBoard.InputAccepted,
             g + " (king stays): O-O on the rook");
-        view.Refresh();
+        Redraw();
         CheckLastMove("g1", "h1", g + " (king stays): O-O");
 
         // Target marks of a held piece.
@@ -1049,23 +1053,23 @@ public class ViewTest : UdonSharpBehaviour {
         int pawn = view.squareObject[Sq("e2")];
         view.OnPiecePickedUp(pawn);
         CheckTargets("e3 e4", t + ": e2 held");
-        view.Refresh();
+        Redraw();
         CheckTargets("e3 e4", t + ": e2 held, refreshed");
         view.pieces[pawn].localPosition = Over("e4");
         view.OnPieceDropped(pawn);
         CheckTargets("", t + ": e2 dropped over e4");
-        view.Refresh();
+        Redraw();
         CheckLastMove("e2", "e4", t + ": e4 by a drop");
         int knight = view.squareObject[Sq("g8")];
         view.OnPiecePickedUp(knight);
         CheckTargets("f6 h6", t + ": g8 held");
         view.OnPiecePickedUp(view.squareObject[Sq("d2")]);
         CheckTargets("", t + ": d2 picked up out of turn instead");
-        view.Refresh();
+        Redraw();
         view.OnPiecePickedUp(knight);
         CheckTargets("f6 h6", t + ": g8 held again");
         CheckInt(board.ResignAs(ChessRules.Black, localName), ChessBoard.InputAccepted, t + ": Black resigned");
-        view.Refresh();
+        Redraw();
         CheckTargets("", t + ": the game ended while g8 was held");
         if (view.heldObject == knight) view.OnPieceDropped(knight);
 
@@ -1076,7 +1080,7 @@ public class ViewTest : UdonSharpBehaviour {
         view.pieces[king].localPosition = Over("h1");
         view.OnPieceDropped(king);
         CheckTargets("", t + " (castling): dropped over h1");
-        view.Refresh();
+        Redraw();
         CheckLastMove("e1", "g1", t + " (castling): O-O by a drop");
 
         // Target marks of a selected piece.
@@ -1093,7 +1097,7 @@ public class ViewTest : UdonSharpBehaviour {
         ClickPiece("b1");
         ClickSquare("c3");
         CheckTargets("", s + ": Nc3 placed");
-        view.Refresh();
+        Redraw();
         CheckLastMove("b1", "c3", s + ": Nc3 by clicks");
 
         // The promotion picker, for a drop.
@@ -1105,7 +1109,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(ViewDrop("e7", Over("e8")), ChessBoard.InputAccepted, p + ": e7 picked up");
         CheckPicker(true, "e8", p + ": e7 dropped over e8");
         CheckPickupable(0, p + ": e7 dropped over e8, no pickups");
-        view.Refresh();
+        Redraw();
         CheckPicker(true, "e8", p + ": e7 dropped over e8, refreshed");
         CheckPickupable(0, p + ": the picker shown");
         view.PressPromoteQueen();
@@ -1171,7 +1175,7 @@ public class ViewTest : UdonSharpBehaviour {
 
         board.ClearState();
         view.SetInputStyle(savedStyle);
-        view.Refresh();
+        Redraw();
         CheckLastMove("", "", "cleared after the highlight checks");
         CheckTargets("", "cleared after the highlight checks");
         CheckPicker(false, "", "cleared after the highlight checks");
@@ -1195,36 +1199,36 @@ public class ViewTest : UdonSharpBehaviour {
         }
         CheckInt(solid, 0, "the square targets are triggers: solid ones");
         solid = 0;
-        for (int i = 0; i < view.buttons.Length; i++) {
-            if (Utilities.IsValid(view.buttons[i]) && !IsTrigger(view.buttons[i].transform.parent)) solid++;
+        for (int i = 0; i < ui.buttons.Length; i++) {
+            if (Utilities.IsValid(ui.buttons[i]) && !IsTrigger(ui.buttons[i].transform.parent)) solid++;
         }
         if (!Utilities.IsValid(view.promotionPicker) || !IsTrigger(view.promotionPicker.transform)) solid++;
         CheckInt(solid, 0, "the button panels and the picker have trigger colliders: solid or missing");
         if (!Utilities.IsValid(blocker)) return;
 
         board.ClearState();
-        view.Refresh();
+        Redraw();
         Check(blocker.enabled, "blocker: enabled on a reset board", "disabled");
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "blocker: Ana joined White");
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "blocker: Bob joined Black");
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, "blocker: Ana and Bob started");
-        view.Refresh();
+        Redraw();
         Check(blocker.enabled, "blocker: enabled in others' game", "disabled");
 
         board.ClearState();
         CheckInt(board.JoinAs(ChessRules.Black, localName), ChessBoard.InputAccepted, "blocker: joined Black");
-        view.Refresh();
+        Redraw();
         Check(!blocker.enabled, "blocker: disabled once seated (Black, lobby)", "enabled");
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "blocker: Ana joined White");
         CheckInt(board.StartGameAs(localName), ChessBoard.InputAccepted, "blocker: started");
-        view.Refresh();
+        Redraw();
         Check(!blocker.enabled, "blocker: disabled in own game", "enabled");
         CheckInt(board.ResignAs(ChessRules.Black, localName), ChessBoard.InputAccepted, "blocker: resigned");
-        view.Refresh();
+        Redraw();
         Check(!blocker.enabled, "blocker: disabled in own ended game", "enabled");
 
         board.ClearState();
-        view.Refresh();
+        Redraw();
         Check(blocker.enabled, "blocker: enabled again once cleared", "disabled");
         CheckView("cleared after the blocker checks");
     }
@@ -1245,7 +1249,7 @@ public class ViewTest : UdonSharpBehaviour {
         view.SetInputStyle(ChessBoardView.InputPickups);
         string a = "animation";
         board.ClearState();
-        view.Refresh();
+        Redraw();
         StartGame(ChessGame.ModeStandard, a + " game");
         CheckAtRest(a + " game started");
 
@@ -1253,7 +1257,7 @@ public class ViewTest : UdonSharpBehaviour {
         PlayOnBoard("e2", "e4", a);
         CheckTravel(mover, "e4", false, a + ": e4");
         CheckInt(TravellingFromBoard(), 1, a + ": e4: one object travelling from the board");
-        view.Refresh();
+        Redraw();
         CheckTravel(mover, "e4", false, a + ": e4, after another Refresh");
         Settle();
         PlayOnBoard("d7", "d5", a);
@@ -1297,7 +1301,7 @@ public class ViewTest : UdonSharpBehaviour {
         captured = view.squareObject[Sq("d2")];
         CheckInt(ViewDrop("d8", Over("d2")), ChessBoard.InputAccepted, a + ": d8 picked up");
         CheckInt(board.lastChange, ChessBoard.ChangeMove, a + ": Qxd2 dropped: played");
-        view.Refresh();
+        Redraw();
         Check(!view.animating[queen] && (view.pieces[queen].localPosition - view.SquarePosition(Sq("d2"))).sqrMagnitude
             < 1e-10f, a + ": Qxd2 dropped: the queen in place at once",
             "at " + view.pieces[queen].localPosition.ToString("F3"));
@@ -1307,26 +1311,26 @@ public class ViewTest : UdonSharpBehaviour {
 
         CheckInt(ViewDrop("b1", Over("b5")), ChessBoard.InputAccepted, a + ": b1 picked up");
         CheckInt(board.lastChange, ChessBoard.ChangeRejected, a + ": b1 dropped over b5: rejected");
-        view.Refresh();
+        Redraw();
         CheckAtRest(a + ": b1 dropped over b5, put back at once");
 
         // Replay: to the start of 12 plies at once, then one ply on travelling.
         CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, a + ": entered replay");
-        view.Refresh();
+        Redraw();
         CheckAtRest(a + ": entered replay");
         CheckInt(board.StepToAs(localName, true, 0), ChessBoard.InputAccepted, a + ": stepped to the start");
-        view.Refresh();
+        Redraw();
         CheckAtRest(a + ": stepped to the start");
         mover = BeforeMove("e2");
         CheckInt(board.StepToAs(localName, true, 1), ChessBoard.InputAccepted, a + ": stepped to ply 1");
-        view.Refresh();
+        Redraw();
         CheckTravel(mover, "e4", false, a + ": stepped to ply 1");
         CheckInt(TravellingFromBoard(), 1, a + ": stepped to ply 1: one object travelling from the board");
         Settle();
 
         // A reset from ply 1 in replay moves one piece back, but a reset never travels.
         CheckInt(board.ResetBoardAs(localName, true), ChessBoard.InputAccepted, a + ": reset");
-        view.Refresh();
+        Redraw();
         CheckAtRest(a + ": reset");
 
         if (Utilities.IsValid(importer) && chess960Pgn != null) {
@@ -1334,7 +1338,7 @@ public class ViewTest : UdonSharpBehaviour {
             importer.StartImport(chess960Pgn.text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
             CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, a + ": chess960.pgn imported");
             CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, a + ": chess960.pgn loaded");
-            view.Refresh();
+            Redraw();
             CheckAtRest(a + ": chess960.pgn loaded");
         }
 
@@ -1343,7 +1347,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckAtRest(a + " game 2 started");
         view.animateMoves = false;
         PlayOnBoard("e2", "e4", a + " off");
-        view.Refresh();
+        Redraw();
         CheckAtRest(a + " off: e4");
         view.animateMoves = true;
 
@@ -1359,7 +1363,7 @@ public class ViewTest : UdonSharpBehaviour {
         board.ClearState();
         view.SetInputStyle(savedAnimationStyle);
         view.animateMoves = savedAnimate;
-        view.Refresh();
+        Redraw();
         CheckView("cleared after the animation checks");
         SendCustomEventDelayedFrames(nameof(RunStatusChecks), 1);
     }
@@ -1378,23 +1382,23 @@ public class ViewTest : UdonSharpBehaviour {
     // start and with seats taken, and one starting with Black to move.
     public void RunStatusChecks() {
         string s = "status";
-        int panels = view.statusLabels.Length;
-        Check(panels > 0 && view.statusPlayerLabels.Length == panels, s + ": panels assigned",
-            panels + " status texts, " + view.statusPlayerLabels.Length + " players texts");
+        int panels = ui.statusLabels.Length;
+        Check(panels > 0 && ui.statusPlayerLabels.Length == panels, s + ": panels assigned",
+            panels + " status texts, " + ui.statusPlayerLabels.Length + " players texts");
         int missing = 0;
         for (int i = 0; i < panels; i++) {
-            if (!Utilities.IsValid(view.statusLabels[i])) missing++;
-            if (i < view.statusPlayerLabels.Length && !Utilities.IsValid(view.statusPlayerLabels[i])) missing++;
+            if (!Utilities.IsValid(ui.statusLabels[i])) missing++;
+            if (i < ui.statusPlayerLabels.Length && !Utilities.IsValid(ui.statusPlayerLabels[i])) missing++;
         }
         CheckInt(missing, 0, s + ": every panel's texts assigned: missing");
-        CheckString(ChessBoardView.ClockDisplay(300000), "5:00", s + ": clock 5:00");
-        CheckString(ChessBoardView.ClockDisplay(299999), "4:59", s + ": clock 4:59.999");
-        CheckString(ChessBoardView.ClockDisplay(61000), "1:01", s + ": clock 1:01");
-        CheckString(ChessBoardView.ClockDisplay(10000), "0:10", s + ": clock 0:10");
-        CheckString(ChessBoardView.ClockDisplay(9876), "0:09.8", s + ": clock 0:09.876");
-        CheckString(ChessBoardView.ClockDisplay(0), "0:00.0", s + ": clock 0");
-        CheckString(ChessBoardView.ClockDisplay(3600000), "1:00:00", s + ": clock an hour");
-        CheckString(ChessBoardView.ClockDisplay(3725000), "1:02:05", s + ": clock 1:02:05");
+        CheckString(ChessBoardUI.ClockDisplay(300000), "5:00", s + ": clock 5:00");
+        CheckString(ChessBoardUI.ClockDisplay(299999), "4:59", s + ": clock 4:59.999");
+        CheckString(ChessBoardUI.ClockDisplay(61000), "1:01", s + ": clock 1:01");
+        CheckString(ChessBoardUI.ClockDisplay(10000), "0:10", s + ": clock 0:10");
+        CheckString(ChessBoardUI.ClockDisplay(9876), "0:09.8", s + ": clock 0:09.876");
+        CheckString(ChessBoardUI.ClockDisplay(0), "0:00.0", s + ": clock 0");
+        CheckString(ChessBoardUI.ClockDisplay(3600000), "1:00:00", s + ": clock an hour");
+        CheckString(ChessBoardUI.ClockDisplay(3725000), "1:02:05", s + ": clock 1:02:05");
 
         // Two others' lobby and game, with a clock.
         board.ClearState();
@@ -1410,11 +1414,11 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, s + ": started");
         CheckStatus("White: Ana  5:00\nBlack: Bob  5:00", "White to move", s + ": game started");
         double start = board.turnStart;
-        CheckString(view.PlayersTextAt(start + 61.5), "White: Ana  3:58\nBlack: Bob  5:00", s + ": a minute on");
-        CheckString(view.StatusTextAt(start + 295.1), "White to move", s + ": 4.9 s left");
-        CheckString(view.PlayersTextAt(start + 295.1), "White: Ana  0:04.9\nBlack: Bob  5:00", s + ": 4.9 s left");
-        CheckString(view.StatusTextAt(start + 301), "White's time is up", s + ": flag fallen");
-        CheckString(view.PlayersTextAt(start + 301), "White: Ana  0:00.0\nBlack: Bob  5:00", s + ": flag fallen");
+        CheckString(ui.PlayersTextAt(start + 61.5), "White: Ana  3:58\nBlack: Bob  5:00", s + ": a minute on");
+        CheckString(ui.StatusTextAt(start + 295.1), "White to move", s + ": 4.9 s left");
+        CheckString(ui.PlayersTextAt(start + 295.1), "White: Ana  0:04.9\nBlack: Bob  5:00", s + ": 4.9 s left");
+        CheckString(ui.StatusTextAt(start + 301), "White's time is up", s + ": flag fallen");
+        CheckString(ui.PlayersTextAt(start + 301), "White: Ana  0:00.0\nBlack: Bob  5:00", s + ": flag fallen");
         CheckInt(board.PieceDroppedAs("Ana", Sq("e2"), Sq("e4")), ChessBoard.InputAccepted, s + ": e4");
         CheckInt(board.PieceDroppedAs("Bob", Sq("f7"), Sq("f6")), ChessBoard.InputAccepted, s + ": f6");
         CheckInt(board.PieceDroppedAs("Ana", Sq("d1"), Sq("h5")), ChessBoard.InputAccepted, s + ": Qh5+");
@@ -1436,8 +1440,8 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(board.LeaveReplayAs("Ana", false), ChessBoard.InputAccepted, s + ": back to the game");
         CheckInt(board.ResignAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob resigned");
         CheckStatus(null, "White wins by resignation (1-0)", s + ": resigned");
-        CheckString(view.PlayerTextAt(ChessRules.Black, board.ServerTime() + 60),
-            view.PlayerTextAt(ChessRules.Black, board.ServerTime()), s + ": the clocks stopped");
+        CheckString(ui.PlayerTextAt(ChessRules.Black, board.ServerTime() + 60),
+            ui.PlayerTextAt(ChessRules.Black, board.ServerTime()), s + ": the clocks stopped");
 
         // Every ending's text, set on the ended game (Black was to move).
         CheckEnding(ChessGame.EndingCheckmate, ChessRules.White, "White wins by checkmate (1-0)");
@@ -1494,7 +1498,7 @@ public class ViewTest : UdonSharpBehaviour {
 
         board.ClearState();
         CheckStatus("White: (open)\nBlack: (open)", "Join White or Black to play", s + ": cleared");
-        view.Refresh();
+        Redraw();
         CheckView("cleared after the status checks");
         SendCustomEventDelayedFrames(nameof(RunPgnBoxChecks), 1);
     }
@@ -1506,50 +1510,50 @@ public class ViewTest : UdonSharpBehaviour {
     // replay, turned to face either end, closed by a reset, and a loaded game's PGN.
     public void RunPgnBoxChecks() {
         string s = "PGN box";
-        bool wired = Utilities.IsValid(view.pgnBox) && Utilities.IsValid(view.pgnField);
+        bool wired = Utilities.IsValid(ui.pgnBox) && Utilities.IsValid(ui.pgnField);
         Check(wired, s + ": box and field assigned", "rebuild the view (Tools > Chess Board > Create Board View)");
         if (!wired) {
             LogSummary();
             return;
         }
-        Check(view.pgnField.transform.IsChildOf(view.pgnBox.transform), s + ": the field in the box", "it isn't");
+        Check(ui.pgnField.transform.IsChildOf(ui.pgnBox.transform), s + ": the field in the box", "it isn't");
         board.ClearState();
-        view.Refresh();
+        Redraw();
         CheckPgnBox(false, s + ": reset board");
-        CheckInt(view.PressButton(ChessBoardView.ButtonPgn), ChessBoard.InputRejected, s + ": reset board: refused");
+        CheckInt(ui.PressButton(ChessBoardUI.ButtonPgn), ChessBoard.InputRejected, s + ": reset board: refused");
         CheckPgnBox(false, s + ": reset board, refused");
 
         StartUnforced(s);
         CheckButtons(OwnGame, s + ": no moves yet");
-        CheckInt(view.PressButton(ChessBoardView.ButtonPgn), ChessBoard.InputRejected, s + ": no moves yet: refused");
+        CheckInt(ui.PressButton(ChessBoardUI.ButtonPgn), ChessBoard.InputRejected, s + ": no moves yet: refused");
         PlayOnBoard("e2", "e4", s);
         PlayOnBoard("e7", "e5", s);
         CheckButtons(OwnGame + " Pgn", s + ": 1. e4 e5");
-        CheckLabel(ChessBoardView.ButtonPgn, "PGN", s + ": closed");
-        view.PressPgn();
+        CheckLabel(ChessBoardUI.ButtonPgn, "PGN", s + ": closed");
+        ui.PressPgn();
         CheckPgnBox(true, s + ": opened");
-        CheckLabel(ChessBoardView.ButtonPgn, "Hide PGN", s + ": opened");
-        string text = view.pgnField.text;
+        CheckLabel(ChessBoardUI.ButtonPgn, "Hide PGN", s + ": opened");
+        string text = ui.pgnField.text;
         Check(text.Contains("[White \"" + localName + "\"]") && text.EndsWith("\n\n1. e4 e5 *\n"),
             s + ": opened: the tags and 1. e4 e5 *", text);
-        bool white = view.LocalEnd() == ChessRules.White;
-        Check(view.pgnBox.transform.localPosition.z > 0 == white, s + ": opened: beyond the board from the local end ("
-            + (white ? "White" : "Black") + ")", "at " + view.pgnBox.transform.localPosition.ToString("F3"));
+        bool white = ui.LocalEnd() == ChessRules.White;
+        Check(ui.pgnBox.transform.localPosition.z > 0 == white, s + ": opened: beyond the board from the local end ("
+            + (white ? "White" : "Black") + ")", "at " + ui.pgnBox.transform.localPosition.ToString("F3"));
         PlayOnBoard("g1", "f3", s);
         CheckPgnBox(true, s + ": after Nf3");
-        text = view.pgnField.text;
+        text = ui.pgnField.text;
         Check(text.EndsWith("1. e4 e5 2. Nf3 *\n"), s + ": after Nf3: the move added", text);
 
         // Facing either end, over the far edge of the board from it.
-        Vector3 placed = view.pgnBox.transform.localPosition;
-        view.PlacePgnBox(ChessRules.Black);
-        Transform box = view.pgnBox.transform;
+        Vector3 placed = ui.pgnBox.transform.localPosition;
+        ui.PlacePgnBox(ChessRules.Black);
+        Transform box = ui.pgnBox.transform;
         Check(box.localPosition.z < 0 && Mathf.Abs(box.localPosition.z) == Mathf.Abs(placed.z)
             && box.localPosition.y == placed.y
             && Quaternion.Angle(box.localRotation, Quaternion.Euler(0, 180, 0)) < 0.01f,
             s + ": for Black: on White's side, facing Black", "at " + box.localPosition.ToString("F3") + ", turned "
             + box.localEulerAngles.ToString("F1"));
-        view.PlacePgnBox(ChessRules.White);
+        ui.PlacePgnBox(ChessRules.White);
         Check(box.localPosition.z > 0 && box.localPosition.y == placed.y
             && Quaternion.Angle(box.localRotation, Quaternion.identity) < 0.01f,
             s + ": for White: on Black's side, facing White", "at " + box.localPosition.ToString("F3") + ", turned "
@@ -1558,28 +1562,28 @@ public class ViewTest : UdonSharpBehaviour {
         // Ended: the PGN logged, also in replay.
         int logged = board.loggedGames;
         CheckInt(board.ResignAs(ChessRules.Black, localName), ChessBoard.InputAccepted, s + ": Black resigned");
-        view.Refresh();
+        Redraw();
         CheckInt(board.loggedGames, logged + 1, s + ": resigned: logged once");
         CheckPgnBox(true, s + ": resigned");
-        CheckString(view.pgnField.text, board.lastLoggedPgn, s + ": resigned: the PGN logged");
-        text = view.pgnField.text;
+        CheckString(ui.pgnField.text, board.lastLoggedPgn, s + ": resigned: the PGN logged");
+        text = ui.pgnField.text;
         Check(text.Contains("[Result \"1-0\"]") && text.Contains("[Termination \"resignation\"]")
             && text.EndsWith("2. Nf3 1-0\n"), s + ": resigned: 1-0 by resignation", text);
         CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, s + ": entered replay");
         CheckInt(board.StepToAs(localName, true, 1), ChessBoard.InputAccepted, s + ": replay at ply 1");
-        view.Refresh();
+        Redraw();
         CheckPgnBox(true, s + ": replay at ply 1");
-        CheckString(view.pgnField.text, board.lastLoggedPgn, s + ": replay at ply 1: the whole game");
+        CheckString(ui.pgnField.text, board.lastLoggedPgn, s + ": replay at ply 1: the whole game");
 
         // Closed and opened again; a reset closes it, and the next game doesn't open it.
-        view.PressPgn();
+        ui.PressPgn();
         CheckPgnBox(false, s + ": closed");
-        CheckLabel(ChessBoardView.ButtonPgn, "PGN", s + ": closed again");
-        view.PressPgn();
+        CheckLabel(ChessBoardUI.ButtonPgn, "PGN", s + ": closed again");
+        ui.PressPgn();
         CheckPgnBox(true, s + ": opened again");
-        view.PressReset();
+        ui.PressReset();
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, s + ": reset");
-        view.Refresh();
+        Redraw();
         CheckPgnBox(false, s + ": reset");
         StartUnforced(s + ": next game");
         PlayOnBoard("d2", "d4", s + ": next game");
@@ -1587,16 +1591,16 @@ public class ViewTest : UdonSharpBehaviour {
 
         // A loaded game: its own tags.
         if (LoadPgn(chess960Pgn, s + ": chess960.pgn")) {
-            view.Refresh();
-            view.PressPgn();
+            Redraw();
+            ui.PressPgn();
             CheckPgnBox(true, s + ": chess960.pgn loaded");
-            text = view.pgnField.text;
+            text = ui.pgnField.text;
             Check(text.Contains("[Variant \"Chess960\"]") && text.Contains("[SetUp \"1\"]"),
                 s + ": chess960.pgn loaded: a Chess960 PGN", text);
         }
 
         board.ClearState();
-        view.Refresh();
+        Redraw();
         CheckPgnBox(false, s + ": cleared");
         CheckView("cleared after the PGN box checks");
         SendCustomEventDelayedFrames(nameof(RunLoadPgnChecks), 1);
@@ -1613,9 +1617,9 @@ public class ViewTest : UdonSharpBehaviour {
     // (PollLoadPgn) on the test's own importer, the board's put back afterwards.
     public void RunLoadPgnChecks() {
         string s = "Load PGN";
-        bool wired = Utilities.IsValid(view.pgnCopyPart) && Utilities.IsValid(view.pgnPastePart)
-            && Utilities.IsValid(view.pgnPasteField) && Utilities.IsValid(view.pgnImportLabel)
-            && Utilities.IsValid(view.pgnImportButton);
+        bool wired = Utilities.IsValid(ui.pgnCopyPart) && Utilities.IsValid(ui.pgnPastePart)
+            && Utilities.IsValid(ui.pgnPasteField) && Utilities.IsValid(ui.pgnImportLabel)
+            && Utilities.IsValid(ui.pgnImportButton);
         Check(wired, s + ": the box's copy and paste parts assigned",
             "rebuild the view (Tools > Chess Board > Create Board View)");
         TextAsset nuka = Utilities.IsValid(boardTest) ? boardTest.siggiVsNuka : null;
@@ -1625,44 +1629,44 @@ public class ViewTest : UdonSharpBehaviour {
             LogSummary();
             return;
         }
-        Transform box = view.pgnBox.transform;
-        Check(view.pgnField.transform.IsChildOf(view.pgnCopyPart.transform)
-            && view.pgnPasteField.transform.IsChildOf(view.pgnPastePart.transform)
-            && view.pgnImportButton.transform.IsChildOf(view.pgnPastePart.transform)
-            && view.pgnCopyPart.transform.IsChildOf(box) && view.pgnPastePart.transform.IsChildOf(box),
+        Transform box = ui.pgnBox.transform;
+        Check(ui.pgnField.transform.IsChildOf(ui.pgnCopyPart.transform)
+            && ui.pgnPasteField.transform.IsChildOf(ui.pgnPastePart.transform)
+            && ui.pgnImportButton.transform.IsChildOf(ui.pgnPastePart.transform)
+            && ui.pgnCopyPart.transform.IsChildOf(box) && ui.pgnPastePart.transform.IsChildOf(box),
             s + ": each field in its part, both parts in the box", "they aren't");
         savedImporter = board.importer;
         board.importer = importer;
 
         board.ClearState();
-        view.Refresh();
+        Redraw();
         CheckButtons("JoinWhite JoinBlack LoadPgn", s + ": reset board");
-        CheckLabel(ChessBoardView.ButtonLoadPgn, "Load PGN", s + ": closed");
-        view.PressLoadPgn();
+        CheckLabel(ChessBoardUI.ButtonLoadPgn, "Load PGN", s + ": closed");
+        ui.PressLoadPgn();
         CheckPasteBox(true, true, "", s + ": opened");
-        CheckLabel(ChessBoardView.ButtonLoadPgn, "Hide PGN", s + ": opened");
-        bool white = view.LocalEnd() == ChessRules.White;
+        CheckLabel(ChessBoardUI.ButtonLoadPgn, "Hide PGN", s + ": opened");
+        bool white = ui.LocalEnd() == ChessRules.White;
         Check(box.localPosition.z > 0 == white, s + ": opened: beyond the board from the local end",
             "at " + box.localPosition.ToString("F3"));
-        view.PressLoadPgn();
+        ui.PressLoadPgn();
         CheckPasteBox(false, false, "", s + ": closed by the button");
-        CheckLabel(ChessBoardView.ButtonLoadPgn, "Load PGN", s + ": closed again");
-        view.PressLoadPgn();
-        view.PressPgnClose();
+        CheckLabel(ChessBoardUI.ButtonLoadPgn, "Load PGN", s + ": closed again");
+        ui.PressLoadPgn();
+        ui.PressPgnClose();
         CheckPasteBox(false, false, "", s + ": closed by Close");
-        CheckInt(view.ImportPasted(), ChessBoard.InputRejected, s + ": closed: Import refused");
+        CheckInt(ui.ImportPasted(), ChessBoard.InputRejected, s + ": closed: Import refused");
 
         // Nothing pasted: refused, and the box says so.
-        view.PressLoadPgn();
-        view.pgnPasteField.text = "  \n";
+        ui.PressLoadPgn();
+        ui.pgnPasteField.text = "  \n";
         int status = board.importStatus;
-        CheckInt(view.ImportPasted(), ChessBoard.InputRejected, s + ": nothing pasted: refused");
+        CheckInt(ui.ImportPasted(), ChessBoard.InputRejected, s + ": nothing pasted: refused");
         CheckPasteBox(true, true, "Paste a PGN into the box first.", s + ": nothing pasted");
         CheckInt(board.importStatus, status, s + ": nothing pasted: no import");
 
         // Siggi-vs-Nuka over the next frames, run by the importer's Update.
-        view.pgnPasteField.text = nuka.text;
-        CheckInt(view.ImportPasted(), ChessBoard.InputAccepted, s + ": Siggi-vs-Nuka: started");
+        ui.pgnPasteField.text = nuka.text;
+        CheckInt(ui.ImportPasted(), ChessBoard.InputAccepted, s + ": Siggi-vs-Nuka: started");
         CheckInt(board.importStatus, ChessBoard.ImportRunning, s + ": Siggi-vs-Nuka: under way");
         CheckPasteBox(true, false, "Importing: 0 moves read", s + ": Siggi-vs-Nuka: started");
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, s + ": Siggi-vs-Nuka: the board still reset");
@@ -1678,7 +1682,7 @@ public class ViewTest : UdonSharpBehaviour {
         string s = "Load PGN";
         int frames = Time.frameCount - loadPgnStart;
         if (board.importStatus == ChessBoard.ImportRunning && frames < 600) {
-            string label = view.pgnImportLabel.text;
+            string label = ui.pgnImportLabel.text;
             if (label.StartsWith("Importing: ") && label != "Importing: 0 moves read") progressSeen = true;
             SendCustomEventDelayedFrames(nameof(PollLoadPgn), 1);
             return;
@@ -1690,61 +1694,61 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(board.lifecycle * 1000 + board.moveCount, ChessBoard.LifecycleLoaded * 1000 + 54,
             n + ": the board loaded with 54 plies");
         CheckString(board.gameId, "20250710001921", n + ": its GameID");
-        view.Refresh();
+        Redraw();
         CheckPasteBox(false, false, "", n + ": loaded: the box closed");
-        CheckString(view.pgnPasteField.text, "", n + ": loaded: the paste emptied");
+        CheckString(ui.pgnPasteField.text, "", n + ": loaded: the paste emptied");
         CheckButtons("JoinWhite JoinBlack First Back Reset?", n + ": loaded");
-        view.PressPgn();
+        ui.PressPgn();
         CheckPgnBox(true, n + ": PGN opens the copy part");
-        Check(view.pgnCopyPart.activeSelf && !view.pgnPastePart.activeSelf, n + ": PGN: the copy part shown",
-            "copy " + view.pgnCopyPart.activeSelf + ", paste " + view.pgnPastePart.activeSelf);
-        string text = view.pgnField.text;
+        Check(ui.pgnCopyPart.activeSelf && !ui.pgnPastePart.activeSelf, n + ": PGN: the copy part shown",
+            "copy " + ui.pgnCopyPart.activeSelf + ", paste " + ui.pgnPastePart.activeSelf);
+        string text = ui.pgnField.text;
         Check(text.Contains("[GameID \"20250710001921\"]") && text.Contains("[Result \"0-1\"]"),
             n + ": PGN: the imported game's", text);
 
         // Failed: the move it failed at and why; the board unchanged.
         string f = s + ": failed";
         board.ClearState();
-        view.Refresh();
+        Redraw();
         CheckPgnBox(false, f + ": reset closed the copy part");
-        view.PressLoadPgn();
-        view.pgnPasteField.text = "1. e4 e5 2. Ke3 *";
-        CheckInt(view.ImportPasted(), ChessBoard.InputAccepted, f + ": started");
+        ui.PressLoadPgn();
+        ui.pgnPasteField.text = "1. e4 e5 2. Ke3 *";
+        CheckInt(ui.ImportPasted(), ChessBoard.InputAccepted, f + ": started");
         importer.ImportFor(float.MaxValue);
         board._ImportFinished();
         CheckPasteBox(true, true, "Import failed at move 2.: illegal move", f);
         CheckInt(board.lifecycle * 1000 + board.moveCount, ChessBoard.LifecycleReset * 1000, f + ": the board reset");
-        CheckString(view.pgnPasteField.text, "1. e4 e5 2. Ke3 *", f + ": the paste kept");
+        CheckString(ui.pgnPasteField.text, "1. e4 e5 2. Ke3 *", f + ": the paste kept");
         // Closed while it runs: opened again to say why.
-        view.pgnPasteField.text = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ke3 *";
-        CheckInt(view.ImportPasted(), ChessBoard.InputAccepted, f + " while closed: started");
-        view.PressLoadPgn();
+        ui.pgnPasteField.text = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ke3 *";
+        CheckInt(ui.ImportPasted(), ChessBoard.InputAccepted, f + " while closed: started");
+        ui.PressLoadPgn();
         CheckPasteBox(false, false, "", f + " while closed: closed");
         importer.ImportFor(float.MaxValue);
         board._ImportFinished();
         CheckPasteBox(true, true, "Import failed at move 4.: illegal move", f + " while closed: opened again");
         // Opened afresh, the old outcome is gone.
-        view.PressLoadPgn();
-        view.PressLoadPgn();
+        ui.PressLoadPgn();
+        ui.PressLoadPgn();
         CheckPasteBox(true, true, "", f + ": opened afresh");
 
         // Abandoned: someone joins meanwhile.
         string a = s + ": abandoned";
-        view.pgnPasteField.text = boardTest.siggiVsNuka.text;
-        CheckInt(view.ImportPasted(), ChessBoard.InputAccepted, a + ": started");
+        ui.pgnPasteField.text = boardTest.siggiVsNuka.text;
+        CheckInt(ui.ImportPasted(), ChessBoard.InputAccepted, a + ": started");
         importer.ImportFor(0f);
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, a + ": Ana joins");
         CheckInt(board.importStatus, ChessBoard.ImportAbandoned, a);
-        view.Refresh();
+        Redraw();
         CheckPasteBox(true, false, "Import abandoned: the board changed before the import finished", a);
         CheckButtons("JoinBlack Reset?", a + ": Ana's lobby");
-        view.PressPgnClose();
+        ui.PressPgnClose();
         CheckPasteBox(false, false, "", a + ": closed");
-        CheckInt(view.PressButton(ChessBoardView.ButtonLoadPgn), ChessBoard.InputRejected, a + ": Load PGN refused");
+        CheckInt(ui.PressButton(ChessBoardUI.ButtonLoadPgn), ChessBoard.InputRejected, a + ": Load PGN refused");
 
         board.importer = savedImporter;
         board.ClearState();
-        view.Refresh();
+        Redraw();
         CheckPgnBox(false, s + ": cleared");
         CheckView("cleared after the Load PGN checks");
         LogSummary();
@@ -1753,21 +1757,21 @@ public class ViewTest : UdonSharpBehaviour {
     // Whether the PGN box shows its paste part (shown) or is hidden; shown, with the Import button as importShown
     // says and the status line reading note.
     void CheckPasteBox(bool shown, bool importShown, string note, string name) {
-        view.Refresh();
+        Redraw();
         string errors = "";
-        if (view.pgnShown != shown || view.pgnPasting != shown) {
-            errors += "pgnShown " + view.pgnShown + ", pgnPasting " + view.pgnPasting + "; ";
+        if (ui.pgnShown != shown || ui.pgnPasting != shown) {
+            errors += "pgnShown " + ui.pgnShown + ", pgnPasting " + ui.pgnPasting + "; ";
         }
-        if (view.pgnBox.activeSelf != shown) errors += "box " + (shown ? "hidden" : "shown") + "; ";
+        if (ui.pgnBox.activeSelf != shown) errors += "box " + (shown ? "hidden" : "shown") + "; ";
         if (shown) {
-            if (!view.pgnPastePart.activeSelf || view.pgnCopyPart.activeSelf) {
-                errors += "paste part " + view.pgnPastePart.activeSelf + ", copy part " + view.pgnCopyPart.activeSelf
+            if (!ui.pgnPastePart.activeSelf || ui.pgnCopyPart.activeSelf) {
+                errors += "paste part " + ui.pgnPastePart.activeSelf + ", copy part " + ui.pgnCopyPart.activeSelf
                     + "; ";
             }
-            if (view.pgnImportButton.activeSelf != importShown) {
+            if (ui.pgnImportButton.activeSelf != importShown) {
                 errors += "Import " + (importShown ? "hidden" : "shown") + "; ";
             }
-            if (view.pgnImportLabel.text != note) errors += "line \"" + view.pgnImportLabel.text + "\"; ";
+            if (ui.pgnImportLabel.text != note) errors += "line \"" + ui.pgnImportLabel.text + "\"; ";
         }
         Check(errors.Length == 0, name + ": " + (shown ? "the paste box shown" + (note.Length > 0 ? ", \"" + note
             + "\"" : "") : "the box hidden"), errors);
@@ -1776,9 +1780,9 @@ public class ViewTest : UdonSharpBehaviour {
     // Whether the PGN box is shown, as the view says, and when shown holds the game's PGN as it stands.
     void CheckPgnBox(bool shown, string name) {
         string errors = "";
-        if (view.pgnShown != shown) errors += "pgnShown " + view.pgnShown + "; ";
-        if (view.pgnBox.activeSelf != shown) errors += "box " + (shown ? "hidden" : "shown") + "; ";
-        if (shown && view.pgnField.text != board.GamePgn()) errors += "text \"" + view.pgnField.text + "\"; ";
+        if (ui.pgnShown != shown) errors += "pgnShown " + ui.pgnShown + "; ";
+        if (ui.pgnBox.activeSelf != shown) errors += "box " + (shown ? "hidden" : "shown") + "; ";
+        if (shown && ui.pgnField.text != board.GamePgn()) errors += "text \"" + ui.pgnField.text + "\"; ";
         Check(errors.Length == 0, name + ": " + (shown ? "shown with the game's PGN" : "hidden"), errors);
     }
 
@@ -1787,23 +1791,23 @@ public class ViewTest : UdonSharpBehaviour {
     // panel may show the texts from just before or just after the Refresh (a clock at 5:00 there and 4:59 here).
     void CheckStatus(string players, string status, string name) {
         double before = board.ServerTime();
-        view.Refresh();
+        Redraw();
         double after = board.ServerTime();
         double now = board.turnStart;
-        if (players != null) CheckString(view.PlayersTextAt(now), players, name + ": players");
-        CheckString(view.StatusTextAt(now), status, name + ": status");
-        string playersBefore = view.PlayersTextAt(before);
-        string playersAfter = view.PlayersTextAt(after);
-        string statusBefore = view.StatusTextAt(before);
-        string statusAfter = view.StatusTextAt(after);
+        if (players != null) CheckString(ui.PlayersTextAt(now), players, name + ": players");
+        CheckString(ui.StatusTextAt(now), status, name + ": status");
+        string playersBefore = ui.PlayersTextAt(before);
+        string playersAfter = ui.PlayersTextAt(after);
+        string statusBefore = ui.StatusTextAt(before);
+        string statusAfter = ui.StatusTextAt(after);
         string errors = "";
-        for (int i = 0; i < view.statusLabels.Length; i++) {
-            Text label = view.statusLabels[i];
+        for (int i = 0; i < ui.statusLabels.Length; i++) {
+            Text label = ui.statusLabels[i];
             if (Utilities.IsValid(label) && label.text != statusBefore && label.text != statusAfter) {
                 errors += "status " + i + ": " + label.text + "; ";
             }
-            if (i >= view.statusPlayerLabels.Length) continue;
-            label = view.statusPlayerLabels[i];
+            if (i >= ui.statusPlayerLabels.Length) continue;
+            label = ui.statusPlayerLabels[i];
             if (Utilities.IsValid(label) && label.text != playersBefore && label.text != playersAfter) {
                 errors += "players " + i + ": " + label.text + "; ";
             }
@@ -1815,7 +1819,7 @@ public class ViewTest : UdonSharpBehaviour {
     void CheckEnding(int ending, int winner, string expected) {
         board.ending = ending;
         board.winner = winner;
-        CheckString(view.EndingText(), expected, "status: ending " + ending + ", winner " + winner);
+        CheckString(ui.EndingText(), expected, "status: ending " + ending + ", winner " + winner);
     }
 
     // No mode or clock forced in the snapshot, and no clock chosen, whatever the arbiter's defaults.
@@ -1832,7 +1836,7 @@ public class ViewTest : UdonSharpBehaviour {
         Unforce();
         board.mode = ChessGame.ModeStandard;
         CheckInt(board.StartGameAs(localName), ChessBoard.InputAccepted, name + ": started");
-        view.Refresh();
+        Redraw();
     }
 
     // Clears the board and loads pgn; whether it did.
@@ -1860,13 +1864,13 @@ public class ViewTest : UdonSharpBehaviour {
     void PlayOnBoard(string from, string to, string name) {
         CheckInt(board.PieceDroppedAs(localName, Sq(from), Sq(to)), ChessBoard.InputAccepted,
             name + ": " + from + "-" + to + " played");
-        view.Refresh();
+        Redraw();
     }
 
     // Puts everything in place at once (a Refresh with animations off), then turns them back on.
     void Settle() {
         view.animateMoves = false;
-        view.Refresh();
+        Redraw();
         view.animateMoves = true;
         CheckAtRest("settled");
     }
@@ -1926,6 +1930,12 @@ public class ViewTest : UdonSharpBehaviour {
     void CheckAtRest(string name) {
         CheckView(name);
         CheckInt(TravellingCount(), 0, name + ": nothing travelling");
+    }
+
+    // Brings the view and the UI up to the board now, as each does by itself on the frame after a change.
+    void Redraw() {
+        view.Refresh();
+        ui.Refresh();
     }
 
     // Whether the object has a collider and it's a trigger.
@@ -2001,23 +2011,23 @@ public class ViewTest : UdonSharpBehaviour {
             CheckInt(board.PieceDroppedAs(localName, Sq(move.Substring(0, 2)), Sq(move.Substring(2, 2))),
                 ChessBoard.InputAccepted, name + ": " + move + " played");
         }
-        view.Refresh();
+        Redraw();
     }
 
     // Whether a button listed with "?" (CheckButtons) should be shown: Reset and Replay when the board lets the local
     // player reset or enter replay (an organizer, or an idle board for Reset), the draw offers, takeback requests and
     // the claim when the snapshot allows them.
     bool OptionalShown(int action) {
-        if (action == ChessBoardView.ButtonReset) return board.CanReset();
-        if (action == ChessBoardView.ButtonEnterReplay) return board.CanEnterReplay();
-        if (action == ChessBoardView.ButtonOfferDrawWhite || action == ChessBoardView.ButtonOfferDrawBlack) {
+        if (action == ChessBoardUI.ButtonReset) return board.CanReset();
+        if (action == ChessBoardUI.ButtonEnterReplay) return board.CanEnterReplay();
+        if (action == ChessBoardUI.ButtonOfferDrawWhite || action == ChessBoardUI.ButtonOfferDrawBlack) {
             return board.IsGameSettingOn(ChessArbiter.SettingDrawAgreement);
         }
-        if (action == ChessBoardView.ButtonRequestTakebackWhite
-            || action == ChessBoardView.ButtonRequestTakebackBlack) {
+        if (action == ChessBoardUI.ButtonRequestTakebackWhite
+            || action == ChessBoardUI.ButtonRequestTakebackBlack) {
             return board.IsGameSettingOn(ChessArbiter.SettingTakebacks);
         }
-        if (action == ChessBoardView.ButtonClaimDraw) {
+        if (action == ChessBoardUI.ButtonClaimDraw) {
             return board.IsGameSettingOn(ChessArbiter.SettingThreefoldRepetition);
         }
         return false;
@@ -2025,37 +2035,37 @@ public class ViewTest : UdonSharpBehaviour {
 
     // Pressing the button for action is refused.
     void CheckRefused(int action, string name) {
-        CheckInt(view.PressButton(action), ChessBoard.InputRejected, name + ": " + buttonNames[action] + " refused");
+        CheckInt(ui.PressButton(action), ChessBoard.InputRejected, name + ": " + buttonNames[action] + " refused");
     }
 
     // After a Refresh, the buttons shown are exactly the actions in expected (names from buttonNames, separated by
     // spaces), each shown one labelled as the view says; a name followed by "?" is shown as OptionalShown says, and
     // Mode and Clock are hidden when the snapshot forces them. The view's ButtonApplies agrees.
     void CheckButtons(string expected, string name) {
-        view.Refresh();
+        Redraw();
         string padded = " " + expected + " ";
         string errors = "";
-        for (int i = 0; i < view.buttons.Length && i < view.buttonActions.Length; i++) {
-            GameObject button = view.buttons[i];
+        for (int i = 0; i < ui.buttons.Length && i < ui.buttonActions.Length; i++) {
+            GameObject button = ui.buttons[i];
             if (!Utilities.IsValid(button)) continue;
-            int action = view.buttonActions[i];
-            if (action < 0 || action >= ChessBoardView.ButtonCount) continue;
+            int action = ui.buttonActions[i];
+            if (action < 0 || action >= ChessBoardUI.ButtonCount) continue;
             string actionName = buttonNames[action];
             bool want = padded.Contains(" " + actionName + " ");
             if (padded.Contains(" " + actionName + "? ")) want = OptionalShown(action);
             // PGN (11.2a), unless named, is checked in every state: shown exactly when the game has moves.
-            if (action == ChessBoardView.ButtonPgn && !padded.Contains(" Pgn")) want = board.moveCount > 0;
+            if (action == ChessBoardUI.ButtonPgn && !padded.Contains(" Pgn")) want = board.moveCount > 0;
             // Load PGN (11.2b), unless named, likewise: shown exactly when the board can take an import.
-            if (action == ChessBoardView.ButtonLoadPgn && !padded.Contains(" LoadPgn")) want = board.CanImport();
-            if (action == ChessBoardView.ButtonMode && board.IsModeForced()) want = false;
-            if (action == ChessBoardView.ButtonClock && board.IsClockForced()) want = false;
+            if (action == ChessBoardUI.ButtonLoadPgn && !padded.Contains(" LoadPgn")) want = board.CanImport();
+            if (action == ChessBoardUI.ButtonMode && board.IsModeForced()) want = false;
+            if (action == ChessBoardUI.ButtonClock && board.IsClockForced()) want = false;
             if (button.activeSelf != want) {
                 errors += actionName + (want ? " hidden; " : " shown; ");
-            } else if (view.ButtonApplies(action) != want) {
-                errors += actionName + " applies " + view.ButtonApplies(action) + "; ";
-            } else if (want && i < view.buttonLabels.Length && Utilities.IsValid(view.buttonLabels[i])
-                && view.buttonLabels[i].text != view.ButtonText(action)) {
-                errors += actionName + " labelled " + view.buttonLabels[i].text + "; ";
+            } else if (ui.ButtonApplies(action) != want) {
+                errors += actionName + " applies " + ui.ButtonApplies(action) + "; ";
+            } else if (want && i < ui.buttonLabels.Length && Utilities.IsValid(ui.buttonLabels[i])
+                && ui.buttonLabels[i].text != ui.ButtonText(action)) {
+                errors += actionName + " labelled " + ui.buttonLabels[i].text + "; ";
             }
         }
         Check(errors.Length == 0, name + ": buttons shown " + expected, errors);
@@ -2063,15 +2073,15 @@ public class ViewTest : UdonSharpBehaviour {
 
     // Every button for action is shown and labelled text.
     void CheckLabel(int action, string text, string name) {
-        view.Refresh();
+        Redraw();
         string errors = "";
-        for (int i = 0; i < view.buttons.Length && i < view.buttonActions.Length; i++) {
-            if (view.buttonActions[i] != action || !Utilities.IsValid(view.buttons[i])) continue;
-            if (!view.buttons[i].activeSelf) {
+        for (int i = 0; i < ui.buttons.Length && i < ui.buttonActions.Length; i++) {
+            if (ui.buttonActions[i] != action || !Utilities.IsValid(ui.buttons[i])) continue;
+            if (!ui.buttons[i].activeSelf) {
                 errors += "hidden; ";
-            } else if (i < view.buttonLabels.Length && Utilities.IsValid(view.buttonLabels[i])
-                && view.buttonLabels[i].text != text) {
-                errors += "labelled " + view.buttonLabels[i].text + "; ";
+            } else if (i < ui.buttonLabels.Length && Utilities.IsValid(ui.buttonLabels[i])
+                && ui.buttonLabels[i].text != text) {
+                errors += "labelled " + ui.buttonLabels[i].text + "; ";
             }
         }
         Check(errors.Length == 0, name + ": " + buttonNames[action] + " labelled " + text, errors);
@@ -2100,7 +2110,7 @@ public class ViewTest : UdonSharpBehaviour {
     void CheckUnselected(int moveCount, string name) {
         CheckInt(view.selectedObject, ChessBoardView.NoObject, name + ": nothing selected");
         CheckInt(board.moveCount, moveCount, name + ": move count");
-        view.Refresh();
+        Redraw();
         CheckView(name);
         CheckInt(SquareTargetCount(), 0, name + ": no square clickable");
     }
@@ -2177,7 +2187,7 @@ public class ViewTest : UdonSharpBehaviour {
         ChessFen.ParseFen(fen, board.board, board.state, out clock, out number);
         board.halfmoveClock = clock;
         board.moveNumber = number;
-        view.Refresh();
+        Redraw();
         CheckView(name + ": set up");
     }
 
@@ -2197,7 +2207,7 @@ public class ViewTest : UdonSharpBehaviour {
     void CheckDropped(int moveCount, int change, string name) {
         CheckInt(board.moveCount, moveCount, name + ": move count");
         CheckInt(board.lastChange, change, name + ": the board's last change");
-        view.Refresh();
+        Redraw();
         CheckView(name);
     }
 
@@ -2250,7 +2260,7 @@ public class ViewTest : UdonSharpBehaviour {
             CheckInt(board.SetModeAs(localName, mode), ChessBoard.InputAccepted, name + ": mode set");
         }
         CheckInt(board.StartGameAs(localName), ChessBoard.InputAccepted, name + ": started");
-        view.Refresh();
+        Redraw();
     }
 
     // Drops the piece on from on to, which must be played, then checks the view, and that the object that was on
@@ -2258,7 +2268,7 @@ public class ViewTest : UdonSharpBehaviour {
     void Play(string from, string to, string landing, string name) {
         int mover = view.squareObject[Sq(from)];
         CheckInt(board.PieceDroppedAs(localName, Sq(from), Sq(to)), ChessBoard.InputAccepted, name + ": played");
-        view.Refresh();
+        Redraw();
         CheckView(name);
         CheckInt(view.squareObject[Sq(landing)], mover, name + ": the " + from + " object moved to " + landing);
     }

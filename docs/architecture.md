@@ -10,10 +10,11 @@ Pooled `UdonSharpBehaviour` move objects were considered and rejected: each fiel
 
 ## Logical board and physical board
 
-Each board is split into two behaviours that never reach into each other's domain.
+Each board is split into behaviours that never reach into each other's domain.
 
 - **`ChessBoard` (logical):** game state, rules, synced fields, ownership, logging. It never touches the world: no transforms, no pickups, no GameObjects.
-- **`ChessBoardView` (physical):** the pieces, buttons, highlights and other objects in the world, and the events from them (pickups, drops, button presses). It holds no game state and no synced fields of its own.
+- **`ChessBoardView` (physical):** the table, the board, the pieces, highlights, animations, the promotion picker and the player blocker, and the events from them (pickups, drops, clicks). It holds no game state and no synced fields of its own.
+- **`ChessBoardUI`** (step 12.1): the button panels, the status display, the PGN box (copying out and Load PGN) and Load it here for the history wall's pick, and their button presses. Like the view, a listener holding no game state and no synced fields. The view and the UI don't know each other: each listens to the board and acts through it, so either can be replaced or left out.
 
 **Logical → physical: change notification.**
 - Udon has no C# events or delegates, so the board keeps a reference to its listener(s) and calls a method on them when its state changes: `OnBoardChanged()`.
@@ -29,6 +30,8 @@ Each board is split into two behaviours that never reach into each other's domai
 - Promotion: when the board answers "promotion choice needed", the view shows the piece picker and calls again with the chosen piece.
 
 ### Implementation
+
+**The UI's place** (decided in 12.1): `ChessBoardUI` has no table to measure, so it is placed relative to its own origin. **Create Board View** builds it on an object of its own beside the view (`ChessBoardUI (<board>)`, the view's next sibling), standing where the view does: at the board's centre with the view's axes (files along +x, White's end at −z). It places the panels and the PGN box around that origin as before, and the UI reads only its own transform (`LocalEnd`, `PlacePgnBox`), so it keeps working wherever it's put as long as its origin stays at the board's centre. Rebuilding replaces the UI where it stands. Reference transforms set by the builder were the other option; they'd add fields for what the origin already gives.
 
 `ChessBoardListener` (`Assets/Siggi/ChessBoard/ChessBoardListener.cs`) is an abstract behaviour with three virtual methods, `OnBoardChanged()`, `OnNotationFilled()` (8.6) and `OnImportChanged()` (8.7). On `ChessBoard`:
 
