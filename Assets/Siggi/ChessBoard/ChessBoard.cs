@@ -665,6 +665,21 @@ namespace SiggiChessBoard {
             return count;
         }
 
+        // The square of the king checkmated in the position shown (step 12.8: the view tips it over), NoSquare for
+        // none: a game ended by checkmate, shown at its last ply (in the game, or in replay, a loaded game too). A game
+        // ends at its mate, so no earlier position of it is one; a custom replay position has no side to move, so it
+        // never is.
+        public int MatedKingSquare() {
+            if (ending != ChessGame.EndingCheckmate) return ChessRules.NoSquare;
+            if (replayMode && (replayCustom || replayIndex != moveCount)) return ChessRules.NoSquare;
+            byte[] shown = replayMode ? replayBoard : board;
+            int king = ChessRules.PieceOf(state[ChessPosition.StateSideToMove], ChessRules.King);
+            for (int square = 0; square < 64; square++) {
+                if (shown[square] == king) return square;
+            }
+            return ChessRules.NoSquare;
+        }
+
         // The legal moves from square in the game (for the legal-target highlights) into moves, which
         // ChessMoves.MaxMoves entries always hold, and how many there are: none unless a game is in progress and not
         // in replay, with the side to move's flag not fallen. Promotions are four moves to one square.

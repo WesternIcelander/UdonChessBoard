@@ -2157,8 +2157,211 @@ public class ViewTest : UdonSharpBehaviour {
         Redraw();
         CheckView(c + ": cleared");
         CheckPlaces("", "", c + ": cleared");
+        SendCustomEventDelayedFrames(nameof(RunFallChecks), 1);
+    }
+
+    // ---- 12.8: the checkmated king falls over ----
+
+    const string MatePgn = "[White \"Fool\"]\n[Black \"Mate\"]\n[Result \"0-1\"]\n\n1. f3 e5 2. g4 Qh4# 0-1\n";
+    // Black's king h5 mated by the queen on g5, guarded by the king on f4: a king on the h file falls along the files.
+    const string SideMateFen = "8/8/8/6Qk/5K2/8/8/8 b - - 0 1";
+    // White's king on e1, standing: its lowest point (view space).
+    float fallStanding;
+    int fallKing;
+
+    // The seventeenth frame (and timed frames after it): the fool's mate laid down at once (animations off) in the
+    // game and on entering replay; then with animations, stepping back to ply 3 starts it standing up at once.
+    public void RunFallChecks() {
+        string f = "fall";
+        view.animateMoves = false;
+        board.ClearState();
+        Redraw();
+        CheckFalls(f + ": a cleared board");
+        fallKing = view.squareObject[Sq("e1")];
+        fallStanding = LowestPoint(fallKing);
+        StartGame(ChessGame.ModeStandard, f);
+        PlayMoves("f2f3 e7e5 g2g4", f);
+        CheckFalls(f + ": before the mate");
+        PlayMoves("d8h4", f);
+        CheckInt(board.MatedKingSquare(), Sq("e1"), f + ": Qh4#: White's king mated");
+        CheckView(f + ": Qh4#");
+        CheckFallen("e1", Vector3.forward, f + ": Qh4#");
+        CheckInt(board.EnterReplayAs(localName, false), ChessBoard.InputAccepted, f + ": replay entered");
+        Redraw();
+        CheckFallen("e1", Vector3.forward, f + ": replay entered");
+
+        view.animateMoves = true;
+        CheckInt(board.StepToAs(localName, false, 3), ChessBoard.InputAccepted, f + ": stepped to ply 3");
+        Redraw();
+        CheckInt(board.MatedKingSquare(), ChessRules.NoSquare, f + ": ply 3: no king mated");
+        Check(view.fallTarget[fallKing] == 0 && view.fallAmount[fallKing] == 1 && view.IsFalling(fallKing)
+            && view.fallStart[fallKing] <= Time.time, f + ": ply 3: the king starts standing up at once",
+            FallText(fallKing));
+        SendCustomEventDelayedSeconds(nameof(RunFallStoodChecks), view.fallSeconds + 0.5f);
+    }
+
+    // Stood up; stepping forward to the mate again: the king waits for the queen to land, then falls.
+    public void RunFallStoodChecks() {
+        string f = "fall";
+        CheckView(f + ": ply 3: stood up");
+        CheckFalls(f + ": ply 3: stood up");
+        CheckInt(board.StepToAs(localName, false, 4), ChessBoard.InputAccepted, f + ": stepped to the mate");
+        Redraw();
+        Check(view.fallTarget[fallKing] == 1 && view.fallAmount[fallKing] == 0
+            && view.fallStart[fallKing] > Time.time + 0.001f, f + ": stepped to the mate: the king waits for the queen",
+            FallText(fallKing));
+        Check(view.animating[view.squareObject[Sq("h4")]], f + ": stepped to the mate: the queen travels", "it doesn't");
+        SendCustomEventDelayedSeconds(nameof(RunFallMidChecks), view.moveSeconds + view.fallSeconds / 2);
+    }
+
+    // Halfway down: partly over, in its place, its base over e1 and its lowest point no lower than standing.
+    public void RunFallMidChecks() {
+        string f = "fall: halfway";
+        float amount = view.fallAmount[fallKing];
+        Check(amount > 0 && amount < 1 && view.IsFalling(fallKing), f + ": partly over", FallText(fallKing));
+        Check((view.pieces[fallKing].localPosition - view.ObjectPlace(fallKing)).sqrMagnitude < 1e-8f,
+            f + ": in its place", "at " + view.pieces[fallKing].localPosition.ToString("F3") + ", its place "
+            + view.ObjectPlace(fallKing).ToString("F3"));
+        CheckInt(view.DropSquare(view.PieceBase(fallKing)), Sq("e1"), f + ": its base over e1");
+        float lowest = LowestPoint(fallKing);
+        Check(lowest > fallStanding - 1e-5f, f + ": not through the board",
+            "lowest " + lowest.ToString("F5") + ", standing " + fallStanding.ToString("F5"));
+        SendCustomEventDelayedSeconds(nameof(RunFallEndChecks), view.fallSeconds / 2 + 0.5f);
+    }
+
+    // Down again; then (animations off) a free move, a takeback, a reset, a loaded game ending in mate, a mate of
+    // Black's king (falling towards White) and one on the h file (falling along the files).
+    public void RunFallEndChecks() {
+        string f = "fall";
+        CheckView(f + ": stepped to the mate: fallen again");
+        CheckFallen("e1", Vector3.forward, f + ": stepped to the mate: fallen again");
+
+        view.animateMoves = false;
+        CheckInt(board.PieceDroppedAs(localName, Sq("a7"), Sq("a6")), ChessBoard.InputAccepted, f + ": a free move");
+        Redraw();
+        CheckFalls(f + ": a free move (custom position)");
+        CheckInt(board.StepToAs(localName, false, 4), ChessBoard.InputAccepted, f + ": back to the mate");
+        Redraw();
+        CheckFallen("e1", Vector3.forward, f + ": back to the mate");
+
+        SetRequestRules(true);
+        CheckInt(board.StepToAs(localName, false, 3), ChessBoard.InputAccepted, f + ": takeback: stepped to ply 3");
+        CheckInt(board.RequestTakebackAs(ChessRules.Black, localName), ChessBoard.InputAccepted, f + ": takeback: asked");
+        CheckInt(board.AcceptTakebackAs(ChessRules.White, localName), ChessBoard.InputAccepted,
+            f + ": takeback: accepted");
+        Redraw();
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, f + ": takeback: the game goes on");
+        CheckFalls(f + ": takeback");
+
+        PlayMoves("d8h4", f + ": mated again");
+        CheckFallen("e1", Vector3.forward, f + ": mated again");
+        view.animateMoves = true;
+        CheckInt(board.ResetBoardAs(localName, true), ChessBoard.InputAccepted, f + ": reset");
+        Redraw();
+        CheckFalls(f + ": reset (animations on): stood up at once");
+        view.animateMoves = false;
+
+        if (Utilities.IsValid(importer)) {
+            board.ClearState();
+            importer.StartImport(MatePgn, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
+            CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, f + ": loaded mate: imported");
+            CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, f + ": loaded mate: loaded");
+            view.animateMoves = true;
+            Redraw();
+            view.animateMoves = false;
+            CheckInt(board.replayIndex, 4, f + ": loaded mate: shown at its end");
+            CheckFallen("e1", Vector3.forward, f + ": loaded mate (animations on): fallen at once");
+            CheckInt(board.StepToAs(localName, true, 3), ChessBoard.InputAccepted, f + ": loaded mate: ply 3");
+            Redraw();
+            CheckFalls(f + ": loaded mate: ply 3");
+        } else {
+            Check(false, f + ": importer assigned", "assign ViewTest's Importer in the Inspector");
+        }
+
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, f + " (Black)");
+        PlayMoves("e2e4 e7e5 d1h5 b8c6 f1c4 g8f6 h5f7", f + " (Black)");
+        CheckInt(board.MatedKingSquare(), Sq("e8"), f + " (Black): Qxf7#: Black's king mated");
+        CheckFallen("e8", Vector3.back, f + " (Black): Qxf7#");
+
+        LoadFen(SideMateFen, f + " (h file)");
+        CheckInt(board.MatedKingSquare(), Sq("h5"), f + " (h file): Black's king on h5 mated");
+        CheckFallen("h5", Vector3.left, f + " (h file)");
+
+        board.ClearState();
+        Redraw();
+        CheckFalls(f + ": cleared");
+        CheckView(f + ": cleared");
         view.animateMoves = savedAnimate;
         LogSummary();
+    }
+
+    // No king mated in the position shown, and every object standing, none falling.
+    void CheckFalls(string name) {
+        CheckInt(board.MatedKingSquare(), ChessRules.NoSquare, name + ": no king mated");
+        int wrong = 0;
+        string details = "";
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            if (view.fallTarget[obj] == 0 && view.fallAmount[obj] == 0) continue;
+            if (wrong++ < 3) details += "object " + obj + ": " + FallText(obj) + "; ";
+        }
+        Check(wrong == 0, name + ": every piece standing", wrong + " not: " + details);
+    }
+
+    // The king on square lying: fallen all the way, its top towards direction (local space), its base over its square
+    // and its lowest point as high as a standing king's, in its place.
+    void CheckFallen(string square, Vector3 direction, string name) {
+        int obj = view.squareObject[Sq(square)];
+        if (obj == ChessBoardView.NoObject) {
+            Check(false, name + ": the king on " + square + " fallen", "no object there");
+            return;
+        }
+        Check(view.fallTarget[obj] == 1 && view.fallAmount[obj] == 1 && !view.IsFalling(obj),
+            name + ": the king on " + square + " fallen", FallText(obj));
+        Vector3 up = PieceUp(obj);
+        Check((up - direction).sqrMagnitude < 1e-6f, name + ": lying towards " + direction.ToString("F0"),
+            "its top towards " + up.ToString("F3"));
+        CheckInt(view.DropSquare(view.PieceBase(obj)), Sq(square), name + ": its base over " + square);
+        float lowest = LowestPoint(obj);
+        Check(Mathf.Abs(lowest - fallStanding) < 1e-5f, name + ": lying on the board",
+            "lowest " + lowest.ToString("F5") + ", standing " + fallStanding.ToString("F5"));
+        Check((view.pieces[obj].localPosition - view.ObjectPlace(obj)).sqrMagnitude < 1e-8f, name + ": in its place",
+            "at " + view.pieces[obj].localPosition.ToString("F3"));
+    }
+
+    string FallText(int obj) {
+        return "fallen " + view.fallAmount[obj].ToString("F3") + ", going to " + view.fallTarget[obj]
+            + ", starting in " + (view.fallStart[obj] - Time.time).ToString("F3") + " s";
+    }
+
+    // Which way obj's top points (view space), its template's turn taken out: up when it stands.
+    Vector3 PieceUp(int obj) {
+        Quaternion template = Quaternion.identity;
+        ChessPieceSet set = view.AppliedPieceSet();
+        int type = view.objectType[obj];
+        if (Utilities.IsValid(set) && type != ChessRules.NoPieceType) {
+            Transform t = set.Template(view.ObjectColor(obj), type);
+            if (Utilities.IsValid(t)) template = t.localRotation;
+        }
+        return view.pieces[obj].localRotation * Quaternion.Inverse(template) * Vector3.up;
+    }
+
+    // The lowest point of obj's mesh bounds (view space).
+    float LowestPoint(int obj) {
+        Mesh mesh = view.pieceFilters[obj].sharedMesh;
+        Transform piece = view.pieces[obj];
+        if (mesh == null) return 0;
+        Bounds bounds = mesh.bounds;
+        Vector3 center = bounds.center;
+        Vector3 extents = bounds.extents;
+        float lowest = float.MaxValue;
+        for (int corner = 0; corner < 8; corner++) {
+            Vector3 local = center + new Vector3((corner & 1) == 0 ? -extents.x : extents.x,
+                (corner & 2) == 0 ? -extents.y : extents.y, (corner & 4) == 0 ? -extents.z : extents.z);
+            float y = view.transform.InverseTransformPoint(piece.TransformPoint(local)).y;
+            if (y < lowest) lowest = y;
+        }
+        return lowest;
     }
 
     // Loads fen as a game with no moves (the board then in replay, loaded).
@@ -2877,6 +3080,7 @@ public class ViewTest : UdonSharpBehaviour {
     void CheckView(string name) {
         string errors = "";
         int count = 0;
+        int mated = board.MatedKingSquare();
         for (int square = 0; square < 64; square++) {
             int piece = board.PieceAt(square);
             int obj = view.squareObject[square];
@@ -2891,8 +3095,15 @@ public class ViewTest : UdonSharpBehaviour {
                 error = "object " + obj + " thinks it's on " + SquareText(view.objectSquare[obj]);
             } else if (view.pieceFilters[obj].sharedMesh != SetMesh(piece)) {
                 error = "object " + obj + " has the wrong mesh";
-            } else if ((view.pieces[obj].localPosition - view.SquarePosition(square) - view.PieceOffset(obj)).sqrMagnitude
-                > 1e-8f) {
+            } else if (view.fallTarget[obj] != (square == mated ? 1 : 0)) {
+                // Step 12.8: only the king mated in the position shown lies (or is on its way down).
+                error = "object " + obj + (square == mated ? " isn't falling, mated" : " is falling, not mated");
+            } else if (square != mated && (view.fallAmount[obj] != 0 || (PieceUp(obj) - Vector3.up).sqrMagnitude > 1e-6f)) {
+                error = "object " + obj + " isn't upright (fallen " + view.fallAmount[obj] + ")";
+            } else if (square == mated && (view.pieces[obj].localPosition - view.ObjectPlace(obj)).sqrMagnitude > 1e-8f) {
+                error = "the mated king's object " + obj + " is at " + view.pieces[obj].localPosition.ToString("F3");
+            } else if (square != mated && (view.pieces[obj].localPosition - view.SquarePosition(square)
+                - view.PieceOffset(obj)).sqrMagnitude > 1e-8f) {
                 error = "object " + obj + " is at " + view.pieces[obj].localPosition.ToString("F3");
             } else if (view.DropSquare(view.PieceBase(obj)) != square) {
                 // In the world too, whatever the view's scale (step 12.2), from its base (step 12.3).

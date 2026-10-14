@@ -119,6 +119,20 @@ namespace SiggiChessBoard {
         [NonSerialized] public float[] animationStart = new float[PieceCount];
         float[] animationLift = new float[PieceCount];
         int animatingCount;
+        // The checkmated king falls over (step 12.8): while the position shown is checkmate
+        // (ChessBoard.MatedKingSquare), its king lies on the board, tipped over about its base (which stays over its
+        // square) towards the board's centre along the files or the ranks, whichever it stands further from it along,
+        // and lifted so that its lowest point is as high as when it stands. It tips over in fallSeconds once the
+        // mating piece has landed, and stands up the same way when the position shown is no longer the mate. A change
+        // that puts everything in place at once (a reset, a load, entering or leaving replay, animateMoves off) lays it
+        // down or stands it up at once too, as does its leaving its square.
+        public float fallSeconds = 0.6f;
+        // How far each object has fallen (0 standing, 1 lying), how far it's going (0 or 1), and from when
+        // (Time.time; later than now while it waits for the mating piece to land).
+        [NonSerialized] public float[] fallAmount = new float[PieceCount];
+        [NonSerialized] public float[] fallTarget = new float[PieceCount];
+        [NonSerialized] public float[] fallStart = new float[PieceCount];
+        bool falling;
 
         // Which object stands on each square (NoObject for none), and the other way round (NoSquare for an object
         // off the board: captured, or not needed by the position). objectType is the piece type each object stands
@@ -411,6 +425,7 @@ namespace SiggiChessBoard {
                 UpdatePickupable();
             }
             if (animatingCount > 0) StepAnimations();
+            if (falling) StepFalls();
         }
 
         // A move one ply on from the position the mapping shows moves its objects now, so the right object travels
@@ -470,7 +485,9 @@ namespace SiggiChessBoard {
             // worked out again, since the position may have changed (a takeback, another player's free move).
             CheckSelection();
             if (selectedObject != NoObject) FindTargets(selectedFrom, selectedInReplay, selectedTargets, selectedMarks);
-            PlaceObjects();
+            bool animate = PlacingAnimates();
+            UpdateFalls(animate);
+            PlaceObjects(animate);
             UpdatePickupable();
             // A held piece's targets may have changed (or the game ended, or replay began).
             if (heldObject != NoObject) FindTargets(heldFrom, replay, heldTargets, heldMarks);
@@ -1313,12 +1330,9 @@ namespace SiggiChessBoard {
 
         // ---- Placing ----
 
-        // Puts every object but the held one where the mapping says (PrepareObject). If the board's changes since the
-        // last Refresh may animate (ChangeAnimates) and moved at most MaxAnimatedObjects objects between squares, each
-        // object whose place changed travels there, those leaving the board waiting for those landing on it; otherwise
-        // (and for a piece the local player has just let go of) it's put there at once. An object already travelling
-        // to its place carries on.
-        void PlaceObjects() {
+        // Whether this Refresh's placing animates: the board's changes since the last Refresh may animate
+        // (ChangeAnimates) and moved at most MaxAnimatedObjects objects between squares. Counts the changes as placed.
+        bool PlacingAnimates() {
             bool animate = animateMoves && moveSeconds > 0 && changesSinceRefresh > 0 && changesAnimate;
             if (animate) {
                 int moved = 0;
@@ -1328,6 +1342,14 @@ namespace SiggiChessBoard {
                 animate = moved <= MaxAnimatedObjects;
             }
             changesSinceRefresh = 0;
+            return animate;
+        }
+
+        // Puts every object but the held one where the mapping says (PrepareObject). If the placing animates
+        // (PlacingAnimates), each object whose place changed travels there, those leaving the board waiting for those
+        // landing on it; otherwise (and for a piece the local player has just let go of) it's put there at once. An
+        // object already travelling to its place carries on.
+        void PlaceObjects(bool animate) {
             // The objects on the board first, so those leaving it know whether to wait.
             bool landing = false;
             for (int pass = 0; pass < 2; pass++) {
@@ -1417,6 +1439,114 @@ namespace SiggiChessBoard {
             }
         }
 
+        // ---- The checkmated king (step 12.8) ----
+
+        // Sets each object's fall: the king mated in the position shown is to lie, every other object to stand. A king
+        // starts falling once the travelling pieces have landed (moveSeconds on), one standing up at once. Without
+        // animation (this placing's, or animateMoves off), and for an object that left its square or has none, the
+        // fall is done at once. Called on every Refresh, before placing.
+        void UpdateFalls(bool animate) {
+            int square = Utilities.IsValid(board) ? board.MatedKingSquare() : ChessRules.NoSquare;
+            int mated = square == ChessRules.NoSquare ? NoObject : squareObject[square];
+            for (int obj = 0; obj < PieceCount; obj++) {
+                float target = obj == mated ? 1 : 0;
+                if (target != fallTarget[obj]) {
+                    fallTarget[obj] = target;
+                    fallStart[obj] = Time.time + (target > 0 ? moveSeconds : 0);
+                    if (!animate) fallAmount[obj] = target;
+                }
+                if (!animateMoves || fallSeconds <= 0 || objectSquare[obj] == ChessRules.NoSquare
+                    || objectSquare[obj] != placedSquare[obj]) {
+                    fallAmount[obj] = target;
+                }
+                if (fallAmount[obj] != target) falling = true;
+            }
+        }
+
+        // Moves the falling (or rising) objects on, every frame while any is: a whole fall takes fallSeconds. A held
+        // or travelling object's fall goes on without moving it.
+        void StepFalls() {
+            falling = false;
+            float now = Time.time;
+            float step = fallSeconds > 0 ? Time.deltaTime / fallSeconds : 1;
+            for (int obj = 0; obj < PieceCount; obj++) {
+                float target = fallTarget[obj];
+                float amount = fallAmount[obj];
+                if (amount == target) continue;
+                if (now >= fallStart[obj]) {
+                    amount = target > amount ? Mathf.Min(target, amount + step) : Mathf.Max(target, amount - step);
+                    fallAmount[obj] = amount;
+                    Transform piece = pieces[obj];
+                    if (obj != heldObject && !animating[obj] && Utilities.IsValid(piece)) {
+                        piece.localPosition = ObjectPlace(obj);
+                        piece.localRotation = ObjectRotation(obj);
+                    }
+                }
+                if (amount != target) falling = true;
+            }
+        }
+
+        // Whether obj is falling over or standing up now (or waiting to), for tests. A falling object always stands
+        // where ObjectPlace says, so the debug view's placement check needs no exception for it.
+        public bool IsFalling(int obj) {
+            return fallAmount[obj] != fallTarget[obj];
+        }
+
+        // The turn obj's fall adds to its template's, about its base, in the view's local space: none standing, a
+        // quarter turn towards FallDirection lying, eased in as a falling piece speeds up.
+        public Quaternion FallTip(int obj) {
+            float amount = fallAmount[obj];
+            int square = objectSquare[obj];
+            if (amount <= 0 || square == ChessRules.NoSquare) return Quaternion.identity;
+            Quaternion lying = Quaternion.FromToRotation(Vector3.up, FallDirection(square));
+            return Quaternion.Slerp(Quaternion.identity, lying, amount * amount);
+        }
+
+        // Which way a king on square falls (local space): towards the board's centre along the files (x) or the
+        // ranks (z), whichever it stands further from it along (the ranks when as far), so it lies on the board. Along
+        // an axis rather than straight at the centre, so the mesh's bounds give its lowest point (FallLift).
+        public static Vector3 FallDirection(int square) {
+            float file = ChessRules.FileOf(square) - 3.5f;
+            float rank = ChessRules.RankOf(square) - 3.5f;
+            if (Mathf.Abs(file) > Mathf.Abs(rank)) return new Vector3(file > 0 ? -1 : 1, 0, 0);
+            return new Vector3(0, 0, rank > 0 ? -1 : 1);
+        }
+
+        // How far obj, turned by tip about its base, is lifted so its lowest point (by its mesh's bounds, as its
+        // template turns and sizes it) is as high as when it stands: it rolls over the edge of its base as it falls.
+        float FallLift(int obj, Quaternion tip) {
+            int type = objectType[obj];
+            if (type == ChessRules.NoPieceType || !Utilities.IsValid(appliedSet)) return 0;
+            int index = TemplateIndex(ObjectColor(obj), type);
+            Mesh mesh = setMeshes[index];
+            if (!Utilities.IsValid(mesh)) return 0;
+            Bounds bounds = mesh.bounds;
+            Vector3 center = bounds.center;
+            Vector3 extents = bounds.extents;
+            Quaternion rotation = setRotations[index];
+            Vector3 scale = setScales[index];
+            Vector3 offset = setOffsets[index];
+            float standing = float.MaxValue;
+            float tipped = float.MaxValue;
+            for (int corner = 0; corner < 8; corner++) {
+                Vector3 local = center + new Vector3((corner & 1) == 0 ? -extents.x : extents.x,
+                    (corner & 2) == 0 ? -extents.y : extents.y, (corner & 4) == 0 ? -extents.z : extents.z);
+                Vector3 point = offset + rotation * Vector3.Scale(scale, local);
+                standing = Mathf.Min(standing, point.y);
+                tipped = Mathf.Min(tipped, (tip * point).y);
+            }
+            return Mathf.Max(0, standing - tipped);
+        }
+
+        // How obj is turned (local space): as its template is, tipped over by its fall; as it is without a template.
+        public Quaternion ObjectRotation(int obj) {
+            int type = objectType[obj];
+            if (type == ChessRules.NoPieceType || !Utilities.IsValid(appliedSet)) {
+                return Utilities.IsValid(pieces[obj]) ? pieces[obj].localRotation : Quaternion.identity;
+            }
+            return FallTip(obj) * setRotations[TemplateIndex(ObjectColor(obj), type)];
+        }
+
         // Brings obj's model (mesh, materials, size and collider) and turn up to the mapping and the applied set, and
         // returns where it belongs: on its square, or beside the board when it's off it. Each piece is turned as its
         // template is (every time, since a hand may have turned it).
@@ -1440,7 +1570,7 @@ namespace SiggiChessBoard {
                     box.size = mesh.bounds.size;
                 }
             }
-            piece.localRotation = setRotations[index];
+            piece.localRotation = FallTip(obj) * setRotations[index];
             return ObjectPlace(obj);
         }
 
@@ -1458,6 +1588,12 @@ namespace SiggiChessBoard {
                 : CapturedPlacePosition(ObjectColor(obj), objectPlace[obj])) + PieceOffset(obj);
             // A selected piece (desktop mode) stands lifted over its square.
             if (obj == selectedObject) position += new Vector3(0, SelectLift * squareSize, 0);
+            // A falling or fallen king (step 12.8) is tipped over about its base and lifted to keep its lowest point.
+            if (objectSquare[obj] != ChessRules.NoSquare && fallAmount[obj] > 0) {
+                Quaternion tip = FallTip(obj);
+                Vector3 offset = PieceOffset(obj);
+                position += tip * offset - offset + new Vector3(0, FallLift(obj, tip), 0);
+            }
             return position;
         }
 
