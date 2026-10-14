@@ -461,12 +461,16 @@ public static class ChessBoardViewBuilder {
 
     // The highlights (step 9.5a), under "Highlights", all hidden and without colliders, so clicks reach the square
     // targets and pieces: two last-move tints (whole squares, just above the squares; the view moves them onto the
-    // last move's squares) and one legal-target frame per square, a1 to h8, over its square and above the tints.
+    // last move's squares) and one legal-target diamond per square, a1 to h8, over its square and above the tints,
+    // with the view's yellow and red materials for the marks (step 12.5).
     static void AddHighlights(GameObject root, ChessBoardView view) {
         Material lastMove = MaterialAsset("Last Move", new Color(0.8f, 0.78f, 0.3f), 0.3f);
-        Material target = MaterialAsset("Legal Target", new Color(0.25f, 0.55f, 0.85f), 0.3f);
+        Material target = MaterialAsset("Target Mark", new Color(0.95f, 0.8f, 0.1f), 0.3f);
+        Material capture = MaterialAsset("Capture Mark", new Color(0.85f, 0.12f, 0.1f), 0.3f);
+        view.targetMaterial = target;
+        view.captureMaterial = capture;
         Mesh tint = FlatMesh("Last Move Tint", 0.0008f, 0);
-        Mesh frame = FlatMesh("Legal Target Frame", 0.0011f, SquareSize * 0.1f);
+        Mesh diamond = DiamondMesh("Legal Target Diamond", 0.0011f);
         GameObject parent = new GameObject("Highlights");
         parent.transform.SetParent(root.transform, false);
         view.lastMoveHighlights = new GameObject[2];
@@ -481,7 +485,7 @@ public static class ChessBoardViewBuilder {
         for (int square = 0; square < 64; square++) {
             int file = square % 8;
             int rank = square / 8;
-            view.targetHighlights[square] = FlatObject(files[file] + (rank + 1).ToString(), targets, frame, target,
+            view.targetHighlights[square] = FlatObject(files[file] + (rank + 1).ToString(), targets, diamond, target,
                 new Vector3((file - 3.5f) * SquareSize, 0, (rank - 3.5f) * SquareSize));
         }
     }
@@ -1131,6 +1135,26 @@ public static class ChessBoardViewBuilder {
         mesh = new Mesh { name = name };
         mesh.SetVertices(vertices);
         mesh.SetTriangles(triangles, 0);
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        AssetDatabase.CreateAsset(mesh, path);
+        return mesh;
+    }
+
+    // A diamond mesh asset facing up (step 12.5), generated if missing: a square turned 45°, centred on the origin at
+    // height y, its corners at the middles of a square's edges.
+    static Mesh DiamondMesh(string name, float y) {
+        string path = ModelsFolder + "/" + name + ".asset";
+        Mesh mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+        if (mesh != null) return mesh;
+        EnsureModelsFolder();
+        float h = SquareSize / 2;
+        mesh = new Mesh { name = name };
+        // Clockwise from above, as FlatQuad's rectangles, so it faces up.
+        mesh.SetVertices(new List<Vector3> {
+            new Vector3(0, y, -h), new Vector3(-h, y, 0), new Vector3(0, y, h), new Vector3(h, y, 0),
+        });
+        mesh.SetTriangles(new[] { 0, 1, 2, 0, 2, 3 }, 0);
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
         AssetDatabase.CreateAsset(mesh, path);

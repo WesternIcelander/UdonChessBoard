@@ -70,6 +70,16 @@ namespace SiggiChessBoard {
         // or selected piece's targets.
         public GameObject[] lastMoveHighlights = new GameObject[2];
         public GameObject[] targetHighlights = new GameObject[64];
+        // The legal-target marks' look (step 12.5): each is a diamond as wide as its square, given targetMaterial
+        // (yellow) and scaled down to SmallMarkScale on an empty square (MarkMove), targetMaterial at full size on a
+        // castle's rook square (MarkCastle), and captureMaterial (red) at full size on a capture (MarkCapture).
+        public Material targetMaterial;
+        public Material captureMaterial;
+        public const float SmallMarkScale = 0.5f;
+        public const int MarkNone = 0;
+        public const int MarkMove = 1;
+        public const int MarkCastle = 2;
+        public const int MarkCapture = 3;
         // The table, the board and the buttons have no solid colliders, so the players can walk up to and into the
         // board. The blocker, a solid box filling the table up to its top, keeps everyone else out: enabled on each
         // client unless the local player has a seat (UpdateBlocker). Players collide only on their own client, so
@@ -188,6 +198,9 @@ namespace SiggiChessBoard {
         [NonSerialized] public bool[] selectedTargets = new bool[64];
         // The same for the held piece, for its highlights.
         [NonSerialized] public bool[] heldTargets = new bool[64];
+        // Each target's legal-target mark (Mark...), for the selected and the held piece.
+        [NonSerialized] public int[] selectedMarks = new int[64];
+        [NonSerialized] public int[] heldMarks = new int[64];
         int[] targetMoves = new int[ChessMoves.MaxMoves];
 
         void Start() {
@@ -440,11 +453,11 @@ namespace SiggiChessBoard {
             // So does a selected piece that can no longer be picked up there; one that still can has its targets
             // worked out again, since the position may have changed (a takeback, another player's free move).
             CheckSelection();
-            if (selectedObject != NoObject) FindTargets(selectedFrom, selectedInReplay, selectedTargets);
+            if (selectedObject != NoObject) FindTargets(selectedFrom, selectedInReplay, selectedTargets, selectedMarks);
             PlaceObjects();
             UpdatePickupable();
             // A held piece's targets may have changed (or the game ended, or replay began).
-            if (heldObject != NoObject) FindTargets(heldFrom, replay, heldTargets);
+            if (heldObject != NoObject) FindTargets(heldFrom, replay, heldTargets, heldMarks);
             UpdateLiftedMarks();
             UpdateLastMoveHighlight();
             UpdatePromotionPicker();
@@ -475,7 +488,7 @@ namespace SiggiChessBoard {
                 && board.PiecePickedUp(square) == ChessBoard.InputAccepted) {
                 heldObject = obj;
                 heldFrom = square;
-                FindTargets(heldFrom, board.replayMode, heldTargets);
+                FindTargets(heldFrom, board.replayMode, heldTargets, heldMarks);
                 UpdateLiftedMarks();
                 return;
             }
@@ -616,25 +629,55 @@ namespace SiggiChessBoard {
             }
         }
 
-        // Marks the held or selected piece's legal targets (heldTargets or selectedTargets); none in replay, where
-        // every square is one, and none with nothing lifted. Called on every lift change.
+        // Marks the held or selected piece's legal targets (heldMarks or selectedMarks), each with its look; none in
+        // replay, where every square is one, and none with nothing lifted. Called on every lift change.
         public void UpdateTargetHighlights() {
-            bool[] targets = null;
-            if (heldObject != NoObject) targets = heldTargets;
-            else if (selectedObject != NoObject) targets = selectedTargets;
+            int[] marks = null;
+            if (heldObject != NoObject) marks = heldMarks;
+            else if (selectedObject != NoObject) marks = selectedMarks;
             bool replay = !Utilities.IsValid(board) || board.replayMode;
             for (int square = 0; square < 64 && square < targetHighlights.Length; square++) {
                 GameObject highlight = targetHighlights[square];
                 if (!Utilities.IsValid(highlight)) continue;
-                bool shown = targets != null && !replay && targets[square];
+                int mark = marks != null && !replay ? marks[square] : MarkNone;
+                bool shown = mark != MarkNone;
+                if (shown) StyleTargetMark(highlight, mark);
                 if (highlight.activeSelf != shown) highlight.SetActive(shown);
             }
+        }
+
+        // Gives a legal-target mark the look of its kind: size, and material (when the view has one for it).
+        void StyleTargetMark(GameObject highlight, int mark) {
+            float size = mark == MarkMove ? SmallMarkScale : 1;
+            Transform t = highlight.transform;
+            if (t.localScale.x != size) t.localScale = new Vector3(size, 1, size);
+            Material material = mark == MarkCapture ? captureMaterial : targetMaterial;
+            if (!Utilities.IsValid(material)) return;
+            MeshRenderer renderer = highlight.GetComponent<MeshRenderer>();
+            if (Utilities.IsValid(renderer) && renderer.sharedMaterial != material) renderer.sharedMaterial = material;
         }
 
         // Whether square's legal-target mark is shown, for tests.
         public bool IsTargetHighlighted(int square) {
             GameObject highlight = targetHighlights[square];
             return Utilities.IsValid(highlight) && highlight.activeSelf;
+        }
+
+        // The kind of legal-target mark square shows (MarkNone when hidden), read from how it looks, for tests:
+        // MarkMove when scaled down, otherwise MarkCapture with captureMaterial and MarkCastle with targetMaterial
+        // (-1 for a look that's none of these).
+        public int TargetMarkShown(int square) {
+            if (!IsTargetHighlighted(square)) return MarkNone;
+            GameObject highlight = targetHighlights[square];
+            MeshRenderer renderer = highlight.GetComponent<MeshRenderer>();
+            Material material = Utilities.IsValid(renderer) ? renderer.sharedMaterial : null;
+            Vector3 scale = highlight.transform.localScale;
+            bool small = Mathf.Abs(scale.x - SmallMarkScale) < 0.001f && Mathf.Abs(scale.z - SmallMarkScale) < 0.001f;
+            bool full = Mathf.Abs(scale.x - 1) < 0.001f && Mathf.Abs(scale.z - 1) < 0.001f;
+            if (small && material == targetMaterial) return MarkMove;
+            if (full && material == targetMaterial) return MarkCastle;
+            if (full && material == captureMaterial) return MarkCapture;
+            return -1;
         }
 
         // Everything shown for the piece the local player has lifted (held or selected): the legal-target marks.
@@ -700,7 +743,7 @@ namespace SiggiChessBoard {
                 selectedObject = obj;
                 selectedFrom = square;
                 selectedInReplay = board.replayMode;
-                FindTargets(selectedFrom, selectedInReplay, selectedTargets);
+                FindTargets(selectedFrom, selectedInReplay, selectedTargets, selectedMarks);
                 dirty = true;
                 VRCPlayerApi local = Networking.LocalPlayer;
                 GameObject piece = Utilities.IsValid(pieces[obj]) ? pieces[obj].gameObject : null;
@@ -738,7 +781,10 @@ namespace SiggiChessBoard {
             if (selectedObject == NoObject) return;
             selectedObject = NoObject;
             selectedFrom = ChessRules.NoSquare;
-            for (int i = 0; i < 64; i++) selectedTargets[i] = false;
+            for (int i = 0; i < 64; i++) {
+                selectedTargets[i] = false;
+                selectedMarks[i] = MarkNone;
+            }
             dirty = true;
         }
 
@@ -765,22 +811,34 @@ namespace SiggiChessBoard {
         }
 
         // Works out targets (selectedTargets or heldTargets) for the piece lifted from from, from the board's legal
-        // moves (every other square in replay, where moves are free).
-        void FindTargets(int from, bool replay, bool[] targets) {
-            for (int i = 0; i < 64; i++) targets[i] = replay && i != from;
+        // moves (every other square in replay, where moves are free), and each target's mark (selectedMarks or
+        // heldMarks; none in replay): MarkCapture for a capture (en passant on the square the pawn moves to),
+        // MarkCastle on a castle's rook square, MarkMove on the rest (a castle's king destination included).
+        void FindTargets(int from, bool replay, bool[] targets, int[] marks) {
+            for (int i = 0; i < 64; i++) {
+                targets[i] = replay && i != from;
+                marks[i] = MarkNone;
+            }
             if (replay) return;
             int count = board.LegalMovesFrom(from, targetMoves);
             for (int i = 0; i < count; i++) {
                 int move = targetMoves[i];
                 int to = ChessRules.MoveTo(move);
                 targets[to] = true;
-                if (!ChessRules.MoveIsCastle(move)) continue;
+                if (!ChessRules.MoveIsCastle(move)) {
+                    int mark = ChessRules.MoveCaptured(move) != ChessRules.NoPieceType ? MarkCapture : MarkMove;
+                    if (mark > marks[to]) marks[to] = mark;
+                    continue;
+                }
+                marks[to] = MarkCastle;
                 // A castle stores its rook's square; the board also castles on a drop on the king's destination,
                 // unless a normal move ends there (which is then a target anyway) or the king doesn't move.
                 int destination = ChessRules.SquareOf(
                     ChessRules.FileOf(to) > ChessRules.FileOf(from) ? ChessRules.FileG : ChessRules.FileC,
                     ChessRules.RankOf(from));
-                if (destination != from) targets[destination] = true;
+                if (destination == from) continue;
+                targets[destination] = true;
+                if (marks[destination] == MarkNone) marks[destination] = MarkMove;
             }
         }
 

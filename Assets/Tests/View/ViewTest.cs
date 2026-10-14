@@ -981,13 +981,18 @@ public class ViewTest : UdonSharpBehaviour {
     const string APawnPromotionFen = "4k3/P7/8/8/8/8/8/4K3 w - - 0 1";
     // The king already on g1 with its rook on h1: castling moves only the rook.
     const string KingStaysFen = "6k1/8/8/8/8/8/8/6KR w K - 0 1";
+    // A pawn on e5 that can take a knight on f6 or the pawn on d5 en passant, or move to e6.
+    const string CaptureMarksFen = "4k3/8/5n2/3pP3/8/8/8/4K3 w - d6 0 1";
+    // The king on f1 with its rook on g1, the king's destination: castling swaps them.
+    const string RookOnDestinationFen = "k7/8/8/8/8/8/8/5KR1 w K - 0 1";
 
     // The tenth frame: the picker, highlights and marks wired; the last-move highlight after moves (castling on the
     // rook marking the king's destination, or the rook's square when the king stays), in replay and on a cleared
-    // board; the legal-target marks of a held piece (pickups) and of a selected one (clicks), none in replay, after
-    // the drop or once the game ends; the picker shown over the promotion square for a drop and for a placing click,
-    // facing the promoting side, each of its buttons playing its piece or putting the pawn back, and hidden when a
-    // piece is picked up or the board changes. The input style is put back afterwards.
+    // board; the legal-target marks of a held piece (pickups) and of a selected one (clicks), each of its kind (a
+    // capture, a castle's rook square, an empty square), none in replay, after the drop or once the game ends; the
+    // picker shown over the promotion square for a drop and for a placing click, facing the promoting side, each of
+    // its buttons playing its piece or putting the pawn back, and hidden when a piece is picked up or the board
+    // changes. The input style is put back afterwards.
     public void RunHighlightChecks() {
         int savedStyle = view.inputStyle;
         Check(Utilities.IsValid(view.promotionPicker) && !view.promotionPicker.activeSelf,
@@ -1003,6 +1008,9 @@ public class ViewTest : UdonSharpBehaviour {
             if (Utilities.IsValid(mark) && view.DropSquare(mark.transform.position) == square) marks++;
         }
         CheckInt(marks, 64, "highlights: every square has its target mark, over that square");
+        Check(Utilities.IsValid(view.targetMaterial) && Utilities.IsValid(view.captureMaterial)
+            && view.targetMaterial != view.captureMaterial,
+            "highlights: the target and capture materials assigned, different", "missing or the same");
 
         // The last move.
         string g = "last move";
@@ -1079,12 +1087,27 @@ public class ViewTest : UdonSharpBehaviour {
         CastleGame(StandardCastlingFen, t + " (castling)");
         int king = view.squareObject[Sq("e1")];
         view.OnPiecePickedUp(king);
-        CheckTargets("d1 f1 d2 e2 f2 a1 c1 g1 h1", t + " (castling): e1 held");
+        CheckTargets("d1 f1 d2 e2 f2 oa1 c1 g1 oh1", t + " (castling): e1 held");
         view.pieces[king].localPosition = Over("h1");
         view.OnPieceDropped(king);
         CheckTargets("", t + " (castling): dropped over h1");
         Redraw();
         CheckLastMove("e1", "g1", t + " (castling): O-O by a drop");
+
+        // Captures (en passant marking the square the pawn moves to), and a castle whose rook stands on the king's
+        // destination: one full-size yellow mark there.
+        CastleGame(CaptureMarksFen, t + " (captures)");
+        int capturing = view.squareObject[Sq("e5")];
+        view.OnPiecePickedUp(capturing);
+        CheckTargets("e6 xd6 xf6", t + " (captures): e5 held");
+        view.OnPieceDropped(capturing);
+        Redraw();
+        CastleGame(RookOnDestinationFen, t + " (rook on g1)");
+        int castlingKing = view.squareObject[Sq("f1")];
+        view.OnPiecePickedUp(castlingKing);
+        CheckTargets("e1 e2 f2 g2 og1", t + " (rook on g1): f1 held");
+        view.OnPieceDropped(castlingKing);
+        Redraw();
 
         // Target marks of a selected piece.
         string s = "selected targets";
@@ -1102,6 +1125,11 @@ public class ViewTest : UdonSharpBehaviour {
         CheckTargets("", s + ": Nc3 placed");
         Redraw();
         CheckLastMove("b1", "c3", s + ": Nc3 by clicks");
+        CastleGame(CaptureMarksFen, s + " (captures)");
+        ClickPiece("e5");
+        CheckTargets("e6 xd6 xf6", s + " (captures): e5 selected");
+        ClickPiece("e5");
+        CheckTargets("", s + " (captures): e5 put back");
 
         // The promotion picker, for a drop.
         string p = "picker";
@@ -2385,14 +2413,30 @@ public class ViewTest : UdonSharpBehaviour {
         return Utilities.IsValid(collider) && collider.isTrigger;
     }
 
-    // Whether exactly the squares in expected (names separated by spaces, in any order) have their target mark shown.
+    // Whether exactly the squares in expected (names separated by spaces, in any order) have their target mark shown,
+    // each with the look of its kind: a name alone for a small yellow diamond (an empty square), "x" before it for a
+    // full-size red one (a capture), "o" for a full-size yellow one (a castle's rook square).
     void CheckTargets(string expected, string name) {
         string wrong = "";
+        string padded = " " + expected + " ";
         for (int square = 0; square < 64; square++) {
-            bool want = (" " + expected + " ").Contains(" " + SquareText(square) + " ");
-            if (view.IsTargetHighlighted(square) != want) wrong += SquareText(square) + " ";
+            string text = SquareText(square);
+            int want = ChessBoardView.MarkNone;
+            if (padded.Contains(" " + text + " ")) want = ChessBoardView.MarkMove;
+            else if (padded.Contains(" x" + text + " ")) want = ChessBoardView.MarkCapture;
+            else if (padded.Contains(" o" + text + " ")) want = ChessBoardView.MarkCastle;
+            int shown = view.TargetMarkShown(square);
+            if (shown != want) wrong += text + " (" + MarkText(shown) + ") ";
         }
         Check(wrong.Length == 0, name + ": target marks [" + expected + "]", "wrong on " + wrong);
+    }
+
+    string MarkText(int mark) {
+        if (mark == ChessBoardView.MarkNone) return "none";
+        if (mark == ChessBoardView.MarkMove) return "small yellow";
+        if (mark == ChessBoardView.MarkCastle) return "full yellow";
+        if (mark == ChessBoardView.MarkCapture) return "full red";
+        return "another look";
     }
 
     // Whether the last-move highlights stand on from and to (both "" for hidden), and the view agrees.
