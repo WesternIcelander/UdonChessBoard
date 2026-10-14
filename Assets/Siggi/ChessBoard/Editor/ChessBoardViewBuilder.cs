@@ -460,24 +460,25 @@ public static class ChessBoardViewBuilder {
     }
 
     // The highlights (step 9.5a), under "Highlights", all hidden and without colliders, so clicks reach the square
-    // targets and pieces: two last-move tints (whole squares, just above the squares; the view moves them onto the
-    // last move's squares) and one legal-target diamond per square, a1 to h8, over its square and above the tints,
-    // with the view's yellow and red materials for the marks (step 12.5).
+    // targets and pieces: the last move's line (a blue bar one unit long along +z, just above the squares; the view
+    // stands it on the move's start, turned and stretched to its end) and its mark (a small blue diamond above the
+    // line, which the view moves onto the start; step 12.6), and one legal-target diamond per square, a1 to h8, over
+    // its square and above both, with the view's yellow and red materials for the marks (step 12.5).
     static void AddHighlights(GameObject root, ChessBoardView view) {
-        Material lastMove = MaterialAsset("Last Move", new Color(0.8f, 0.78f, 0.3f), 0.3f);
+        Material lastMove = MaterialAsset("Last Move Mark", new Color(0.2f, 0.5f, 0.95f), 0.3f);
         Material target = MaterialAsset("Target Mark", new Color(0.95f, 0.8f, 0.1f), 0.3f);
         Material capture = MaterialAsset("Capture Mark", new Color(0.85f, 0.12f, 0.1f), 0.3f);
         view.targetMaterial = target;
         view.captureMaterial = capture;
-        Mesh tint = FlatMesh("Last Move Tint", 0.0008f, 0);
+        Mesh line = LineMesh("Last Move Line", 0.0008f, SquareSize * LastMoveLineWidth);
+        Mesh fromDiamond = DiamondMesh("Last Move Diamond", 0.00095f);
         Mesh diamond = DiamondMesh("Legal Target Diamond", 0.0011f);
         GameObject parent = new GameObject("Highlights");
         parent.transform.SetParent(root.transform, false);
-        view.lastMoveHighlights = new GameObject[2];
-        for (int i = 0; i < 2; i++) {
-            view.lastMoveHighlights[i] = FlatObject(i == 0 ? "Last Move From" : "Last Move To", parent, tint, lastMove,
-                Vector3.zero);
-        }
+        view.lastMoveLine = FlatObject("Last Move Line", parent, line, lastMove, Vector3.zero);
+        view.lastMoveMark = FlatObject("Last Move From", parent, fromDiamond, lastMove, Vector3.zero);
+        view.lastMoveMark.transform.localScale =
+            new Vector3(ChessBoardView.SmallMarkScale, 1, ChessBoardView.SmallMarkScale);
         GameObject targets = new GameObject("Legal Targets");
         targets.transform.SetParent(parent.transform, false);
         view.targetHighlights = new GameObject[64];
@@ -1132,6 +1133,28 @@ public static class ChessBoardViewBuilder {
             FlatQuad(vertices, triangles, -h, -h + w, -h + w, h - w, y);
             FlatQuad(vertices, triangles, h - w, -h + w, h, h - w, y);
         }
+        mesh = new Mesh { name = name };
+        mesh.SetVertices(vertices);
+        mesh.SetTriangles(triangles, 0);
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        AssetDatabase.CreateAsset(mesh, path);
+        return mesh;
+    }
+
+    // The last-move line's width, in squares.
+    const float LastMoveLineWidth = 0.12f;
+
+    // A flat bar mesh asset facing up (step 12.6), generated if missing: width wide, centred on the origin's x, from
+    // the origin to one unit along +z, at height y.
+    static Mesh LineMesh(string name, float y, float width) {
+        string path = ModelsFolder + "/" + name + ".asset";
+        Mesh mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+        if (mesh != null) return mesh;
+        EnsureModelsFolder();
+        List<Vector3> vertices = new List<Vector3>();
+        List<int> triangles = new List<int>();
+        FlatQuad(vertices, triangles, -width / 2, 0, width / 2, 1, y);
         mesh = new Mesh { name = name };
         mesh.SetVertices(vertices);
         mesh.SetTriangles(triangles, 0);

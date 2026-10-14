@@ -65,10 +65,13 @@ namespace SiggiChessBoard {
         // the files, in squares (over the a and h files it would hang off the board).
         public const float PickerHeight = 2.2f;
         public const float PickerMaxOffset = 2;
-        // Highlights (step 9.5a), children of this view lying on the board: the last move's two squares (objects
-        // moved onto them, hidden for none), and one legal-target mark per square, standing over it, shown for the held
-        // or selected piece's targets.
-        public GameObject[] lastMoveHighlights = new GameObject[2];
+        // Highlights (step 9.5a), children of this view lying on the board: the last move (hidden for none), and one
+        // legal-target mark per square, standing over it, shown for the held or selected piece's targets.
+        // The last move (step 12.6): a line from its from square to its to square (a flat bar starting at its origin
+        // and running along its +z, one local unit long; the view stands it on the from square, turns it towards the
+        // to square and stretches its z to reach it), and a mark (a small diamond) the view moves onto the from square.
+        public GameObject lastMoveLine;
+        public GameObject lastMoveMark;
         public GameObject[] targetHighlights = new GameObject[64];
         // The legal-target marks' look (step 12.5): each is a diamond as wide as its square, given targetMaterial
         // (yellow) and scaled down to SmallMarkScale on an empty square (MarkMove), targetMaterial at full size on a
@@ -246,11 +249,10 @@ namespace SiggiChessBoard {
                     ? ParentProblem(targetHighlights[i].transform) : "";
                 if (problem.Length > 0) return problem;
             }
-            for (int i = 0; i < lastMoveHighlights.Length; i++) {
-                string problem = Utilities.IsValid(lastMoveHighlights[i])
-                    ? ParentProblem(lastMoveHighlights[i].transform) : "";
-                if (problem.Length > 0) return problem;
-            }
+            string lineProblem = Utilities.IsValid(lastMoveLine) ? ParentProblem(lastMoveLine.transform) : "";
+            if (lineProblem.Length > 0) return lineProblem;
+            string markProblem = Utilities.IsValid(lastMoveMark) ? ParentProblem(lastMoveMark.transform) : "";
+            if (markProblem.Length > 0) return markProblem;
             return Utilities.IsValid(promotionPicker) ? ParentProblem(promotionPicker.transform) : "";
         }
 
@@ -601,31 +603,45 @@ namespace SiggiChessBoard {
 
         // ---- Highlights (step 9.5a) ----
 
-        // The two squares the last-move highlight marks for move (NoSquare for none): where the piece came from and
-        // where it stands now (a castle's king destination; when the king doesn't move, its rook's square instead).
+        // The two squares the last-move line joins for move (which 0 for its start, 1 for its end; NoSquare for none):
+        // where the piece came from and where it stands now. A castle shows the king's path to its destination; when
+        // the king doesn't move (Chess960), its rook's path instead (from its square to the f or d file).
         public static int LastMoveSquare(int move, int which) {
             if (move == 0) return ChessRules.NoSquare;
             int from = ChessRules.MoveFrom(move);
-            if (which == 0) return from;
             int to = ChessRules.MoveTo(move);
-            if (!ChessRules.MoveIsCastle(move)) return to;
-            int destination = ChessRules.SquareOf(
-                ChessRules.FileOf(to) > ChessRules.FileOf(from) ? ChessRules.FileG : ChessRules.FileC,
-                ChessRules.RankOf(from));
-            return destination != from ? destination : to;
+            if (!ChessRules.MoveIsCastle(move)) return which == 0 ? from : to;
+            bool kingSide = ChessRules.FileOf(to) > ChessRules.FileOf(from);
+            int rank = ChessRules.RankOf(from);
+            int destination = ChessRules.SquareOf(kingSide ? ChessRules.FileG : ChessRules.FileC, rank);
+            if (destination != from) return which == 0 ? from : destination;
+            if (which == 0) return to;
+            return ChessRules.SquareOf(kingSide ? ChessRules.FileF : ChessRules.FileD, rank);
         }
 
-        // Puts the last-move highlights on the squares of the move that led to the position shown (in replay too),
-        // hidden when there's none. Called on every Refresh.
+        // Shows the move that led to the position shown (in replay too): the line from its start to its end and the
+        // mark on its start; both hidden when there's none, and the line when it starts and ends on one square (a
+        // Chess960 castle moving neither piece). Called on every Refresh.
         public void UpdateLastMoveHighlight() {
             int move = Utilities.IsValid(board) ? board.LastMove() : 0;
-            for (int i = 0; i < 2 && i < lastMoveHighlights.Length; i++) {
-                GameObject highlight = lastMoveHighlights[i];
-                if (!Utilities.IsValid(highlight)) continue;
-                int square = LastMoveSquare(move, i);
-                bool shown = square != ChessRules.NoSquare;
-                if (shown) highlight.transform.localPosition = SquarePosition(square);
-                if (highlight.activeSelf != shown) highlight.SetActive(shown);
+            int from = LastMoveSquare(move, 0);
+            int to = LastMoveSquare(move, 1);
+            if (Utilities.IsValid(lastMoveMark)) {
+                bool shown = from != ChessRules.NoSquare;
+                if (shown) lastMoveMark.transform.localPosition = SquarePosition(from);
+                if (lastMoveMark.activeSelf != shown) lastMoveMark.SetActive(shown);
+            }
+            if (Utilities.IsValid(lastMoveLine)) {
+                bool shown = from != ChessRules.NoSquare && to != from;
+                if (shown) {
+                    Vector3 start = SquarePosition(from);
+                    Vector3 path = SquarePosition(to) - start;
+                    Transform line = lastMoveLine.transform;
+                    line.localPosition = start;
+                    line.localRotation = Quaternion.LookRotation(path, Vector3.up);
+                    line.localScale = new Vector3(1, 1, path.magnitude);
+                }
+                if (lastMoveLine.activeSelf != shown) lastMoveLine.SetActive(shown);
             }
         }
 

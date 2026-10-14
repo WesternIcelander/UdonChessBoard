@@ -986,9 +986,9 @@ public class ViewTest : UdonSharpBehaviour {
     // The king on f1 with its rook on g1, the king's destination: castling swaps them.
     const string RookOnDestinationFen = "k7/8/8/8/8/8/8/5KR1 w K - 0 1";
 
-    // The tenth frame: the picker, highlights and marks wired; the last-move highlight after moves (castling on the
-    // rook marking the king's destination, or the rook's square when the king stays), in replay and on a cleared
-    // board; the legal-target marks of a held piece (pickups) and of a selected one (clicks), each of its kind (a
+    // The tenth frame: the picker, highlights and marks wired; the last-move line and mark after moves (castling on
+    // the rook showing the king's path, or the rook's when the king stays), in replay and on a cleared board; the
+    // legal-target marks of a held piece (pickups) and of a selected one (clicks), each of its kind (a
     // capture, a castle's rook square, an empty square), none in replay, after the drop or once the game ends; the
     // picker shown over the promotion square for a drop and for a placing click, facing the promoting side, each of
     // its buttons playing its piece or putting the pawn back, and hidden when a piece is picked up or the board
@@ -997,11 +997,12 @@ public class ViewTest : UdonSharpBehaviour {
         int savedStyle = view.inputStyle;
         Check(Utilities.IsValid(view.promotionPicker) && !view.promotionPicker.activeSelf,
             "highlights: the promotion picker assigned, hidden", "missing or shown");
-        int lastMoves = 0;
-        for (int i = 0; i < view.lastMoveHighlights.Length; i++) {
-            if (Utilities.IsValid(view.lastMoveHighlights[i])) lastMoves++;
-        }
-        CheckInt(lastMoves, 2, "highlights: both last-move highlights assigned");
+        Check(Utilities.IsValid(view.lastMoveLine) && Utilities.IsValid(view.lastMoveMark),
+            "highlights: the last-move line and mark assigned", "missing");
+        Material lastMoveMaterial = MaterialOf(view.lastMoveLine);
+        Check(Utilities.IsValid(lastMoveMaterial) && lastMoveMaterial == MaterialOf(view.lastMoveMark)
+            && lastMoveMaterial != view.targetMaterial && lastMoveMaterial != view.captureMaterial,
+            "highlights: the last-move line and mark share a material, not the target marks'", "they don't");
         int marks = 0;
         for (int square = 0; square < 64 && square < view.targetHighlights.Length; square++) {
             GameObject mark = view.targetHighlights[square];
@@ -1053,7 +1054,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(board.PieceDroppedAs(localName, Sq("g1"), Sq("h1")), ChessBoard.InputAccepted,
             g + " (king stays): O-O on the rook");
         Redraw();
-        CheckLastMove("g1", "h1", g + " (king stays): O-O");
+        CheckLastMove("h1", "f1", g + " (king stays): O-O, the rook's path");
 
         // Target marks of a held piece.
         string t = "held targets";
@@ -2439,23 +2440,44 @@ public class ViewTest : UdonSharpBehaviour {
         return "another look";
     }
 
-    // Whether the last-move highlights stand on from and to (both "" for hidden), and the view agrees.
+    // Whether the last move is shown from from to to (both "" for none): the mark (a small diamond) on from, and the
+    // line starting there and ending on to.
     void CheckLastMove(string from, string to, string name) {
         string errors = "";
-        string[] squares = { from, to };
-        for (int i = 0; i < 2; i++) {
-            GameObject highlight = view.lastMoveHighlights[i];
-            if (!Utilities.IsValid(highlight)) continue;
-            bool want = squares[i].Length > 0;
-            if (highlight.activeSelf != want) {
-                errors += (i == 0 ? "from" : "to") + (want ? " hidden; " : " shown; ");
-            } else if (want && (highlight.transform.localPosition - view.SquarePosition(Sq(squares[i]))).sqrMagnitude
-                > 1e-8f) {
-                errors += (i == 0 ? "from" : "to") + " at " + highlight.transform.localPosition.ToString("F3") + "; ";
+        bool want = from.Length > 0;
+        GameObject mark = view.lastMoveMark;
+        GameObject line = view.lastMoveLine;
+        if (Utilities.IsValid(mark)) {
+            Transform t = mark.transform;
+            if (mark.activeSelf != want) {
+                errors += "mark " + (want ? "hidden; " : "shown; ");
+            } else if (want && (t.localPosition - view.SquarePosition(Sq(from))).sqrMagnitude > 1e-8f) {
+                errors += "mark at " + t.localPosition.ToString("F3") + "; ";
+            } else if (want && Mathf.Abs(t.localScale.x - ChessBoardView.SmallMarkScale) > 0.001f) {
+                errors += "mark scaled " + t.localScale.ToString("F2") + "; ";
             }
         }
-        Check(errors.Length == 0, name + ": last move " + (from.Length > 0 ? from + " " + to : "not") + " highlighted",
-            errors);
+        if (Utilities.IsValid(line)) {
+            Transform t = line.transform;
+            Vector3 end = t.localPosition + t.localRotation * new Vector3(0, 0, t.localScale.z);
+            if (line.activeSelf != want) {
+                errors += "line " + (want ? "hidden; " : "shown; ");
+            } else if (want && (t.localPosition - view.SquarePosition(Sq(from))).sqrMagnitude > 1e-8f) {
+                errors += "line starting at " + t.localPosition.ToString("F3") + "; ";
+            } else if (want && (end - view.SquarePosition(Sq(to))).sqrMagnitude > 1e-8f) {
+                errors += "line ending at " + end.ToString("F3") + "; ";
+            } else if (want && Mathf.Abs(t.localScale.x - 1) > 0.001f) {
+                errors += "line widened " + t.localScale.ToString("F2") + "; ";
+            }
+        }
+        Check(errors.Length == 0, name + ": last move " + (want ? from + " " + to : "not") + " shown", errors);
+    }
+
+    // The material of obj's renderer (null for none).
+    Material MaterialOf(GameObject obj) {
+        if (!Utilities.IsValid(obj)) return null;
+        MeshRenderer renderer = obj.GetComponent<MeshRenderer>();
+        return Utilities.IsValid(renderer) ? renderer.sharedMaterial : null;
     }
 
     // Whether the picker is shown (with a promotion waiting) or hidden (with none); shown, whether it stands over
