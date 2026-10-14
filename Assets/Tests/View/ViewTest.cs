@@ -2183,7 +2183,7 @@ public class ViewTest : UdonSharpBehaviour {
         PlayMoves("f2f3 e7e5 g2g4", f);
         CheckFalls(f + ": before the mate");
         PlayMoves("d8h4", f);
-        CheckInt(board.MatedKingSquare(), Sq("e1"), f + ": Qh4#: White's king mated");
+        CheckInt(board.FallenKingSquare(), Sq("e1"), f + ": Qh4#: White's king mated");
         CheckView(f + ": Qh4#");
         CheckFallen("e1", Vector3.forward, f + ": Qh4#");
         CheckInt(board.EnterReplayAs(localName, false), ChessBoard.InputAccepted, f + ": replay entered");
@@ -2193,7 +2193,7 @@ public class ViewTest : UdonSharpBehaviour {
         view.animateMoves = true;
         CheckInt(board.StepToAs(localName, false, 3), ChessBoard.InputAccepted, f + ": stepped to ply 3");
         Redraw();
-        CheckInt(board.MatedKingSquare(), ChessRules.NoSquare, f + ": ply 3: no king mated");
+        CheckInt(board.FallenKingSquare(), ChessRules.NoSquare, f + ": ply 3: no king mated");
         Check(view.fallTarget[fallKing] == 0 && view.fallAmount[fallKing] == 1 && view.IsFalling(fallKing)
             && view.fallStart[fallKing] <= Time.time, f + ": ply 3: the king starts standing up at once",
             FallText(fallKing));
@@ -2281,12 +2281,54 @@ public class ViewTest : UdonSharpBehaviour {
         board.ClearState();
         StartGame(ChessGame.ModeStandard, f + " (Black)");
         PlayMoves("e2e4 e7e5 d1h5 b8c6 f1c4 g8f6 h5f7", f + " (Black)");
-        CheckInt(board.MatedKingSquare(), Sq("e8"), f + " (Black): Qxf7#: Black's king mated");
+        CheckInt(board.FallenKingSquare(), Sq("e8"), f + " (Black): Qxf7#: Black's king mated");
         CheckFallen("e8", Vector3.back, f + " (Black): Qxf7#");
 
         LoadFen(SideMateFen, f + " (h file)");
-        CheckInt(board.MatedKingSquare(), Sq("h5"), f + " (h file): Black's king on h5 mated");
+        CheckInt(board.FallenKingSquare(), Sq("h5"), f + " (h file): Black's king on h5 mated");
         CheckFallen("h5", Vector3.left, f + " (h file)");
+
+        // A resignation lays the resigning side's king down, at once with nothing travelling.
+        string r = "fall: resigned";
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, r);
+        PlayMoves("e2e4 e7e5", r);
+        view.animateMoves = true;
+        CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, r + ": White resigns");
+        Redraw();
+        CheckInt(board.FallenKingSquare(), Sq("e1"), r + ": White's king fallen");
+        int resigned = view.squareObject[Sq("e1")];
+        Check(view.fallTarget[resigned] == 1 && view.IsFalling(resigned) && view.fallStart[resigned] <= Time.time,
+            r + ": the king starts falling at once", FallText(resigned));
+        view.animateMoves = false;
+        Redraw();
+        CheckView(r + " (White)");
+        CheckFallen("e1", Vector3.forward, r + " (White)");
+        CheckInt(board.EnterReplayAs(localName, false), ChessBoard.InputAccepted, r + ": replay entered");
+        Redraw();
+        CheckFallen("e1", Vector3.forward, r + ": replay entered");
+        CheckInt(board.StepToAs(localName, false, 1), ChessBoard.InputAccepted, r + ": stepped to ply 1");
+        Redraw();
+        CheckFalls(r + ": ply 1");
+
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, r + " (Black)");
+        PlayMoves("e2e4", r + " (Black)");
+        CheckInt(board.ResignAs(ChessRules.Black, localName), ChessBoard.InputAccepted, r + " (Black): Black resigns");
+        Redraw();
+        CheckInt(board.FallenKingSquare(), Sq("e8"), r + " (Black): Black's king fallen");
+        CheckFallen("e8", Vector3.back, r + " (Black)");
+
+        // A draw lays nobody down.
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, f + " (draw)");
+        SetRequestRules(true);
+        PlayMoves("e2e4", f + " (draw)");
+        CheckInt(board.OfferDrawAs(ChessRules.Black, localName), ChessBoard.InputAccepted, f + " (draw): offered");
+        CheckInt(board.AcceptDrawAs(ChessRules.White, localName), ChessBoard.InputAccepted, f + " (draw): accepted");
+        Redraw();
+        CheckInt(board.ending, ChessGame.EndingDrawAgreement, f + " (draw): drawn");
+        CheckFalls(f + " (draw)");
 
         board.ClearState();
         Redraw();
@@ -2296,9 +2338,9 @@ public class ViewTest : UdonSharpBehaviour {
         LogSummary();
     }
 
-    // No king mated in the position shown, and every object standing, none falling.
+    // No king fallen in the position shown, and every object standing, none falling.
     void CheckFalls(string name) {
-        CheckInt(board.MatedKingSquare(), ChessRules.NoSquare, name + ": no king mated");
+        CheckInt(board.FallenKingSquare(), ChessRules.NoSquare, name + ": no king fallen");
         int wrong = 0;
         string details = "";
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
@@ -3080,7 +3122,7 @@ public class ViewTest : UdonSharpBehaviour {
     void CheckView(string name) {
         string errors = "";
         int count = 0;
-        int mated = board.MatedKingSquare();
+        int mated = board.FallenKingSquare();
         for (int square = 0; square < 64; square++) {
             int piece = board.PieceAt(square);
             int obj = view.squareObject[square];

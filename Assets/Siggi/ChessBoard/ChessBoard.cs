@@ -665,15 +665,19 @@ namespace SiggiChessBoard {
             return count;
         }
 
-        // The square of the king checkmated in the position shown (step 12.8: the view tips it over), NoSquare for
-        // none: a game ended by checkmate, shown at its last ply (in the game, or in replay, a loaded game too). A game
-        // ends at its mate, so no earlier position of it is one; a custom replay position has no side to move, so it
-        // never is.
-        public int MatedKingSquare() {
-            if (ending != ChessGame.EndingCheckmate) return ChessRules.NoSquare;
+        // The square of the king that has fallen in the position shown (step 12.8: the view tips it over), NoSquare for
+        // none: the king checkmated, or the resigning side's, in a game ended that way, shown at its last ply (in the
+        // game, or in replay, a loaded game too). Earlier positions of the game never have one; a custom replay
+        // position has no side to move, so it never does either.
+        public int FallenKingSquare() {
+            int color;
+            if (ending == ChessGame.EndingCheckmate) color = state[ChessPosition.StateSideToMove];
+            else if (ending == ChessGame.EndingResignation && winner != ChessRules.NoColor) {
+                color = ChessRules.OtherColor(winner);
+            } else return ChessRules.NoSquare;
             if (replayMode && (replayCustom || replayIndex != moveCount)) return ChessRules.NoSquare;
             byte[] shown = replayMode ? replayBoard : board;
-            int king = ChessRules.PieceOf(state[ChessPosition.StateSideToMove], ChessRules.King);
+            int king = ChessRules.PieceOf(color, ChessRules.King);
             for (int square = 0; square < 64; square++) {
                 if (shown[square] == king) return square;
             }

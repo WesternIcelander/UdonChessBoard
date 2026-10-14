@@ -119,16 +119,17 @@ namespace SiggiChessBoard {
         [NonSerialized] public float[] animationStart = new float[PieceCount];
         float[] animationLift = new float[PieceCount];
         int animatingCount;
-        // The checkmated king falls over (step 12.8): while the position shown is checkmate
-        // (ChessBoard.MatedKingSquare), its king lies on the board, tipped over about its base (which stays over its
-        // square) towards the board's centre along the files or the ranks, whichever it stands further from it along,
-        // and lifted so that its lowest point is as high as when it stands. It tips over in fallSeconds once the
-        // mating piece has landed, and stands up the same way when the position shown is no longer the mate. A change
+        // The checkmated or resigning king falls over (step 12.8): while the position shown is the end of a game lost
+        // by checkmate or resignation (ChessBoard.FallenKingSquare), the loser's king lies on the board, tipped over
+        // about its base (which stays over its square) towards the board's centre along the files or the ranks,
+        // whichever it stands further from it along, and lifted so that its lowest point is as high as when it stands.
+        // It tips over in fallSeconds once any travelling piece (the mating one) has landed, at once on a resignation,
+        // and stands up the same way when the position shown is no longer that end. A change
         // that puts everything in place at once (a reset, a load, entering or leaving replay, animateMoves off) lays it
         // down or stands it up at once too, as does its leaving its square.
         public float fallSeconds = 0.6f;
         // How far each object has fallen (0 standing, 1 lying), how far it's going (0 or 1), and from when
-        // (Time.time; later than now while it waits for the mating piece to land).
+        // (Time.time; later than now while it waits for the travelling pieces to land).
         [NonSerialized] public float[] fallAmount = new float[PieceCount];
         [NonSerialized] public float[] fallTarget = new float[PieceCount];
         [NonSerialized] public float[] fallStart = new float[PieceCount];
@@ -1439,20 +1440,25 @@ namespace SiggiChessBoard {
             }
         }
 
-        // ---- The checkmated king (step 12.8) ----
+        // ---- The checkmated or resigning king (step 12.8) ----
 
-        // Sets each object's fall: the king mated in the position shown is to lie, every other object to stand. A king
-        // starts falling once the travelling pieces have landed (moveSeconds on), one standing up at once. Without
+        // Sets each object's fall: the king fallen in the position shown (mated or resigning) is to lie, every other
+        // object to stand. A king starts falling once the pieces travelling in this placing have landed (moveSeconds
+        // on; at once when none does, as on a resignation), one standing up at once. Without
         // animation (this placing's, or animateMoves off), and for an object that left its square or has none, the
         // fall is done at once. Called on every Refresh, before placing.
         void UpdateFalls(bool animate) {
-            int square = Utilities.IsValid(board) ? board.MatedKingSquare() : ChessRules.NoSquare;
-            int mated = square == ChessRules.NoSquare ? NoObject : squareObject[square];
+            int square = Utilities.IsValid(board) ? board.FallenKingSquare() : ChessRules.NoSquare;
+            int fallen = square == ChessRules.NoSquare ? NoObject : squareObject[square];
+            bool travelling = false;
             for (int obj = 0; obj < PieceCount; obj++) {
-                float target = obj == mated ? 1 : 0;
+                if (obj != heldObject && objectSquare[obj] != placedSquare[obj]) travelling = true;
+            }
+            for (int obj = 0; obj < PieceCount; obj++) {
+                float target = obj == fallen ? 1 : 0;
                 if (target != fallTarget[obj]) {
                     fallTarget[obj] = target;
-                    fallStart[obj] = Time.time + (target > 0 ? moveSeconds : 0);
+                    fallStart[obj] = Time.time + (target > 0 && travelling ? moveSeconds : 0);
                     if (!animate) fallAmount[obj] = target;
                 }
                 if (!animateMoves || fallSeconds <= 0 || objectSquare[obj] == ChessRules.NoSquare
