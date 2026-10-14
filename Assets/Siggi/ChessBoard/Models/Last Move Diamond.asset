@@ -6,7 +6,7 @@ Mesh:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: Last Move Tint
+  m_Name: Last Move Diamond
   serializedVersion: 11
   m_SubMeshes:
   - serializedVersion: 2
@@ -17,7 +17,7 @@ Mesh:
     firstVertex: 0
     vertexCount: 4
     localAABB:
-      m_Center: {x: 0, y: 0.0008, z: 0}
+      m_Center: {x: 0, y: 0.00095, z: 0}
       m_Extent: {x: 0.025, y: 0, z: 0.025}
   m_Shapes:
     vertices: []
@@ -97,7 +97,7 @@ Mesh:
       format: 0
       dimension: 0
     m_DataSize: 96
-    _typelessdata: cdccccbc17b7513acdccccbc000000000000803f00000000cdccccbc17b7513acdcccc3c000000000000803f00000000cdcccc3c17b7513acdcccc3c000000000000803f00000000cdcccc3c17b7513acdccccbc000000000000803f00000000
+    _typelessdata: 000000006c09793acdccccbc000000000000803f00000000cdccccbc6c09793a00000000000000000000803f00000000000000006c09793acdcccc3c000000000000803f00000000cdcccc3c6c09793a00000000000000000000803f00000000
   m_CompressedMesh:
     m_Vertices:
       m_NumItems: 0
@@ -151,7 +151,7 @@ Mesh:
       m_BitSize: 0
     m_UVInfo: 0
   m_LocalAABB:
-    m_Center: {x: 0, y: 0.0008, z: 0}
+    m_Center: {x: 0, y: 0.00095, z: 0}
     m_Extent: {x: 0.025, y: 0, z: 0.025}
   m_MeshUsageFlags: 0
   m_CookingOptions: 30
