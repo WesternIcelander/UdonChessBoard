@@ -72,6 +72,12 @@ namespace SiggiChessBoard {
         // to square and stretches its z to reach it), and a mark (a small diamond) the view moves onto the from square.
         public GameObject lastMoveLine;
         public GameObject lastMoveMark;
+        // Check lines (step 12.7): while a king is in check in the position shown (in replay too), a red line from
+        // each piece giving check to the king, each a bar like lastMoveLine; the lines beyond the checks are hidden,
+        // and checks beyond the lines aren't shown. A game has at most two (a double check); a custom replay position
+        // can have more. The builder makes CheckLineCount.
+        public GameObject[] checkLines = new GameObject[0];
+        public const int CheckLineCount = 16;
         public GameObject[] targetHighlights = new GameObject[64];
         // The legal-target marks' look (step 12.5): each is a diamond as wide as its square, given targetMaterial
         // (yellow) and scaled down to SmallMarkScale on an empty square (MarkMove), targetMaterial at full size on a
@@ -204,6 +210,10 @@ namespace SiggiChessBoard {
         // Each target's legal-target mark (Mark...), for the selected and the held piece.
         [NonSerialized] public int[] selectedMarks = new int[64];
         [NonSerialized] public int[] heldMarks = new int[64];
+        // The checks in the position shown, for the check lines: the squares of the pieces giving check and of the
+        // kings they attack (ChessBoard.Checks).
+        [NonSerialized] public int[] checkers = new int[CheckLineCount];
+        [NonSerialized] public int[] checkedKings = new int[CheckLineCount];
         int[] targetMoves = new int[ChessMoves.MaxMoves];
 
         void Start() {
@@ -253,6 +263,10 @@ namespace SiggiChessBoard {
             if (lineProblem.Length > 0) return lineProblem;
             string markProblem = Utilities.IsValid(lastMoveMark) ? ParentProblem(lastMoveMark.transform) : "";
             if (markProblem.Length > 0) return markProblem;
+            for (int i = 0; i < checkLines.Length; i++) {
+                string problem = Utilities.IsValid(checkLines[i]) ? ParentProblem(checkLines[i].transform) : "";
+                if (problem.Length > 0) return problem;
+            }
             return Utilities.IsValid(promotionPicker) ? ParentProblem(promotionPicker.transform) : "";
         }
 
@@ -462,6 +476,7 @@ namespace SiggiChessBoard {
             if (heldObject != NoObject) FindTargets(heldFrom, replay, heldTargets, heldMarks);
             UpdateLiftedMarks();
             UpdateLastMoveHighlight();
+            UpdateCheckLines();
             UpdatePromotionPicker();
             UpdateBlocker();
         }
@@ -631,17 +646,32 @@ namespace SiggiChessBoard {
                 if (shown) lastMoveMark.transform.localPosition = SquarePosition(from);
                 if (lastMoveMark.activeSelf != shown) lastMoveMark.SetActive(shown);
             }
-            if (Utilities.IsValid(lastMoveLine)) {
-                bool shown = from != ChessRules.NoSquare && to != from;
-                if (shown) {
-                    Vector3 start = SquarePosition(from);
-                    Vector3 path = SquarePosition(to) - start;
-                    Transform line = lastMoveLine.transform;
-                    line.localPosition = start;
-                    line.localRotation = Quaternion.LookRotation(path, Vector3.up);
-                    line.localScale = new Vector3(1, 1, path.magnitude);
-                }
-                if (lastMoveLine.activeSelf != shown) lastMoveLine.SetActive(shown);
+            if (Utilities.IsValid(lastMoveLine)) PlaceLine(lastMoveLine, from, to);
+        }
+
+        // Shows a line (a bar one local unit long along its +z, as lastMoveLine) from square from to square to: stood
+        // on from, turned towards to and stretched to reach it. Hidden for NoSquare, or when both are one square.
+        public void PlaceLine(GameObject lineObject, int from, int to) {
+            bool shown = from != ChessRules.NoSquare && to != ChessRules.NoSquare && to != from;
+            if (shown) {
+                Vector3 start = SquarePosition(from);
+                Vector3 path = SquarePosition(to) - start;
+                Transform line = lineObject.transform;
+                line.localPosition = start;
+                line.localRotation = Quaternion.LookRotation(path, Vector3.up);
+                line.localScale = new Vector3(1, 1, path.magnitude);
+            }
+            if (lineObject.activeSelf != shown) lineObject.SetActive(shown);
+        }
+
+        // Shows a check line from each piece giving check to the king it attacks in the position shown (in replay
+        // too, and once a game ends in checkmate), hiding the rest. Called on every Refresh.
+        public void UpdateCheckLines() {
+            int count = Utilities.IsValid(board) ? board.Checks(checkers, checkedKings) : 0;
+            for (int i = 0; i < checkLines.Length; i++) {
+                if (!Utilities.IsValid(checkLines[i])) continue;
+                if (i < count) PlaceLine(checkLines[i], checkers[i], checkedKings[i]);
+                else if (checkLines[i].activeSelf) checkLines[i].SetActive(false);
             }
         }
 

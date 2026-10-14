@@ -981,6 +981,8 @@ public class ViewTest : UdonSharpBehaviour {
     const string APawnPromotionFen = "4k3/P7/8/8/8/8/8/4K3 w - - 0 1";
     // The king already on g1 with its rook on h1: castling moves only the rook.
     const string KingStaysFen = "6k1/8/8/8/8/8/8/6KR w K - 0 1";
+    // A knight on e4 in front of its rook: Nd6 gives a double check (the knight, and the rook it uncovers).
+    const string DoubleCheckFen = "4k3/8/8/8/4N3/8/8/4RK2 w - - 0 1";
     // A pawn on e5 that can take a knight on f6 or the pawn on d5 en passant, or move to e6.
     const string CaptureMarksFen = "4k3/8/5n2/3pP3/8/8/8/4K3 w - d6 0 1";
     // The king on f1 with its rook on g1, the king's destination: castling swaps them.
@@ -988,8 +990,9 @@ public class ViewTest : UdonSharpBehaviour {
 
     // The tenth frame: the picker, highlights and marks wired; the last-move line and mark after moves (castling on
     // the rook showing the king's path, or the rook's when the king stays), in replay and on a cleared board; the
-    // legal-target marks of a held piece (pickups) and of a selected one (clicks), each of its kind (a
-    // capture, a castle's rook square, an empty square), none in replay, after the drop or once the game ends; the
+    // check lines (step 12.7) of a check, a double check and a checkmate, in replay and a custom position, and gone
+    // once answered; the legal-target marks of a held piece (pickups) and of a selected one (clicks), each of its kind
+    // (a capture, a castle's rook square, an empty square), none in replay, after the drop or once the game ends; the
     // picker shown over the promotion square for a drop and for a placing click, facing the promoting side, each of
     // its buttons playing its piece or putting the pawn back, and hidden when a piece is picked up or the board
     // changes. The input style is put back afterwards.
@@ -1003,6 +1006,15 @@ public class ViewTest : UdonSharpBehaviour {
         Check(Utilities.IsValid(lastMoveMaterial) && lastMoveMaterial == MaterialOf(view.lastMoveMark)
             && lastMoveMaterial != view.targetMaterial && lastMoveMaterial != view.captureMaterial,
             "highlights: the last-move line and mark share a material, not the target marks'", "they don't");
+        int lineCount = 0;
+        for (int i = 0; i < view.checkLines.Length; i++) {
+            if (Utilities.IsValid(view.checkLines[i])) lineCount++;
+        }
+        CheckInt(lineCount, ChessBoardView.CheckLineCount, "highlights: the check lines assigned");
+        Material checkMaterial = view.checkLines.Length > 0 ? MaterialOf(view.checkLines[0]) : null;
+        Check(Utilities.IsValid(checkMaterial) && checkMaterial != lastMoveMaterial
+            && checkMaterial != view.targetMaterial && checkMaterial != view.captureMaterial,
+            "highlights: the check lines' material, not the last move's or the target marks'", "missing or shared");
         int marks = 0;
         for (int square = 0; square < 64 && square < view.targetHighlights.Length; square++) {
             GameObject mark = view.targetHighlights[square];
@@ -1055,6 +1067,47 @@ public class ViewTest : UdonSharpBehaviour {
             g + " (king stays): O-O on the rook");
         Redraw();
         CheckLastMove("h1", "f1", g + " (king stays): O-O, the rook's path");
+
+        // Check lines: one from each piece giving check, in the game and in replay, and none once it's answered.
+        string k = "check lines";
+        board.ClearState();
+        Redraw();
+        CheckCheckLines("", k + ": a cleared board");
+        StartGame(ChessGame.ModeStandard, k);
+        PlayMoves("e2e4 d7d5", k);
+        CheckCheckLines("", k + ": no check");
+        PlayMoves("f1b5", k);
+        CheckCheckLines("b5e8", k + ": Bb5+");
+        PlayMoves("c7c6", k);
+        CheckCheckLines("", k + ": c6, answered");
+        CheckInt(board.EnterReplayAs(localName, false), ChessBoard.InputAccepted, k + ": replay entered");
+        CheckInt(board.StepToAs(localName, false, 3), ChessBoard.InputAccepted, k + ": stepped to ply 3");
+        Redraw();
+        CheckCheckLines("b5e8", k + ": replay at Bb5+");
+        CheckInt(board.StepToAs(localName, false, 2), ChessBoard.InputAccepted, k + ": stepped to ply 2");
+        Redraw();
+        CheckCheckLines("", k + ": replay before Bb5+");
+        CheckInt(board.PieceDroppedAs(localName, Sq("d8"), Sq("d2")), ChessBoard.InputAccepted,
+            k + ": a free move, the queen to d2");
+        Redraw();
+        CheckCheckLines("d2e1", k + ": replay, custom position: White in check");
+        CheckInt(board.PieceDroppedAs(localName, Sq("f1"), Sq("b5")), ChessBoard.InputAccepted,
+            k + ": a free move, the bishop to b5");
+        Redraw();
+        CheckCheckLines("d2e1 b5e8", k + ": replay, custom position: both kings in check");
+
+        CastleGame(DoubleCheckFen, k + " (double check)");
+        CheckCheckLines("", k + " (double check): no check");
+        PlayMoves("e4d6", k + " (double check)");
+        CheckCheckLines("d6e8 e1e8", k + " (double check): Nd6, a double check");
+        PlayMoves("e8d8", k + " (double check)");
+        CheckCheckLines("", k + " (double check): Kd8, answered");
+
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, k + " (mate)");
+        PlayMoves("e2e4 e7e5 d1h5 b8c6 f1c4 g8f6 h5f7", k + " (mate)");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, k + " (mate): Qxf7# ends the game");
+        CheckCheckLines("f7e8", k + " (mate): the checkmate's line stays");
 
         // Target marks of a held piece.
         string t = "held targets";
@@ -2471,6 +2524,36 @@ public class ViewTest : UdonSharpBehaviour {
             }
         }
         Check(errors.Length == 0, name + ": last move " + (want ? from + " " + to : "not") + " shown", errors);
+    }
+
+    // Whether exactly the check lines in expected (each a from and a to square, "b5e8", separated by spaces, in any
+    // order; "" for none) are shown: each a line starting on its from square and ending on its to square.
+    void CheckCheckLines(string expected, string name) {
+        string shown = "";
+        string padded = " " + expected + " ";
+        int matched = 0;
+        int count = 0;
+        for (int i = 0; i < view.checkLines.Length; i++) {
+            GameObject line = view.checkLines[i];
+            if (!Utilities.IsValid(line) || !line.activeSelf) continue;
+            count++;
+            Transform t = line.transform;
+            Vector3 end = t.localPosition + t.localRotation * new Vector3(0, 0, t.localScale.z);
+            string text = SquareAt(t.localPosition) + SquareAt(end);
+            shown += " " + text;
+            if (padded.Contains(" " + text + " ") && Mathf.Abs(t.localScale.x - 1) < 0.001f) matched++;
+        }
+        int wanted = expected.Length == 0 ? 0 : expected.Split(new char[] { ' ' }).Length;
+        Check(matched == wanted && count == wanted, name + ": check lines [" + expected + "]",
+            "shown [" + shown.Trim() + "]");
+    }
+
+    // The name of the square whose centre is at position (the view's local space), "?" for none.
+    string SquareAt(Vector3 position) {
+        for (int square = 0; square < 64; square++) {
+            if ((position - view.SquarePosition(square)).sqrMagnitude < 1e-8f) return SquareText(square);
+        }
+        return "?";
     }
 
     // The material of obj's renderer (null for none).

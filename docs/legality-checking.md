@@ -8,6 +8,8 @@ The Java checks each candidate by copying the board and generating all of the op
 
 This also removes the recursion (`getAllLegalMoves` → `isInCheck` → `getAllLegalMoves`).
 
+The check lines (step 12.7) need every piece giving check, not just whether there is one: `ChessMoves.SquareAttackers` looks outward the same way as `IsSquareAttacked` but collects each attacker's square instead of stopping at the first (at most 16: eight along the lines, eight knights). `ChessBoard.Checks` uses it on each king of the position shown.
+
 Notation generation (`RegularMove.notation`) should reuse the already-computed legal move list and disambiguate directly, with no parsing. Find the other legal moves with the same piece type and *to* square. If there are none, no prefix is needed. Otherwise add the from-file if that makes it unique, else the from-rank, else both. Pawn captures always take the from-file. (`ChessNotation.MoveToSan`; the other moves must also match on castling, which never collides since a castle's *to* is the mover's own rook.)
 
 Import goes the other way, from SAN to a legal move, also without regex (`ChessNotation.MoveFromSan`, see [Import steps](pgn.md#import-steps)).

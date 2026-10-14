@@ -24,6 +24,7 @@ public class RulesTest : UdonSharpBehaviour {
         TestCastling();
         TestMoveGeneration();
         TestAttacks();
+        TestAttackers();
         TestLegalMoves();
         TestPositions();
         TestFen();
@@ -1275,6 +1276,79 @@ public class RulesTest : UdonSharpBehaviour {
         b[ChessRules.B1] = ChessRules.WhiteBishop;
         b[ChessRules.C2] = ChessRules.WhitePawn;
         CheckAttacked("sliders blocked by their own pieces", b, white, "a2 a3 b1 b5 c4 c2 b3 d3");
+    }
+
+    // ---- 12.7 ----
+
+    // Compares the pieces of byColor attacking square (ChessMoves.SquareAttackers) with expected: their squares
+    // separated by spaces, in any order, "" for none.
+    void CheckAttackers(string name, string placement, string square, int byColor, string expected) {
+        byte[] board = Placement(placement);
+        byte[] b = CopyBoard(board);
+        int[] attackers = new int[16];
+        int count = ChessMoves.SquareAttackers(b, ChessRules.ParseSquare(square), byColor, attackers, 0);
+        bool[] wanted = new bool[64];
+        int wantedCount = 0;
+        if (expected != "") {
+            string[] names = expected.Split(new char[] { ' ' });
+            for (int i = 0; i < names.Length; i++) wanted[ChessRules.ParseSquare(names[i])] = true;
+            wantedCount = names.Length;
+        }
+        string errors = BoardDiff(b, board);
+        if (errors != "") errors = " changed the board:" + errors;
+        for (int i = 0; i < count; i++) {
+            if (!wanted[attackers[i]]) errors += " unexpected " + ChessRules.SquareName(attackers[i]);
+        }
+        if (count != wantedCount) errors += " count " + count + " (expected " + wantedCount + ")";
+        Check(errors == "", "attackers: " + name, errors);
+    }
+
+    void TestAttackers() {
+        int white = ChessRules.White;
+        int black = ChessRules.Black;
+        CheckAttackers("rook on the file", "4r2k/8/8/8/8/8/8/4K3", "e1", black, "e8");
+        CheckAttackers("rook blocked", "4r2k/8/8/8/4n3/8/8/4K3", "e1", black, "");
+        CheckAttackers("pawn", "8/8/8/3k4/4P3/8/8/7K", "d5", white, "e4");
+        CheckAttackers("discovered double check by a knight", "4k3/8/3N4/8/8/8/8/4RK2", "e8", white, "d6 e1");
+        CheckAttackers("the other colour's pieces don't count", "4k3/8/3N4/8/8/8/8/4RK2", "e8", black, "");
+        CheckAttackers("kings", "8/8/8/8/8/2k5/3K4/8", "c3", white, "d2");
+        // The most one square can have: eight knights and eight queens around d4.
+        string crowd = "8/8/2N1N3/1NQQQN2/2Q1Q3/1NQQQN2/2N1N3/8";
+        CheckAttackers("sixteen attackers", crowd, "d4", white,
+            "b3 b5 c2 c6 e2 e6 f3 f5 c3 c4 c5 d3 d5 e3 e4 e5");
+
+        // Appended at count, and only while the array has room.
+        byte[] b = Placement(crowd);
+        int[] attackers = new int[18];
+        attackers[0] = 99;
+        attackers[1] = 98;
+        int count = ChessMoves.SquareAttackers(b, ChessRules.D4, white, attackers, 2);
+        Check(count == 18 && attackers[0] == 99 && attackers[1] == 98, "attackers: appended after count",
+            "count " + count + ", first " + attackers[0] + " " + attackers[1]);
+        int[] small = new int[3];
+        count = ChessMoves.SquareAttackers(b, ChessRules.D4, white, small, 0);
+        Check(count == 3, "attackers: no more than the array holds", "count " + count);
+
+        // Some attacker for exactly the squares IsSquareAttacked finds attacked.
+        string[] placements = new string[] {
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR",
+            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R",
+            "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1",
+            crowd
+        };
+        string wrong = "";
+        for (int p = 0; p < placements.Length; p++) {
+            b = Placement(placements[p]);
+            for (int color = 0; color < 2; color++) {
+                for (int sq = 0; sq < 64; sq++) {
+                    bool some = ChessMoves.SquareAttackers(b, sq, color, attackers, 0) > 0;
+                    if (some != ChessMoves.IsSquareAttacked(b, sq, color)) {
+                        wrong += " " + p + ":" + ChessRules.SquareName(sq) + (color == white ? "w" : "b");
+                    }
+                }
+            }
+        }
+        Check(wrong == "", "attackers: agree with IsSquareAttacked", "differ on" + wrong);
     }
 
     // ---- 2.5 ----

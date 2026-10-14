@@ -462,15 +462,18 @@ public static class ChessBoardViewBuilder {
     // The highlights (step 9.5a), under "Highlights", all hidden and without colliders, so clicks reach the square
     // targets and pieces: the last move's line (a blue bar one unit long along +z, just above the squares; the view
     // stands it on the move's start, turned and stretched to its end) and its mark (a small blue diamond above the
-    // line, which the view moves onto the start; step 12.6), and one legal-target diamond per square, a1 to h8, over
-    // its square and above both, with the view's yellow and red materials for the marks (step 12.5).
+    // line, which the view moves onto the start; step 12.6), the check lines (red bars like the last move's, just above
+    // it and under its mark; step 12.7), and one legal-target diamond per square, a1 to h8, over its square and above
+    // them all, with the view's yellow and red materials for the marks (step 12.5).
     static void AddHighlights(GameObject root, ChessBoardView view) {
         Material lastMove = MaterialAsset("Last Move Mark", new Color(0.2f, 0.5f, 0.95f), 0.3f);
         Material target = MaterialAsset("Target Mark", new Color(0.95f, 0.8f, 0.1f), 0.3f);
         Material capture = MaterialAsset("Capture Mark", new Color(0.85f, 0.12f, 0.1f), 0.3f);
+        Material check = MaterialAsset("Check Line", new Color(0.9f, 0.08f, 0.08f), 0.3f);
         view.targetMaterial = target;
         view.captureMaterial = capture;
         Mesh line = LineMesh("Last Move Line", 0.0008f, SquareSize * LastMoveLineWidth);
+        Mesh checkLine = LineMesh("Check Line", 0.00085f, SquareSize * LastMoveLineWidth);
         Mesh fromDiamond = DiamondMesh("Last Move Diamond", 0.00095f);
         Mesh diamond = DiamondMesh("Legal Target Diamond", 0.0011f);
         GameObject parent = new GameObject("Highlights");
@@ -479,6 +482,12 @@ public static class ChessBoardViewBuilder {
         view.lastMoveMark = FlatObject("Last Move From", parent, fromDiamond, lastMove, Vector3.zero);
         view.lastMoveMark.transform.localScale =
             new Vector3(ChessBoardView.SmallMarkScale, 1, ChessBoardView.SmallMarkScale);
+        GameObject checks = new GameObject("Check Lines");
+        checks.transform.SetParent(parent.transform, false);
+        view.checkLines = new GameObject[ChessBoardView.CheckLineCount];
+        for (int i = 0; i < view.checkLines.Length; i++) {
+            view.checkLines[i] = FlatObject("Check Line " + (i + 1), checks, checkLine, check, Vector3.zero);
+        }
         GameObject targets = new GameObject("Legal Targets");
         targets.transform.SetParent(parent.transform, false);
         view.targetHighlights = new GameObject[64];

@@ -644,6 +644,27 @@ namespace SiggiChessBoard {
             return ChessMoves.IsInCheck(board, state, state[ChessPosition.StateSideToMove]);
         }
 
+        // The checks in the position shown (for the check lines, step 12.7; the replay board's in replay, custom
+        // positions included): for each king attacked by the other colour, each piece attacking it. Entry i of
+        // checkers is the square of a piece giving check and entry i of kings the king's square; both are filled while
+        // both have room. Returns how many there are. In a position from the game only the side to move can be in
+        // check; a custom replay position can have both kings in check.
+        public int Checks(int[] checkers, int[] kings) {
+            if (checkers == null || kings == null) return 0;
+            byte[] shown = replayMode ? replayBoard : board;
+            int limit = Mathf.Min(checkers.Length, kings.Length);
+            int count = 0;
+            for (int square = 0; square < 64 && count < limit; square++) {
+                int piece = shown[square];
+                if (piece == ChessRules.Empty || (piece & 7) != ChessRules.King) continue;
+                int start = count;
+                count = Mathf.Min(ChessMoves.SquareAttackers(shown, square, ((piece >> 3) & 1) ^ 1, checkers, count),
+                    limit);
+                for (int i = start; i < count; i++) kings[i] = square;
+            }
+            return count;
+        }
+
         // The legal moves from square in the game (for the legal-target highlights) into moves, which
         // ChessMoves.MaxMoves entries always hold, and how many there are: none unless a game is in progress and not
         // in replay, with the side to move's flag not fallen. Promotions are four moves to one square.

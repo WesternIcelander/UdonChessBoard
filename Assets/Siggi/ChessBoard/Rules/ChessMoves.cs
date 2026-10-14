@@ -267,6 +267,66 @@ namespace SiggiChessBoard {
             return false;
         }
 
+        // The squares of the pieces of byColor attacking square (as IsSquareAttacked, but all of them, for the check
+        // lines, step 12.7), appended to attackers at index count while it has room. Returns the new count. At most 16
+        // pieces attack one square (eight along the lines, the nearest pawns and king among them, and eight knights).
+        public static int SquareAttackers(byte[] board, int square, int byColor, int[] attackers, int count) {
+            int file = square & 7;
+            int rank = square >> 3;
+            int colorBits = byColor << 3;
+
+            int pawnRank = byColor == ChessRules.White ? rank - 1 : rank + 1;
+            if (pawnRank >= 0 && pawnRank <= 7) {
+                int pawn = ChessRules.Pawn | colorBits;
+                if (file > 0 && board[(pawnRank << 3) | (file - 1)] == pawn && count < attackers.Length) {
+                    attackers[count++] = (pawnRank << 3) | (file - 1);
+                }
+                if (file < 7 && board[(pawnRank << 3) | (file + 1)] == pawn && count < attackers.Length) {
+                    attackers[count++] = (pawnRank << 3) | (file + 1);
+                }
+            }
+
+            int knight = ChessRules.Knight | colorBits;
+            int king = ChessRules.King | colorBits;
+            for (int d = 0; d < 8; d++) {
+                int toFile = file + ((KnightFileSteps >> (d * 3)) & 7) - 2;
+                int toRank = rank + ((KnightRankSteps >> (d * 3)) & 7) - 2;
+                if (toFile >= 0 && toFile <= 7 && toRank >= 0 && toRank <= 7
+                    && board[(toRank << 3) | toFile] == knight && count < attackers.Length) {
+                    attackers[count++] = (toRank << 3) | toFile;
+                }
+                toFile = file + ((LineFileSteps >> (d * 2)) & 3) - 1;
+                toRank = rank + ((LineRankSteps >> (d * 2)) & 3) - 1;
+                if (toFile >= 0 && toFile <= 7 && toRank >= 0 && toRank <= 7
+                    && board[(toRank << 3) | toFile] == king && count < attackers.Length) {
+                    attackers[count++] = (toRank << 3) | toFile;
+                }
+            }
+
+            int queen = ChessRules.Queen | colorBits;
+            int rook = ChessRules.Rook | colorBits;
+            int bishop = ChessRules.Bishop | colorBits;
+            for (int d = 0; d < 8; d++) {
+                int slider = d < 4 ? rook : bishop;
+                int fileStep = ((LineFileSteps >> (d * 2)) & 3) - 1;
+                int rankStep = ((LineRankSteps >> (d * 2)) & 3) - 1;
+                int toFile = file + fileStep;
+                int toRank = rank + rankStep;
+                while (toFile >= 0 && toFile <= 7 && toRank >= 0 && toRank <= 7) {
+                    int target = board[(toRank << 3) | toFile];
+                    if (target != ChessRules.Empty) {
+                        if ((target == slider || target == queen) && count < attackers.Length) {
+                            attackers[count++] = (toRank << 3) | toFile;
+                        }
+                        break;
+                    }
+                    toFile += fileStep;
+                    toRank += rankStep;
+                }
+            }
+            return count;
+        }
+
         // Java Board.getAllLegalMoves: all legal moves for the side to move, written to moves from index 0. Returns
         // the count. With prohibitSelfCheck (Java Board.prohibitSelfCheck, normally true) a move is kept only if it
         // doesn't leave the mover's king in check, and castling only if the king isn't in check and doesn't pass
