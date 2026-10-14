@@ -21,6 +21,8 @@ public class ViewTest : UdonSharpBehaviour {
     public ChessPgnImporter importer;
     public TextAsset chess960Pgn;
     public TextAsset promotionsPgn;
+    // A second chess piece set (step 12.3): models turned 90°, twice the size, origin off centre, two material slots.
+    public ChessPieceSet testPieceSet;
     // Set once the checks are over (or skipped), so ArchiveTest (step 10) can use the board after them.
     [System.NonSerialized] public bool finished;
 
@@ -1752,7 +1754,217 @@ public class ViewTest : UdonSharpBehaviour {
         Redraw();
         CheckPgnBox(false, s + ": cleared");
         CheckView("cleared after the Load PGN checks");
+        SendCustomEventDelayedFrames(nameof(RunPieceSetChecks), 1);
+    }
+
+    // ---- 12.3: chess piece sets ----
+
+    ChessPieceSet savedViewSet;
+    ChessPieceSet savedDefaultSet;
+    // Each object's world bounds under the starting set on a cleared board: the centre from its square's centre, and
+    // the size.
+    Vector3[] boundsCentre = new Vector3[ChessBoardView.PieceCount];
+    Vector3[] boundsSize = new Vector3[ChessBoardView.PieceCount];
+
+    // A fifteenth frame: the test set put on the view at once (meshes, both material slots, turn, size, collider, the
+    // pieces standing exactly as the starting set's do), a game played with it by drops and clicks with captures and
+    // a promotion; back to the arbiter's set with SetChessPieces(null); SetDefaultChessPieces(null) refused, then the
+    // test set made the arbiter's default, picked up by the view on a later frame (RunPieceSetPollChecks).
+    public void RunPieceSetChecks() {
+        string s = "piece sets";
+        ChessArbiter arbiter = board.arbiter;
+        bool ready = Utilities.IsValid(testPieceSet) && Utilities.IsValid(arbiter)
+            && Utilities.IsValid(arbiter.defaultPieceSet);
+        Check(ready, s + ": the test set and the arbiter's default set assigned", "rebuild with Tools > Chess Board > "
+            + "Create Board View, then Create View Test");
+        if (!ready) {
+            LogSummary();
+            return;
+        }
+        savedViewSet = view.pieceSet;
+        savedDefaultSet = arbiter.defaultPieceSet;
+        view.animateMoves = false;
+        Check(view.AppliedPieceSet() == view.CurrentPieceSet(), s + ": the current set applied", "it isn't");
+        CheckString(testPieceSet.Problem(), "", s + ": the test set complete");
+        CheckString(savedDefaultSet.Problem(), "", s + ": the default set complete");
+        Check(!testPieceSet.whitePawn.gameObject.activeInHierarchy && !savedDefaultSet.whiteKing.gameObject
+            .activeInHierarchy, s + ": the sets' templates hidden in play", "shown");
+
+        view.SetChessPieces(null);
+        board.ClearState();
+        Redraw();
+        CheckPieceSet(savedDefaultSet, s + ": the arbiter's set");
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            Bounds bounds = view.pieceRenderers[obj].bounds;
+            boundsCentre[obj] = bounds.center - SquareWorld(view.objectSquare[obj]);
+            boundsSize[obj] = bounds.size;
+        }
+
+        // Applied at once, nothing moving off its square.
+        string t = s + ": the test set";
+        view.SetChessPieces(testPieceSet);
+        CheckPieceSet(testPieceSet, t + ", at once");
+        CheckView(t + ", at once");
+        int wrong = 0;
+        string details = "";
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            Bounds bounds = view.pieceRenderers[obj].bounds;
+            Vector3 centre = bounds.center - SquareWorld(view.objectSquare[obj]);
+            if ((centre - boundsCentre[obj]).magnitude > 1e-4f || (bounds.size - boundsSize[obj]).magnitude > 1e-4f) {
+                if (wrong++ < 2) {
+                    details += "object " + obj + " bounds " + centre.ToString("F4") + " size " + bounds.size.ToString("F4")
+                        + ", the default's " + boundsCentre[obj].ToString("F4") + " size "
+                        + boundsSize[obj].ToString("F4") + "; ";
+                }
+            }
+        }
+        Check(wrong == 0, t + ": every piece upright on its square at the default's size", wrong + " differ: "
+            + details);
+
+        // A game: drops (pickups) and clicks, captures and a promotion.
+        int savedStyle = view.inputStyle;
+        StartGame(ChessGame.ModeStandard, t + " game");
+        view.SetInputStyle(ChessBoardView.InputPickups);
+        CheckInt(view.piecePickups[view.squareObject[Sq("e2")]].pickupable ? 1 : 0, 1, t + ": e2 a pickup");
+        DropOver("e2", "e4", t + ": e4 dropped");
+        CheckDropped(1, ChessBoard.ChangeMove, t + ": e4");
+        view.SetInputStyle(ChessBoardView.InputClicks);
+        ClickPiece("d7");
+        Check(view.selectedObject != ChessBoardView.NoObject, t + ": d7 clicked: selected", "nothing selected");
+        Redraw();
+        CheckLifted(view.selectedObject, "d7", t + ": d7 selected");
+        ClickSquare("d5");
+        CheckUnselected(2, t + ": d5 placed by a click");
+        view.SetInputStyle(ChessBoardView.InputPickups);
+        int blackPawn = view.squareObject[Sq("d5")];
+        DropOver("e4", "d5", t + ": exd5 dropped");
+        CheckDropped(3, ChessBoard.ChangeMove, t + ": exd5");
+        Check(view.objectSquare[blackPawn] == ChessRules.NoSquare && (view.pieces[blackPawn].localPosition
+            - view.SparePosition(blackPawn) - view.PieceOffset(blackPawn)).sqrMagnitude < 1e-8f,
+            t + ": the captured pawn beside the board, offset as on a square", "at "
+            + view.pieces[blackPawn].localPosition.ToString("F3"));
+        Play("c7", "c6", "c6", t + ": c6");
+        view.SetInputStyle(ChessBoardView.InputClicks);
+        ClickPiece("d5");
+        ClickPiece("c6");
+        CheckUnselected(5, t + ": dxc6 by clicking the pawn");
+        Play("g8", "f6", "f6", t + ": Nf6");
+        Play("c6", "b7", "b7", t + ": cxb7");
+        Play("b8", "d7", "d7", t + ": Nbd7");
+        view.SetInputStyle(ChessBoardView.InputPickups);
+        int promoting = view.squareObject[Sq("b7")];
+        DropOver("b7", "a8", t + ": bxa8 dropped");
+        CheckInt(view.promotionObject, promoting, t + ": bxa8 waits for its piece");
+        CheckInt(view.ChoosePromotion(ChessRules.Queen), ChessBoard.InputAccepted, t + ": bxa8=Q chosen");
+        CheckDropped(9, ChessBoard.ChangeMove, t + ": bxa8=Q");
+        CheckInt(view.objectType[promoting], ChessRules.Queen, t + ": bxa8=Q: the pawn's object a queen");
+        CheckPieceSet(testPieceSet, t + ": after the game");
+        view.SetInputStyle(savedStyle);
+
+        // Back to the arbiter's set, at once, every piece on its square.
+        string b = s + ": SetChessPieces(null)";
+        view.SetChessPieces(null);
+        CheckPieceSet(savedDefaultSet, b + ": the arbiter's set, at once");
+        CheckView(b);
+
+        // The arbiter's default: null refused; the test set picked up on a later frame.
+        Check(!arbiter.SetDefaultChessPieces(null), s + ": SetDefaultChessPieces(null) refused", "accepted");
+        Check(arbiter.defaultPieceSet == savedDefaultSet, s + ": SetDefaultChessPieces(null): the default kept",
+            "changed");
+        Check(arbiter.SetDefaultChessPieces(testPieceSet), s + ": SetDefaultChessPieces(test set) accepted",
+            "refused");
+        SendCustomEventDelayedFrames(nameof(RunPieceSetPollChecks), 2);
+    }
+
+    // The frame after the arbiter's change: the view wears the arbiter's new default by itself; then a set of the
+    // view's own wins over the arbiter's (RunPieceSetEndChecks, a later frame).
+    public void RunPieceSetPollChecks() {
+        string s = "piece sets";
+        CheckPieceSet(testPieceSet, s + ": the arbiter's new default, on its own");
+        CheckView(s + ": the arbiter's new default");
+        view.SetChessPieces(savedDefaultSet);
+        CheckPieceSet(savedDefaultSet, s + ": the view's own set over the arbiter's");
+        SendCustomEventDelayedFrames(nameof(RunPieceSetEndChecks), 2);
+    }
+
+    // Frames later, the view's own set still worn; then everything put back as it was.
+    public void RunPieceSetEndChecks() {
+        string s = "piece sets";
+        CheckPieceSet(savedDefaultSet, s + ": the view's own set kept frames later");
+        board.arbiter.SetDefaultChessPieces(savedDefaultSet);
+        view.SetChessPieces(savedViewSet);
+        Check(view.AppliedPieceSet() == view.CurrentPieceSet() && board.arbiter.defaultPieceSet == savedDefaultSet,
+            s + ": put back", "they aren't");
+        board.ClearState();
+        Redraw();
+        CheckView(s + ": cleared");
+        view.animateMoves = savedAnimate;
         LogSummary();
+    }
+
+    // Picks the piece on from up as the local player, moves it so its base is over to (off the square's centre and
+    // above the surface, as a hand lets go) and drops it.
+    void DropOver(string from, string to, string name) {
+        int obj = view.squareObject[Sq(from)];
+        if (obj == ChessBoardView.NoObject) {
+            Check(false, name, "no piece on " + from);
+            return;
+        }
+        view.OnPiecePickedUp(obj);
+        Check(view.heldObject == obj, name + ": picked up", "not held");
+        view.pieces[obj].localPosition = Over(to) + view.PieceOffset(obj);
+        view.OnPieceDropped(obj);
+    }
+
+    // The centre of a square on the playing surface, in the world.
+    Vector3 SquareWorld(int square) {
+        return view.transform.TransformPoint(view.SquarePosition(square));
+    }
+
+    // The mesh the current set gives piece (null for none).
+    Mesh SetMesh(int piece) {
+        ChessPieceSet set = view.CurrentPieceSet();
+        if (!Utilities.IsValid(set)) return null;
+        Transform template = set.Template(ChessRules.PieceColorOf(piece), ChessRules.PieceTypeOf(piece));
+        if (!Utilities.IsValid(template)) return null;
+        MeshFilter filter = template.GetComponent<MeshFilter>();
+        return Utilities.IsValid(filter) ? filter.sharedMesh : null;
+    }
+
+    // Whether set is applied and every object standing for a piece wears its template: the mesh, every material
+    // slot, the turn and the size, with its collider fitted to the mesh.
+    void CheckPieceSet(ChessPieceSet set, string name) {
+        Check(view.AppliedPieceSet() == set, name + ": applied", "another set is");
+        int wrong = 0;
+        string details = "";
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            int type = view.objectType[obj];
+            if (type == ChessRules.NoPieceType) continue;
+            Transform template = set.Template(view.ObjectColor(obj), type);
+            Transform piece = view.pieces[obj];
+            Mesh mesh = template.GetComponent<MeshFilter>().sharedMesh;
+            Material[] want = template.GetComponent<MeshRenderer>().sharedMaterials;
+            Material[] have = view.pieceRenderers[obj].sharedMaterials;
+            BoxCollider box = view.pieceColliders[obj];
+            string error = "";
+            if (view.pieceFilters[obj].sharedMesh != mesh) {
+                error = "mesh";
+            } else if (have.Length != want.Length) {
+                error = have.Length + " materials, not " + want.Length;
+            } else if (obj != view.heldObject && Quaternion.Angle(piece.localRotation, template.localRotation) > 0.1f) {
+                error = "turned " + piece.localRotation.eulerAngles.ToString("F1");
+            } else if ((piece.localScale - template.localScale).sqrMagnitude > 1e-8f) {
+                error = "scale " + piece.localScale.ToString("F3");
+            } else if ((box.center - mesh.bounds.center).sqrMagnitude > 1e-10f
+                || (box.size - mesh.bounds.size).sqrMagnitude > 1e-10f) {
+                error = "collider " + box.size.ToString("F4") + ", the mesh " + mesh.bounds.size.ToString("F4");
+            }
+            for (int i = 0; error.Length == 0 && i < want.Length; i++) {
+                if (have[i] != want[i]) error = "material " + i;
+            }
+            if (error.Length > 0 && wrong++ < 3) details += "object " + obj + ": " + error + "; ";
+        }
+        Check(wrong == 0, name + ": every piece wears its template", wrong + " wrong: " + details);
     }
 
     // Whether the PGN box shows its paste part (shown) or is hidden; shown, with the Import button as importShown
@@ -2118,7 +2330,7 @@ public class ViewTest : UdonSharpBehaviour {
 
     // Whether obj stands lifted over square.
     void CheckLifted(int obj, string square, string name) {
-        Vector3 expected = view.SquarePosition(Sq(square))
+        Vector3 expected = view.SquarePosition(Sq(square)) + view.PieceOffset(obj)
             + new Vector3(0, ChessBoardView.SelectLift * view.squareSize, 0);
         Check((view.pieces[obj].localPosition - expected).sqrMagnitude < 1e-8f, name + ": lifted over " + square,
             "at " + view.pieces[obj].localPosition.ToString("F3"));
@@ -2301,20 +2513,21 @@ public class ViewTest : UdonSharpBehaviour {
                 error = "object " + obj + " stands for " + PieceText(view.ObjectPiece(obj)) + ", not " + PieceText(piece);
             } else if (view.objectSquare[obj] != square) {
                 error = "object " + obj + " thinks it's on " + SquareText(view.objectSquare[obj]);
-            } else if (view.pieceFilters[obj].sharedMesh != view.meshes[ChessRules.PieceTypeOf(piece)]) {
+            } else if (view.pieceFilters[obj].sharedMesh != SetMesh(piece)) {
                 error = "object " + obj + " has the wrong mesh";
-            } else if ((view.pieces[obj].localPosition - view.SquarePosition(square)).sqrMagnitude > 1e-8f) {
+            } else if ((view.pieces[obj].localPosition - view.SquarePosition(square) - view.PieceOffset(obj)).sqrMagnitude
+                > 1e-8f) {
                 error = "object " + obj + " is at " + view.pieces[obj].localPosition.ToString("F3");
-            } else if (view.DropSquare(view.pieces[obj].position) != square) {
-                // In the world too, whatever the view's scale (step 12.2).
-                error = "object " + obj + " stands over " + SquareText(view.DropSquare(view.pieces[obj].position))
+            } else if (view.DropSquare(view.PieceBase(obj)) != square) {
+                // In the world too, whatever the view's scale (step 12.2), from its base (step 12.3).
+                error = "object " + obj + " stands over " + SquareText(view.DropSquare(view.PieceBase(obj)))
                     + " in the world";
             }
             if (error.Length > 0 && count++ < 3) errors += SquareText(square) + ": " + error + "; ";
         }
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
             if (view.objectSquare[obj] != ChessRules.NoSquare) continue;
-            Vector3 position = view.pieces[obj].localPosition;
+            Vector3 position = view.pieces[obj].localPosition - view.PieceOffset(obj);
             if (Mathf.Abs(position.x) < half && Mathf.Abs(position.z) < half && count++ < 3) {
                 errors += "object " + obj + " is off the board but at " + position.ToString("F3") + "; ";
             }

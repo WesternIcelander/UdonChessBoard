@@ -20,8 +20,9 @@ using VRC.Udon;
 // view for the same board is replaced, keeping its place, and so is its UI; a world creator's own model in it, and
 // the model parts they deleted, are kept (step 12.2, KeepCustomModel). The piece meshes, the highlight meshes
 // and the materials are generated placeholders in Assets/Siggi/ChessBoard/Models/, made only when missing, so they
-// can be replaced there (or other meshes assigned in the view's Meshes field). Menu: Tools > Chess Board > Create
-// Board View. Plain editor C#, not Udon.
+// can be replaced there. The piece models come from a ChessPieceSet (step 12.3): a board's arbiter without a Default
+// Piece Set gets one made from the generated meshes, as a child (EnsureDefaultPieceSet). Menu: Tools > Chess Board >
+// Create Board View. Plain editor C#, not Udon.
 public static class ChessBoardViewBuilder {
     const string ViewScriptPath = "Assets/Siggi/ChessBoard/ChessBoardView.cs";
     const string ViewProgramPath = "Assets/Siggi/ChessBoard/ChessBoardView.asset";
@@ -31,6 +32,8 @@ public static class ChessBoardViewBuilder {
     const string PieceProgramPath = "Assets/Siggi/ChessBoard/ChessPiece.asset";
     const string SquareScriptPath = "Assets/Siggi/ChessBoard/ChessSquare.cs";
     const string SquareProgramPath = "Assets/Siggi/ChessBoard/ChessSquare.asset";
+    const string PieceSetScriptPath = "Assets/Siggi/ChessBoard/ChessPieceSet.cs";
+    const string PieceSetProgramPath = "Assets/Siggi/ChessBoard/ChessPieceSet.asset";
     const string ModelsFolder = "Assets/Siggi/ChessBoard/Models";
 
     const float SquareSize = 0.05f;
@@ -54,8 +57,7 @@ public static class ChessBoardViewBuilder {
         if (board == null) return;
         if (!EnsureProgramAssets()) return;
 
-        Mesh[] meshes = new Mesh[7];
-        for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) meshes[type] = PieceMesh(type);
+        Mesh[] meshes = PieceMeshes();
         Material whitePieces = MaterialAsset("White Pieces", new Color(0.92f, 0.89f, 0.82f), 0.55f);
         Material blackPieces = MaterialAsset("Black Pieces", new Color(0.13f, 0.12f, 0.12f), 0.6f);
         Material lightSquares = MaterialAsset("Light Squares", new Color(0.93f, 0.85f, 0.71f), 0.3f);
@@ -102,10 +104,11 @@ public static class ChessBoardViewBuilder {
         ChessBoardView view = UdonSharpUndo.AddComponent<ChessBoardView>(root);
         view.board = board;
         view.squareSize = SquareSize;
-        view.meshes = meshes;
+        string setNote = EnsureDefaultPieceSet(board, meshes, whitePieces, blackPieces);
         view.blocker = blockerBox;
         view.pieces = new Transform[ChessBoardView.PieceCount];
         view.pieceFilters = new MeshFilter[ChessBoardView.PieceCount];
+        view.pieceRenderers = new MeshRenderer[ChessBoardView.PieceCount];
         view.piecePickups = new VRCPickup[ChessBoardView.PieceCount];
         view.pieceColliders = new BoxCollider[ChessBoardView.PieceCount];
         view.pieceBehaviours = new ChessPiece[ChessBoardView.PieceCount];
@@ -126,7 +129,9 @@ public static class ChessBoardViewBuilder {
             piece.transform.localRotation = white ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
             MeshFilter filter = piece.AddComponent<MeshFilter>();
             filter.sharedMesh = meshes[type];
-            piece.AddComponent<MeshRenderer>().sharedMaterial = white ? whitePieces : blackPieces;
+            MeshRenderer renderer = piece.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = white ? whitePieces : blackPieces;
+            view.pieceRenderers[obj] = renderer;
             view.pieces[obj] = piece.transform;
             view.pieceFilters[obj] = filter;
             AddPickup(piece, view, obj, meshes[type]);
@@ -182,7 +187,7 @@ public static class ChessBoardViewBuilder {
         Debug.Log("[ChessBoardViewBuilder] " + (replacing ? "Replaced " : "Created ") + root.name + " for "
             + board.gameObject.name + (replacing ? " (" + repointed + " behaviour(s) pointed at the new view" + kept
                 + ")" : "")
-            + " and " + uiObject.name + (ui.historyWall != null ? ", with the history wall" : "")
+            + " and " + uiObject.name + (ui.historyWall != null ? ", with the history wall" : "") + setNote
             + ". Move them where you like (the UI's origin at the board's centre) and save the scene.");
     }
 
@@ -275,6 +280,94 @@ public static class ChessBoardViewBuilder {
         view.piecePickups[obj] = pickup;
         view.pieceColliders[obj] = box;
         view.pieceBehaviours[obj] = behaviour;
+    }
+
+    // ---- Piece sets (step 12.3, docs/customizing.md) ----
+
+    // How far apart the builder lays out a set's slots, in squares.
+    const float SlotSpacing = 1.5f;
+
+    // The board's arbiter's default piece set: kept when it has one; otherwise "Chess Pieces", made from the
+    // generated meshes and materials as a child of the arbiter, and put in its Default Piece Set. Returns a note for
+    // the log ("" when nothing changed).
+    static string EnsureDefaultPieceSet(ChessBoard board, Mesh[] meshes, Material white, Material black) {
+        ChessArbiter arbiter = board.arbiter;
+        if (arbiter == null) {
+            Debug.LogWarning("[ChessBoardViewBuilder] " + board.gameObject.name + " has no arbiter, so its view has "
+                + "no default piece set: set the board's Arbiter, then run Create Board View again.");
+            return ", no piece set (the board has no arbiter)";
+        }
+        if (arbiter.defaultPieceSet != null) return "";
+        ChessPieceSet set = BuildPieceSet("Chess Pieces", arbiter.transform, meshes, new[] { white },
+            new[] { black }, Vector3.zero, Quaternion.identity, Vector3.one);
+        Undo.RecordObject(arbiter, "Create Board View");
+        arbiter.defaultPieceSet = set;
+        UdonSharpEditorUtility.CopyProxyToUdon(arbiter);
+        EditorUtility.SetDirty(arbiter);
+        return ", and the default piece set " + set.gameObject.name + " on " + arbiter.gameObject.name;
+    }
+
+    // A ChessPieceSet named name under parent: for each colour and piece type, a slot (laid out in a row per colour,
+    // SlotSpacing squares apart) holding a one-square guide on the playing surface and the template, its mesh
+    // meshes[type] with the colour's materials. White's templates stand at offset, turned by rotation and scaled by
+    // scale; Black's are turned half round as well (their knights face White), offset included. Public for the
+    // view test's second set.
+    public static ChessPieceSet BuildPieceSet(string name, Transform parent, Mesh[] meshes, Material[] whiteMaterials,
+            Material[] blackMaterials, Vector3 offset, Quaternion rotation, Vector3 scale) {
+        Mesh guideMesh = FlatMesh("Piece Set Guide", 0.0005f, SquareSize * 0.06f);
+        Material guideMaterial = MaterialAsset("Piece Set Guide", new Color(0.3f, 0.75f, 0.4f), 0.2f);
+        GameObject root = new GameObject(name);
+        Undo.RegisterCreatedObjectUndo(root, "Create Piece Set");
+        root.transform.SetParent(parent, false);
+        root.transform.localPosition = new Vector3(0, 0, -2 * SquareSize * SlotSpacing);
+        ChessPieceSet set = UdonSharpUndo.AddComponent<ChessPieceSet>(root);
+        Transform[] templates = new Transform[12];
+        Quaternion half = Quaternion.Euler(0, 180, 0);
+        for (int color = ChessRules.White; color <= ChessRules.Black; color++) {
+            bool white = color == ChessRules.White;
+            for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) {
+                string label = (white ? "White " : "Black ") + TypeNames[type];
+                GameObject slot = new GameObject(label);
+                slot.transform.SetParent(root.transform, false);
+                slot.transform.localPosition = new Vector3((type - 1) * SlotSpacing * SquareSize, 0,
+                    (white ? 0 : 1) * SlotSpacing * SquareSize);
+                GameObject guide = new GameObject("Guide");
+                guide.transform.SetParent(slot.transform, false);
+                guide.AddComponent<MeshFilter>().sharedMesh = guideMesh;
+                MeshRenderer guideRenderer = guide.AddComponent<MeshRenderer>();
+                guideRenderer.sharedMaterial = guideMaterial;
+                guideRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                GameObject model = new GameObject("Model");
+                model.transform.SetParent(slot.transform, false);
+                model.transform.localPosition = white ? offset : half * offset;
+                model.transform.localRotation = white ? rotation : half * rotation;
+                model.transform.localScale = scale;
+                model.AddComponent<MeshFilter>().sharedMesh = meshes[type];
+                model.AddComponent<MeshRenderer>().sharedMaterials = white ? whiteMaterials : blackMaterials;
+                templates[ChessBoardView.TemplateIndex(color, type)] = model.transform;
+            }
+        }
+        set.whitePawn = templates[ChessBoardView.TemplateIndex(ChessRules.White, ChessRules.Pawn)];
+        set.whiteKnight = templates[ChessBoardView.TemplateIndex(ChessRules.White, ChessRules.Knight)];
+        set.whiteBishop = templates[ChessBoardView.TemplateIndex(ChessRules.White, ChessRules.Bishop)];
+        set.whiteRook = templates[ChessBoardView.TemplateIndex(ChessRules.White, ChessRules.Rook)];
+        set.whiteQueen = templates[ChessBoardView.TemplateIndex(ChessRules.White, ChessRules.Queen)];
+        set.whiteKing = templates[ChessBoardView.TemplateIndex(ChessRules.White, ChessRules.King)];
+        set.blackPawn = templates[ChessBoardView.TemplateIndex(ChessRules.Black, ChessRules.Pawn)];
+        set.blackKnight = templates[ChessBoardView.TemplateIndex(ChessRules.Black, ChessRules.Knight)];
+        set.blackBishop = templates[ChessBoardView.TemplateIndex(ChessRules.Black, ChessRules.Bishop)];
+        set.blackRook = templates[ChessBoardView.TemplateIndex(ChessRules.Black, ChessRules.Rook)];
+        set.blackQueen = templates[ChessBoardView.TemplateIndex(ChessRules.Black, ChessRules.Queen)];
+        set.blackKing = templates[ChessBoardView.TemplateIndex(ChessRules.Black, ChessRules.King)];
+        UdonSharpEditorUtility.CopyProxyToUdon(set);
+        return set;
+    }
+
+    // The generated piece meshes by ChessRules type (entry 0 empty), made when missing. Public for the view test.
+    public static Mesh[] PieceMeshes() {
+        Mesh[] meshes = new Mesh[7];
+        for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) meshes[type] = PieceMesh(type);
+        return meshes;
     }
 
     // Desktop mode's square targets (step 9.3c): one object per square, a1 to h8, under "Square Targets", each a thin
@@ -795,18 +888,20 @@ public static class ChessBoardViewBuilder {
     }
 
     // UdonSharp needs a compiled program asset next to a script before its behaviour can be added. The repository
-    // has them (the view's, the UI's, the pieces' and the squares'); any that's missing is created and compiled, and the
-    // menu item has to be run again afterwards.
+    // has them (the view's, the UI's, the pieces', the squares' and the piece set's); any that's missing is created and
+    // compiled, and the menu item has to be run again afterwards.
     static bool EnsureProgramAssets() {
         bool created = CreateProgramAssetIfMissing(ViewScriptPath, ViewProgramPath);
         created |= CreateProgramAssetIfMissing(UIScriptPath, UIProgramPath);
         created |= CreateProgramAssetIfMissing(PieceScriptPath, PieceProgramPath);
         created |= CreateProgramAssetIfMissing(SquareScriptPath, SquareProgramPath);
+        created |= CreateProgramAssetIfMissing(PieceSetScriptPath, PieceSetProgramPath);
         if (!created) return true;
         AssetDatabase.SaveAssets();
         UdonSharpProgramAsset.CompileAllCsPrograms(true);
         EditorUtility.DisplayDialog("Create Board View", "Created the missing program assets next to "
-            + ViewScriptPath + ", " + UIScriptPath + ", " + PieceScriptPath + " or " + SquareScriptPath
+            + ViewScriptPath + ", " + UIScriptPath + ", " + PieceScriptPath + ", " + SquareScriptPath + " or "
+            + PieceSetScriptPath
             + ". Once UdonSharp has finished compiling, run Tools > Chess Board > Create Board View again.", "OK");
         return false;
     }

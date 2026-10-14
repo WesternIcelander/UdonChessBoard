@@ -20,7 +20,7 @@ namespace SiggiChessBoard {
     public class ChessBoardView : ChessBoardListener {
         public const int PieceCount = 32;
         // Objects 0 to 15 are White's, 16 to 31 Black's: a side never has more than 16 pieces, since promotion turns
-        // a pawn into another piece. Each object swaps its mesh to the piece it stands for.
+        // a pawn into another piece. Each object wears the model of the piece it stands for.
         public const int PiecesPerColor = 16;
         public const int NoObject = -1;
         // How the local player handles the pieces (inputStyle): Auto is pickups in VR and clicks otherwise; the other
@@ -31,11 +31,15 @@ namespace SiggiChessBoard {
 
         // The board shown; the view adds itself as a listener on Start.
         public ChessBoard board;
-        // The piece objects, children of this view, and their mesh filters (the same index).
+        // The piece objects, children of this view, and their mesh filters and renderers (the same index).
         public Transform[] pieces = new Transform[PieceCount];
         public MeshFilter[] pieceFilters = new MeshFilter[PieceCount];
-        // The mesh for each piece type, by ChessRules type (Pawn = 1 ... King = 6; entry 0 unused).
-        public Mesh[] meshes = new Mesh[7];
+        public MeshRenderer[] pieceRenderers = new MeshRenderer[PieceCount];
+        // The piece models (step 12.3, docs/customizing.md): this view's own set, or when empty the arbiter's
+        // defaultPieceSet. Each piece object takes its template's mesh, materials, offset, rotation and size. Changed
+        // at run time with SetChessPieces, on this client only.
+        [Tooltip("This board's own chess piece set. Empty: the Chess Arbiter's Default Piece Set.")]
+        public ChessPieceSet pieceSet;
         // Each piece object's pickup and collider (the same index). The collider is fitted to the piece's mesh.
         public VRCPickup[] piecePickups = new VRCPickup[PieceCount];
         public BoxCollider[] pieceColliders = new BoxCollider[PieceCount];
@@ -98,8 +102,24 @@ namespace SiggiChessBoard {
         // The square each object last stood on, so a piece coming back to the board (a reset, stepping back in
         // replay) is taken from near where it is needed. NoSquare for never.
         int[] objectLastSquare = new int[PieceCount];
-        // The type each object's mesh was last set to, so a mesh is only swapped when it changes.
+        // The type each object's model was last set to, so a model is only swapped when it changes (-1 to set it on
+        // the next placing, as after a set change).
         int[] objectMeshType = new int[PieceCount];
+
+        // The piece set applied (null for none) and the arbiter whose default it follows while pieceSet is empty, and
+        // the set's templates copied by TemplateIndex (colour * 6 + type - 1): mesh, materials, offset from the
+        // square's centre, rotation, scale, and the point under the square's centre in the piece's own space (where a
+        // drop is read from).
+        public const int TemplateCount = 12;
+        ChessPieceSet appliedSet;
+        ChessArbiter arbiter;
+        bool warnedNoSet;
+        Mesh[] setMeshes = new Mesh[TemplateCount];
+        Material[][] setMaterials = new Material[TemplateCount][];
+        Vector3[] setOffsets = new Vector3[TemplateCount];
+        Quaternion[] setRotations = new Quaternion[TemplateCount];
+        Vector3[] setScales = new Vector3[TemplateCount];
+        Vector3[] setBases = new Vector3[TemplateCount];
 
         // The position the mapping was last brought up to: replay or the game, its ply, and whether it was a custom
         // replay position. A move one ply on from it is applied to the mapping as it happens (ApplyMove), so the
@@ -166,6 +186,8 @@ namespace SiggiChessBoard {
             }
             string problem = LocalSpaceProblem();
             if (problem.Length > 0) Debug.LogWarning("[ChessBoardView] " + gameObject.name + ": " + problem);
+            arbiter = board.arbiter;
+            ApplyPieceSet();
             board.AddListener(this);
             Refresh();
         }
@@ -214,7 +236,126 @@ namespace SiggiChessBoard {
             return "";
         }
 
+        // ---- Piece sets (step 12.3, docs/customizing.md) ----
+
+        // Uses set for this board's pieces from now on, on this client; null goes back to the arbiter's default set.
+        // Applied at once, every piece staying on its square.
+        public void SetChessPieces(ChessPieceSet set) {
+            pieceSet = set;
+            ApplyPieceSet();
+        }
+
+        // The set the pieces should wear: this view's own, otherwise the arbiter's default (null for neither).
+        public ChessPieceSet CurrentPieceSet() {
+            if (Utilities.IsValid(pieceSet)) return pieceSet;
+            if (Utilities.IsValid(arbiter) && Utilities.IsValid(arbiter.defaultPieceSet)) return arbiter.defaultPieceSet;
+            return null;
+        }
+
+        // The set applied to the pieces now, for tests.
+        public ChessPieceSet AppliedPieceSet() {
+            return appliedSet;
+        }
+
+        // Applies the arbiter's default set once it changes while this view has none of its own. Called every frame:
+        // the arbiter doesn't know the views (one field read, as the settings menu polls the arbiter's changes).
+        public void CheckPieceSet() {
+            if (Utilities.IsValid(pieceSet) || !Utilities.IsValid(arbiter)) return;
+            if (arbiter.defaultPieceSet != appliedSet) ApplyPieceSet();
+        }
+
+        // Copies the current set's templates and puts them on every piece object at once, each staying where the
+        // mapping has it (a travelling one lands at once, a held one stays in the hand).
+        void ApplyPieceSet() {
+            ChessPieceSet set = CurrentPieceSet();
+            appliedSet = set;
+            if (!Utilities.IsValid(set)) {
+                if (!warnedNoSet) {
+                    Debug.LogError("[ChessBoardView] " + gameObject.name + ": no chess piece set: set the Chess "
+                        + "Arbiter's Default Piece Set (or this view's Piece Set). The pieces keep the models they have.");
+                    warnedNoSet = true;
+                }
+                return;
+            }
+            string problem = set.Problem();
+            if (problem.Length > 0) {
+                Debug.LogError("[ChessBoardView] " + gameObject.name + ": chess piece set " + set.gameObject.name + ": "
+                    + problem + ".");
+            }
+            for (int color = ChessRules.White; color <= ChessRules.Black; color++) {
+                for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) {
+                    int index = TemplateIndex(color, type);
+                    Transform template = set.Template(color, type);
+                    if (!Utilities.IsValid(template)) {
+                        setMeshes[index] = null;
+                        setMaterials[index] = null;
+                        setOffsets[index] = Vector3.zero;
+                        setRotations[index] = color == ChessRules.White
+                            ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
+                        setScales[index] = Vector3.one;
+                        setBases[index] = Vector3.zero;
+                        continue;
+                    }
+                    MeshFilter filter = template.GetComponent<MeshFilter>();
+                    MeshRenderer renderer = template.GetComponent<MeshRenderer>();
+                    setMeshes[index] = Utilities.IsValid(filter) ? filter.sharedMesh : null;
+                    setMaterials[index] = Utilities.IsValid(renderer) ? renderer.sharedMaterials : null;
+                    Vector3 offset = template.localPosition;
+                    Quaternion rotation = template.localRotation;
+                    Vector3 scale = template.localScale;
+                    setOffsets[index] = offset;
+                    setRotations[index] = rotation;
+                    setScales[index] = scale;
+                    // The square's centre, -offset from the piece's origin, in the piece's own (turned, scaled) space.
+                    Vector3 local = Quaternion.Inverse(rotation) * -offset;
+                    setBases[index] = new Vector3(SafeDivide(local.x, scale.x), SafeDivide(local.y, scale.y),
+                        SafeDivide(local.z, scale.z));
+                }
+            }
+            for (int obj = 0; obj < PieceCount; obj++) {
+                objectMeshType[obj] = -1;
+                if (!Utilities.IsValid(pieces[obj]) || objectType[obj] == ChessRules.NoPieceType) continue;
+                Vector3 target = PrepareObject(obj);
+                if (obj == heldObject) continue;
+                StopAnimation(obj);
+                pieces[obj].localPosition = target;
+            }
+        }
+
+        static float SafeDivide(float a, float b) {
+            return Mathf.Abs(b) > 1e-6f ? a / b : 0;
+        }
+
+        // The index of a colour's piece type in the copied templates.
+        public static int TemplateIndex(int color, int type) {
+            return color * 6 + type - 1;
+        }
+
+        // The mesh obj wears for the piece it stands for, from the applied set (null for none).
+        public Mesh ObjectMesh(int obj) {
+            int type = objectType[obj];
+            return type == ChessRules.NoPieceType ? null : setMeshes[TemplateIndex(ObjectColor(obj), type)];
+        }
+
+        // How far obj's origin stands from its square's centre (or its place beside the board), in the view's local
+        // space: its template's position.
+        public Vector3 PieceOffset(int obj) {
+            int type = objectType[obj];
+            if (type == ChessRules.NoPieceType || !Utilities.IsValid(appliedSet)) return Vector3.zero;
+            return setOffsets[TemplateIndex(ObjectColor(obj), type)];
+        }
+
+        // The point of obj that stands on its square's centre (world space): where a drop is read from, following the
+        // piece as a hand turns it.
+        public Vector3 PieceBase(int obj) {
+            Transform piece = pieces[obj];
+            int type = objectType[obj];
+            if (type == ChessRules.NoPieceType || !Utilities.IsValid(appliedSet)) return piece.position;
+            return piece.TransformPoint(setBases[TemplateIndex(ObjectColor(obj), type)]);
+        }
+
         void Update() {
+            CheckPieceSet();
             if (dirty) {
                 Refresh();
             } else if (Time.time >= nextPickupCheck) {
@@ -317,9 +458,9 @@ namespace SiggiChessBoard {
             LetGoOf(obj);
         }
 
-        // A piece let go by the local player (its ChessPiece's OnDrop): forwards the drop on the square under it (off
-        // the board too, which the board rejects) if the board accepted its pickup; a king castles by being dropped on
-        // its rook. A promotion waits for ChoosePromotion with the pawn standing on its square; anything else is placed
+        // A piece let go by the local player (its ChessPiece's OnDrop): forwards the drop on the square under its base
+        // (off the board too, which the board rejects) if the board accepted its pickup; a king castles by being dropped
+        // on its rook. A promotion waits for ChoosePromotion with the pawn standing on its square; anything else is placed
         // from the board after its change, so a rejected drop goes back where it was.
         public void OnPieceDropped(int obj) {
             if (obj < 0 || obj >= PieceCount) return;
@@ -333,7 +474,7 @@ namespace SiggiChessBoard {
             }
             heldObject = NoObject;
             UpdateLiftedMarks();
-            int to = DropSquare(pieces[obj].position);
+            int to = DropSquare(PieceBase(obj));
             int from = heldFrom;
             if (board.PieceDropped(from, to) == ChessBoard.InputPromotionNeeded) {
                 WaitForPromotion(obj, from, to);
@@ -935,33 +1076,41 @@ namespace SiggiChessBoard {
             }
         }
 
-        // Brings obj's mesh (and collider) and turn up to the mapping, and returns where it belongs: on its square, or
-        // beside the board when it's off it. Black's pieces face the other way, for the knights.
+        // Brings obj's model (mesh, materials, size and collider) and turn up to the mapping and the applied set, and
+        // returns where it belongs: on its square, or beside the board when it's off it. Each piece is turned as its
+        // template is (every time, since a hand may have turned it).
         Vector3 PrepareObject(int obj) {
             Transform piece = pieces[obj];
             int type = objectType[obj];
-            if (type != objectMeshType[obj] && type != ChessRules.NoPieceType && Utilities.IsValid(pieceFilters[obj])) {
-                Mesh mesh = meshes[type];
-                pieceFilters[obj].sharedMesh = mesh;
+            if (type == ChessRules.NoPieceType || !Utilities.IsValid(appliedSet)) return ObjectPlace(obj);
+            int index = TemplateIndex(ObjectColor(obj), type);
+            if (type != objectMeshType[obj]) {
                 objectMeshType[obj] = type;
+                Mesh mesh = setMeshes[index];
+                if (Utilities.IsValid(pieceFilters[obj]) && Utilities.IsValid(mesh)) pieceFilters[obj].sharedMesh = mesh;
+                Material[] materials = setMaterials[index];
+                if (Utilities.IsValid(pieceRenderers[obj]) && materials != null) {
+                    pieceRenderers[obj].sharedMaterials = materials;
+                }
+                piece.localScale = setScales[index];
                 BoxCollider box = pieceColliders[obj];
                 if (Utilities.IsValid(box) && Utilities.IsValid(mesh)) {
                     box.center = mesh.bounds.center;
                     box.size = mesh.bounds.size;
                 }
             }
-            piece.localRotation = ObjectColor(obj) == ChessRules.White
-                ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
+            piece.localRotation = setRotations[index];
             return ObjectPlace(obj);
         }
 
-        // Where obj belongs now (local space), changing nothing: on its square, or beside the board when it's off it.
-        // Public for the debug view's placement check (step 9.6).
+        // Where obj's origin belongs now (local space), changing nothing: on its square, or beside the board when it's
+        // off it, moved by its template's offset. Public for the debug view's placement check (step 9.6).
         public Vector3 ObjectPlace(int obj) {
             int square = objectSquare[obj];
             // A pawn waiting for its promotion piece stands where it was dropped.
             if (obj == promotionObject) square = promotionTo;
-            Vector3 position = square != ChessRules.NoSquare ? SquarePosition(square) : SparePosition(obj);
+            Vector3 position = (square != ChessRules.NoSquare ? SquarePosition(square) : SparePosition(obj))
+                + PieceOffset(obj);
             // A selected piece (desktop mode) stands lifted over its square.
             if (obj == selectedObject) position += new Vector3(0, SelectLift * squareSize, 0);
             return position;

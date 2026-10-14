@@ -6,8 +6,8 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 
 // Adds ViewTest (PLAN.md section 9) to the open scene for the scene's board view: the board, the view, the board's UI
-// (step 12.1), the scene's BoardTest to wait for, an importer of its own (a child) and the two PGNs. An existing
-// ViewTest is replaced.
+// (step 12.1), the scene's BoardTest to wait for, an importer of its own (a child), the two PGNs and a second piece
+// set (step 12.3, a child: BuildTestPieceSet). An existing ViewTest is replaced.
 // Menu: Tools > Chess Board > Create View Test. Plain editor C#, not Udon.
 public static class ViewTestBuilder {
     const string TestScriptPath = "Assets/Tests/View/ViewTest.cs";
@@ -47,6 +47,7 @@ public static class ViewTestBuilder {
         test.importer = importer;
         test.chess960Pgn = AssetDatabase.LoadAssetAtPath<TextAsset>(Chess960Path);
         test.promotionsPgn = AssetDatabase.LoadAssetAtPath<TextAsset>(PromotionsPath);
+        test.testPieceSet = BuildTestPieceSet(root.transform);
         UdonSharpEditorUtility.CopyProxyToUdon(test);
 
         for (int i = 0; i < olds.Length; i++) {
@@ -89,6 +90,76 @@ public static class ViewTestBuilder {
             return null;
         }
         return view;
+    }
+
+    // ---- The second piece set (step 12.3) ----
+
+    const string TestModelsFolder = "Assets/Tests/View/Models";
+    // Where each test model's origin is, from the generated piece's base centre, in the model's own (doubled) units.
+    static readonly Vector3 TestOrigin = new Vector3(0.012f, 0.03f, -0.02f);
+
+    // "Test Chess Pieces" under parent: the generated pieces made awkward (TestMesh: turned 90° onto their backs,
+    // twice the size, the origin off their base, two material slots), with templates turned, scaled and moved back
+    // so the pieces stand as the default ones do. The view test switches to it and back.
+    static ChessPieceSet BuildTestPieceSet(Transform parent) {
+        Mesh[] meshes = ChessBoardViewBuilder.PieceMeshes();
+        Mesh[] testMeshes = new Mesh[meshes.Length];
+        for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) testMeshes[type] = TestMesh(meshes[type]);
+        Material[] white = { TestMaterial("Test White Body", new Color(0.95f, 0.9f, 0.75f)),
+            TestMaterial("Test White Top", new Color(0.9f, 0.6f, 0.2f)) };
+        Material[] black = { TestMaterial("Test Black Body", new Color(0.2f, 0.15f, 0.25f)),
+            TestMaterial("Test Black Top", new Color(0.3f, 0.5f, 0.9f)) };
+        // Undoes TestMesh: turned back up, halved, and moved so the base centre is on the square's centre.
+        Quaternion rotation = Quaternion.Euler(-90, 0, 0);
+        Vector3 offset = -(rotation * (TestOrigin * 0.5f));
+        ChessPieceSet set = ChessBoardViewBuilder.BuildPieceSet("Test Chess Pieces", parent, testMeshes, white, black,
+            offset, rotation, Vector3.one * 0.5f);
+        set.transform.localPosition = new Vector3(0, 0, 0.3f);
+        return set;
+    }
+
+    // The mesh asset "Test <name>" made from a generated piece, if missing: each vertex doubled, turned 90° about x
+    // (lying on its back) and moved by TestOrigin; submesh 0 its lower half, 1 its upper half (by the piece's height).
+    static Mesh TestMesh(Mesh source) {
+        string path = TestModelsFolder + "/Test " + source.name + ".asset";
+        Mesh mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+        if (mesh != null) return mesh;
+        if (!AssetDatabase.IsValidFolder(TestModelsFolder)) AssetDatabase.CreateFolder("Assets/Tests/View", "Models");
+        Vector3[] vertices = source.vertices;
+        int[] triangles = source.triangles;
+        float middle = source.bounds.center.y;
+        Quaternion turn = Quaternion.Euler(90, 0, 0);
+        Vector3[] moved = new Vector3[vertices.Length];
+        for (int i = 0; i < vertices.Length; i++) moved[i] = turn * (vertices[i] * 2) + TestOrigin;
+        var lower = new System.Collections.Generic.List<int>();
+        var upper = new System.Collections.Generic.List<int>();
+        for (int i = 0; i + 2 < triangles.Length; i += 3) {
+            float y = (vertices[triangles[i]].y + vertices[triangles[i + 1]].y + vertices[triangles[i + 2]].y) / 3;
+            var part = y < middle ? lower : upper;
+            part.Add(triangles[i]);
+            part.Add(triangles[i + 1]);
+            part.Add(triangles[i + 2]);
+        }
+        mesh = new Mesh { name = "Test " + source.name };
+        mesh.vertices = moved;
+        mesh.subMeshCount = 2;
+        mesh.SetTriangles(lower, 0);
+        mesh.SetTriangles(upper, 1);
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        AssetDatabase.CreateAsset(mesh, path);
+        return mesh;
+    }
+
+    static Material TestMaterial(string name, Color color) {
+        string path = TestModelsFolder + "/" + name + ".mat";
+        Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (material != null) return material;
+        if (!AssetDatabase.IsValidFolder(TestModelsFolder)) AssetDatabase.CreateFolder("Assets/Tests/View", "Models");
+        material = new Material(Shader.Find("Standard"));
+        material.color = color;
+        AssetDatabase.CreateAsset(material, path);
+        return material;
     }
 
     // As ChessBoardViewBuilder.EnsureProgramAsset.

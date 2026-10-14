@@ -80,6 +80,11 @@ namespace SiggiChessBoard {
             + "NoOneAuth for nobody. Must not be empty.")]
         public SimpleAuth simpleAuth;
 
+        [Header("Pieces")]
+        [Tooltip("The chess piece set every board view uses unless it has its own (docs/customizing.md). Must not be "
+            + "empty.")]
+        public ChessPieceSet defaultPieceSet;
+
         [Header("Boards")]
         [Tooltip("How many boards can have their own overrides: board numbers 0 to this minus 1.")]
         public int boardCount = 4;
@@ -137,6 +142,15 @@ namespace SiggiChessBoard {
         public override void OnDeserialization() {
             received = true;
             changes++;
+        }
+
+        // Makes set the default chess piece set (step 12.3), on this client only: every board view without a set of
+        // its own wears it from the next frame (the views poll defaultPieceSet). The arbiter only holds it. Refuses
+        // null (false): a view needs a set to fall back on.
+        public bool SetDefaultChessPieces(ChessPieceSet set) {
+            if (!Utilities.IsValid(set)) return false;
+            defaultPieceSet = set;
+            return true;
         }
 
         // The setting bits from the editor fields.
