@@ -79,3 +79,6 @@ crashlytics-build.properties
 # Temporary auto-generated Android Assets
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# Developer-specific test automation settings (vrchat-world-unity-automation Claude Code skill)
+/TestingAutomation.md

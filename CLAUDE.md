@@ -9,7 +9,7 @@ UdonSharp port of the Java ChessBoard library, for VRChat worlds. `PLAN.md` hold
 - **`PLAN.md`'s implementation steps are a checklist.** Work through the items in order. After completing an item and passing its **Verify**, tick it (`- [x]`) in `PLAN.md` before moving on. Never tick an item whose verification hasn't actually been seen to pass.
 - **Commit whenever a step is complete**: once its Verify has passed and it's ticked, commit the step's changes (code, tests, `PLAN.md`, docs) in one commit named after it, e.g. "Add game IDs and ContinuedFrom (PLAN 7.6)". Unity-generated asset changes go in their own commit.
 - **If the work deviates from the plan, update `PLAN.md` (and the affected `docs/` files) to match** in the same change.
-- Play Mode and multi-client checks need the user to run Unity; test results are read from the Unity Editor log (`%LOCALAPPDATA%\Unity\Editor\Editor.log`).
+- **Running tests:** when `TestingAutomation.md` exists in the project root, Play Mode tests, uploads and multi-client checks run through the `vrchat-world-unity-automation` Claude Code skill: load it and read that file before running any. Without them, the developer runs Unity and the clients. Test results are read from the Unity Editor log (`%LOCALAPPDATA%\Unity\Editor\Editor.log`), or the skill's log.
 
 ## UdonSharp limits
 
