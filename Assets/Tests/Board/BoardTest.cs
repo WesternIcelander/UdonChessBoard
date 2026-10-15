@@ -101,12 +101,13 @@ public class BoardTest : ChessBoardListener {
     }
 
     // The second frame: snapshots, listeners and scenarios (7.9 to 7.12), sync, ownership and inactivity (8.3 to 8.5),
-    // who may touch the pieces (9.2) and pick them up (9.3c).
+    // playing on untimed after a flag fall (12.9), who may touch the pieces (9.2) and pick them up (9.3c).
     public void RunSyncChecks() {
         TestSnapshot();
         TestListeners();
         TestScenarios();
         TestSync();
+        TestPlayOn();
         TestOwnership();
         TestInactivity();
         TestTouchPieces();
@@ -4807,7 +4808,8 @@ public class BoardTest : ChessBoardListener {
             + "; seats " + board.whitePlayer + "|" + board.blackPlayer + "; activity " + board.lastActivity
             + "; result " + board.ending + " " + board.winner + "; lifecycle " + board.lifecycle
             + "; mode " + board.mode + "; clock " + board.baseTime + "+" + board.increment + " " + board.whiteTime
-            + " " + board.blackTime + " " + board.turnStart + "; settings " + board.gameSettings;
+            + " " + board.blackTime + " " + board.turnStart + (board.untimedAfterFlagFall ? " untimed" : "") + " "
+            + board.flagFallPly + "; settings " + board.gameSettings;
         for (int i = 0; i < ChessArbiter.NumberCount; i++) text += " " + board.gameNumbers[i];
         return text;
     }
@@ -5010,6 +5012,206 @@ public class BoardTest : ChessBoardListener {
         board.RemoveListener(this);
         board.ClearState();
         board.PackState();
+    }
+
+    // ---- 12.9 playing on untimed after a flag fall ----
+
+    // A 60 s game between Ana and Bob with these settings: 1. e4 at 1001, leaving White 59 s; Black's flag falls at
+    // 1061.
+    void FlagFallAfterE4(int settings, string name) {
+        StartedGame(60, 0, 1000);
+        board.gameSettings = settings;
+        Play(ChessRules.E2, ChessRules.E4, 1001, name + ": 1. e4");
+    }
+
+    void TestPlayOn() {
+        NothingForced();
+        board.AddListener(this);
+        int playOn = ChessArbiter.SettingPlayOnAfterFlagFall;
+
+        // Off: the game ends as before.
+        string o = "play-on off";
+        FlagFallAfterE4(0, o);
+        Check(board.CheckFlagFallAt(1100), o + ": the flag falls", "no flag fall");
+        CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.White, "1-0", o);
+        Check(!board.ClocksFromPreviousGame(), o + ": no clocks from a previous game", "set");
+
+        // On: the timed game is logged as it ended, then plays on untimed at once.
+        string s = "play-on";
+        FlagFallAfterE4(playOn, s);
+        string timedId = board.gameId;
+        int before = board.loggedGames;
+        MarkNotifications();
+        Check(board.CheckFlagFallAt(1100), s + ": the flag falls", "no flag fall");
+        CheckTold(ChessBoard.ChangeEnded, s + ": told as ended");
+        CheckLogged(before, 1, s + ": the timed game logged once");
+        CheckLogHas("[Result \"1-0\"]\n", s + ": logged 1-0");
+        CheckLogHas("[TimeControl \"60\"]\n", s + ": logged with its time control");
+        CheckLogHas("[GameID \"" + timedId + "\"]\n", s + ": logged with its own ID");
+        CheckLogHas("[Termination \"time forfeit\"]\n", s + ": logged as a time forfeit");
+        CheckLogHas("1. e4 { [%clk 0:00:59] } 1-0\n", s + ": logged with its clocks");
+        CheckInGame(s + ": playing on");
+        Check(board.gameId.Length > 0 && board.gameId != timedId, s + ": a new Game ID", "\"" + board.gameId + "\"");
+        CheckText(board.continuedFrom, timedId + "/1", s + ": ContinuedFrom the flag fall's ply");
+        Check(!board.HasClock() && !board.IsClockRunning(), s + ": no clock", "clock");
+        Check(board.ClocksFromPreviousGame(), s + ": the clocks are the previous game's", "not");
+        CheckTimes(59000, 0, 1e6, s + ": the times at the flag fall");
+        CheckInt(board.FlaggedColorAt(1e9), ChessRules.NoColor, s + ": no flag can fall");
+        CheckInt(board.clockHistory[0], -1, s + ": the timed game's clocks emptied");
+        CheckInt(board.moveCount, 1, s + ": the moves kept");
+        CheckSeats("Ana", "Bob", s);
+
+        // Moves are played with no clock; the untimed game is logged as any continued game when it ends.
+        Play(ChessRules.E7, ChessRules.E5, 5000, s + ": 1... e5");
+        CheckInt(board.clockHistory[1], -1, s + ": e5 has no clock");
+        CheckTimes(59000, 0, 1e7, s + ": the times unchanged by a move");
+        Check(!board.CheckFlagFallAt(1e9), s + ": no flag fall later", "flag fell");
+        string pgn = board.GamePgn();
+        Check(pgn.Contains("[TimeControl \"-\"]\n") && !pgn.Contains("[%clk"), s + ": its PGN is untimed", pgn);
+        string playOnId = board.gameId;
+        before = board.loggedGames;
+        CheckInt(board.ResignAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob resigns");
+        CheckLoggedEnding(before, "1-0", "resignation", s + ": resigned");
+        CheckLogHas("[GameID \"" + playOnId + "\"]\n", s + ": logged with its new ID");
+        CheckLogHas("[ContinuedFrom \"" + timedId + "/1\"]\n", s + ": logged with ContinuedFrom");
+        CheckLogHas("[TimeControl \"-\"]\n", s + ": logged untimed");
+        CheckLogHas("\n\n1. e4 e5 1-0\n", s + ": logged without clocks");
+        Check(board.ClocksFromPreviousGame(), s + ": the previous game's clocks once ended", "not");
+        CheckTimes(59000, 0, 1e7, s + ": the times once ended");
+        before = board.loggedGames;
+        CheckInt(board.ResetBoardAs("Ana", false), ChessBoard.InputAccepted, s + ": reset");
+        CheckLogged(before, 0, s + ": the reset logs nothing more");
+        Check(!board.ClocksFromPreviousGame() && board.flagFallPly == -1, s + ": the reset clears it", "kept");
+
+        // With no move since the flag fell, a reset or a resignation logs nothing; after a move, a reset logs it.
+        string n = "play-on, no move";
+        FlagFallAfterE4(playOn, n);
+        board.CheckFlagFallAt(1100);
+        before = board.loggedGames;
+        CheckInt(board.ResetBoardAs("Bob", false), ChessBoard.InputAccepted, n + ": reset");
+        CheckLogged(before, 0, n + ": reset: nothing logged");
+        FlagFallAfterE4(playOn, n);
+        board.CheckFlagFallAt(1100);
+        before = board.loggedGames;
+        CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, n + ": Ana resigns");
+        CheckLogged(before, 0, n + ": resigned: nothing logged");
+        FlagFallAfterE4(playOn, n);
+        board.CheckFlagFallAt(1100);
+        Play(ChessRules.E7, ChessRules.E5, 5000, n + ": 1... e5");
+        before = board.loggedGames;
+        board.ResetBoardAs("Bob", false);
+        CheckLoggedOnReset(before, "*", "unterminated", n + ": reset after a move");
+        CheckLogHas("1. e4 e5 *", n + ": reset after a move: its moves");
+
+        // A drawn time forfeit plays on too (the side out of time may still mate); a dead position doesn't, with the
+        // dead-position rule on.
+        string d = "play-on, drawn";
+        StartedGame(60, 0, 1000);
+        board.gameSettings = playOn | ChessArbiter.SettingDeadPosition;
+        SetPosition("k7/8/8/8/8/8/8/KQR5 w - - 0 1");
+        Check(board.CheckFlagFallAt(1060), d + ": White's flag falls", "no flag fall");
+        CheckInGame(d + ": playing on");
+        CheckTimes(0, 60000, 1e6, d + ": White out of time");
+        string v = "play-on, dead position";
+        StartedGame(60, 0, 1000);
+        board.gameSettings = playOn | ChessArbiter.SettingDeadPosition;
+        SetPosition("k7/8/8/8/8/8/8/K5n1 w - - 0 1");
+        Check(board.CheckFlagFallAt(1060), v + ": White's flag falls", "no flag fall");
+        CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.NoColor, "1/2-1/2", v + ": no play-on");
+        Check(!board.ClocksFromPreviousGame(), v + ": no clocks from a previous game", "set");
+
+        // In replay, the game plays on in replay.
+        string r = "play-on in replay";
+        FlagFallAfterE4(playOn, r);
+        CheckInt(board.EnterReplayAs("Ana", false), ChessBoard.InputAccepted, r + ": replay");
+        CheckInt(board.StepToAs("Ana", false, 0), ChessBoard.InputAccepted, r + ": step to the start");
+        Check(board.CheckFlagFallAt(1100), r + ": the flag falls", "no flag fall");
+        CheckInGame(r + ": playing on");
+        Check(board.replayMode && board.replayIndex == 0, r + ": replay kept at the start",
+            "replay " + board.replayMode + " at " + board.replayIndex);
+
+        // A takeback in the game played on, back before the flag fell: still untimed, the times kept.
+        string t = "play-on takeback";
+        StartedGame(60, 0, 1000);
+        board.gameSettings = playOn | ChessArbiter.SettingTakebacks;
+        Play(ChessRules.E2, ChessRules.E4, 1001, t + ": 1. e4");
+        Play(ChessRules.E7, ChessRules.E5, 1002, t + ": 1... e5");
+        Play(ChessRules.G1, ChessRules.F3, 1003, t + ": 2. Nf3");
+        Check(board.CheckFlagFallAt(1100), t + ": Black's flag falls", "no flag fall");
+        playOnId = board.gameId;
+        Play(ChessRules.B8, ChessRules.C6, 5000, t + ": 2... Nc6");
+        before = TakeBackTo(1, t);
+        CheckLogged(before, 1, t + ": the game played on logged");
+        CheckLogHas("[Result \"*\"]\n", t + ": logged unfinished");
+        CheckLogHas("[GameID \"" + playOnId + "\"]\n", t + ": logged with its ID");
+        CheckInGame(t + ": taken back");
+        CheckInt(board.moveCount, 1, t + ": back to ply 1");
+        CheckText(board.continuedFrom, playOnId + "/1", t + ": ContinuedFrom the game played on");
+        Check(!board.HasClock() && board.ClocksFromPreviousGame(), t + ": still untimed", "clock or no times");
+        CheckTimes(58000, 0, 1e6, t + ": the times kept");
+        CheckInt(board.flagFallPly, -1, t + ": no longer the flag fall's own game");
+        string u = "play-on takeback, no move";
+        StartedGame(60, 0, 1000);
+        board.gameSettings = playOn | ChessArbiter.SettingTakebacks;
+        Play(ChessRules.E2, ChessRules.E4, 1001, u + ": 1. e4");
+        Play(ChessRules.E7, ChessRules.E5, 1002, u + ": 1... e5");
+        Play(ChessRules.G1, ChessRules.F3, 1003, u + ": 2. Nf3");
+        board.CheckFlagFallAt(1100);
+        before = TakeBackTo(1, u);
+        CheckLogged(before, 0, u + ": nothing logged");
+
+        // Sync: the game played on arrives at a client that had the timed game in progress. It's logged there on time,
+        // as the sender logged it, even with this client's clock not yet run out.
+        string y = "play-on sync";
+        FlagFallAfterE4(playOn, y);
+        timedId = board.gameId;
+        board.CheckFlagFallAt(1100);
+        playOnId = board.gameId;
+        board.PackState();
+        // As this client had it before the update.
+        board.gameId = timedId;
+        board.continuedFrom = "";
+        board.baseTime = 60;
+        board.whiteTime = 59000;
+        board.blackTime = 60000;
+        board.turnStart = board.ServerTime() + 1000;
+        board.clockHistory[0] = 59000;
+        board.untimedAfterFlagFall = false;
+        board.flagFallPly = -1;
+        before = board.loggedGames;
+        board.ReceiveState();
+        CheckLoggedOnReset(before, "1-0", "time forfeit", y);
+        CheckLogHas("[GameID \"" + timedId + "\"]\n", y + ": logged with the timed game's ID");
+        CheckInGame(y + ": playing on");
+        CheckText(board.gameId, playOnId, y + ": the new game taken");
+        Check(board.ClocksFromPreviousGame() && board.flagFallPly == 1, y + ": playing on after the flag fall",
+            "untimed " + board.untimedAfterFlagFall + ", ply " + board.flagFallPly);
+        board.PackState();
+        string sent = StateText();
+        board.ClearState();
+        board.ReceiveState();
+        CheckText(StateText(), sent, y + ": received as sent");
+        before = board.loggedGames;
+        board.ReceiveState();
+        CheckLogged(before, 0, y + ": the same update again logs nothing");
+        SyncReplaceGame();
+        board.ReceiveState();
+        CheckLogged(before, 0, y + ": a reset arriving with no move since the flag fell logs nothing");
+
+        board.RemoveListener(this);
+        board.ClearState();
+        board.PackState();
+    }
+
+    // Steps the replay to ply, White asks to take back to there and Black accepts. Returns the games logged before
+    // the accept.
+    int TakeBackTo(int ply, string name) {
+        CheckInt(board.EnterReplayAs("Ana", false), ChessBoard.InputAccepted, name + ": replay");
+        CheckInt(board.StepToAs("Ana", false, ply), ChessBoard.InputAccepted, name + ": step to ply " + ply);
+        CheckInt(board.RequestTakebackAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, name + ": asked");
+        int logged = board.loggedGames;
+        CheckInt(board.AcceptTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, name + ": accepted");
+        return logged;
     }
 
     // ---- 8.4 ownership ----

@@ -46,6 +46,7 @@ Each board is split into behaviours that never reach into each other's domain.
   - `PieceAt(square)`: the piece shown, from the replay board in replay and the game's board otherwise.
   - `LastMove()`: the packed move that led to the position shown, for the last-move highlight and animation; 0 for the starting position or a custom replay position.
   - `SideToMove()` and `IsInCheck()`: the game's, whatever replay shows.
+  - `ClocksFromPreviousGame()`: the game plays on untimed after a flag fall (step 12.9), so `RemainingTime` gives the timed game's times, for the UI's `GG`.
   - `Checks(checkers, kings)`: the checks in the position shown, for the check lines (step 12.7); `FallenKingSquare()`: the king checkmated, or the resigning side's, in the position shown, for the falling king (step 12.8).
   - `LegalMovesFrom(square, moves)`: the game's legal moves from a square (for the legal-target highlights), none unless a game is in progress, not in replay and the side to move's flag hasn't fallen.
   - `ResultText()`: `1-0`, `0-1`, `1/2-1/2` or `*`.

@@ -1548,6 +1548,26 @@ public class ViewTest : UdonSharpBehaviour {
         CheckEnding(ChessGame.EndingUnknown, ChessRules.NoColor, "Draw (1/2-1/2)");
         CheckEnding(ChessGame.EndingNone, ChessRules.NoColor, "");
 
+        // Playing on untimed after Black's flag fell (12.9): the timed game's times, GG for the side out of time.
+        board.ending = ChessGame.EndingNone;
+        board.winner = ChessRules.NoColor;
+        board.lifecycle = ChessBoard.LifecycleInGame;
+        board.baseTime = ChessArbiter.NoClock;
+        board.increment = 0;
+        board.untimedAfterFlagFall = true;
+        board.whiteTime = 59000;
+        board.blackTime = 0;
+        double later = board.ServerTime() + 100;
+        Check(ui.PlayerTextAt(ChessRules.White, later).EndsWith("  0:59"), s + ": play-on: White's time kept",
+            ui.PlayerTextAt(ChessRules.White, later));
+        Check(ui.PlayerTextAt(ChessRules.Black, later).EndsWith("  GG"), s + ": play-on: GG for Black",
+            ui.PlayerTextAt(ChessRules.Black, later));
+        Check(ui.StatusTextAt(later).Contains("Playing on untimed: Black ran out of time"),
+            s + ": play-on: the status says so", ui.StatusTextAt(later));
+        board.untimedAfterFlagFall = false;
+        Check(!ui.PlayerTextAt(ChessRules.Black, later).Contains("GG"), s + ": no GG without play-on",
+            ui.PlayerTextAt(ChessRules.Black, later));
+
         // A stalemate and a checkmate played on the local player's games, with no clock.
         board.ClearState();
         StartUnforced(s + ": stalemate game");

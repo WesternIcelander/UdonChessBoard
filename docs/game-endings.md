@@ -58,6 +58,7 @@ Each FIDE draw rule can be switched on or off in the instance settings menu (on 
 - FIDE 6.9: the side out of time loses, unless its opponent can't checkmate by any series of legal moves, which makes it a draw. That exception is the **dead-position rule's**: it applies only while the snapshot has the dead-position draw rule on, so under "No draws" (or with only the other draw rules on) a timeout is always a loss.
 - **"Can't checkmate"** (`ChessDraws.HasNoMatingMaterial(board, color)`): the opponent has only its king, or the whole board is insufficient material (`IsInsufficientMaterial`, the standard cases above). Anything else counts as able to mate, since the flagged side's own pieces can hem its king in: K+N or K+B against a king with a pawn or a minor piece can mate, so the flag loses there.
 - The result is the time forfeit ending either way (`Termination "time forfeit"`), with `1/2-1/2` for the draw.
+- **Then, by default, play goes on untimed** (step 12.9): the ended game is logged, and a new untimed game continues from its last position (see [Clocks](clocks.md#implementation), Playing on). Organizers can turn it off per board or for all.
 
 ## Implementation
 

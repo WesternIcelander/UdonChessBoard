@@ -24,7 +24,9 @@ namespace SiggiChessBoard {
         // control are then the forced mode and forced base time and increment, and the players can't change them.
         public const int SettingModeForced = 1 << 7;
         public const int SettingClockForced = 1 << 8;
-        public const int SettingCount = 9;
+        // A game whose flag falls plays on untimed at once, after ending and being logged (step 12.9, docs/clocks.md).
+        public const int SettingPlayOnAfterFlagFall = 1 << 9;
+        public const int SettingCount = 10;
         public const int SettingsDrawRules = SettingDrawAgreement | SettingThreefoldRepetition | SettingFiftyMoveRule
             | SettingFivefoldRepetition | SettingSeventyFiveMoveRule | SettingDeadPosition;
 
@@ -58,6 +60,8 @@ namespace SiggiChessBoard {
         public bool fivefoldRepetition;
         public bool seventyFiveMoveRule;
         public bool deadPosition;
+        [Tooltip("When a side's time runs out, the game ends and is logged, then plays on at once as an untimed game.")]
+        public bool playOnAfterFlagFall = true;
 
         [Header("Inactivity (seconds, -1 = never)")]
         [Tooltip("Idle time after which anyone can reset a board. Clamped to the auto-reset time when both are set.")]
@@ -206,6 +210,7 @@ namespace SiggiChessBoard {
             if (deadPosition) bits |= SettingDeadPosition;
             if (modeForced) bits |= SettingModeForced;
             if (clockForced) bits |= SettingClockForced;
+            if (playOnAfterFlagFall) bits |= SettingPlayOnAfterFlagFall;
             return bits;
         }
 
@@ -458,6 +463,7 @@ namespace SiggiChessBoard {
             if ((bits & SettingDeadPosition) != 0) text += " dead-position";
             if ((bits & SettingModeForced) != 0) text += " mode-forced";
             if ((bits & SettingClockForced) != 0) text += " clock-forced";
+            if ((bits & SettingPlayOnAfterFlagFall) != 0) text += " play-on";
             return text.Length == 0 ? "none" : text.Substring(1);
         }
 

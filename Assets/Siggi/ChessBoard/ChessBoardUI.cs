@@ -665,19 +665,31 @@ namespace SiggiChessBoard {
         }
 
         // A seat's line: "White: Ana", "(open)" for an empty seat, with the side's remaining time at server time now
-        // during and after a game with a clock ("White: Ana  4:58").
+        // during and after a game with a clock ("White: Ana  4:58"). In a game played on untimed after a flag fall
+        // (step 12.9) the times are the timed game's, and the side out of time shows GG instead of 0:00.
         public string PlayerTextAt(int color, double now) {
             if (!Utilities.IsValid(board)) return "";
             string name = color == ChessRules.White ? board.whitePlayer : board.blackPlayer;
             string text = ColorText(color) + ": " + (name != null && name.Length > 0 ? name : "(open)");
             bool played = board.lifecycle == ChessBoard.LifecycleInGame || board.lifecycle == ChessBoard.LifecycleEnded;
-            if (played && board.HasClock()) text += "  " + ClockDisplay(board.RemainingTimeAt(color, now));
+            if (!played) return text;
+            int left = board.RemainingTimeAt(color, now);
+            if (board.ClocksFromPreviousGame()) text += "  " + (left == 0 ? "GG" : ClockDisplay(left));
+            else if (board.HasClock()) text += "  " + ClockDisplay(left);
             return text;
+        }
+
+        // Which side's time ran out before the game played on untimed (step 12.9): the one with no time left, NoColor
+        // if the game isn't playing on.
+        int PlayOnFlaggedColor() {
+            if (!board.ClocksFromPreviousGame()) return ChessRules.NoColor;
+            if (board.whiteTime == 0) return ChessRules.White;
+            return board.blackTime == 0 ? ChessRules.Black : ChessRules.NoColor;
         }
 
         // The board's state at server time now, a line each: a reset board's invitation; the lobby's mode and clock; a
         // loaded game's names (and mode, for Chess960); in a game, whose turn it is and whether they're in check, or that
-        // their time is up; the result of an ended or loaded game (EndingText); a pending draw offer and takeback
+        // their time is up, and, playing on untimed after a flag fall, whose time ran out (12.9); the result of an ended or loaded game (EndingText); a pending draw offer and takeback
         // request; the replay position (ReplayText).
         public string StatusTextAt(double now) {
             if (!Utilities.IsValid(board)) return "";
@@ -696,6 +708,10 @@ namespace SiggiChessBoard {
                 } else {
                     text = ColorText(board.SideToMove()) + " to move";
                     if (board.IsInCheck()) text += ", in check";
+                }
+                int playOnFlagged = PlayOnFlaggedColor();
+                if (playOnFlagged != ChessRules.NoColor) {
+                    text = AddLine(text, "Playing on untimed: " + ColorText(playOnFlagged) + " ran out of time");
                 }
             }
             text = AddLine(text, EndingText());

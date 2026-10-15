@@ -83,7 +83,7 @@ public class SettingsTest : UdonSharpBehaviour {
             ChessArbiter.SettingTakebacks, ChessArbiter.SettingDrawAgreement, ChessArbiter.SettingThreefoldRepetition,
             ChessArbiter.SettingFiftyMoveRule, ChessArbiter.SettingFivefoldRepetition,
             ChessArbiter.SettingSeventyFiveMoveRule, ChessArbiter.SettingDeadPosition, ChessArbiter.SettingModeForced,
-            ChessArbiter.SettingClockForced
+            ChessArbiter.SettingClockForced, ChessArbiter.SettingPlayOnAfterFlagFall
         };
         CheckInt(bits.Length, ChessArbiter.SettingCount, "bits: one per setting");
         int all = 0;
@@ -95,12 +95,13 @@ public class SettingsTest : UdonSharpBehaviour {
         Check(single, "bits: each a single bit", "");
         CheckInt(all, (1 << ChessArbiter.SettingCount) - 1, "bits: distinct, the lowest SettingCount bits");
         CheckInt(ChessArbiter.SettingsDrawRules, all & ~(ChessArbiter.SettingTakebacks
-                | ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced),
+                | ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced
+                | ChessArbiter.SettingPlayOnAfterFlagFall),
             "bits: draw rules are the six draw settings");
         CheckText(ChessArbiter.SettingsToString(0), "none", "bits text: none");
         CheckText(ChessArbiter.SettingsToString(all),
-            "takebacks agreement threefold fifty-move fivefold seventy-five-move dead-position mode-forced clock-forced",
-            "bits text: all");
+            "takebacks agreement threefold fifty-move fivefold seventy-five-move dead-position mode-forced clock-forced"
+            + " play-on", "bits text: all");
         CheckText(ChessArbiter.SettingsToString(ChessArbiter.SettingTakebacks | ChessArbiter.SettingClockForced),
             "takebacks clock-forced", "bits text: two");
     }
@@ -151,6 +152,7 @@ public class SettingsTest : UdonSharpBehaviour {
         CheckSetting(ChessArbiter.SettingDeadPosition, arbiter.deadPosition, "deadPosition");
         CheckSetting(ChessArbiter.SettingModeForced, arbiter.modeForced, "modeForced");
         CheckSetting(ChessArbiter.SettingClockForced, arbiter.clockForced, "clockForced");
+        CheckSetting(ChessArbiter.SettingPlayOnAfterFlagFall, arbiter.playOnAfterFlagFall, "playOnAfterFlagFall");
         CheckInt(arbiter.defaultSettings & ~((1 << ChessArbiter.SettingCount) - 1), 0, "editor defaults: no other bits");
 
         // The numeric settings as entered, corrected the same way the arbiter corrects them.
@@ -201,7 +203,7 @@ public class SettingsTest : UdonSharpBehaviour {
         CheckInt(ChessArbiter.CombineSettings(t, m | c, m | a), t | m, "combine: only masked value bits count");
         CheckInt(ChessArbiter.CombineSettings(0, ChessArbiter.SettingsDrawRules, 0), 0, "combine: no draws, from none");
         CheckInt(ChessArbiter.CombineSettings(all, ChessArbiter.SettingsDrawRules, 0),
-            t | m | c, "combine: no draws, from all");
+            t | m | c | ChessArbiter.SettingPlayOnAfterFlagFall, "combine: no draws, from all");
         CheckInt(ChessArbiter.CombineSettings(t, numberBits, all), t, "combine: number bits don't touch settings");
         CheckInt(ChessArbiter.CombineSettings(t | numberBits | (1 << 30), ~0, a | (1 << 30)), a,
             "combine: no bits above the settings");
@@ -648,6 +650,17 @@ public class SettingsTest : UdonSharpBehaviour {
                 && menu.Press(ChessSettingsMenu.ItemClockForced, ChessSettingsMenu.ActionOn)
                 && arbiter.IsDefaultOn(ChessArbiter.SettingClockForced),
             "menu: all boards: mode and clock forced", ChessArbiter.SettingsToString(arbiter.defaultSettings));
+
+        // All boards: playing on untimed after a flag fall (12.9), off in the known defaults.
+        int p = ChessSettingsMenu.ItemPlayOnAfterFlagFall;
+        CheckText(ChessSettingsMenu.ItemText(p), "Play on untimed after a flag fall", "menu: play-on row's label");
+        CheckText(menu.values[p].text, "Off", "menu: all boards: play-on shown off");
+        Check(menu.Press(p, ChessSettingsMenu.ActionOn) && arbiter.IsDefaultOn(ChessArbiter.SettingPlayOnAfterFlagFall),
+            "menu: all boards: play-on on", ChessArbiter.SettingsToString(arbiter.defaultSettings));
+        CheckText(menu.values[p].text, "On", "menu: all boards: play-on shown on");
+        Check(menu.Press(p, ChessSettingsMenu.ActionOff)
+                && !arbiter.IsDefaultOn(ChessArbiter.SettingPlayOnAfterFlagFall),
+            "menu: all boards: play-on off again", ChessArbiter.SettingsToString(arbiter.defaultSettings));
 
         // All boards: times, with Never last.
         int r = ChessSettingsMenu.ItemResetAvailableTime;

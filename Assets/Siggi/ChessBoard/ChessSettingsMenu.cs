@@ -32,9 +32,11 @@ namespace SiggiChessBoard {
         public const int ItemClockForced = 10;
         public const int ItemForcedBaseTime = 11;
         public const int ItemForcedIncrement = 12;
-        public const int ItemResetAvailableTime = 13;
-        public const int ItemAutoResetTime = 14;
-        public const int ItemCount = 15;
+        // Playing on untimed after a flag fall (step 12.9).
+        public const int ItemPlayOnAfterFlagFall = 13;
+        public const int ItemResetAvailableTime = 14;
+        public const int ItemAutoResetTime = 15;
+        public const int ItemCount = 16;
         // The scope row: Previous and Next pick the boards the menu shows, Default clears the board's overrides.
         public const int ItemScope = -1;
         // The re-snapshot row (step 11.1b): On makes the boards shown that are in use take the settings now.
@@ -273,6 +275,7 @@ namespace SiggiChessBoard {
                 case ItemDeadPosition: return ChessArbiter.SettingDeadPosition;
                 case ItemModeForced: return ChessArbiter.SettingModeForced;
                 case ItemClockForced: return ChessArbiter.SettingClockForced;
+                case ItemPlayOnAfterFlagFall: return ChessArbiter.SettingPlayOnAfterFlagFall;
             }
             return 0;
         }
@@ -309,6 +312,7 @@ namespace SiggiChessBoard {
                 case ItemClockForced: return "Force the time control";
                 case ItemForcedBaseTime: return "  Forced base time";
                 case ItemForcedIncrement: return "  Forced increment";
+                case ItemPlayOnAfterFlagFall: return "Play on untimed after a flag fall";
                 case ItemResetAvailableTime: return "Anyone can reset after idle";
                 case ItemAutoResetTime: return "Board resets itself after idle";
                 case ItemResnapshot: return "Apply to boards in use";

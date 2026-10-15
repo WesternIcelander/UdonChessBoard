@@ -165,6 +165,12 @@ namespace SiggiChessBoard {
         [NonSerialized] public int whiteTime;
         [NonSerialized] public int blackTime;
         [NonSerialized] public double turnStart;
+        // Playing on untimed after a flag fall (step 12.9, docs/clocks.md): whether the game is untimed because a
+        // flag fell (in it or in the game it continued from), so whiteTime and blackTime are the timed game's at its
+        // end (ClocksFromPreviousGame); and the ply the flag fell at while this game is that flag fall's own
+        // continuation, -1 otherwise (a takeback in it starts another game), so it isn't logged with no move since.
+        [NonSerialized] public bool untimedAfterFlagFall;
+        [NonSerialized] public int flagFallPly = -1;
 
         // The settings snapshot (docs/settings.md): ChessArbiter setting bits and its numeric settings.
         [NonSerialized] public int gameSettings;
@@ -207,8 +213,10 @@ namespace SiggiChessBoard {
         public const int SyncBlackTime = 19;
         public const int SyncGameSettings = 20;
         public const int SyncChange = 21;
+        public const int SyncUntimedAfterFlagFall = 22;
+        public const int SyncFlagFallPly = 23;
         // gameNumbers, then the state array.
-        public const int SyncGameNumbers = 22;
+        public const int SyncGameNumbers = 24;
         public const int SyncState = SyncGameNumbers + ChessArbiter.NumberCount;
         public const int SyncLength = SyncState + ChessPosition.StateLength;
 
@@ -474,6 +482,8 @@ namespace SiggiChessBoard {
             ints[SyncBlackTime] = blackTime;
             ints[SyncGameSettings] = gameSettings;
             ints[SyncChange] = lastSentChange;
+            ints[SyncUntimedAfterFlagFall] = untimedAfterFlagFall ? 1 : 0;
+            ints[SyncFlagFallPly] = flagFallPly;
             Array.Copy(gameNumbers, 0, ints, SyncGameNumbers, ChessArbiter.NumberCount);
             Array.Copy(state, 0, ints, SyncState, ChessPosition.StateLength);
             syncedInts = ints;
@@ -517,7 +527,10 @@ namespace SiggiChessBoard {
             bool wasInGame = lifecycle == LifecycleInGame;
             bool sameGame = syncedGameId == gameId
                 && (newLifecycle == LifecycleInGame || newLifecycle == LifecycleEnded);
-            if (wasInGame && !sameGame) LogGoneGameAt(ServerTime());
+            if (wasInGame && !sameGame) {
+                if (IsPlayOnOfThisGame()) LogGame(ChessGame.EndingTimeForfeit, FlagFallWinner(SideToMove()));
+                else LogGoneGameAt(ServerTime());
+            }
             UnpackState();
             if (wasInGame && sameGame && lifecycle == LifecycleEnded) LogGame(ending, winner);
             lastSentChange = syncedInts[SyncChange];
@@ -539,6 +552,14 @@ namespace SiggiChessBoard {
             return syncedStartFen != null && syncedGameId != null && syncedContinuedFrom != null
                 && syncedReplaySourceWhite != null && syncedReplaySourceBlack != null
                 && syncedReplaySourceResult != null && syncedWhitePlayer != null && syncedBlackPlayer != null;
+        }
+
+        // Whether the update in the synced fields is this game played on untimed after its flag fell (step 12.9): its
+        // own continuation, from this game's last ply. The sender ended this game on time first, so it's logged so here
+        // too, whatever this client's clock says.
+        bool IsPlayOnOfThisGame() {
+            return syncedInts[SyncFlagFallPly] == moveCount && gameId.Length > 0
+                && syncedContinuedFrom == ChessGame.ContinuedFromText(gameId, moveCount);
         }
 
         // Logs the game in progress that an update has replaced, as the client replacing it did: on time if the side
@@ -600,6 +621,8 @@ namespace SiggiChessBoard {
             increment = ints[SyncIncrement];
             whiteTime = ints[SyncWhiteTime];
             blackTime = ints[SyncBlackTime];
+            untimedAfterFlagFall = ints[SyncUntimedAfterFlagFall] != 0;
+            flagFallPly = ints[SyncFlagFallPly];
             gameSettings = ints[SyncGameSettings];
 
             turnStart = syncedTurnStart;
@@ -753,6 +776,8 @@ namespace SiggiChessBoard {
             whiteTime = 0;
             blackTime = 0;
             turnStart = 0;
+            untimedAfterFlagFall = false;
+            flagFallPly = -1;
 
             gameSettings = 0;
             gameNumbers = new int[ChessArbiter.NumberCount];
@@ -1068,6 +1093,13 @@ namespace SiggiChessBoard {
             return baseTime != ChessArbiter.NoClock;
         }
 
+        // Whether the game plays on untimed after a flag fall (step 12.9): there's no clock, and the remaining times
+        // (RemainingTime) are each side's at the end of the timed game, the side out of time's 0, so the UI can show
+        // that side as having lost on time.
+        public bool ClocksFromPreviousGame() {
+            return untimedAfterFlagFall;
+        }
+
         // Whether the side to move's clock is running: a game with a clock is in progress. Replay doesn't stop it.
         public bool IsClockRunning() {
             return lifecycle == LifecycleInGame && baseTime != ChessArbiter.NoClock;
@@ -1369,9 +1401,10 @@ namespace SiggiChessBoard {
 
         // Writes the game's PGN, with this ending and winner, to the log as one entry: a "[ChessPGN]" line, then the
         // PGN, so a bot reading the output log finds every game (docs/game-endings.md: each client logs once, on the
-        // transition), and hands it to the archive (docs/archive.md). A game with no moves isn't logged.
+        // transition), and hands it to the archive (docs/archive.md). A game with no moves isn't logged, nor is a game
+        // played on untimed after a flag fall with no move since the flag fell (step 12.9): the timed game holds them.
         void LogGame(int logEnding, int logWinner) {
-            if (moveCount == 0) return;
+            if (moveCount == 0 || moveCount == flagFallPly) return;
             lastLoggedPgn = PgnWith(logEnding, logWinner);
             loggedGames++;
             Debug.Log("[ChessPGN]\n" + lastLoggedPgn);
@@ -1399,11 +1432,42 @@ namespace SiggiChessBoard {
 
         // Ends the game on time forfeit if the side to move's flag has fallen at server time now, and returns whether
         // it did. The side out of time loses, unless its opponent can't checkmate (ChessDraws.HasNoMatingMaterial) and
-        // the snapshot's dead-position rule is on, which makes it a draw; under "No draws" it always loses.
+        // the snapshot's dead-position rule is on, which makes it a draw; under "No draws" it always loses. The game is
+        // logged as it ends; then, while the snapshot has SettingPlayOnAfterFlagFall on, it plays on untimed at once
+        // (PlayOnUntimedAt). Either way the listeners are told once, as ChangeEnded.
         public bool CheckFlagFallAt(double now) {
             if (!EndOnFlagFallAt(now)) return false;
+            if (MayPlayOnAfterFlagFall()) PlayOnUntimedAt(now);
             NotifyChanged(ChangeEnded);
             return true;
+        }
+
+        // Whether a game just ended on time plays on: the snapshot has it on, and the position isn't one of the
+        // automatic draws the snapshot has on (a dead position, with that rule on), which the untimed game would be
+        // over in before a move. A drawn time forfeit plays on too: the side out of time may still mate.
+        bool MayPlayOnAfterFlagFall() {
+            return IsGameSettingOn(ChessArbiter.SettingPlayOnAfterFlagFall) && AutomaticDraw() == ChessGame.EndingNone;
+        }
+
+        // The game that has just ended on time (and been logged) plays on at once as an untimed continuation game at
+        // server time now (step 12.9, docs/clocks.md): a new Game ID with ContinuedFrom at the last ply, no clock, the
+        // same players and position, in progress with no result. The clock history is emptied (-1), so the untimed
+        // game's PGN has no [%clk] for the timed moves under its TimeControl "-"; the timed game's PGN has them. Each
+        // side's time stays as the timed game ended (the flagged side's 0), for ClocksFromPreviousGame. A pending
+        // takeback request was for the ended game and is cleared; replay is left as it is.
+        void PlayOnUntimedAt(double now) {
+            ContinueGameIdAt(moveCount, NetworkDateTime());
+            for (int i = 0; i < moveCount; i++) clockHistory[i] = -1;
+            baseTime = ChessArbiter.NoClock;
+            increment = 0;
+            turnStart = now;
+            untimedAfterFlagFall = true;
+            flagFallPly = moveCount;
+            ending = ChessGame.EndingNone;
+            winner = ChessRules.NoColor;
+            lifecycle = LifecycleInGame;
+            takebackColor = ChessRules.NoColor;
+            takebackPly = 0;
         }
 
         // CheckFlagFallAt without telling the listeners, for a change that ends the game on time on its way (a reset).
@@ -2018,6 +2082,7 @@ namespace SiggiChessBoard {
             ContinueGameIdAt(ply, NetworkDateTime());
             TruncateHistory(ply);
             RestoreClocks(ServerTime());
+            flagFallPly = -1;
             ending = ChessGame.EndingNone;
             winner = ChessRules.NoColor;
             lifecycle = LifecycleInGame;
@@ -2047,8 +2112,12 @@ namespace SiggiChessBoard {
 
         // Puts both clocks back to what they were after the last move each side made (the clock history), or the base
         // time for a side that hasn't moved, and starts the side to move's turn at server time now. With no clock
-        // they stay 0. A history entry of -1 (none known) counts as the base time.
+        // they stay 0, except in a game played on untimed after a flag fall (step 12.9), even back before the flag
+        // fell: it stays untimed, and its times stay those the timed game ended with. A history entry of -1 (none
+        // known) counts as the base time.
         void RestoreClocks(double now) {
+            turnStart = now;
+            if (untimedAfterFlagFall) return;
             int start = baseTime == ChessArbiter.NoClock ? 0 : baseTime * 1000;
             int toMove = moveCount >= 2 ? clockHistory[moveCount - 2] : -1;
             int moved = moveCount >= 1 ? clockHistory[moveCount - 1] : -1;
@@ -2061,7 +2130,6 @@ namespace SiggiChessBoard {
                 whiteTime = moved;
                 blackTime = toMove;
             }
-            turnStart = now;
         }
 
         // ---- PGN import (docs/pgn.md, Import; docs/networking.md, Imported games) ----
