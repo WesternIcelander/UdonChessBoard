@@ -13,7 +13,7 @@ using VRC.Udon;
 
 // Builds the physical board (PLAN.md 9.1, ChessBoardView.cs) in the open scene for the selected ChessBoard, or the
 // scene's only one: a table, the board's surface and squares, the 32 piece objects, the highlights, the promotion
-// picker (step 9.5a) and the captured-piece places (step 12.4), wired to a ChessBoardView; and its UI (step 12.1,
+// ghosts (step 12.11) and the captured-piece places (step 12.4), wired to a ChessBoardView; and its UI (step 12.1,
 // ChessBoardUI.cs) on an object of its own beside the view, standing where the view does (the board's centre): the
 // button panels (steps 9.4a and 9.4b), the
 // status panels (step 9.5c) and the PGN box (steps 11.2a, 11.2b). Players walk through all of it (no solid colliders
@@ -35,6 +35,8 @@ public static class ChessBoardViewBuilder {
     const string SquareProgramPath = "Assets/Siggi/ChessBoard/ChessSquare.asset";
     const string PieceSetScriptPath = "Assets/Siggi/ChessBoard/ChessPieceSet.cs";
     const string PieceSetProgramPath = "Assets/Siggi/ChessBoard/ChessPieceSet.asset";
+    const string GhostScriptPath = "Assets/Siggi/ChessBoard/ChessPromotionGhost.cs";
+    const string GhostProgramPath = "Assets/Siggi/ChessBoard/ChessPromotionGhost.asset";
     const string ModelsFolder = "Assets/Siggi/ChessBoard/Models";
 
     const float SquareSize = 0.05f;
@@ -64,6 +66,7 @@ public static class ChessBoardViewBuilder {
         Material lightSquares = MaterialAsset("Light Squares", new Color(0.93f, 0.85f, 0.71f), 0.3f);
         Material darkSquares = MaterialAsset("Dark Squares", new Color(0.55f, 0.37f, 0.24f), 0.3f);
         Material frame = MaterialAsset("Board Frame", new Color(0.3f, 0.19f, 0.11f), 0.35f);
+        Material ghost = GhostMaterialAsset();
         Mesh squares = SquaresMesh();
 
         GameObject root = new GameObject("ChessBoardView (" + board.gameObject.name + ")");
@@ -105,7 +108,7 @@ public static class ChessBoardViewBuilder {
         ChessBoardView view = UdonSharpUndo.AddComponent<ChessBoardView>(root);
         view.board = board;
         view.squareSize = SquareSize;
-        string setNote = EnsureDefaultPieceSet(board, meshes, whitePieces, blackPieces);
+        string setNote = EnsureDefaultPieceSet(board, meshes, whitePieces, blackPieces, ghost);
         view.blocker = blockerBox;
         view.pieces = new Transform[ChessBoardView.PieceCount];
         view.pieceFilters = new MeshFilter[ChessBoardView.PieceCount];
@@ -139,7 +142,7 @@ public static class ChessBoardViewBuilder {
         }
         AddSquareTargets(root, view);
         AddHighlights(root, view);
-        AddPromotionPicker(root, view);
+        AddPromotionGhosts(root, view, meshes, ghost);
         AddCapturedPlaces(root, view);
         UdonSharpEditorUtility.CopyProxyToUdon(view);
 
@@ -195,11 +198,11 @@ public static class ChessBoardViewBuilder {
     }
 
     // The parts of the table and board model a world creator may delete (step 12.2, docs/customizing.md), and every
-    // child the builder makes.
+    // child the builder makes (the promotion picker of steps 9.5a to 12.10 too, so a rebuild doesn't keep it).
     static readonly string[] ModelParts = { "Table", "Board", "Squares" };
     static readonly string[] BuiltChildren = {
         "Table", "Player Blocker", "Board", "Squares", "Pieces", "Square Targets", "Highlights", "Promotion Picker",
-        CapturedPlacesName,
+        PromotionGhostsName, CapturedPlacesName,
     };
 
     // The captured-piece places (step 12.4), under "Captured Places": 16 per colour (enough for every piece a side
@@ -208,6 +211,7 @@ public static class ChessBoardViewBuilder {
     // Black's end, Black's to White's right (+x) from White's end. Empty objects; a world creator moves them, or puts
     // their own in the view's fields.
     const string CapturedPlacesName = "Captured Places";
+    const string PromotionGhostsName = "Promotion Ghosts";
 
     static void AddCapturedPlaces(GameObject root, ChessBoardView view) {
         GameObject parent = new GameObject(CapturedPlacesName);
@@ -344,16 +348,18 @@ public static class ChessBoardViewBuilder {
         view.pieceBehaviours[obj] = behaviour;
     }
 
-    // ---- Piece sets (step 12.3, docs/customizing.md) ----
+    // ---- Piece sets (steps 12.3, 12.10 and 12.11, docs/customizing.md) ----
 
     // How far apart the builder lays out a set's slots, in squares.
     const float SlotSpacing = 1.5f;
 
     // The board's arbiter's default piece sets (step 12.10), one per side: each kept when the arbiter has it;
     // otherwise "White Pieces" or "Black Pieces", made from the generated meshes and that side's material as a child of
-    // the arbiter, and put in its Default White / Black Piece Set. The combined "Chess Pieces" of step 12.3 (both
+    // the arbiter, and put in its Default White / Black Piece Set. A kept set without promotion slots (from before step
+    // 12.11) gets them (AddPromotionSlots), the ghost material on each. The combined "Chess Pieces" of step 12.3 (both
     // colours in one set) is removed when found. Returns a note for the log ("" when nothing changed).
-    static string EnsureDefaultPieceSet(ChessBoard board, Mesh[] meshes, Material white, Material black) {
+    static string EnsureDefaultPieceSet(ChessBoard board, Mesh[] meshes, Material white, Material black,
+            Material ghost) {
         ChessArbiter arbiter = board.arbiter;
         if (arbiter == null) {
             Debug.LogWarning("[ChessBoardViewBuilder] " + board.gameObject.name + " has no arbiter, so its view has "
@@ -366,34 +372,47 @@ public static class ChessBoardViewBuilder {
             Undo.DestroyObjectImmediate(combined.gameObject);
             note += ", removing the combined Chess Pieces";
         }
-        if (arbiter.defaultWhitePieceSet != null && arbiter.defaultBlackPieceSet != null) return note;
-        Undo.RecordObject(arbiter, "Create Board View");
-        if (arbiter.defaultWhitePieceSet == null) {
-            ChessPieceSet set = BuildPieceSet("White Pieces", arbiter.transform, meshes, new[] { white },
-                Vector3.zero, Quaternion.identity, Vector3.one);
-            arbiter.defaultWhitePieceSet = set;
-            note += ", the default White Pieces";
+        if (arbiter.defaultWhitePieceSet == null || arbiter.defaultBlackPieceSet == null) {
+            Undo.RecordObject(arbiter, "Create Board View");
+            if (arbiter.defaultWhitePieceSet == null) {
+                arbiter.defaultWhitePieceSet = BuildPieceSet("White Pieces", arbiter.transform, meshes,
+                    new[] { white }, Vector3.zero, Quaternion.identity, Vector3.one, ghost);
+                note += ", the default White Pieces";
+            }
+            if (arbiter.defaultBlackPieceSet == null) {
+                ChessPieceSet set = BuildPieceSet("Black Pieces", arbiter.transform, meshes, new[] { black },
+                    Vector3.zero, Quaternion.identity, Vector3.one, ghost);
+                // Behind White's two rows (its pieces and its promotion pieces).
+                set.transform.localPosition += new Vector3(0, 0, 2 * SlotSpacing * SquareSize);
+                arbiter.defaultBlackPieceSet = set;
+                note += ", the default Black Pieces";
+            }
+            UdonSharpEditorUtility.CopyProxyToUdon(arbiter);
+            EditorUtility.SetDirty(arbiter);
         }
-        if (arbiter.defaultBlackPieceSet == null) {
-            ChessPieceSet set = BuildPieceSet("Black Pieces", arbiter.transform, meshes, new[] { black },
-                Vector3.zero, Quaternion.identity, Vector3.one);
-            set.transform.localPosition += new Vector3(0, 0, SlotSpacing * SquareSize);
-            arbiter.defaultBlackPieceSet = set;
-            note += ", the default Black Pieces";
+        ChessPieceSet whiteSet = arbiter.defaultWhitePieceSet;
+        ChessPieceSet blackSet = arbiter.defaultBlackPieceSet;
+        if (AddPromotionSlots(whiteSet, meshes, ghost) > 0) note += ", promotion slots in " + whiteSet.gameObject.name;
+        if (blackSet != whiteSet && AddPromotionSlots(blackSet, meshes, ghost) > 0) {
+            note += ", promotion slots in " + blackSet.gameObject.name;
+            // The built Black Pieces stood a row behind White Pieces, where White's promotion row is now: moved back.
+            Vector3 oldPlace = whiteSet.transform.localPosition + new Vector3(0, 0, SlotSpacing * SquareSize);
+            if (whiteSet.transform.parent == arbiter.transform && blackSet.transform.parent == arbiter.transform
+                && (blackSet.transform.localPosition - oldPlace).sqrMagnitude < 1e-8f) {
+                Undo.RecordObject(blackSet.transform, "Create Board View");
+                blackSet.transform.localPosition = oldPlace + new Vector3(0, 0, SlotSpacing * SquareSize);
+            }
         }
-        UdonSharpEditorUtility.CopyProxyToUdon(arbiter);
-        EditorUtility.SetDirty(arbiter);
-        return note + " on " + arbiter.gameObject.name;
+        return note.Length > 0 ? note + " on " + arbiter.gameObject.name : "";
     }
 
     // A ChessPieceSet named name under parent, one side's pieces (step 12.10): for each piece type, a slot (laid out in
     // a row, SlotSpacing squares apart) holding a one-square guide on the playing surface and the template, its mesh
-    // meshes[type] with materials, standing at offset, turned by rotation and scaled by scale. Set up as White's
-    // pieces (knights facing +z); a view turns Black's half round. Public for the view test's set.
+    // meshes[type] with materials, standing at offset, turned by rotation and scaled by scale; and the promotion slots
+    // behind them (AddPromotionSlots), with promotionMaterial. Set up as White's pieces (knights facing +z); a view
+    // turns Black's half round. Public for the view test's set.
     public static ChessPieceSet BuildPieceSet(string name, Transform parent, Mesh[] meshes, Material[] materials,
-            Vector3 offset, Quaternion rotation, Vector3 scale) {
-        Mesh guideMesh = FlatMesh("Piece Set Guide", 0.0005f, SquareSize * 0.06f);
-        Material guideMaterial = MaterialAsset("Piece Set Guide", new Color(0.3f, 0.75f, 0.4f), 0.2f);
+            Vector3 offset, Quaternion rotation, Vector3 scale, Material promotionMaterial) {
         GameObject root = new GameObject(name);
         Undo.RegisterCreatedObjectUndo(root, "Create Piece Set");
         root.transform.SetParent(parent, false);
@@ -401,23 +420,12 @@ public static class ChessBoardViewBuilder {
         ChessPieceSet set = UdonSharpUndo.AddComponent<ChessPieceSet>(root);
         Transform[] templates = new Transform[7];
         for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) {
-            GameObject slot = new GameObject(TypeNames[type]);
-            slot.transform.SetParent(root.transform, false);
-            slot.transform.localPosition = new Vector3((type - 1) * SlotSpacing * SquareSize, 0, 0);
-            GameObject guide = new GameObject("Guide");
-            guide.transform.SetParent(slot.transform, false);
-            guide.AddComponent<MeshFilter>().sharedMesh = guideMesh;
-            MeshRenderer guideRenderer = guide.AddComponent<MeshRenderer>();
-            guideRenderer.sharedMaterial = guideMaterial;
-            guideRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            GameObject model = new GameObject("Model");
-            model.transform.SetParent(slot.transform, false);
-            model.transform.localPosition = offset;
-            model.transform.localRotation = rotation;
-            model.transform.localScale = scale;
-            model.AddComponent<MeshFilter>().sharedMesh = meshes[type];
-            model.AddComponent<MeshRenderer>().sharedMaterials = materials;
-            templates[type] = model.transform;
+            Transform model = AddSlot(root.transform, TypeNames[type],
+                new Vector3((type - 1) * SlotSpacing * SquareSize, 0, 0), meshes[type], materials);
+            model.localPosition = offset;
+            model.localRotation = rotation;
+            model.localScale = scale;
+            templates[type] = model;
         }
         set.pawn = templates[ChessRules.Pawn];
         set.knight = templates[ChessRules.Knight];
@@ -426,7 +434,71 @@ public static class ChessBoardViewBuilder {
         set.queen = templates[ChessRules.Queen];
         set.king = templates[ChessRules.King];
         UdonSharpEditorUtility.CopyProxyToUdon(set);
+        AddPromotionSlots(set, meshes, promotionMaterial);
         return set;
+    }
+
+    // Adds to set the promotion slots (step 12.11) it lacks, in a second row behind its pieces (+z, SlotSpacing
+    // squares), each behind its piece's slot: a guide and a template with the mesh and local transform of the set's
+    // own template of that type (meshes[type], unturned, when it has none), and material on every slot of the mesh.
+    // The set's other templates are kept. Returns how many it added.
+    public static int AddPromotionSlots(ChessPieceSet set, Mesh[] meshes, Material material) {
+        if (set == null) return 0;
+        Transform[] templates = new Transform[7];
+        int added = 0;
+        for (int type = ChessRules.Knight; type <= ChessRules.Queen; type++) {
+            templates[type] = set.PromotionTemplate(type);
+            if (templates[type] != null) continue;
+            Transform piece = set.Template(type);
+            Vector3 place = new Vector3((type - 1) * SlotSpacing * SquareSize, 0, 0);
+            if (piece != null && piece.parent != null && piece.parent.parent == set.transform) {
+                place = piece.parent.localPosition;
+            }
+            place.z += SlotSpacing * SquareSize;
+            MeshFilter filter = piece != null ? piece.GetComponent<MeshFilter>() : null;
+            Mesh mesh = filter != null && filter.sharedMesh != null ? filter.sharedMesh : meshes[type];
+            Material[] materials = new Material[Mathf.Max(1, mesh.subMeshCount)];
+            for (int i = 0; i < materials.Length; i++) materials[i] = material;
+            Transform model = AddSlot(set.transform, "Promotion " + TypeNames[type], place, mesh, materials);
+            if (piece != null) {
+                model.localPosition = piece.localPosition;
+                model.localRotation = piece.localRotation;
+                model.localScale = piece.localScale;
+            }
+            templates[type] = model;
+            added++;
+        }
+        if (added == 0) return 0;
+        Undo.RecordObject(set, "Add Promotion Slots");
+        set.promotionKnight = templates[ChessRules.Knight];
+        set.promotionBishop = templates[ChessRules.Bishop];
+        set.promotionRook = templates[ChessRules.Rook];
+        set.promotionQueen = templates[ChessRules.Queen];
+        UdonSharpEditorUtility.CopyProxyToUdon(set);
+        EditorUtility.SetDirty(set);
+        return added;
+    }
+
+    // A slot named name under setRoot at place: a one-square guide on the playing surface and a "Model" with mesh and
+    // materials, unmoved. Returns the model.
+    static Transform AddSlot(Transform setRoot, string name, Vector3 place, Mesh mesh, Material[] materials) {
+        Mesh guideMesh = FlatMesh("Piece Set Guide", 0.0005f, SquareSize * 0.06f);
+        Material guideMaterial = MaterialAsset("Piece Set Guide", new Color(0.3f, 0.75f, 0.4f), 0.2f);
+        GameObject slot = new GameObject(name);
+        Undo.RegisterCreatedObjectUndo(slot, "Create Piece Set");
+        slot.transform.SetParent(setRoot, false);
+        slot.transform.localPosition = place;
+        GameObject guide = new GameObject("Guide");
+        guide.transform.SetParent(slot.transform, false);
+        guide.AddComponent<MeshFilter>().sharedMesh = guideMesh;
+        MeshRenderer guideRenderer = guide.AddComponent<MeshRenderer>();
+        guideRenderer.sharedMaterial = guideMaterial;
+        guideRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        GameObject model = new GameObject("Model");
+        model.transform.SetParent(slot.transform, false);
+        model.AddComponent<MeshFilter>().sharedMesh = mesh;
+        model.AddComponent<MeshRenderer>().sharedMaterials = materials;
+        return model.transform;
     }
 
     // The generated piece meshes by ChessRules type (entry 0 empty), made when missing. Public for the view test.
@@ -517,68 +589,35 @@ public static class ChessBoardViewBuilder {
         return flat;
     }
 
-    // The promotion picker's buttons: label and the view's event, Cancel last.
-    static readonly string[] PickerLabels = { "Queen", "Rook", "Bishop", "Knight", "Cancel" };
-    static readonly string[] PickerEvents = {
-        "PressPromoteQueen", "PressPromoteRook", "PressPromoteBishop", "PressPromoteKnight", "PressPromoteCancel",
-    };
-    static readonly Vector2 PickerCell = new Vector2(52, 30);
-
-    // The promotion picker (step 9.5a): a small world-space canvas (with VRCUiShape, like the button panels) of five
-    // buttons in a row, upright, facing -z (White's end) unturned. Built hidden; the view stands it over the promotion
-    // square, facing the promoting side, while a promotion waits for its piece.
-    static void AddPromotionPicker(GameObject root, ChessBoardView view) {
-        UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(view);
-        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        GameObject canvasObject = new GameObject("Promotion Picker", typeof(RectTransform));
-        canvasObject.layer = LayerMask.NameToLayer("Default");
-        canvasObject.transform.SetParent(root.transform, false);
-        Canvas canvas = canvasObject.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.WorldSpace;
-        RectTransform rect = canvasObject.GetComponent<RectTransform>();
-        rect.sizeDelta = new Vector2(PickerLabels.Length * (PickerCell.x + 4) + 8, PickerCell.y + 12);
-        rect.localScale = Vector3.one * 0.001f;
-        rect.localPosition = new Vector3(0, ChessBoardView.PickerHeight * SquareSize, 0);
-        canvasObject.AddComponent<CanvasScaler>();
-        canvasObject.AddComponent<GraphicRaycaster>();
-        canvasObject.AddComponent<VRCUiShape>();
-        AddTriggerCollider(canvasObject);
-        canvasObject.AddComponent<Image>().color = new Color(0.12f, 0.12f, 0.14f, 0.9f);
-        GridLayoutGroup grid = canvasObject.AddComponent<GridLayoutGroup>();
-        grid.padding = new RectOffset(6, 6, 6, 6);
-        grid.cellSize = PickerCell;
-        grid.spacing = new Vector2(4, 4);
-        grid.childAlignment = TextAnchor.MiddleCenter;
-        grid.constraint = GridLayoutGroup.Constraint.FixedRowCount;
-        grid.constraintCount = 1;
-        for (int i = 0; i < PickerLabels.Length; i++) {
-            GameObject buttonObject = new GameObject(PickerLabels[i], typeof(RectTransform));
-            buttonObject.layer = canvasObject.layer;
-            buttonObject.transform.SetParent(canvasObject.transform, false);
-            Image image = buttonObject.AddComponent<Image>();
-            image.color = i < 4 ? new Color(0.85f, 0.85f, 0.88f) : new Color(0.7f, 0.55f, 0.55f);
-            Button button = buttonObject.AddComponent<Button>();
-            button.targetGraphic = image;
-            button.navigation = new Navigation { mode = Navigation.Mode.None };
-            UnityEventTools.AddStringPersistentListener(button.onClick,
-                new UnityAction<string>(udon.SendCustomEvent), PickerEvents[i]);
-            GameObject labelObject = new GameObject("Label", typeof(RectTransform));
-            labelObject.layer = canvasObject.layer;
-            RectTransform labelRect = labelObject.GetComponent<RectTransform>();
-            labelRect.SetParent(buttonObject.transform, false);
-            labelRect.anchorMin = Vector2.zero;
-            labelRect.anchorMax = Vector2.one;
-            Text label = labelObject.AddComponent<Text>();
-            label.font = font;
-            label.fontSize = 13;
-            label.alignment = TextAnchor.MiddleCenter;
-            label.color = Color.black;
-            label.raycastTarget = false;
-            label.text = PickerLabels[i];
+    // The promotion ghosts (step 12.11), under "Promotion Ghosts": a knight, bishop, rook and queen (ChessBoardView
+    // GhostType order), each with the generated mesh and the Promotion Ghost material, a trigger box collider fitted to
+    // it (so players walk through it and a click still reaches it) and a ChessPromotionGhost promoting to its piece.
+    // Built hidden; the view dresses them in the promoting side's promotion templates and floats them over the pawn.
+    static void AddPromotionGhosts(GameObject root, ChessBoardView view, Mesh[] meshes, Material ghostMaterial) {
+        GameObject parent = new GameObject(PromotionGhostsName);
+        parent.transform.SetParent(root.transform, false);
+        view.promotionGhosts = new ChessPromotionGhost[ChessBoardView.GhostCount];
+        for (int ghost = 0; ghost < ChessBoardView.GhostCount; ghost++) {
+            int type = ChessBoardView.GhostType(ghost);
+            GameObject ghostObject = new GameObject(TypeNames[type]);
+            ghostObject.transform.SetParent(parent.transform, false);
+            ghostObject.transform.localPosition = new Vector3((ghost - 1.5f) * SquareSize,
+                ChessBoardView.GhostHeight * SquareSize, 0);
+            ghostObject.AddComponent<MeshFilter>().sharedMesh = meshes[type];
+            MeshRenderer renderer = ghostObject.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = ghostMaterial;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            BoxCollider box = ghostObject.AddComponent<BoxCollider>();
+            box.center = meshes[type].bounds.center;
+            box.size = meshes[type].bounds.size;
+            box.isTrigger = true;
+            ChessPromotionGhost behaviour = UdonSharpUndo.AddComponent<ChessPromotionGhost>(ghostObject);
+            behaviour.view = view;
+            behaviour.pieceType = type;
+            UdonSharpEditorUtility.CopyProxyToUdon(behaviour);
+            view.promotionGhosts[ghost] = behaviour;
+            ghostObject.SetActive(false);
         }
-        canvasObject.SetActive(false);
-        view.promotionPicker = canvasObject;
     }
 
     // The PGN box's size in canvas pixels (a millimetre each; as wide as the board), the height of its hint line, and
@@ -968,20 +1007,21 @@ public static class ChessBoardViewBuilder {
     }
 
     // UdonSharp needs a compiled program asset next to a script before its behaviour can be added. The repository
-    // has them (the view's, the UI's, the pieces', the squares' and the piece set's); any that's missing is created and
-    // compiled, and the menu item has to be run again afterwards.
+    // has them (the view's, the UI's, the pieces', the squares', the piece set's and the promotion ghosts'); any
+    // that's missing is created and compiled, and the menu item has to be run again afterwards.
     static bool EnsureProgramAssets() {
         bool created = CreateProgramAssetIfMissing(ViewScriptPath, ViewProgramPath);
         created |= CreateProgramAssetIfMissing(UIScriptPath, UIProgramPath);
         created |= CreateProgramAssetIfMissing(PieceScriptPath, PieceProgramPath);
         created |= CreateProgramAssetIfMissing(SquareScriptPath, SquareProgramPath);
         created |= CreateProgramAssetIfMissing(PieceSetScriptPath, PieceSetProgramPath);
+        created |= CreateProgramAssetIfMissing(GhostScriptPath, GhostProgramPath);
         if (!created) return true;
         AssetDatabase.SaveAssets();
         UdonSharpProgramAsset.CompileAllCsPrograms(true);
         EditorUtility.DisplayDialog("Create Board View", "Created the missing program assets next to "
-            + ViewScriptPath + ", " + UIScriptPath + ", " + PieceScriptPath + ", " + SquareScriptPath + " or "
-            + PieceSetScriptPath
+            + ViewScriptPath + ", " + UIScriptPath + ", " + PieceScriptPath + ", " + SquareScriptPath + ", "
+            + PieceSetScriptPath + " or " + GhostScriptPath
             + ". Once UdonSharp has finished compiling, run Tools > Chess Board > Create Board View again.", "OK");
         return false;
     }
@@ -1016,6 +1056,28 @@ public static class ChessBoardViewBuilder {
         material = new Material(Shader.Find("Standard"));
         material.color = color;
         material.SetFloat("_Glossiness", smoothness);
+        AssetDatabase.CreateAsset(material, path);
+        return material;
+    }
+
+    // The see-through green "Promotion Ghost" material (step 12.11), made with the Standard shader in Fade mode if
+    // missing.
+    public static Material GhostMaterialAsset() {
+        string path = ModelsFolder + "/Promotion Ghost.mat";
+        Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (material != null) return material;
+        EnsureModelsFolder();
+        material = new Material(Shader.Find("Standard"));
+        material.color = new Color(0.25f, 0.95f, 0.4f, 0.45f);
+        material.SetFloat("_Glossiness", 0.4f);
+        material.SetFloat("_Mode", 2);
+        material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        material.SetInt("_ZWrite", 0);
+        material.DisableKeyword("_ALPHATEST_ON");
+        material.EnableKeyword("_ALPHABLEND_ON");
+        material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+        material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
         AssetDatabase.CreateAsset(material, path);
         return material;
     }

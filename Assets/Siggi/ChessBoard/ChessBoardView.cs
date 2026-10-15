@@ -7,7 +7,7 @@ using VRC.SDKBase;
 namespace SiggiChessBoard {
     // The physical board (docs/architecture.md, docs/physical-pieces.md): the 32 piece objects in the world, placed on
     // the squares the logical board says, with what goes with them on the table: pickups and clicks, highlights,
-    // animations, the promotion picker and the player blocker. The buttons, the status display and the PGN box are the
+    // animations, the promotion ghosts and the player blocker. The buttons, the status display and the PGN box are the
     // UI's (ChessBoardUI, step 12.1), which this view doesn't know. Holds no game state and no synced fields; it reads
     // the board after each change. Built in the scene by Tools > Chess Board > Create Board View
     // (Editor/ChessBoardViewBuilder.cs).
@@ -59,14 +59,18 @@ namespace SiggiChessBoard {
         public ChessSquare[] squareTargets = new ChessSquare[64];
         // How far a selected piece is lifted above its square, in squares.
         public const float SelectLift = 0.5f;
-        // The promotion picker (step 9.5a): a panel of buttons (Queen, Rook, Bishop, Knight, Cancel, each calling its
-        // PressPromote... event), a child of this view, shown only to the local player while their promotion waits for
-        // its piece, standing over the promotion square and facing the promoting side.
-        public GameObject promotionPicker;
-        // How high the picker's centre stands over the board, and how far it may stand off the board's centre along
-        // the files, in squares (over the a and h files it would hang off the board).
-        public const float PickerHeight = 2.2f;
-        public const float PickerMaxOffset = 2;
+        // The promotion ghosts (step 12.11): see-through pieces, a knight, bishop, rook and queen (GhostType), children of
+        // this view, shown only to the local player while their pawn waits on the last rank, floating in a row above
+        // it; clicking one (Interact) promotes to its piece. Each wears the promoting side's promotion template
+        // (ChessPieceSet.PromotionTemplate), Black's turned half round as its pieces are.
+        public ChessPromotionGhost[] promotionGhosts = new ChessPromotionGhost[GhostCount];
+        public const int GhostCount = 4;
+        // Where the row floats, in squares: its ghosts' bases GhostHeight above the playing surface over the promotion
+        // square's rank, GhostSpacing apart along the files, the row's middle no further off the board's centre than
+        // GhostMaxOffset (so the row stays over the board by the a and h files).
+        public const float GhostHeight = 1.5f;
+        public const float GhostSpacing = 1;
+        public const float GhostMaxOffset = 2;
         // Highlights (step 9.5a), children of this view lying on the board: the last move (hidden for none), and one
         // legal-target mark per square, standing over it, shown for the held or selected piece's targets.
         // The last move (step 12.6): a line from its from square to its to square (a flat bar starting at its origin
@@ -177,6 +181,14 @@ namespace SiggiChessBoard {
         Quaternion[] setRotations = new Quaternion[TemplateCount];
         Vector3[] setScales = new Vector3[TemplateCount];
         Vector3[] setBases = new Vector3[TemplateCount];
+        // The promotion templates copied the same way, by GhostIndex (colour * GhostCount + ghost), and the colour the
+        // ghosts were last dressed for (-1 to dress them again when next shown, as after a set change).
+        Mesh[] ghostMeshes = new Mesh[2 * GhostCount];
+        Material[][] ghostMaterials = new Material[2 * GhostCount][];
+        Vector3[] ghostOffsets = new Vector3[2 * GhostCount];
+        Quaternion[] ghostRotations = new Quaternion[2 * GhostCount];
+        Vector3[] ghostScales = new Vector3[2 * GhostCount];
+        int ghostsDressed = -1;
 
         // The position the mapping was last brought up to: replay or the game, its ply, and whether it was a custom
         // replay position. A move one ply on from it is applied to the mapping as it happens (ApplyMove), so the
@@ -287,7 +299,12 @@ namespace SiggiChessBoard {
                 string problem = Utilities.IsValid(checkLines[i]) ? ParentProblem(checkLines[i].transform) : "";
                 if (problem.Length > 0) return problem;
             }
-            return Utilities.IsValid(promotionPicker) ? ParentProblem(promotionPicker.transform) : "";
+            for (int i = 0; i < promotionGhosts.Length; i++) {
+                ChessPromotionGhost ghost = promotionGhosts[i];
+                string problem = Utilities.IsValid(ghost) ? ParentProblem(ghost.transform) : "";
+                if (problem.Length > 0) return problem;
+            }
+            return "";
         }
 
         // "" when every group between obj and the view is unmoved, unturned and unscaled.
@@ -395,6 +412,26 @@ namespace SiggiChessBoard {
                 setBases[index] = new Vector3(SafeDivide(local.x, scale.x), SafeDivide(local.y, scale.y),
                     SafeDivide(local.z, scale.z));
             }
+            for (int ghost = 0; ghost < GhostCount; ghost++) {
+                int index = GhostIndex(color, ghost);
+                Transform template = set.PromotionTemplate(GhostType(ghost));
+                ghostMeshes[index] = null;
+                ghostMaterials[index] = null;
+                ghostOffsets[index] = Vector3.zero;
+                ghostRotations[index] = turn;
+                ghostScales[index] = Vector3.one;
+                if (!Utilities.IsValid(template)) continue;
+                MeshFilter filter = template.GetComponent<MeshFilter>();
+                MeshRenderer renderer = template.GetComponent<MeshRenderer>();
+                ghostMeshes[index] = Utilities.IsValid(filter) ? filter.sharedMesh : null;
+                ghostMaterials[index] = Utilities.IsValid(renderer) ? renderer.sharedMaterials : null;
+                ghostOffsets[index] = turn * template.localPosition;
+                ghostRotations[index] = turn * template.localRotation;
+                ghostScales[index] = template.localScale;
+            }
+            // Ghosts showing for this side change at once.
+            if (ghostsDressed == color) ghostsDressed = -1;
+            UpdatePromotionGhosts();
             for (int obj = 0; obj < PieceCount; obj++) {
                 if (ObjectColor(obj) != color) continue;
                 objectMeshType[obj] = -1;
@@ -514,7 +551,7 @@ namespace SiggiChessBoard {
             UpdateLiftedMarks();
             UpdateLastMoveHighlight();
             UpdateCheckLines();
-            UpdatePromotionPicker();
+            UpdatePromotionGhosts();
             UpdateBlocker();
         }
 
@@ -575,82 +612,114 @@ namespace SiggiChessBoard {
             }
         }
 
-        // The promotion picker's answer (step 9.5a): plays the waiting promotion with pieceType (ChessRules.Queen, Rook,
-        // Bishop or Knight). Any other type is rejected by the board, which puts the pawn back. InputRejected with no
-        // promotion waiting.
+        // A promotion ghost's answer (step 12.11): plays the waiting promotion with pieceType (ChessRules.Knight,
+        // Bishop, Rook or Queen). There's no cancel: any other type is refused (InputRejected) and the pawn goes on
+        // waiting. InputRejected with no promotion waiting.
         public int ChoosePromotion(int pieceType) {
             if (promotionObject == NoObject || !Utilities.IsValid(board)) return ChessBoard.InputRejected;
+            if (pieceType < ChessRules.Knight || pieceType > ChessRules.Queen) return ChessBoard.InputRejected;
             ClearPromotion();
             dirty = true;
             return board.PromotionChosen(promotionFrom, promotionTo, pieceType);
         }
 
-        // The picker closed without a choice: the pawn goes back.
-        public void CancelPromotion() {
-            ChoosePromotion(ChessRules.NoPieceType);
-        }
+        // ---- Promotion ghosts (step 12.11) ----
 
-        // ---- Promotion picker (step 9.5a) ----
-
-        // The picker's buttons.
-        public void PressPromoteQueen() {
-            ChoosePromotion(ChessRules.Queen);
-        }
-
-        public void PressPromoteRook() {
-            ChoosePromotion(ChessRules.Rook);
-        }
-
-        public void PressPromoteBishop() {
-            ChoosePromotion(ChessRules.Bishop);
-        }
-
-        public void PressPromoteKnight() {
-            ChoosePromotion(ChessRules.Knight);
-        }
-
-        public void PressPromoteCancel() {
-            CancelPromotion();
-        }
-
-        // The board asked for a promotion's piece: obj, the pawn, stands on to while the picker asks. Meanwhile no piece
-        // is a pickup or a click target, so a hand near a piece reaches the picker's buttons rather than the piece.
+        // The board asked for a promotion's piece: obj, the pawn, stands on to while the ghosts float over it, and
+        // dropping it there has committed to promoting. Meanwhile no piece is a pickup or a click target, so a hand
+        // near a piece reaches the ghosts rather than the piece.
         void WaitForPromotion(int obj, int from, int to) {
             promotionObject = obj;
             promotionFrom = from;
             promotionTo = to;
             dirty = true;
-            UpdatePromotionPicker();
+            UpdatePromotionGhosts();
             UpdatePickupable();
         }
 
-        // No promotion waits any more (chosen, cancelled, or dropped by a pickup or a change to the board); the pawn
-        // is placed from the board on the next frame.
+        // No promotion waits any more (chosen, or dropped by a change to the board); the pawn is placed from the board
+        // on the next frame.
         void ClearPromotion() {
             if (promotionObject == NoObject) return;
             promotionObject = NoObject;
             dirty = true;
-            UpdatePromotionPicker();
+            UpdatePromotionGhosts();
             UpdatePickupable();
         }
 
-        // Shows the picker while a promotion waits, over the promotion square (no further off the board's centre than
-        // PickerMaxOffset squares along the files, PickerHeight squares up), facing the promoting side's end of the
-        // table; hides it otherwise.
-        public void UpdatePromotionPicker() {
-            if (!Utilities.IsValid(promotionPicker)) return;
+        // The ChessRules piece type of a ghost: knight, bishop, rook, queen.
+        public static int GhostType(int ghost) {
+            return ChessRules.Knight + ghost;
+        }
+
+        // The index of a colour's ghost in the copied promotion templates.
+        public static int GhostIndex(int color, int ghost) {
+            return color * GhostCount + ghost;
+        }
+
+        // Where a ghost's base floats while a promotion waits (local space): in a row over the promotion square's
+        // rank, GhostHeight squares up, GhostSpacing squares apart, its middle over the promotion square but no further
+        // off the board's centre than GhostMaxOffset; knight to queen from left to right as the promoting side sees it
+        // (from White's end along +x, from Black's along -x). Its template's offset is added to this.
+        public Vector3 GhostPosition(int ghost) {
+            if (promotionObject == NoObject || promotionTo == ChessRules.NoSquare) return Vector3.zero;
+            Vector3 position = SquarePosition(promotionTo);
+            float limit = GhostMaxOffset * squareSize;
+            position.x = Mathf.Clamp(position.x, -limit, limit);
+            float along = (ghost - (GhostCount - 1) * 0.5f) * GhostSpacing * squareSize;
+            position.x += ObjectColor(promotionObject) == ChessRules.White ? along : -along;
+            position.y = GhostHeight * squareSize;
+            return position;
+        }
+
+        // Shows the ghosts while a promotion waits, each dressed in the promoting side's promotion template (mesh,
+        // materials, turn, size and a collider fitted to the mesh) and floating in its place (GhostPosition); hides
+        // them otherwise. Called on every Refresh, when a promotion starts or stops waiting, and on a set change.
+        public void UpdatePromotionGhosts() {
             bool shown = promotionObject != NoObject && promotionTo != ChessRules.NoSquare;
-            if (shown) {
-                Transform picker = promotionPicker.transform;
-                Vector3 position = SquarePosition(promotionTo);
-                float limit = PickerMaxOffset * squareSize;
-                position.x = Mathf.Clamp(position.x, -limit, limit);
-                position.y = PickerHeight * squareSize;
-                picker.localPosition = position;
-                picker.localRotation = ObjectColor(promotionObject) == ChessRules.White
-                    ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
+            int color = shown ? ObjectColor(promotionObject) : -1;
+            bool dress = shown && ghostsDressed != color;
+            if (dress) ghostsDressed = color;
+            for (int ghost = 0; ghost < promotionGhosts.Length && ghost < GhostCount; ghost++) {
+                ChessPromotionGhost behaviour = promotionGhosts[ghost];
+                if (!Utilities.IsValid(behaviour)) continue;
+                GameObject ghostObject = behaviour.gameObject;
+                if (shown) {
+                    int index = GhostIndex(color, ghost);
+                    Transform t = ghostObject.transform;
+                    if (dress) DressGhost(ghostObject, index);
+                    t.localPosition = GhostPosition(ghost) + ghostOffsets[index];
+                    t.localRotation = ghostRotations[index];
+                }
+                if (ghostObject.activeSelf != shown) ghostObject.SetActive(shown);
             }
-            if (promotionPicker.activeSelf != shown) promotionPicker.SetActive(shown);
+        }
+
+        // Gives a ghost the copied promotion template at index: mesh, materials, size and fitted collider.
+        void DressGhost(GameObject ghostObject, int index) {
+            Mesh mesh = ghostMeshes[index];
+            MeshFilter filter = ghostObject.GetComponent<MeshFilter>();
+            if (Utilities.IsValid(filter) && Utilities.IsValid(mesh)) filter.sharedMesh = mesh;
+            Material[] materials = ghostMaterials[index];
+            MeshRenderer renderer = ghostObject.GetComponent<MeshRenderer>();
+            if (Utilities.IsValid(renderer) && materials != null) renderer.sharedMaterials = materials;
+            ghostObject.transform.localScale = ghostScales[index];
+            BoxCollider box = ghostObject.GetComponent<BoxCollider>();
+            if (Utilities.IsValid(box) && Utilities.IsValid(mesh)) {
+                box.center = mesh.bounds.center;
+                box.size = mesh.bounds.size;
+            }
+        }
+
+        // Whether the ghosts show (every one of them active), for tests.
+        public bool AreGhostsShown() {
+            if (promotionGhosts.Length < GhostCount) return false;
+            for (int ghost = 0; ghost < GhostCount; ghost++) {
+                if (!Utilities.IsValid(promotionGhosts[ghost]) || !promotionGhosts[ghost].gameObject.activeSelf) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         // ---- Highlights (step 9.5a) ----
@@ -929,7 +998,7 @@ namespace SiggiChessBoard {
         // desktop mode, with interact text saying what: with nothing selected, the pieces the board would let them
         // pick up; with one selected, that piece and its square (put back), its targets (pieces to capture or castle
         // with, squares to place on) and the other pieces they could select instead. Players using pickups get none, and
-        // nobody does while the promotion picker shows.
+        // nobody does while the promotion ghosts show.
         // Called after every change, once a second and on every click.
         public void UpdateClickables() {
             bool clicks = !UsesPickups() && Utilities.IsValid(board) && promotionObject == NoObject;
@@ -1004,7 +1073,7 @@ namespace SiggiChessBoard {
         }
 
         // Makes the pieces on the board pickups for the local player while they use pickups and may touch the pieces;
-        // pieces off the board never are, and none while the promotion picker shows. Called after every change, once a
+        // pieces off the board never are, and none while the promotion ghosts show. Called after every change, once a
         // second and when a promotion starts or stops waiting.
         public void UpdatePickupable() {
             nextPickupCheck = Time.time + PickupCheckInterval;

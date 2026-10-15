@@ -11,7 +11,7 @@ A view (`ChessBoardView (<board>)`) holds these children:
 | **Table** | the placeholder table | yes |
 | **Board**, **Squares** | the placeholder board: its frame, and the 64 squares as one mesh | yes |
 | **Player Blocker** | the solid box keeping players without a seat out of the table ([Physical pieces](physical-pieces.md#walking-through-the-board-step-95a2)) | keep it; resize its `BoxCollider` to a table of your own |
-| **Pieces**, **Square Targets**, **Highlights**, **Promotion Picker** | the pieces, desktop mode's click targets, the highlights and the picker | no: the view uses them |
+| **Pieces**, **Square Targets**, **Highlights**, **Promotion Ghosts** | the pieces, desktop mode's click targets, the highlights and the promotion ghosts ([Promotion pieces](#chess-piece-sets-steps-123-and-1210)) | no: the view uses them |
 | **Captured Places** | where captured pieces stand ([below](#captured-piece-places-step-124)) | move them freely; delete some for fewer places |
 
 The view reads nothing from **Table**, **Board** or **Squares**, so delete them and put your own model in their place, as a child of the view so it scales with it:
@@ -37,14 +37,16 @@ The pieces' models come from **chess piece sets**: a `ChessPieceSet` behaviour o
 
 **Making a set.** Duplicate **White Pieces** (or build your own the same way) and change its templates:
 
-- It has a slot per piece type (**Pawn** … **King**), each holding a **Guide** (a green square frame, one square of the board) and a **Model** (the template). The slot stands for the square: its centre is the square's centre, its y = 0 the playing surface.
+- It has a slot per piece type (**Pawn** … **King**), and behind them a second row for the promotion pieces (below), each holding a **Guide** (a green square frame, one square of the board) and a **Model** (the template). The slot stands for the square: its centre is the square's centre, its y = 0 the playing surface.
 - For each **Model**, put your mesh in its `MeshFilter` and your materials in its `MeshRenderer`, one per slot of the mesh.
 - Then move, turn and scale the **Model** under its slot until the piece stands upright on the guide at the size you want, its base on the guide's surface. That local position, rotation and scale is what every piece of that type gets on the board (in the board view's units, so they scale with the view).
 - Set it up as White's pieces, facing Black (+z, the knight looking along the slot's blue axis). When Black wears the set, the board turns its pieces half round, so its knights face White: one set serves either side with no setup per side.
 - Light and dark versions of a design are two sets (duplicate the set and change the materials), so a world can offer, say, a supporter set in both colours, and let White wear one and Black the other.
 - Keep the slots themselves unscaled and unturned so what you see in the editor is what the board shows: only each **Model**'s own transform is read. The set's position in the world doesn't matter.
 - The set's own object must stay active; it hides its slots when the world starts, and the boards go on reading them.
-- The set's fields (**Pawn** … **King**) point at the templates: after duplicating a set, check that they point at the copy's own **Model**s.
+- The set's fields (**Pawn** … **King**, **Promotion Knight** … **Promotion Queen**) point at the templates: after duplicating a set, check that they point at the copy's own **Model**s.
+
+**Promotion pieces** (step 12.11). When a player drops (or click-places) a pawn on the last rank, see-through pieces float in a row above it, a knight, bishop, rook and queen, and clicking one promotes to it. They come from the second row of slots in the promoting side's set, **Promotion Knight** … **Promotion Queen**, set up exactly as the pieces are (mesh, materials, and the **Model**'s position, turn and size on its guide, as White's piece). The default sets use each type's regular mesh with one see-through green material, **Promotion Ghost** (in `Assets/Siggi/ChessBoard/Models/`), on every slot; give your set's promotion models a see-through material of your own, or the same one. Each side's ghosts come from its own set, so White's and Black's can look different. A set missing one of them is named in the log when it's applied, as a missing piece template is. **Create Board View** adds the promotion slots to the arbiter's default sets when they lack them (an arbiter from before step 12.11), copying each type's mesh and transform from the set's own piece, and keeping everything else; for a set of your own, add them by hand or let the builder add them by making it a default and running it.
 
 **Assigning a set.** Put it in the arbiter's **Default White Piece Set** or **Default Black Piece Set** for every board, or in a board view's **White Piece Set** or **Black Piece Set** (on `ChessBoardView (<board>)`) for that board only. Each side is on its own: a view can set White's and follow the arbiter's default for Black.
 

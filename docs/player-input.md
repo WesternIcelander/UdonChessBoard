@@ -22,7 +22,7 @@ Players not in VR (desktop and mobile, `IsUserInVR()` false) move by clicking in
 - **Board changes** (a reset, a resignation, a flag fall, entering replay, the piece no longer being selectable) put a selected piece back down, unselected.
 - **Only the selecting player sees the lift**: the pieces have no `VRCObjectSync` (step 9.6), so others see the piece move once it's placed. Selecting still takes the piece's ownership, like a grab.
 
-This is purely a view concept: selecting is `PiecePickedUp`, placing is `PieceDropped`, so the board treats both input styles alike, including promotion (the picker appears after the placing click) and replay's free moves.
+This is purely a view concept: selecting is `PiecePickedUp`, placing is `PieceDropped`, so the board treats both input styles alike, including promotion (the promotion ghosts appear after the placing click) and replay's free moves.
 
 ## Implementation
 

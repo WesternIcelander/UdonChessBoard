@@ -341,7 +341,7 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(view.heldObject, ChessBoardView.NoObject, "replay: e4 let go once the queen took its square");
         CheckView("replay: e4 let go");
 
-        // A promotion waits for its piece, then is cancelled, then played.
+        // A promotion waits for its piece, refuses what isn't one, then is played.
         board.ClearState();
         StartGame(ChessGame.ModeStandard, "promotion drop game");
         Play("a2", "a4", "a4", "a4");
@@ -360,17 +360,17 @@ public class ViewTest : UdonSharpBehaviour {
         Check((view.pieces[promoting].localPosition - view.SquarePosition(Sq("a8"))).sqrMagnitude < 1e-8f,
             "b7 dropped over a8: the pawn stands on a8 meanwhile",
             "at " + view.pieces[promoting].localPosition.ToString("F3"));
-        view.CancelPromotion();
-        CheckInt(view.promotionObject, ChessBoardView.NoObject, "promotion cancelled: nothing waits");
-        CheckDropped(8, ChessBoard.ChangeRejected, "promotion cancelled: the pawn back on b7");
-        CheckInt(view.ChoosePromotion(ChessRules.Queen), ChessBoard.InputRejected,
-            "a choice with no promotion waiting: refused");
-        CheckInt(ViewDrop("b7", Over("a8")), ChessBoard.InputAccepted, "b7 picked up again");
-        CheckInt(view.promotionObject, promoting, "b7 dropped over a8 again: waits for a piece");
+        // No cancel (step 12.11): a choice that isn't a promotion piece is refused, and the pawn goes on waiting.
+        CheckInt(view.ChoosePromotion(ChessRules.NoPieceType), ChessBoard.InputRejected, "no piece chosen: refused");
+        CheckInt(view.ChoosePromotion(ChessRules.King), ChessBoard.InputRejected, "a king chosen: refused");
+        CheckInt(view.promotionObject, promoting, "refused choices: the pawn still waits");
+        CheckInt(board.moveCount, 8, "refused choices: nothing played");
         CheckInt(view.ChoosePromotion(ChessRules.Knight), ChessBoard.InputAccepted, "bxa8=N chosen: played");
         CheckDropped(9, ChessBoard.ChangeMove, "bxa8=N");
         CheckInt(view.squareObject[Sq("a8")], promoting, "bxa8=N: the pawn's object on a8");
         CheckInt(view.objectType[promoting], ChessRules.Knight, "bxa8=N: the object stands for a knight");
+        CheckInt(view.ChoosePromotion(ChessRules.Queen), ChessBoard.InputRejected,
+            "a choice with no promotion waiting: refused");
 
         board.ClearState();
         view.SetInputStyle(savedStyle);
@@ -974,11 +974,13 @@ public class ViewTest : UdonSharpBehaviour {
         SendCustomEventDelayedFrames(nameof(RunHighlightChecks), 1);
     }
 
-    // ---- 9.5a: the promotion picker and highlights ----
+    // ---- 9.5a: highlights, and the promotion ghosts (12.11, in place of 9.5a's picker) ----
 
-    // A black pawn about to promote on e1, and a white one on a7 (the picker can't stand over the a file).
+    // A black pawn about to promote on e1, a white one on a7 and a black one on h2 (the ghosts' row can't be centred
+    // over the a and h files).
     const string BlackPromotionFen = "k7/8/8/8/8/8/4p3/K7 b - - 0 1";
     const string APawnPromotionFen = "4k3/P7/8/8/8/8/8/4K3 w - - 0 1";
+    const string BlackHPawnPromotionFen = "4k3/8/8/8/8/8/7p/4K3 b - - 0 1";
     // The king already on g1 with its rook on h1: castling moves only the rook.
     const string KingStaysFen = "6k1/8/8/8/8/8/8/6KR w K - 0 1";
     // A knight on e4 in front of its rook: Nd6 gives a double check (the knight, and the rook it uncovers).
@@ -988,18 +990,27 @@ public class ViewTest : UdonSharpBehaviour {
     // The king on f1 with its rook on g1, the king's destination: castling swaps them.
     const string RookOnDestinationFen = "k7/8/8/8/8/8/8/5KR1 w K - 0 1";
 
-    // The tenth frame: the picker, highlights and marks wired; the last-move line and mark after moves (castling on
-    // the rook showing the king's path, or the rook's when the king stays), in replay and on a cleared board; the
-    // check lines (step 12.7) of a check, a double check and a checkmate, in replay and a custom position, and gone
-    // once answered; the legal-target marks of a held piece (pickups) and of a selected one (clicks), each of its kind
-    // (a capture, a castle's rook square, an empty square), none in replay, after the drop or once the game ends; the
-    // picker shown over the promotion square for a drop and for a placing click, facing the promoting side, each of
-    // its buttons playing its piece or putting the pawn back, and hidden when a piece is picked up or the board
-    // changes. The input style is put back afterwards.
+    // The tenth frame: the promotion ghosts, highlights and marks wired; the last-move line and mark after moves
+    // (castling on the rook showing the king's path, or the rook's when the king stays), in replay and on a cleared
+    // board; the check lines (step 12.7) of a check, a double check and a checkmate, in replay and a custom position,
+    // and gone once answered; the legal-target marks of a held piece (pickups) and of a selected one (clicks), each of
+    // its kind (a capture, a castle's rook square, an empty square), none in replay, after the drop or once the game
+    // ends; the promotion ghosts (step 12.11) floating over the pawn for a drop and for a placing click, for both
+    // colours, in order from the promoting side's left, each wearing its promotion template and promoting to its
+    // piece when clicked, nothing else a pickup or clickable meanwhile, and hidden when the board changes. The input
+    // style is put back afterwards.
     public void RunHighlightChecks() {
         int savedStyle = view.inputStyle;
-        Check(Utilities.IsValid(view.promotionPicker) && !view.promotionPicker.activeSelf,
-            "highlights: the promotion picker assigned, hidden", "missing or shown");
+        int ghostsReady = 0;
+        for (int i = 0; i < view.promotionGhosts.Length; i++) {
+            ChessPromotionGhost ghost = view.promotionGhosts[i];
+            if (Utilities.IsValid(ghost) && !ghost.gameObject.activeSelf
+                && ghost.pieceType == ChessBoardView.GhostType(i)) {
+                ghostsReady++;
+            }
+        }
+        CheckInt(ghostsReady, ChessBoardView.GhostCount,
+            "highlights: the promotion ghosts assigned (knight, bishop, rook, queen), hidden");
         Check(Utilities.IsValid(view.lastMoveLine) && Utilities.IsValid(view.lastMoveMark),
             "highlights: the last-move line and mark assigned", "missing");
         Material lastMoveMaterial = MaterialOf(view.lastMoveLine);
@@ -1185,85 +1196,83 @@ public class ViewTest : UdonSharpBehaviour {
         ClickPiece("e5");
         CheckTargets("", s + " (captures): e5 put back");
 
-        // The promotion picker, for a drop.
-        string p = "picker";
+        // The promotion ghosts (step 12.11), for a drop.
+        string p = "ghosts";
         view.SetInputStyle(ChessBoardView.InputPickups);
         CastleGame(PromotionFen, p);
-        CheckPicker(false, "", p + ": set up");
+        CheckGhosts(false, "", p + ": set up");
         int promoting = view.squareObject[Sq("e7")];
         CheckInt(ViewDrop("e7", Over("e8")), ChessBoard.InputAccepted, p + ": e7 picked up");
-        CheckPicker(true, "e8", p + ": e7 dropped over e8");
+        CheckGhosts(true, "e8", p + ": e7 dropped over e8");
         CheckPickupable(0, p + ": e7 dropped over e8, no pickups");
         Redraw();
-        CheckPicker(true, "e8", p + ": e7 dropped over e8, refreshed");
-        CheckPickupable(0, p + ": the picker shown");
-        view.PressPromoteQueen();
-        CheckPicker(false, "", p + ": Queen pressed");
-        CheckPickupable(3, p + ": the picker gone");
+        CheckGhosts(true, "e8", p + ": e7 dropped over e8, refreshed");
+        CheckPickupable(0, p + ": the ghosts shown");
+        CheckInt(view.ChoosePromotion(ChessRules.NoPieceType), ChessBoard.InputRejected,
+            p + ": no cancel: a choice of no piece refused");
+        CheckGhosts(true, "e8", p + ": still waiting after the refused choice");
+        ClickGhost(ChessRules.Queen, p + ": the queen clicked");
+        CheckGhosts(false, "", p + ": the queen clicked");
+        CheckPickupable(3, p + ": the ghosts gone");
         CheckDropped(1, ChessBoard.ChangeMove, p + ": e8=Q");
         CheckInt(view.objectType[promoting], ChessRules.Queen, p + ": e8=Q: the pawn's object is a queen");
         CheckLastMove("e7", "e8", p + ": e8=Q");
 
-        CastleGame(PromotionFen, p + " (cancel)");
+        CastleGame(PromotionFen, p + " (change)");
         ViewDrop("e7", Over("e8"));
-        CheckPicker(true, "e8", p + " (cancel): e7 dropped over e8");
-        view.PressPromoteCancel();
-        CheckPicker(false, "", p + " (cancel): Cancel pressed");
-        CheckDropped(0, ChessBoard.ChangeRejected, p + " (cancel): the pawn back on e7");
-        CheckPickupable(3, p + " (cancel): the picker gone");
-
-        ViewDrop("e7", Over("e8"));
-        CheckPicker(true, "e8", p + " (pickup): e7 dropped over e8");
-        int whiteKing = view.squareObject[Sq("a1")];
-        view.OnPiecePickedUp(whiteKing);
-        CheckPicker(false, "", p + " (pickup): the king picked up meanwhile");
-        CheckInt(view.promotionObject, ChessBoardView.NoObject, p + " (pickup): nothing waits");
-        view.OnPieceDropped(whiteKing);
-        CheckDropped(0, ChessBoard.ChangeRejected, p + " (pickup): the king dropped back, the pawn back on e7");
-
-        ViewDrop("e7", Over("e8"));
-        CheckPicker(true, "e8", p + " (change): e7 dropped over e8");
+        CheckGhosts(true, "e8", p + " (change): e7 dropped over e8");
         CheckInt(board.ResignAs(ChessRules.Black, localName), ChessBoard.InputAccepted, p + " (change): Black resigned");
-        CheckPicker(false, "", p + " (change): the game ended meanwhile");
+        CheckGhosts(false, "", p + " (change): the game ended meanwhile");
         CheckInt(view.ChoosePromotion(ChessRules.Queen), ChessBoard.InputRejected,
             p + " (change): a choice afterwards refused");
 
         CastleGame(BlackPromotionFen, p + " (Black)");
         int blackPawn = view.squareObject[Sq("e2")];
         ViewDrop("e2", Over("e1"));
-        CheckPicker(true, "e1", p + " (Black): e2 dropped over e1");
-        view.PressPromoteKnight();
+        CheckGhosts(true, "e1", p + " (Black): e2 dropped over e1");
+        CheckPickupable(0, p + " (Black): the ghosts shown");
+        ClickGhost(ChessRules.Knight, p + " (Black): the knight clicked");
         CheckDropped(1, ChessBoard.ChangeMove, p + " (Black): e1=N");
         CheckInt(view.objectType[blackPawn], ChessRules.Knight, p + " (Black): e1=N: the pawn's object is a knight");
 
-        // The promotion picker, for a placing click.
+        // The promotion ghosts, for a placing click.
         view.SetInputStyle(ChessBoardView.InputClicks);
         CastleGame(PromotionFen, p + " (clicks)");
         int clickPawn = view.squareObject[Sq("e7")];
         ClickPiece("e7");
         ClickSquare("e8");
-        CheckPicker(true, "e8", p + " (clicks): e8 clicked");
-        CheckClickables("", "", p + " (clicks): the picker shown");
-        view.PressPromoteRook();
+        CheckGhosts(true, "e8", p + " (clicks): e8 clicked");
+        CheckClickables("", "", p + " (clicks): the ghosts shown");
+        ClickGhost(ChessRules.Rook, p + " (clicks): the rook clicked");
         CheckDropped(1, ChessBoard.ChangeMove, p + " (clicks): e8=R");
-        CheckClickables("a8", "", p + " (clicks): e8=R, the picker gone");
+        CheckClickables("a8", "", p + " (clicks): e8=R, the ghosts gone");
         CheckInt(view.objectType[clickPawn], ChessRules.Rook, p + " (clicks): e8=R: the pawn's object is a rook");
 
         CastleGame(APawnPromotionFen, p + " (a file)");
         int aPawn = view.squareObject[Sq("a7")];
         ClickPiece("a7");
         ClickSquare("a8");
-        CheckPicker(true, "a8", p + " (a file): a8 clicked");
-        view.PressPromoteBishop();
+        CheckGhosts(true, "a8", p + " (a file): a8 clicked");
+        ClickGhost(ChessRules.Bishop, p + " (a file): the bishop clicked");
         CheckDropped(1, ChessBoard.ChangeMove, p + " (a file): a8=B");
         CheckInt(view.objectType[aPawn], ChessRules.Bishop, p + " (a file): a8=B: the pawn's object is a bishop");
+
+        CastleGame(BlackHPawnPromotionFen, p + " (Black, h file)");
+        int hPawn = view.squareObject[Sq("h2")];
+        ClickPiece("h2");
+        ClickSquare("h1");
+        CheckGhosts(true, "h1", p + " (Black, h file): h1 clicked");
+        CheckClickables("", "", p + " (Black, h file): the ghosts shown");
+        ClickGhost(ChessRules.Queen, p + " (Black, h file): the queen clicked");
+        CheckDropped(1, ChessBoard.ChangeMove, p + " (Black, h file): h1=Q");
+        CheckInt(view.objectType[hPawn], ChessRules.Queen, p + " (Black, h file): h1=Q: the pawn's object is a queen");
 
         board.ClearState();
         view.SetInputStyle(savedStyle);
         Redraw();
         CheckLastMove("", "", "cleared after the highlight checks");
         CheckTargets("", "cleared after the highlight checks");
-        CheckPicker(false, "", "cleared after the highlight checks");
+        CheckGhosts(false, "", "cleared after the highlight checks");
         CheckView("cleared after the highlight checks");
         RunBlockerChecks();
         SendCustomEventDelayedFrames(nameof(RunAnimationChecks), 1);
@@ -1272,7 +1281,8 @@ public class ViewTest : UdonSharpBehaviour {
     // ---- 9.5a2: walking through the board ----
 
     // Run straight after the highlight checks: nothing a player walks into is solid but the blocker (the click
-    // targets and the UI canvases are triggers), which is enabled exactly while the local player has no seat.
+    // targets, the promotion ghosts and the UI canvases are triggers), which is enabled exactly while the local player
+    // has no seat.
     void RunBlockerChecks() {
         Collider blocker = view.blocker;
         Check(Utilities.IsValid(blocker) && !blocker.isTrigger, "the blocker assigned and solid",
@@ -1287,8 +1297,13 @@ public class ViewTest : UdonSharpBehaviour {
         for (int i = 0; i < ui.buttons.Length; i++) {
             if (Utilities.IsValid(ui.buttons[i]) && !IsTrigger(ui.buttons[i].transform.parent)) solid++;
         }
-        if (!Utilities.IsValid(view.promotionPicker) || !IsTrigger(view.promotionPicker.transform)) solid++;
-        CheckInt(solid, 0, "the button panels and the picker have trigger colliders: solid or missing");
+        CheckInt(solid, 0, "the button panels have trigger colliders: solid or missing");
+        solid = 0;
+        for (int i = 0; i < view.promotionGhosts.Length; i++) {
+            ChessPromotionGhost ghost = view.promotionGhosts[i];
+            if (!Utilities.IsValid(ghost) || !IsTrigger(ghost.transform)) solid++;
+        }
+        CheckInt(solid, 0, "the promotion ghosts have trigger colliders: solid or missing");
         if (!Utilities.IsValid(blocker)) return;
 
         board.ClearState();
@@ -1872,8 +1887,10 @@ public class ViewTest : UdonSharpBehaviour {
 
     // A fifteenth frame: the test set put on White's pieces alone at once (meshes, both material slots, turn, size,
     // collider, the pieces standing exactly as the starting sets' do), then on Black's too (one set worn by both
-    // sides, Black's turned half round); a game played with it by drops and clicks with captures and a promotion, and
-    // Black resigning (its king laid down); each side back to the arbiter's set alone with SetChessPieces(color,
+    // sides, Black's turned half round); a missing promotion template named, and the default sets' promotion
+    // templates (step 12.11) one see-through green material; a game played with it by drops and clicks with captures
+    // and a promotion (its ghosts wearing the test set's promotion templates, and changing in place as either side's
+    // set changes while they show), and Black resigning (its king laid down); each side back to the arbiter's set alone with SetChessPieces(color,
     // null), the captured pieces, the promoted queen and the fallen king changing in place; the view one of the
     // arbiter's piece set listeners, once; SetDefaultChessPieces(color, null) refused, and each change of a default
     // worn at once by that side alone, unless the view has a set of its own for it or isn't a listener; everything
@@ -1904,8 +1921,33 @@ public class ViewTest : UdonSharpBehaviour {
         CheckString(savedDefaultWhite.Problem(), "", s + ": the default White set complete");
         CheckString(savedDefaultBlack.Problem(), "", s + ": the default Black set complete");
         Check(!testPieceSet.pawn.gameObject.activeInHierarchy && !savedDefaultWhite.king.gameObject.activeInHierarchy
-            && !savedDefaultBlack.queen.gameObject.activeInHierarchy, s + ": the sets' templates hidden in play",
+            && !savedDefaultBlack.queen.gameObject.activeInHierarchy
+            && !savedDefaultWhite.promotionQueen.gameObject.activeInHierarchy, s + ": the sets' templates hidden in play",
             "shown");
+        // The promotion templates (step 12.11): a missing one is named; the default sets' all wear one see-through
+        // green material, with each type's regular mesh.
+        Transform savedTemplate = testPieceSet.promotionRook;
+        testPieceSet.promotionRook = null;
+        CheckString(testPieceSet.Problem(), "no promotion rook template", s + ": a missing promotion template named");
+        testPieceSet.promotionRook = savedTemplate;
+        CheckString(testPieceSet.Problem(), "", s + ": the promotion template back");
+        Material ghostMaterial = MaterialOf(savedDefaultWhite.promotionKnight.gameObject);
+        int ghostWrong = 0;
+        for (int type = ChessRules.Knight; type <= ChessRules.Queen; type++) {
+            for (int side = 0; side < 2; side++) {
+                ChessPieceSet set = side == 0 ? savedDefaultWhite : savedDefaultBlack;
+                Transform template = set.PromotionTemplate(type);
+                if (MaterialOf(template.gameObject) != ghostMaterial
+                    || template.GetComponent<MeshFilter>().sharedMesh
+                        != set.Template(type).GetComponent<MeshFilter>().sharedMesh) {
+                    ghostWrong++;
+                }
+            }
+        }
+        CheckInt(ghostWrong, 0, s + ": the default promotion templates: one material, the pieces' meshes: wrong ones");
+        Color ghostColor = Utilities.IsValid(ghostMaterial) ? ghostMaterial.color : Color.black;
+        Check(ghostColor.a < 1 && ghostColor.g > ghostColor.r && ghostColor.g > ghostColor.b,
+            s + ": the default promotion material see-through green", "colour " + ghostColor);
 
         view.SetChessPieces(white, null);
         view.SetChessPieces(black, null);
@@ -1963,7 +2005,16 @@ public class ViewTest : UdonSharpBehaviour {
         int promoting = view.squareObject[Sq("b7")];
         DropOver("b7", "a8", t + ": bxa8 dropped");
         CheckInt(view.promotionObject, promoting, t + ": bxa8 waits for its piece");
-        CheckInt(view.ChoosePromotion(ChessRules.Queen), ChessBoard.InputAccepted, t + ": bxa8=Q chosen");
+        // The ghosts wear the promoting side's set's promotion templates, and follow a change of that set at once.
+        CheckGhosts(true, "a8", t + ": bxa8 waiting");
+        view.SetChessPieces(white, null);
+        CheckGhosts(true, "a8", t + ": White back to the arbiter's set while the ghosts show");
+        view.SetChessPieces(black, null);
+        CheckGhosts(true, "a8", t + ": Black's set changed while White's ghosts show");
+        view.SetChessPieces(white, testPieceSet);
+        view.SetChessPieces(black, testPieceSet);
+        CheckGhosts(true, "a8", t + ": the test set back on both sides while the ghosts show");
+        ClickGhost(ChessRules.Queen, t + ": the queen clicked");
         CheckDropped(9, ChessBoard.ChangeMove, t + ": bxa8=Q");
         CheckInt(view.objectType[promoting], ChessRules.Queen, t + ": bxa8=Q: the pawn's object a queen");
         CheckPieceSets(testPieceSet, testPieceSet, t + ": after the game");
@@ -2897,25 +2948,92 @@ public class ViewTest : UdonSharpBehaviour {
         return Utilities.IsValid(renderer) ? renderer.sharedMaterial : null;
     }
 
-    // Whether the picker is shown (with a promotion waiting) or hidden (with none); shown, whether it stands over
-    // square (no further along the files than the view allows), PickerHeight squares up, facing the promoting side.
-    void CheckPicker(bool shown, string square, string name) {
-        GameObject picker = view.promotionPicker;
-        if (!Utilities.IsValid(picker)) return;
-        Check(picker.activeSelf == shown && (view.promotionObject != ChessBoardView.NoObject) == shown,
-            name + ": the picker " + (shown ? "shown" : "hidden"),
-            "active " + picker.activeSelf + ", waiting object " + view.promotionObject);
-        if (!shown || !picker.activeSelf) return;
-        Vector3 expected = view.SquarePosition(Sq(square));
-        float limit = ChessBoardView.PickerMaxOffset * view.squareSize;
-        expected.x = Mathf.Clamp(expected.x, -limit, limit);
-        expected.y = ChessBoardView.PickerHeight * view.squareSize;
-        Check((picker.transform.localPosition - expected).sqrMagnitude < 1e-8f, name + ": the picker over " + square,
-            "at " + picker.transform.localPosition.ToString("F3"));
-        bool white = square.Substring(1, 1) == "8";
-        Quaternion facing = white ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
-        Check(Quaternion.Angle(picker.transform.localRotation, facing) < 1, name + ": the picker facing "
-            + (white ? "White" : "Black"), "turned " + Quaternion.Angle(picker.transform.localRotation, facing));
+    // Whether the promotion ghosts show (with a promotion waiting) or are hidden (with none); shown, whether each
+    // floats in its place over square (step 12.11): GhostHeight squares up, GhostSpacing apart, the row's middle over
+    // the square but no further along the files than the view allows, knight to queen from left to right as the
+    // promoting side sees it; and wears that side's current set's promotion template: its mesh, every material slot,
+    // its turn (Black's half round), size and offset, with a trigger collider fitted to the mesh.
+    void CheckGhosts(bool shown, string square, string name) {
+        int active = 0;
+        for (int i = 0; i < view.promotionGhosts.Length; i++) {
+            if (Utilities.IsValid(view.promotionGhosts[i]) && view.promotionGhosts[i].gameObject.activeSelf) active++;
+        }
+        bool waiting = view.promotionObject != ChessBoardView.NoObject;
+        Check(active == (shown ? ChessBoardView.GhostCount : 0) && waiting == shown && view.AreGhostsShown() == shown,
+            name + ": the ghosts " + (shown ? "shown" : "hidden"),
+            active + " active, waiting object " + view.promotionObject);
+        if (!shown || active != ChessBoardView.GhostCount || !waiting) return;
+        int color = view.ObjectColor(view.promotionObject);
+        bool white = color == ChessRules.White;
+        ChessPieceSet set = view.CurrentPieceSet(color);
+        Vector3 middle = view.SquarePosition(Sq(square));
+        float limit = ChessBoardView.GhostMaxOffset * view.squareSize;
+        middle.x = Mathf.Clamp(middle.x, -limit, limit);
+        Quaternion half = white ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
+        int wrong = 0;
+        string details = "";
+        float lastAcross = float.MinValue;
+        for (int ghost = 0; ghost < ChessBoardView.GhostCount; ghost++) {
+            Transform template = Utilities.IsValid(set) ? set.PromotionTemplate(ChessBoardView.GhostType(ghost)) : null;
+            Transform t = view.promotionGhosts[ghost].transform;
+            string error = "";
+            if (!Utilities.IsValid(template)) {
+                error = "no promotion template";
+            } else {
+                Vector3 offset = half * template.localPosition;
+                float along = (ghost - 1.5f) * ChessBoardView.GhostSpacing * view.squareSize;
+                Vector3 expected = middle + new Vector3(white ? along : -along,
+                    ChessBoardView.GhostHeight * view.squareSize, 0) + offset;
+                // Left to right as the promoting side sees it: along +x from White's end, along -x from Black's.
+                float across = white ? t.localPosition.x - offset.x : offset.x - t.localPosition.x;
+                Mesh mesh = template.GetComponent<MeshFilter>().sharedMesh;
+                Material[] want = template.GetComponent<MeshRenderer>().sharedMaterials;
+                Material[] have = t.GetComponent<MeshRenderer>().sharedMaterials;
+                BoxCollider box = t.GetComponent<BoxCollider>();
+                if ((t.localPosition - expected).sqrMagnitude > 1e-8f) {
+                    error = "at " + t.localPosition.ToString("F3") + ", not " + expected.ToString("F3");
+                } else if (across <= lastAcross) {
+                    error = "out of order";
+                } else if (t.GetComponent<MeshFilter>().sharedMesh != mesh) {
+                    error = "mesh";
+                } else if (have.Length != want.Length) {
+                    error = have.Length + " materials, not " + want.Length;
+                } else if (Quaternion.Angle(t.localRotation, TemplateTurn(color, template)) > 0.1f) {
+                    error = "turned " + t.localRotation.eulerAngles.ToString("F1");
+                } else if ((t.localScale - template.localScale).sqrMagnitude > 1e-8f) {
+                    error = "scale " + t.localScale.ToString("F3");
+                } else if (!Utilities.IsValid(box) || !box.isTrigger
+                    || (box.center - mesh.bounds.center).sqrMagnitude > 1e-10f
+                    || (box.size - mesh.bounds.size).sqrMagnitude > 1e-10f) {
+                    error = "collider not a trigger fitted to the mesh";
+                }
+                for (int i = 0; error.Length == 0 && i < want.Length; i++) {
+                    if (have[i] != want[i]) error = "material " + i;
+                }
+                lastAcross = across;
+            }
+            if (error.Length > 0 && wrong++ < 3) {
+                details += ChessPieceSet.TypeName(ChessBoardView.GhostType(ghost)) + ": " + error + "; ";
+            }
+        }
+        Check(wrong == 0, name + ": each ghost in its place over " + square + ", wearing its promotion template",
+            wrong + " wrong: " + details);
+    }
+
+    // Clicks the promotion ghost of a piece type through its ChessPromotionGhost (as a VR pointer or a desktop click
+    // would), and checks that the view took the choice.
+    void ClickGhost(int type, string name) {
+        ChessPromotionGhost found = null;
+        for (int i = 0; i < view.promotionGhosts.Length; i++) {
+            ChessPromotionGhost ghost = view.promotionGhosts[i];
+            if (Utilities.IsValid(ghost) && ghost.pieceType == type) found = ghost;
+        }
+        if (!Utilities.IsValid(found)) {
+            Check(false, name, "no ghost for " + ChessPieceSet.TypeName(type));
+            return;
+        }
+        found.Interact();
+        CheckInt(view.promotionObject, ChessBoardView.NoObject, name + ": nothing waits any more");
     }
 
     // Turns takebacks, draws by agreement and threefold claims on or off in the board's snapshot (directly, as

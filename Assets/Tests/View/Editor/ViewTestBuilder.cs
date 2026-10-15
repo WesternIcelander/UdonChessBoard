@@ -111,8 +111,10 @@ public static class ViewTestBuilder {
         // Undoes TestMesh: turned back up, halved, and moved so the base centre is on the square's centre.
         Quaternion rotation = Quaternion.Euler(-90, 0, 0);
         Vector3 offset = -(rotation * (TestOrigin * 0.5f));
+        // Its promotion templates (step 12.11) take the test pieces' transforms and a material of their own.
+        Material ghost = TestMaterial("Test Promotion Ghost", new Color(0.3f, 0.4f, 0.95f));
         ChessPieceSet set = ChessBoardViewBuilder.BuildPieceSet("Test Chess Pieces", parent, testMeshes, white, offset,
-            rotation, Vector3.one * 0.5f);
+            rotation, Vector3.one * 0.5f, ghost);
         set.transform.localPosition = new Vector3(0, 0, 0.3f);
         return set;
     }
