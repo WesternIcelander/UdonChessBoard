@@ -21,9 +21,9 @@ using VRC.Udon;
 // view for the same board is replaced, keeping its place, and so is its UI; a world creator's own model in it, and
 // the model parts they deleted, are kept (step 12.2, KeepCustomModel). The piece meshes, the highlight meshes
 // and the materials are generated placeholders in Assets/Siggi/ChessBoard/Models/, made only when missing, so they
-// can be replaced there. The piece models come from a ChessPieceSet (step 12.3): a board's arbiter without a Default
-// Piece Set gets one made from the generated meshes, as a child (EnsureDefaultPieceSet). Menu: Tools > Chess Board >
-// Create Board View. Plain editor C#, not Udon.
+// can be replaced there. The piece models come from a ChessPieceSet per side (steps 12.3, 12.10): a board's arbiter
+// without its Default White / Black Piece Set gets one made from the generated meshes, as a child
+// (EnsureDefaultPieceSet). Menu: Tools > Chess Board > Create Board View. Plain editor C#, not Udon.
 public static class ChessBoardViewBuilder {
     const string ViewScriptPath = "Assets/Siggi/ChessBoard/ChessBoardView.cs";
     const string ViewProgramPath = "Assets/Siggi/ChessBoard/ChessBoardView.asset";
@@ -349,33 +349,49 @@ public static class ChessBoardViewBuilder {
     // How far apart the builder lays out a set's slots, in squares.
     const float SlotSpacing = 1.5f;
 
-    // The board's arbiter's default piece set: kept when it has one; otherwise "Chess Pieces", made from the
-    // generated meshes and materials as a child of the arbiter, and put in its Default Piece Set. Returns a note for
-    // the log ("" when nothing changed).
+    // The board's arbiter's default piece sets (step 12.10), one per side: each kept when the arbiter has it;
+    // otherwise "White Pieces" or "Black Pieces", made from the generated meshes and that side's material as a child of
+    // the arbiter, and put in its Default White / Black Piece Set. The combined "Chess Pieces" of step 12.3 (both
+    // colours in one set) is removed when found. Returns a note for the log ("" when nothing changed).
     static string EnsureDefaultPieceSet(ChessBoard board, Mesh[] meshes, Material white, Material black) {
         ChessArbiter arbiter = board.arbiter;
         if (arbiter == null) {
             Debug.LogWarning("[ChessBoardViewBuilder] " + board.gameObject.name + " has no arbiter, so its view has "
-                + "no default piece set: set the board's Arbiter, then run Create Board View again.");
-            return ", no piece set (the board has no arbiter)";
+                + "no default piece sets: set the board's Arbiter, then run Create Board View again.");
+            return ", no piece sets (the board has no arbiter)";
         }
-        if (arbiter.defaultPieceSet != null) return "";
-        ChessPieceSet set = BuildPieceSet("Chess Pieces", arbiter.transform, meshes, new[] { white },
-            new[] { black }, Vector3.zero, Quaternion.identity, Vector3.one);
+        string note = "";
+        Transform combined = arbiter.transform.Find("Chess Pieces");
+        if (combined != null && combined.GetComponent<ChessPieceSet>() != null) {
+            Undo.DestroyObjectImmediate(combined.gameObject);
+            note += ", removing the combined Chess Pieces";
+        }
+        if (arbiter.defaultWhitePieceSet != null && arbiter.defaultBlackPieceSet != null) return note;
         Undo.RecordObject(arbiter, "Create Board View");
-        arbiter.defaultPieceSet = set;
+        if (arbiter.defaultWhitePieceSet == null) {
+            ChessPieceSet set = BuildPieceSet("White Pieces", arbiter.transform, meshes, new[] { white },
+                Vector3.zero, Quaternion.identity, Vector3.one);
+            arbiter.defaultWhitePieceSet = set;
+            note += ", the default White Pieces";
+        }
+        if (arbiter.defaultBlackPieceSet == null) {
+            ChessPieceSet set = BuildPieceSet("Black Pieces", arbiter.transform, meshes, new[] { black },
+                Vector3.zero, Quaternion.identity, Vector3.one);
+            set.transform.localPosition += new Vector3(0, 0, SlotSpacing * SquareSize);
+            arbiter.defaultBlackPieceSet = set;
+            note += ", the default Black Pieces";
+        }
         UdonSharpEditorUtility.CopyProxyToUdon(arbiter);
         EditorUtility.SetDirty(arbiter);
-        return ", and the default piece set " + set.gameObject.name + " on " + arbiter.gameObject.name;
+        return note + " on " + arbiter.gameObject.name;
     }
 
-    // A ChessPieceSet named name under parent: for each colour and piece type, a slot (laid out in a row per colour,
-    // SlotSpacing squares apart) holding a one-square guide on the playing surface and the template, its mesh
-    // meshes[type] with the colour's materials. White's templates stand at offset, turned by rotation and scaled by
-    // scale; Black's are turned half round as well (their knights face White), offset included. Public for the
-    // view test's second set.
-    public static ChessPieceSet BuildPieceSet(string name, Transform parent, Mesh[] meshes, Material[] whiteMaterials,
-            Material[] blackMaterials, Vector3 offset, Quaternion rotation, Vector3 scale) {
+    // A ChessPieceSet named name under parent, one side's pieces (step 12.10): for each piece type, a slot (laid out in
+    // a row, SlotSpacing squares apart) holding a one-square guide on the playing surface and the template, its mesh
+    // meshes[type] with materials, standing at offset, turned by rotation and scaled by scale. Set up as White's
+    // pieces (knights facing +z); a view turns Black's half round. Public for the view test's set.
+    public static ChessPieceSet BuildPieceSet(string name, Transform parent, Mesh[] meshes, Material[] materials,
+            Vector3 offset, Quaternion rotation, Vector3 scale) {
         Mesh guideMesh = FlatMesh("Piece Set Guide", 0.0005f, SquareSize * 0.06f);
         Material guideMaterial = MaterialAsset("Piece Set Guide", new Color(0.3f, 0.75f, 0.4f), 0.2f);
         GameObject root = new GameObject(name);
@@ -383,44 +399,32 @@ public static class ChessBoardViewBuilder {
         root.transform.SetParent(parent, false);
         root.transform.localPosition = new Vector3(0, 0, -2 * SquareSize * SlotSpacing);
         ChessPieceSet set = UdonSharpUndo.AddComponent<ChessPieceSet>(root);
-        Transform[] templates = new Transform[12];
-        Quaternion half = Quaternion.Euler(0, 180, 0);
-        for (int color = ChessRules.White; color <= ChessRules.Black; color++) {
-            bool white = color == ChessRules.White;
-            for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) {
-                string label = (white ? "White " : "Black ") + TypeNames[type];
-                GameObject slot = new GameObject(label);
-                slot.transform.SetParent(root.transform, false);
-                slot.transform.localPosition = new Vector3((type - 1) * SlotSpacing * SquareSize, 0,
-                    (white ? 0 : 1) * SlotSpacing * SquareSize);
-                GameObject guide = new GameObject("Guide");
-                guide.transform.SetParent(slot.transform, false);
-                guide.AddComponent<MeshFilter>().sharedMesh = guideMesh;
-                MeshRenderer guideRenderer = guide.AddComponent<MeshRenderer>();
-                guideRenderer.sharedMaterial = guideMaterial;
-                guideRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                GameObject model = new GameObject("Model");
-                model.transform.SetParent(slot.transform, false);
-                model.transform.localPosition = white ? offset : half * offset;
-                model.transform.localRotation = white ? rotation : half * rotation;
-                model.transform.localScale = scale;
-                model.AddComponent<MeshFilter>().sharedMesh = meshes[type];
-                model.AddComponent<MeshRenderer>().sharedMaterials = white ? whiteMaterials : blackMaterials;
-                templates[ChessBoardView.TemplateIndex(color, type)] = model.transform;
-            }
+        Transform[] templates = new Transform[7];
+        for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) {
+            GameObject slot = new GameObject(TypeNames[type]);
+            slot.transform.SetParent(root.transform, false);
+            slot.transform.localPosition = new Vector3((type - 1) * SlotSpacing * SquareSize, 0, 0);
+            GameObject guide = new GameObject("Guide");
+            guide.transform.SetParent(slot.transform, false);
+            guide.AddComponent<MeshFilter>().sharedMesh = guideMesh;
+            MeshRenderer guideRenderer = guide.AddComponent<MeshRenderer>();
+            guideRenderer.sharedMaterial = guideMaterial;
+            guideRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            GameObject model = new GameObject("Model");
+            model.transform.SetParent(slot.transform, false);
+            model.transform.localPosition = offset;
+            model.transform.localRotation = rotation;
+            model.transform.localScale = scale;
+            model.AddComponent<MeshFilter>().sharedMesh = meshes[type];
+            model.AddComponent<MeshRenderer>().sharedMaterials = materials;
+            templates[type] = model.transform;
         }
-        set.whitePawn = templates[ChessBoardView.TemplateIndex(ChessRules.White, ChessRules.Pawn)];
-        set.whiteKnight = templates[ChessBoardView.TemplateIndex(ChessRules.White, ChessRules.Knight)];
-        set.whiteBishop = templates[ChessBoardView.TemplateIndex(ChessRules.White, ChessRules.Bishop)];
-        set.whiteRook = templates[ChessBoardView.TemplateIndex(ChessRules.White, ChessRules.Rook)];
-        set.whiteQueen = templates[ChessBoardView.TemplateIndex(ChessRules.White, ChessRules.Queen)];
-        set.whiteKing = templates[ChessBoardView.TemplateIndex(ChessRules.White, ChessRules.King)];
-        set.blackPawn = templates[ChessBoardView.TemplateIndex(ChessRules.Black, ChessRules.Pawn)];
-        set.blackKnight = templates[ChessBoardView.TemplateIndex(ChessRules.Black, ChessRules.Knight)];
-        set.blackBishop = templates[ChessBoardView.TemplateIndex(ChessRules.Black, ChessRules.Bishop)];
-        set.blackRook = templates[ChessBoardView.TemplateIndex(ChessRules.Black, ChessRules.Rook)];
-        set.blackQueen = templates[ChessBoardView.TemplateIndex(ChessRules.Black, ChessRules.Queen)];
-        set.blackKing = templates[ChessBoardView.TemplateIndex(ChessRules.Black, ChessRules.King)];
+        set.pawn = templates[ChessRules.Pawn];
+        set.knight = templates[ChessRules.Knight];
+        set.bishop = templates[ChessRules.Bishop];
+        set.rook = templates[ChessRules.Rook];
+        set.queen = templates[ChessRules.Queen];
+        set.king = templates[ChessRules.King];
         UdonSharpEditorUtility.CopyProxyToUdon(set);
         return set;
     }

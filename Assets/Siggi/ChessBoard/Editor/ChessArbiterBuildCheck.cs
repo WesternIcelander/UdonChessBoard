@@ -6,8 +6,9 @@ using VRC.SDKBase.Editor.BuildPipeline;
 
 namespace SiggiChessBoard {
     // Cancels a VRChat build or upload while any ChessArbiter in the open scenes has an empty SimpleAuth field
-    // (docs/organizers.md) or an empty Default Piece Set (step 12.3, docs/customizing.md). Choosing nobody is done with
-    // NoOneAuth, and every board view needs a piece set to fall back on, so an empty field is always a mistake.
+    // (docs/organizers.md) or an empty Default White Piece Set or Default Black Piece Set (steps 12.3 and 12.10,
+    // docs/customizing.md). Choosing nobody is done with NoOneAuth, and every board view needs a piece set per side to
+    // fall back on, so an empty field is always a mistake.
     public class ChessArbiterBuildCheck : IVRCSDKBuildRequestedCallback {
         public int callbackOrder => 0;
 
@@ -35,10 +36,12 @@ namespace SiggiChessBoard {
                         arbiter);
                     authPaths += "\n  • " + path;
                 }
-                if (arbiter.defaultPieceSet == null) {
-                    Debug.LogError("[ChessArbiter] " + path + ": the Default Piece Set field is empty. Set it to a "
+                for (int white = 1; white >= 0; white--) {
+                    if ((white == 1 ? arbiter.defaultWhitePieceSet : arbiter.defaultBlackPieceSet) != null) continue;
+                    string field = "Default " + (white == 1 ? "White" : "Black") + " Piece Set";
+                    Debug.LogError("[ChessArbiter] " + path + ": the " + field + " field is empty. Set it to a "
                         + "ChessPieceSet (Tools > Chess Board > Create Board View makes one). Build cancelled.", arbiter);
-                    setPaths += "\n  • " + path;
+                    setPaths += "\n  • " + path + " (" + field + ")";
                 }
             }
             Selection.activeObject = blocking[0].gameObject;
@@ -54,10 +57,11 @@ namespace SiggiChessBoard {
                     + "  • NoOneAuth: nobody; the settings stay as you set them in the editor\n\n";
             }
             if (setPaths.Length > 0) {
-                message += "The \"Default Piece Set\" field is empty on:\n" + setPaths + "\n\n"
-                    + "This field holds the chess piece models the boards use. To fix it, select the arbiter, and in "
-                    + "the Inspector drag a Chess Piece Set into the \"Default Piece Set\" field under \"Pieces\" "
-                    + "(Tools > Chess Board > Create Board View puts the default set on the arbiter).\n\n";
+                message += "A piece set field is empty on:\n" + setPaths + "\n\n"
+                    + "These fields hold the chess piece models the boards use, a set for each side. To fix it, select "
+                    + "the arbiter, and in the Inspector drag a Chess Piece Set into the empty field under \"Pieces\" "
+                    + "(Tools > Chess Board > Create Board View puts the default White Pieces and Black Pieces on the "
+                    + "arbiter).\n\n";
             }
             EditorUtility.DisplayDialog("Chess: build cancelled", message
                 + "The first arbiter is selected now. Then build again.", "OK");
@@ -70,7 +74,10 @@ namespace SiggiChessBoard {
             if (requestedBuildType != VRCSDKRequestedBuildType.Scene) return new List<ChessArbiter>();
             List<ChessArbiter> blocking = new List<ChessArbiter>();
             foreach (ChessArbiter arbiter in FindAll()) {
-                if (arbiter.simpleAuth == null || arbiter.defaultPieceSet == null) blocking.Add(arbiter);
+                if (arbiter.simpleAuth == null || arbiter.defaultWhitePieceSet == null
+                        || arbiter.defaultBlackPieceSet == null) {
+                    blocking.Add(arbiter);
+                }
             }
             return blocking;
         }

@@ -1859,70 +1859,75 @@ public class ViewTest : UdonSharpBehaviour {
         SendCustomEventDelayedFrames(nameof(RunPieceSetChecks), 1);
     }
 
-    // ---- 12.3: chess piece sets ----
+    // ---- 12.3 and 12.10: chess piece sets, one per side ----
 
-    ChessPieceSet savedViewSet;
-    ChessPieceSet savedDefaultSet;
-    // Each object's world bounds under the starting set on a cleared board: the centre from its square's centre, and
+    ChessPieceSet savedWhiteSet;
+    ChessPieceSet savedBlackSet;
+    ChessPieceSet savedDefaultWhite;
+    ChessPieceSet savedDefaultBlack;
+    // Each object's world bounds under the starting sets on a cleared board: the centre from its square's centre, and
     // the size.
     Vector3[] boundsCentre = new Vector3[ChessBoardView.PieceCount];
     Vector3[] boundsSize = new Vector3[ChessBoardView.PieceCount];
 
-    // A fifteenth frame: the test set put on the view at once (meshes, both material slots, turn, size, collider, the
-    // pieces standing exactly as the starting set's do), a game played with it by drops and clicks with captures and
-    // a promotion; back to the arbiter's set with SetChessPieces(null); the view one of the arbiter's piece set
-    // listeners, once; SetDefaultChessPieces(null) refused, and each change of the arbiter's default worn at once,
-    // unless the view has a set of its own or isn't a listener; everything put back.
+    // A fifteenth frame: the test set put on White's pieces alone at once (meshes, both material slots, turn, size,
+    // collider, the pieces standing exactly as the starting sets' do), then on Black's too (one set worn by both
+    // sides, Black's turned half round); a game played with it by drops and clicks with captures and a promotion, and
+    // Black resigning (its king laid down); each side back to the arbiter's set alone with SetChessPieces(color,
+    // null), the captured pieces, the promoted queen and the fallen king changing in place; the view one of the
+    // arbiter's piece set listeners, once; SetDefaultChessPieces(color, null) refused, and each change of a default
+    // worn at once by that side alone, unless the view has a set of its own for it or isn't a listener; everything
+    // put back.
     public void RunPieceSetChecks() {
         string s = "piece sets";
         ChessArbiter arbiter = board.arbiter;
         bool ready = Utilities.IsValid(testPieceSet) && Utilities.IsValid(arbiter)
-            && Utilities.IsValid(arbiter.defaultPieceSet);
-        Check(ready, s + ": the test set and the arbiter's default set assigned", "rebuild with Tools > Chess Board > "
+            && Utilities.IsValid(arbiter.defaultWhitePieceSet) && Utilities.IsValid(arbiter.defaultBlackPieceSet);
+        Check(ready, s + ": the test set and the arbiter's default sets assigned", "rebuild with Tools > Chess Board > "
             + "Create Board View, then Create View Test");
         if (!ready) {
             LogSummary();
             return;
         }
-        savedViewSet = view.pieceSet;
-        savedDefaultSet = arbiter.defaultPieceSet;
+        int white = ChessRules.White;
+        int black = ChessRules.Black;
+        savedWhiteSet = view.whitePieceSet;
+        savedBlackSet = view.blackPieceSet;
+        savedDefaultWhite = arbiter.defaultWhitePieceSet;
+        savedDefaultBlack = arbiter.defaultBlackPieceSet;
         view.animateMoves = false;
-        Check(view.AppliedPieceSet() == view.CurrentPieceSet(), s + ": the current set applied", "it isn't");
+        Check(view.AppliedPieceSet(white) == view.CurrentPieceSet(white)
+            && view.AppliedPieceSet(black) == view.CurrentPieceSet(black), s + ": the current sets applied",
+            "they aren't");
+        Check(savedDefaultWhite != savedDefaultBlack, s + ": each side its own default set", "one set for both");
         CheckString(testPieceSet.Problem(), "", s + ": the test set complete");
-        CheckString(savedDefaultSet.Problem(), "", s + ": the default set complete");
-        Check(!testPieceSet.whitePawn.gameObject.activeInHierarchy && !savedDefaultSet.whiteKing.gameObject
-            .activeInHierarchy, s + ": the sets' templates hidden in play", "shown");
+        CheckString(savedDefaultWhite.Problem(), "", s + ": the default White set complete");
+        CheckString(savedDefaultBlack.Problem(), "", s + ": the default Black set complete");
+        Check(!testPieceSet.pawn.gameObject.activeInHierarchy && !savedDefaultWhite.king.gameObject.activeInHierarchy
+            && !savedDefaultBlack.queen.gameObject.activeInHierarchy, s + ": the sets' templates hidden in play",
+            "shown");
 
-        view.SetChessPieces(null);
+        view.SetChessPieces(white, null);
+        view.SetChessPieces(black, null);
         board.ClearState();
         Redraw();
-        CheckPieceSet(savedDefaultSet, s + ": the arbiter's set");
+        CheckPieceSets(savedDefaultWhite, savedDefaultBlack, s + ": the arbiter's sets");
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
             Bounds bounds = view.pieceRenderers[obj].bounds;
             boundsCentre[obj] = bounds.center - SquareWorld(view.objectSquare[obj]);
             boundsSize[obj] = bounds.size;
         }
 
-        // Applied at once, nothing moving off its square.
+        // Applied at once to White's pieces alone, nothing moving off its square; then to Black's too.
         string t = s + ": the test set";
-        view.SetChessPieces(testPieceSet);
-        CheckPieceSet(testPieceSet, t + ", at once");
-        CheckView(t + ", at once");
-        int wrong = 0;
-        string details = "";
-        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
-            Bounds bounds = view.pieceRenderers[obj].bounds;
-            Vector3 centre = bounds.center - SquareWorld(view.objectSquare[obj]);
-            if ((centre - boundsCentre[obj]).magnitude > 1e-4f || (bounds.size - boundsSize[obj]).magnitude > 1e-4f) {
-                if (wrong++ < 2) {
-                    details += "object " + obj + " bounds " + centre.ToString("F4") + " size " + bounds.size.ToString("F4")
-                        + ", the default's " + boundsCentre[obj].ToString("F4") + " size "
-                        + boundsSize[obj].ToString("F4") + "; ";
-                }
-            }
-        }
-        Check(wrong == 0, t + ": every piece upright on its square at the default's size", wrong + " differ: "
-            + details);
+        view.SetChessPieces(white, testPieceSet);
+        CheckPieceSets(testPieceSet, savedDefaultBlack, t + " on White, at once: Black's unchanged");
+        CheckView(t + " on White");
+        CheckBounds(t + " on White");
+        view.SetChessPieces(black, testPieceSet);
+        CheckPieceSets(testPieceSet, testPieceSet, t + " on both sides, at once");
+        CheckView(t + " on both sides");
+        CheckBounds(t + " on both sides");
 
         // A game: drops (pickups) and clicks, captures and a promotion.
         int savedStyle = view.inputStyle;
@@ -1961,16 +1966,28 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(view.ChoosePromotion(ChessRules.Queen), ChessBoard.InputAccepted, t + ": bxa8=Q chosen");
         CheckDropped(9, ChessBoard.ChangeMove, t + ": bxa8=Q");
         CheckInt(view.objectType[promoting], ChessRules.Queen, t + ": bxa8=Q: the pawn's object a queen");
-        CheckPieceSet(testPieceSet, t + ": after the game");
+        CheckPieceSets(testPieceSet, testPieceSet, t + ": after the game");
         view.SetInputStyle(savedStyle);
+        fallStanding = LowestPoint(view.squareObject[Sq("e8")]);
+        CheckInt(board.ResignAs(ChessRules.Black, localName), ChessBoard.InputAccepted, t + ": Black resigned");
+        Redraw();
+        CheckFallen("e8", Vector3.back, t + ": Black resigned");
 
-        // Back to the arbiter's set, at once, every piece on its square.
-        string b = s + ": SetChessPieces(null)";
-        view.SetChessPieces(null);
-        CheckPieceSet(savedDefaultSet, b + ": the arbiter's set, at once");
-        CheckView(b);
+        // Each side back to the arbiter's set alone, at once: Black's captured pieces and fallen king, then White's
+        // promoted queen.
+        string b = s + ": SetChessPieces(color, null)";
+        view.SetChessPieces(black, null);
+        CheckPieceSets(testPieceSet, savedDefaultBlack, b + ": Black's back to the arbiter's, at once, White's kept");
+        CheckView(b + ": Black's");
+        CheckFallen("e8", Vector3.back, b + ": Black's");
+        view.SetChessPieces(white, null);
+        CheckPieceSets(savedDefaultWhite, savedDefaultBlack, b + ": White's back to the arbiter's, at once");
+        CheckView(b + ": White's");
+        CheckInt(view.objectType[promoting], ChessRules.Queen, b + ": the promoted queen still a queen");
+        CheckFallen("e8", Vector3.back, b + ": White's");
 
-        // The arbiter's default: the view a listener of the arbiter's, once; null refused; each change worn at once.
+        // The arbiter's defaults: the view a listener of the arbiter's, once; null refused; each change worn at once
+        // by its side alone.
         int listeners = arbiter.PieceSetListenerCount();
         int found = 0;
         for (int i = 0; i < arbiter.pieceSetListeners.Length; i++) {
@@ -1979,41 +1996,80 @@ public class ViewTest : UdonSharpBehaviour {
         CheckInt(found, 1, s + ": the view among the arbiter's piece set listeners");
         arbiter.AddPieceSetListener(view);
         CheckInt(arbiter.PieceSetListenerCount(), listeners, s + ": the view added again: no change");
-        Check(!arbiter.SetDefaultChessPieces(null), s + ": SetDefaultChessPieces(null) refused", "accepted");
-        Check(arbiter.defaultPieceSet == savedDefaultSet, s + ": SetDefaultChessPieces(null): the default kept",
-            "changed");
+        Check(!arbiter.SetDefaultChessPieces(white, null), s + ": SetDefaultChessPieces(White, null) refused",
+            "accepted");
+        Check(!arbiter.SetDefaultChessPieces(black, null), s + ": SetDefaultChessPieces(Black, null) refused",
+            "accepted");
+        Check(!arbiter.SetDefaultChessPieces(2, testPieceSet), s + ": SetDefaultChessPieces(2, set) refused",
+            "accepted");
+        Check(arbiter.defaultWhitePieceSet == savedDefaultWhite && arbiter.defaultBlackPieceSet == savedDefaultBlack,
+            s + ": refused: the defaults kept", "changed");
         string d = s + ": SetDefaultChessPieces";
-        Check(arbiter.SetDefaultChessPieces(testPieceSet), d + "(test set) accepted", "refused");
-        CheckPieceSet(testPieceSet, d + "(test set): worn at once");
-        CheckView(d + "(test set)");
-        Check(arbiter.SetDefaultChessPieces(savedDefaultSet), d + "(default) accepted", "refused");
-        CheckPieceSet(savedDefaultSet, d + "(default): worn at once");
+        Check(arbiter.SetDefaultChessPieces(black, testPieceSet), d + "(Black, test set) accepted", "refused");
+        CheckPieceSets(savedDefaultWhite, testPieceSet, d + "(Black, test set): worn at once by Black alone");
+        CheckView(d + "(Black, test set)");
+        Check(arbiter.SetDefaultChessPieces(black, savedDefaultBlack), d + "(Black, default) accepted", "refused");
+        CheckPieceSets(savedDefaultWhite, savedDefaultBlack, d + "(Black, default): worn at once");
+        Check(arbiter.SetDefaultChessPieces(white, testPieceSet), d + "(White, test set) accepted", "refused");
+        CheckPieceSets(testPieceSet, savedDefaultBlack, d + "(White, test set): worn at once by White alone");
+        CheckView(d + "(White, test set)");
+        Check(arbiter.SetDefaultChessPieces(white, savedDefaultWhite), d + "(White, default) accepted", "refused");
+        CheckPieceSets(savedDefaultWhite, savedDefaultBlack, d + "(White, default): worn at once");
 
-        // A set of the view's own wins over the arbiter's changes.
-        view.SetChessPieces(testPieceSet);
-        arbiter.SetDefaultChessPieces(testPieceSet);
-        arbiter.SetDefaultChessPieces(savedDefaultSet);
-        CheckPieceSet(testPieceSet, s + ": the view's own set kept through the arbiter's changes");
-        view.SetChessPieces(null);
-        CheckPieceSet(savedDefaultSet, s + ": the view's own set dropped: the arbiter's");
+        // A set of the view's own for a side wins over the arbiter's changes for it; the other side follows them.
+        view.SetChessPieces(white, testPieceSet);
+        arbiter.SetDefaultChessPieces(white, savedDefaultBlack);
+        CheckPieceSets(testPieceSet, savedDefaultBlack, s + ": the view's own White set kept through the arbiter's "
+            + "change");
+        arbiter.SetDefaultChessPieces(black, testPieceSet);
+        CheckPieceSets(testPieceSet, testPieceSet, s + ": with a White set of its own, Black follows the arbiter's");
+        arbiter.SetDefaultChessPieces(black, savedDefaultBlack);
+        view.SetChessPieces(white, null);
+        CheckPieceSets(savedDefaultBlack, savedDefaultBlack, s + ": the view's own White set dropped: the arbiter's");
+        arbiter.SetDefaultChessPieces(white, savedDefaultWhite);
+        CheckPieceSets(savedDefaultWhite, savedDefaultBlack, s + ": the arbiter's White default back");
 
         // A listener removed isn't told.
         arbiter.RemovePieceSetListener(view);
         CheckInt(arbiter.PieceSetListenerCount(), listeners - 1, s + ": the view removed as a listener");
-        arbiter.SetDefaultChessPieces(testPieceSet);
-        CheckPieceSet(savedDefaultSet, s + ": the view removed: not told of the arbiter's change");
+        arbiter.SetDefaultChessPieces(white, testPieceSet);
+        CheckPieceSets(savedDefaultWhite, savedDefaultBlack, s + ": the view removed: not told of the arbiter's "
+            + "change");
         arbiter.AddPieceSetListener(view);
         CheckInt(arbiter.PieceSetListenerCount(), listeners, s + ": the view added back");
 
         // Put back as it was.
-        arbiter.SetDefaultChessPieces(savedDefaultSet);
-        view.SetChessPieces(savedViewSet);
-        Check(view.AppliedPieceSet() == view.CurrentPieceSet() && arbiter.defaultPieceSet == savedDefaultSet,
+        arbiter.SetDefaultChessPieces(white, savedDefaultWhite);
+        view.SetChessPieces(white, savedWhiteSet);
+        view.SetChessPieces(black, savedBlackSet);
+        Check(view.AppliedPieceSet(white) == view.CurrentPieceSet(white)
+            && view.AppliedPieceSet(black) == view.CurrentPieceSet(black)
+            && arbiter.defaultWhitePieceSet == savedDefaultWhite && arbiter.defaultBlackPieceSet == savedDefaultBlack,
             s + ": put back", "they aren't");
         board.ClearState();
         Redraw();
         CheckView(s + ": cleared");
         SendCustomEventDelayedFrames(nameof(RunCapturedPlaceChecks), 1);
+    }
+
+    // Whether every object stands as it did under the starting sets (RunPieceSetChecks): its world bounds the same
+    // about its square's centre, so upright on its square at the default's size.
+    void CheckBounds(string name) {
+        int wrong = 0;
+        string details = "";
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            Bounds bounds = view.pieceRenderers[obj].bounds;
+            Vector3 centre = bounds.center - SquareWorld(view.objectSquare[obj]);
+            if ((centre - boundsCentre[obj]).magnitude > 1e-4f || (bounds.size - boundsSize[obj]).magnitude > 1e-4f) {
+                if (wrong++ < 2) {
+                    details += "object " + obj + " bounds " + centre.ToString("F4") + " size " + bounds.size.ToString("F4")
+                        + ", the default's " + boundsCentre[obj].ToString("F4") + " size "
+                        + boundsSize[obj].ToString("F4") + "; ";
+                }
+            }
+        }
+        Check(wrong == 0, name + ": every piece upright on its square at the default's size", wrong + " differ: "
+            + details);
     }
 
     // ---- 12.4: captured-piece places ----
@@ -2399,13 +2455,21 @@ public class ViewTest : UdonSharpBehaviour {
     // Which way obj's top points (view space), its template's turn taken out: up when it stands.
     Vector3 PieceUp(int obj) {
         Quaternion template = Quaternion.identity;
-        ChessPieceSet set = view.AppliedPieceSet();
+        int color = view.ObjectColor(obj);
+        ChessPieceSet set = view.AppliedPieceSet(color);
         int type = view.objectType[obj];
         if (Utilities.IsValid(set) && type != ChessRules.NoPieceType) {
-            Transform t = set.Template(view.ObjectColor(obj), type);
-            if (Utilities.IsValid(t)) template = t.localRotation;
+            Transform t = set.Template(type);
+            if (Utilities.IsValid(t)) template = TemplateTurn(color, t);
         }
         return view.pieces[obj].localRotation * Quaternion.Inverse(template) * Vector3.up;
+    }
+
+    // How a ChessRules colour's piece stands turned when it wears template: as the template is, Black's turned half
+    // round (step 12.10).
+    Quaternion TemplateTurn(int color, Transform template) {
+        return color == ChessRules.White ? template.localRotation
+            : Quaternion.Euler(0, 180, 0) * template.localRotation;
     }
 
     // The lowest point of obj's mesh bounds (view space).
@@ -2495,27 +2559,31 @@ public class ViewTest : UdonSharpBehaviour {
         return view.transform.TransformPoint(view.SquarePosition(square));
     }
 
-    // The mesh the current set gives piece (null for none).
+    // The mesh the current set of its side gives piece (null for none).
     Mesh SetMesh(int piece) {
-        ChessPieceSet set = view.CurrentPieceSet();
+        ChessPieceSet set = view.CurrentPieceSet(ChessRules.PieceColorOf(piece));
         if (!Utilities.IsValid(set)) return null;
-        Transform template = set.Template(ChessRules.PieceColorOf(piece), ChessRules.PieceTypeOf(piece));
+        Transform template = set.Template(ChessRules.PieceTypeOf(piece));
         if (!Utilities.IsValid(template)) return null;
         MeshFilter filter = template.GetComponent<MeshFilter>();
         return Utilities.IsValid(filter) ? filter.sharedMesh : null;
     }
 
-    // Whether set is applied and every object standing for a piece wears its template: the mesh, every material
-    // slot, the turn and the size, with its collider fitted to the mesh.
-    void CheckPieceSet(ChessPieceSet set, string name) {
-        Check(view.AppliedPieceSet() == set, name + ": applied", "another set is");
+    // Whether whiteSet and blackSet are applied to their sides and every object standing for a piece wears its side's
+    // template: the mesh, every material slot, the turn (Black's half round; a fallen king's left to CheckFallen) and
+    // the size, with its collider fitted to the mesh.
+    void CheckPieceSets(ChessPieceSet whiteSet, ChessPieceSet blackSet, string name) {
+        Check(view.AppliedPieceSet(ChessRules.White) == whiteSet, name + ": White's set applied", "another set is");
+        Check(view.AppliedPieceSet(ChessRules.Black) == blackSet, name + ": Black's set applied", "another set is");
         int wrong = 0;
         string details = "";
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
             int type = view.objectType[obj];
             if (type == ChessRules.NoPieceType) continue;
-            Transform template = set.Template(view.ObjectColor(obj), type);
+            int color = view.ObjectColor(obj);
+            Transform template = (color == ChessRules.White ? whiteSet : blackSet).Template(type);
             Transform piece = view.pieces[obj];
+            Quaternion turn = TemplateTurn(color, template);
             Mesh mesh = template.GetComponent<MeshFilter>().sharedMesh;
             Material[] want = template.GetComponent<MeshRenderer>().sharedMaterials;
             Material[] have = view.pieceRenderers[obj].sharedMaterials;
@@ -2525,7 +2593,8 @@ public class ViewTest : UdonSharpBehaviour {
                 error = "mesh";
             } else if (have.Length != want.Length) {
                 error = have.Length + " materials, not " + want.Length;
-            } else if (obj != view.heldObject && Quaternion.Angle(piece.localRotation, template.localRotation) > 0.1f) {
+            } else if (obj != view.heldObject && view.fallAmount[obj] == 0
+                && Quaternion.Angle(piece.localRotation, turn) > 0.1f) {
                 error = "turned " + piece.localRotation.eulerAngles.ToString("F1");
             } else if ((piece.localScale - template.localScale).sqrMagnitude > 1e-8f) {
                 error = "scale " + piece.localScale.ToString("F3");

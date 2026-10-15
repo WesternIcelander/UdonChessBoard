@@ -7,7 +7,7 @@ using UnityEngine;
 
 // Adds ViewTest (PLAN.md section 9) to the open scene for the scene's board view: the board, the view, the board's UI
 // (step 12.1), the scene's BoardTest to wait for, an importer of its own (a child), the two PGNs and a second piece
-// set (step 12.3, a child: BuildTestPieceSet). An existing ViewTest is replaced.
+// set (steps 12.3 and 12.10, a child: BuildTestPieceSet). An existing ViewTest is replaced.
 // Menu: Tools > Chess Board > Create View Test. Plain editor C#, not Udon.
 public static class ViewTestBuilder {
     const string TestScriptPath = "Assets/Tests/View/ViewTest.cs";
@@ -100,20 +100,19 @@ public static class ViewTestBuilder {
 
     // "Test Chess Pieces" under parent: the generated pieces made awkward (TestMesh: turned 90° onto their backs,
     // twice the size, the origin off their base, two material slots), with templates turned, scaled and moved back
-    // so the pieces stand as the default ones do. The view test switches to it and back.
+    // so the pieces stand as the default ones do. One set (step 12.10), set up as White's; the view test puts it on
+    // either side or both, and back.
     static ChessPieceSet BuildTestPieceSet(Transform parent) {
         Mesh[] meshes = ChessBoardViewBuilder.PieceMeshes();
         Mesh[] testMeshes = new Mesh[meshes.Length];
         for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) testMeshes[type] = TestMesh(meshes[type]);
         Material[] white = { TestMaterial("Test White Body", new Color(0.95f, 0.9f, 0.75f)),
             TestMaterial("Test White Top", new Color(0.9f, 0.6f, 0.2f)) };
-        Material[] black = { TestMaterial("Test Black Body", new Color(0.2f, 0.15f, 0.25f)),
-            TestMaterial("Test Black Top", new Color(0.3f, 0.5f, 0.9f)) };
         // Undoes TestMesh: turned back up, halved, and moved so the base centre is on the square's centre.
         Quaternion rotation = Quaternion.Euler(-90, 0, 0);
         Vector3 offset = -(rotation * (TestOrigin * 0.5f));
-        ChessPieceSet set = ChessBoardViewBuilder.BuildPieceSet("Test Chess Pieces", parent, testMeshes, white, black,
-            offset, rotation, Vector3.one * 0.5f);
+        ChessPieceSet set = ChessBoardViewBuilder.BuildPieceSet("Test Chess Pieces", parent, testMeshes, white, offset,
+            rotation, Vector3.one * 0.5f);
         set.transform.localPosition = new Vector3(0, 0, 0.3f);
         return set;
     }

@@ -85,10 +85,13 @@ namespace SiggiChessBoard {
         public SimpleAuth simpleAuth;
 
         [Header("Pieces")]
-        [Tooltip("The chess piece set every board view uses unless it has its own (docs/customizing.md). Must not be "
-            + "empty.")]
-        public ChessPieceSet defaultPieceSet;
-        // The board views told when defaultPieceSet changes (SetDefaultChessPieces); each adds itself on Start.
+        [Tooltip("The chess piece set White wears on every board view without its own (docs/customizing.md). Must not "
+            + "be empty.")]
+        public ChessPieceSet defaultWhitePieceSet;
+        [Tooltip("The chess piece set Black wears on every board view without its own (docs/customizing.md). Must not "
+            + "be empty.")]
+        public ChessPieceSet defaultBlackPieceSet;
+        // The board views told when a default set changes (SetDefaultChessPieces); each adds itself on Start.
         [NonSerialized] public ChessBoardView[] pieceSetListeners = new ChessBoardView[0];
 
         [Header("Boards")]
@@ -150,21 +153,29 @@ namespace SiggiChessBoard {
             changes++;
         }
 
-        // Makes set the default chess piece set (step 12.3), on this client only, and tells each piece set listener
-        // (the board views, OnDefaultPieceSetChanged), so a view without a set of its own wears it at once. The arbiter
-        // only holds the set. Refuses null (false): a view needs a set to fall back on. Setting the same set again
-        // tells nobody.
-        public bool SetDefaultChessPieces(ChessPieceSet set) {
-            if (!Utilities.IsValid(set)) return false;
-            if (set == defaultPieceSet) return true;
-            defaultPieceSet = set;
+        // Makes set the default chess piece set for a ChessRules colour (steps 12.3 and 12.10), on this client only,
+        // and tells each piece set listener (the board views, OnDefaultPieceSetChanged), so a view without a set of its
+        // own for that side wears it at once. The arbiter only holds the set. Refuses null and an unknown colour
+        // (false): a view needs a set to fall back on. Setting the same set again tells nobody.
+        public bool SetDefaultChessPieces(int color, ChessPieceSet set) {
+            if (!Utilities.IsValid(set) || (color != ChessRules.White && color != ChessRules.Black)) return false;
+            if (set == DefaultPieceSet(color)) return true;
+            if (color == ChessRules.White) defaultWhitePieceSet = set;
+            else defaultBlackPieceSet = set;
             for (int i = 0; i < pieceSetListeners.Length; i++) {
-                if (Utilities.IsValid(pieceSetListeners[i])) pieceSetListeners[i].OnDefaultPieceSetChanged();
+                if (Utilities.IsValid(pieceSetListeners[i])) pieceSetListeners[i].OnDefaultPieceSetChanged(color);
             }
             return true;
         }
 
-        // Tells view of every change to defaultPieceSet from now on (each board view adds itself on Start); adding
+        // The default chess piece set for a ChessRules colour (null when empty or for an unknown colour).
+        public ChessPieceSet DefaultPieceSet(int color) {
+            if (color == ChessRules.White) return defaultWhitePieceSet;
+            if (color == ChessRules.Black) return defaultBlackPieceSet;
+            return null;
+        }
+
+        // Tells view of every change to a default piece set from now on (each board view adds itself on Start); adding
         // one twice changes nothing.
         public void AddPieceSetListener(ChessBoardView view) {
             if (!Utilities.IsValid(view)) return;
@@ -178,7 +189,7 @@ namespace SiggiChessBoard {
             pieceSetListeners = grown;
         }
 
-        // Stops telling view of changes to defaultPieceSet.
+        // Stops telling view of changes to the default piece sets.
         public void RemovePieceSetListener(ChessBoardView view) {
             int count = pieceSetListeners.Length;
             int index = -1;
