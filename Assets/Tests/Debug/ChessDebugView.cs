@@ -13,9 +13,13 @@ using VRC.SDKBase;
 public class ChessDebugView : ChessBoardListener {
     // The board shown and driven; the view adds itself as a listener on Start.
     public ChessBoard board;
-    // The board's squares, a1 = 0 to h8 = 63: a background and the piece letter (FEN letters, "" for empty).
+    // The board's squares, a1 = 0 to h8 = 63: a background and the piece's image (step 12.13: the 2D view's sprites,
+    // hidden on an empty square).
     public Image[] squareImages = new Image[64];
-    public Text[] squareTexts = new Text[64];
+    public Image[] pieceImages = new Image[64];
+    // Each colour's piece sprites, pawn to king, as the 2D view's (set by the builder from Sprites2D/).
+    public Sprite[] whiteSprites = new Sprite[6];
+    public Sprite[] blackSprites = new Sprite[6];
     // Everything else about the board, and the result of the last button pressed.
     public Text statusText;
     // The PGN the import buttons import (8.7): Assets/Tests/PGN/Siggi-vs-Nuka.pgn.txt, set by the builder.
@@ -1057,10 +1061,15 @@ public class ChessDebugView : ChessBoardListener {
         }
         for (int square = 0; square < 64; square++) {
             int piece = board.PieceAt(square);
-            if (squareTexts != null && square < squareTexts.Length && Utilities.IsValid(squareTexts[square])) {
-                squareTexts[square].text = piece == ChessRules.Empty ? "" : ChessFen.FenChar(piece).ToString();
-                squareTexts[square].color = piece != ChessRules.Empty && ChessRules.PieceColorOf(piece) == ChessRules.Black
-                    ? Color.black : Color.white;
+            if (pieceImages != null && square < pieceImages.Length && Utilities.IsValid(pieceImages[square])) {
+                Sprite sprite = null;
+                if (piece != ChessRules.Empty) {
+                    Sprite[] sprites = ChessRules.PieceColorOf(piece) == ChessRules.White ? whiteSprites : blackSprites;
+                    int index = ChessRules.PieceTypeOf(piece) - ChessRules.Pawn;
+                    if (sprites != null && index >= 0 && index < sprites.Length) sprite = sprites[index];
+                }
+                pieceImages[square].sprite = sprite;
+                pieceImages[square].enabled = sprite != null;
             }
             if (squareImages != null && square < squareImages.Length && Utilities.IsValid(squareImages[square])) {
                 bool light = (ChessRules.FileOf(square) + ChessRules.RankOf(square)) % 2 == 1;

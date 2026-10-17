@@ -659,15 +659,36 @@ namespace SiggiChessBoard {
             }
         }
 
-        // Both seats at server time now, White's line first (PlayerTextAt).
+        // Both seats at server time now, White's line first (PlayerTextAt). The status texts are static, taking the
+        // board, so the 2D view (step 12.13) writes the same lines; the instance forms read this UI's board.
         public string PlayersTextAt(double now) {
-            return PlayerTextAt(ChessRules.White, now) + "\n" + PlayerTextAt(ChessRules.Black, now);
+            return PlayersTextFor(board, now);
+        }
+
+        public string PlayerTextAt(int color, double now) {
+            return PlayerTextFor(board, color, now);
+        }
+
+        public string StatusTextAt(double now) {
+            return StatusTextFor(board, now);
+        }
+
+        public string EndingText() {
+            return EndingTextFor(board);
+        }
+
+        public string ReplayText() {
+            return ReplayTextFor(board);
+        }
+
+        public static string PlayersTextFor(ChessBoard board, double now) {
+            return PlayerTextFor(board, ChessRules.White, now) + "\n" + PlayerTextFor(board, ChessRules.Black, now);
         }
 
         // A seat's line: "White: Ana", "(open)" for an empty seat, with the side's remaining time at server time now
         // during and after a game with a clock ("White: Ana  4:58"). In a game played on untimed after a flag fall
         // (step 12.9) the times are the timed game's, and the side out of time shows GG instead of 0:00.
-        public string PlayerTextAt(int color, double now) {
+        public static string PlayerTextFor(ChessBoard board, int color, double now) {
             if (!Utilities.IsValid(board)) return "";
             string name = color == ChessRules.White ? board.whitePlayer : board.blackPlayer;
             string text = ColorText(color) + ": " + (name != null && name.Length > 0 ? name : "(open)");
@@ -681,7 +702,7 @@ namespace SiggiChessBoard {
 
         // Which side's time ran out before the game played on untimed (step 12.9): the one with no time left, NoColor
         // if the game isn't playing on.
-        int PlayOnFlaggedColor() {
+        static int PlayOnFlaggedColor(ChessBoard board) {
             if (!board.ClocksFromPreviousGame()) return ChessRules.NoColor;
             if (board.whiteTime == 0) return ChessRules.White;
             return board.blackTime == 0 ? ChessRules.Black : ChessRules.NoColor;
@@ -691,7 +712,7 @@ namespace SiggiChessBoard {
         // loaded game's names (and mode, for Chess960); in a game, whose turn it is and whether they're in check, or that
         // their time is up, and, playing on untimed after a flag fall, whose time ran out (12.9); the result of an ended or loaded game (EndingText); a pending draw offer and takeback
         // request; the replay position (ReplayText).
-        public string StatusTextAt(double now) {
+        public static string StatusTextFor(ChessBoard board, double now) {
             if (!Utilities.IsValid(board)) return "";
             int lifecycle = board.lifecycle;
             if (lifecycle == ChessBoard.LifecycleReset) return "Join White or Black to play";
@@ -709,25 +730,25 @@ namespace SiggiChessBoard {
                     text = ColorText(board.SideToMove()) + " to move";
                     if (board.IsInCheck()) text += ", in check";
                 }
-                int playOnFlagged = PlayOnFlaggedColor();
+                int playOnFlagged = PlayOnFlaggedColor(board);
                 if (playOnFlagged != ChessRules.NoColor) {
                     text = AddLine(text, "Playing on untimed: " + ColorText(playOnFlagged) + " ran out of time");
                 }
             }
-            text = AddLine(text, EndingText());
+            text = AddLine(text, EndingTextFor(board));
             if (board.drawOfferColor != ChessRules.NoColor) {
                 text = AddLine(text, ColorText(board.drawOfferColor) + " offers a draw");
             }
             if (board.takebackColor != ChessRules.NoColor) {
                 text = AddLine(text, ColorText(board.takebackColor) + " asks to take back to here");
             }
-            if (board.replayMode) text = AddLine(text, ReplayText());
+            if (board.replayMode) text = AddLine(text, ReplayTextFor(board));
             return text;
         }
 
         // How an ended or loaded game ended, with its PGN result: "White wins by checkmate (1-0)", "Draw by agreement
         // (1/2-1/2)"; "Unfinished game (*)" for a loaded game without a result; "" otherwise.
-        public string EndingText() {
+        public static string EndingTextFor(ChessBoard board) {
             if (!Utilities.IsValid(board)) return "";
             int lifecycle = board.lifecycle;
             if (lifecycle != ChessBoard.LifecycleEnded && lifecycle != ChessBoard.LifecycleLoaded) return "";
@@ -749,7 +770,7 @@ namespace SiggiChessBoard {
 
         // The replay position: "Replay: 2. Nf3 (3 of 4)" (the move that led to it, numbered as PGN numbers it, "?"
         // while its notation is missing), "Replay: start (0 of 4)", or "Replay: custom position" after free moves.
-        public string ReplayText() {
+        public static string ReplayTextFor(ChessBoard board) {
             if (board.replayCustom) return "Replay: custom position";
             int ply = board.replayIndex;
             string of = " (" + ply + " of " + board.moveCount + ")";

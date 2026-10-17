@@ -11,8 +11,9 @@ using VRC.SDK3.Components;
 using VRC.Udon;
 
 // Builds the debug view (PLAN.md 8.1, ChessDebugView.cs) in the open scene for the selected ChessBoard, or the scene's
-// only one: a world-space canvas with the 8x8 board, the status text and one button per public method of the view.
-// An existing debug view for the same board is replaced, keeping its place, so it can be rebuilt when buttons change.
+// only one: a world-space canvas with the 8x8 board (the 2D view's piece sprites, 12.13), the status text and one
+// button per public method of the view. An existing debug view for the same board is replaced, keeping its place,
+// so it can be rebuilt when buttons change.
 // Menu: Tools > Chess Board > Create Debug View. Plain editor C#, not Udon.
 public static class ChessDebugViewBuilder {
     const string ViewScriptPath = "Assets/Tests/Debug/ChessDebugView.cs";
@@ -85,7 +86,9 @@ public static class ChessDebugViewBuilder {
                 + "in the view's Import Pgn field.");
         }
         view.squareImages = new Image[64];
-        view.squareTexts = new Text[64];
+        view.pieceImages = new Image[64];
+        view.whiteSprites = ChessBoard2DViewBuilder.LoadPieceSprites(ChessRules.White);
+        view.blackSprites = ChessBoard2DViewBuilder.LoadPieceSprites(ChessRules.Black);
 
         // The board, White at the bottom: a1 bottom left.
         for (int square = 0; square < 64; square++) {
@@ -95,11 +98,7 @@ public static class ChessDebugViewBuilder {
                 new Vector2(Margin + file * SquareSize, Margin + (7 - rank) * SquareSize),
                 new Vector2(SquareSize, SquareSize));
             view.squareImages[square] = cell.AddComponent<Image>();
-            Text piece = NewText(cell, "Piece", font, 40, TextAnchor.MiddleCenter);
-            piece.fontStyle = FontStyle.Bold;
-            Outline outline = piece.gameObject.AddComponent<Outline>();
-            outline.effectColor = new Color(0.5f, 0.5f, 0.5f);
-            view.squareTexts[square] = piece;
+            view.pieceImages[square] = ChessBoard2DViewBuilder.NewPieceImage(cell, 2);
         }
 
         float statusLeft = Margin * 2 + 8 * SquareSize;

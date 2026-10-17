@@ -21,6 +21,8 @@ public class ArchiveTest : UdonSharpBehaviour {
     public GameHistoryWall wall;
     // The board's UI, for its Load it here button (steps 10.2b, 12.1).
     public ChessBoardUI ui;
+    // Set once the checks are done or skipped, for Board2DTest (step 12.13) to wait for.
+    [System.NonSerialized] public bool finished;
 
     const int HolderCount = 10;
     const int Capacity = HolderCount * GameArchiveHolder.Capacity;
@@ -67,6 +69,7 @@ public class ArchiveTest : UdonSharpBehaviour {
         if (VRCPlayerApi.GetPlayerCount() > 1) {
             Debug.Log("[ArchiveTest] skipped: other players are in the instance, and the checks would send the "
                 + "archive to them");
+            finished = true;
             return;
         }
         if (!Utilities.IsValid(archive)) {
@@ -698,6 +701,7 @@ public class ArchiveTest : UdonSharpBehaviour {
     }
 
     void LogSummary() {
+        finished = true;
         Debug.Log("[ArchiveTest] done: " + passed + " passed, " + failed + " failed"
             + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
     }
