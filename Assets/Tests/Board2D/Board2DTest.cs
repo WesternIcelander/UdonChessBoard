@@ -4,13 +4,14 @@ using UnityEngine;
 using UnityEngine.UI;
 using VRC.SDKBase;
 
-// Step 12.13 and 12.14 test behaviour (PLAN.md 12.13, 12.14, docs/board-2d.md): the 2D board view, ChessBoard2DView.
+// Step 12.13 to 12.15 test behaviour (PLAN.md 12.13 to 12.15, docs/board-2d.md): the 2D board view, ChessBoard2DView.
 // Stepping is checked on its own (StepTarget, with five boards) and on the scene's boards through the view: which
 // board it shows, that it listens to that one only, its pieces, highlights, board label and texts against the board
 // and the board's UI's texts, as moves are played. Then its own replay (12.14): the step buttons, following the game,
-// the board's replay and takebacks, switching board, locking to one board and a long game's timing. The boards are synced, so like BoardTest it runs only with
-// no one else in the instance, once BoardTest, ViewTest and ArchiveTest have finished with the boards. The view's
-// Synced is turned off for the checks (nothing is sent) and put back. Logs "[Board2DTest] PASS: <check>" or
+// the board's replay and takebacks, switching board, locking to one board, the move list (12.15) and a long game's
+// timing. The boards are synced, so like BoardTest it runs only with no one else in the instance, once BoardTest,
+// ViewTest and ArchiveTest have finished with the boards. The view's Synced is turned off for the checks (nothing is
+// sent) and put back. Logs "[Board2DTest] PASS: <check>" or
 // "[Board2DTest] FAIL: <check>: <details>" per check, then a summary line. Built in the scene by Tools > Chess Board >
 // Create 2D View Test (Editor/Board2DTestBuilder.cs).
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
@@ -254,6 +255,13 @@ public class Board2DTest : UdonSharpBehaviour {
         ResetBoth();
         RunReplayChecks();
         RunLockChecks();
+        RunMoveListChecks();
+        // Ends on a loaded game from a FEN without notation, which the board fills in over the next frames.
+        SendCustomEventDelayedFrames(nameof(CheckNotationLater), 3);
+    }
+
+    public void CheckNotationLater() {
+        RunNotationLaterChecks();
         RunLongGameCheck();
         ResetBoth();
         view.synced = savedSynced;
@@ -461,6 +469,287 @@ public class Board2DTest : UdonSharpBehaviour {
         Check(view.leftButton.gameObject.activeSelf && view.rightButton.gameObject.activeSelf
             && view.leftButton.interactable && view.rightButton.interactable, s + ": unlocked, selector back",
             "hidden or disabled");
+    }
+
+    // ---- The move list (12.15) ----
+
+    // From the standard start with Black to move after e4, for a game whose first move is Black's.
+    const string FenBlackFirst = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+
+    void RunMoveListChecks() {
+        string s = "move list";
+        RunMoveListWiringChecks(s);
+        RunMoveListLayoutChecks(s);
+        ResetBoth();
+        view.Show(0);
+        CheckMoveCells(new string[0], -1, s + ": a reset board, no moves");
+        StartGame(first);
+        Play(first, "e2", "e4", s);
+        Play(first, "e7", "e5", s);
+        Play(first, "g1", "f3", s);
+        Play(first, "b8", "c6", s);
+        view.Refresh();
+        string[] moves = { "e4", "e5", "Nf3", "Nc6" };
+        CheckMoveCells(moves, 3, s + ": 4 plies, Nc6 current");
+        CheckString(view.moveNumbers[0].text + " " + view.moveNumbers[1].text + " [" + view.moveNumbers[2].text + "]",
+            "1. 2. []", s + ": move numbers");
+        view.PressBack();
+        CheckMoveCells(moves, 2, s + ": < to ply 3, Nf3 current");
+        view.PressFirst();
+        CheckMoveCells(moves, -1, s + ": << to the start, none current");
+        view.PressMoveCell(1);
+        CheckInt(view.ViewPly(), 2, s + ": e5 clicked, the position after it");
+        CheckViewAt("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2", 2, s + ": e5 clicked");
+        CheckMoveCells(moves, 1, s + ": e5 clicked, e5 current");
+        view.PressMoveCell(3);
+        CheckInt(view.ViewPly(), 4, s + ": Nc6 clicked, the latest");
+        Check(view.IsOnLatest(), s + ": Nc6 clicked, on the latest", "not on the latest");
+        view.PressMoveCell(0);
+        CheckInt(view.ViewPly(), 1, s + ": e4 clicked, ply 1");
+        view.PressMoveCell(4);
+        CheckInt(view.ViewPly(), 1, s + ": an empty cell clicked does nothing");
+        view.PressMoveCell(-1);
+        view.PressMoveCell(view.moveCells.Length);
+        CheckInt(view.ViewPly(), 1, s + ": cells off the pool do nothing");
+        view.PressLast();
+        Play(first, "f1", "b5", s);
+        view.Refresh();
+        CheckMoveCells(new string[] { "e4", "e5", "Nf3", "Nc6", "Bb5" }, 4, s + ": on the latest, Bb5 current");
+
+        // Scrolling: moves past the list's height, the view on the latest.
+        float rowsShown = view.moveListViewport.rect.height / view.moveRowHeight;
+        int wanted = Mathf.CeilToInt(rowsShown) * 2 + 8;
+        bool inView = true;
+        string lost = "";
+        bool played = true;
+        while (first.moveCount < wanted && played) {
+            played = PlayAny(first);
+            view.Refresh();
+            if (!view.IsMoveInView(first.moveCount - 1) && inView) {
+                inView = false;
+                lost = "ply " + first.moveCount + " out of view at scroll " + view.MoveListScroll();
+            }
+        }
+        CheckInt(first.moveCount, wanted, s + ": " + wanted + " plies played");
+        Check(inView, s + ": on the latest, each new move in view", lost);
+        Check(view.MoveListMaxScroll() > 0, s + ": the moves don't fit, it scrolls", "max scroll 0");
+        Check(Mathf.Abs(view.MoveListScroll() - view.MoveListMaxScroll()) < 0.5f, s + ": scrolled to the bottom",
+            view.MoveListScroll() + " of " + view.MoveListMaxScroll());
+        Check(view.IsMoveCellCurrent(view.MoveCellOf(first.moveCount - 1)), s + ": the latest move current",
+            "cell " + view.MoveCellOf(first.moveCount - 1));
+        Check(view.moveList.verticalScrollbar != null, s + ": a scrollbar", "none");
+        view.PressFirst();
+        CheckFloat(view.MoveListScroll(), 0, s + ": << scrolls to the top");
+        view.PressForward();
+        Check(view.IsMoveInView(0) && view.IsMoveCellCurrent(view.MoveCellOf(0)), s + ": > to ply 1, e4 in view",
+            "scroll " + view.MoveListScroll());
+        // A player's own scrolling stays while the ply shown doesn't change.
+        view.ScrollMoveList(view.moveRowHeight * 3);
+        view.Refresh();
+        CheckFloat(view.MoveListScroll(), view.moveRowHeight * 3, s + ": scrolled by hand, kept on a redraw");
+        // A step brings the move back into view, scrolling just enough: e5's row (the first) at the top.
+        view.PressForward();
+        CheckFloat(view.MoveListScroll(), 0, s + ": > to ply 2, scrolled up just to e5's row");
+        // Down: a ply below the list, its row at the bottom.
+        int row = Mathf.CeilToInt(rowsShown) + 2;
+        view.ShowPly(2 * row + 1);
+        CheckFloat(view.MoveListScroll(), (row + 1) * view.moveRowHeight - view.moveListViewport.rect.height,
+            s + ": a ply below the list, its row scrolled just to the bottom");
+        Check(view.IsMoveInView(2 * row), s + ": that move in view", "scroll " + view.MoveListScroll());
+        // Scrolled part of a row: the pool starts on the row at the top, shifted up by the rest.
+        view.ScrollMoveList(view.moveRowHeight * 3 + view.moveRowHeight / 2);
+        CheckInt(view.MoveCellPly(0), 6, s + ": scrolled 3.5 rows, the pool's first cell is ply 7's");
+        CheckFloat(view.moveListRows.anchoredPosition.y, view.moveRowHeight / 2,
+            s + ": scrolled 3.5 rows, rows shifted");
+        CheckString(view.moveNumbers[0].text, "4.", s + ": scrolled 3.5 rows, the first number");
+        int ply = view.MoveCellPly(3);
+        view.PressMoveCell(3);
+        CheckInt(view.ViewPly(), ply + 1, s + ": a scrolled cell clicked, the position after its move");
+        Check(view.IsMoveCellCurrent(3), s + ": the clicked cell current", "not yellow");
+        // Switching board scrolls to the new board's latest, and back.
+        CheckInt(second.JoinAs(ChessRules.White, Bo), ChessBoard.InputAccepted, s + ": Bo joins the second board");
+        view.PressRight();
+        CheckMoveCells(new string[0], -1, s + ": the second board, no moves");
+        CheckFloat(view.MoveListScroll(), 0, s + ": the second board, at the top");
+        view.PressLeft();
+        Check(view.IsMoveInView(first.moveCount - 1) && view.IsOnLatest(), s + ": back on the first, its latest in view",
+            "scroll " + view.MoveListScroll());
+
+        // A game from a FEN with Black to move, its notation left for the board to fill in.
+        ResetBoth();
+        int[] loaded = new int[2];
+        string[] sans = { "", "" };
+        int[] clocks = { -1, -1 };
+        byte[] position = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        int clock;
+        int number;
+        ChessFen.ParseFen(FenBlackFirst, position, state, out clock, out number);
+        loaded[0] = FindMove(position, state, "e7", "e5");
+        ChessPosition.MakeMove(position, state, loaded[0]);
+        loaded[1] = FindMove(position, state, "g1", "f3");
+        CheckInt(first.LoadGame(FenBlackFirst, loaded, sans, clocks, 2, ChessGame.ModeStandard, "Fen A", "Fen B", "*",
+            "", ChessArbiter.NoClock, 0), ChessBoard.InputAccepted, s + ": a game from Black to move loaded");
+        view.Show(0);
+        view.Refresh();
+        CheckString(view.moveCellLabels[1].text + "|" + view.moveCellLabels[2].text, "|",
+            s + ": the notation not filled in yet, empty cells");
+        Check(!view.moveCells[0].interactable && view.moveCells[1].interactable && view.moveCells[2].interactable,
+            s + ": Black first, White's first cell empty and not clickable", "clickable: " + view.moveCells[0].interactable
+            + " " + view.moveCells[1].interactable + " " + view.moveCells[2].interactable);
+    }
+
+    // The FEN game loaded at the end of RunMoveListChecks, frames later: its notation filled in by the board.
+    void RunNotationLaterChecks() {
+        string s = "move list";
+        CheckMoveCells(new string[] { "", "e5", "Nf3" }, 2, s + ": Black first, the notation filled in");
+        CheckString(view.moveNumbers[0].text + " " + view.moveNumbers[1].text, "1. 2.", s + ": Black first, numbers");
+        view.PressMoveCell(1);
+        CheckInt(view.ViewPly(), 1, s + ": Black first, e5 clicked, ply 1");
+        CheckMoveCells(new string[] { "", "e5", "Nf3" }, 1, s + ": Black first, e5 current");
+        CheckInt(first.ResetBoardAs(Ana, true), ChessBoard.InputAccepted, s + ": reset");
+    }
+
+    void RunMoveListWiringChecks(string s) {
+        Check(Utilities.IsValid(view.moveList) && Utilities.IsValid(view.moveListViewport)
+            && Utilities.IsValid(view.moveListContent) && Utilities.IsValid(view.moveListRows),
+            s + ": wiring, scroll rect, viewport, content and rows", "one missing");
+        int poolRows = view.moveNumbers == null ? 0 : view.moveNumbers.Length;
+        Check(poolRows >= Mathf.CeilToInt(view.moveListViewport.rect.height / view.moveRowHeight) + 1,
+            s + ": wiring, enough pooled rows to fill the list", poolRows + " rows");
+        bool ok = view.moveCells != null && view.moveCellImages != null && view.moveCellLabels != null
+            && view.moveCells.Length == 2 * poolRows && view.moveCellImages.Length == 2 * poolRows
+            && view.moveCellLabels.Length == 2 * poolRows;
+        string details = "wrong counts";
+        for (int i = 0; ok && i < 2 * poolRows; i++) {
+            ChessMoveListCell cell = Utilities.IsValid(view.moveCells[i])
+                ? view.moveCells[i].GetComponent<ChessMoveListCell>()
+                : null;
+            if (!Utilities.IsValid(view.moveCells[i]) || !Utilities.IsValid(view.moveCellImages[i])
+                || !Utilities.IsValid(view.moveCellLabels[i]) || !Utilities.IsValid(cell) || cell.view != view
+                || cell.cell != i) {
+                ok = false;
+                details = "cell " + i;
+            }
+        }
+        for (int r = 0; ok && r < poolRows; r++) {
+            if (!Utilities.IsValid(view.moveNumbers[r])) {
+                ok = false;
+                details = "number " + r;
+            }
+        }
+        Check(ok, s + ": wiring, each pooled cell with its button, image, label and ChessMoveListCell", details);
+        Check(view.moveList.content == view.moveListContent && view.moveList.viewport == view.moveListViewport
+            && !view.moveList.horizontal && view.moveList.vertical, s + ": wiring, the scroll rect's parts",
+            "content, viewport or direction");
+    }
+
+    // The board, the selector, the texts and the step buttons all left of the move list, which runs from above the
+    // selector to below the step buttons.
+    void RunMoveListLayoutChecks(string s) {
+        RectTransform listRect = view.moveList.GetComponent<RectTransform>();
+        Vector3[] list = WorldCorners(listRect);
+        Transform canvas = view.transform;
+        float listLeft = canvas.InverseTransformPoint(list[0]).x;
+        float listBottom = canvas.InverseTransformPoint(list[0]).y;
+        float listTop = canvas.InverseTransformPoint(list[1]).y;
+        RectTransform[] others = {
+            view.squareImages[0].transform.parent.GetComponent<RectTransform>(), view.boardLabel.rectTransform,
+            view.leftButton.GetComponent<RectTransform>(), view.rightButton.GetComponent<RectTransform>(),
+            view.playersLabel.rectTransform, view.statusLabel.rectTransform,
+            view.stepButtons[0].GetComponent<RectTransform>(), view.stepButtons[3].GetComponent<RectTransform>()
+        };
+        bool ok = true;
+        string details = "";
+        float othersTop = float.MinValue;
+        float othersBottom = float.MaxValue;
+        for (int i = 0; i < others.Length; i++) {
+            Vector3[] corners = WorldCorners(others[i]);
+            float right = canvas.InverseTransformPoint(corners[2]).x;
+            othersTop = Mathf.Max(othersTop, canvas.InverseTransformPoint(corners[1]).y);
+            othersBottom = Mathf.Min(othersBottom, canvas.InverseTransformPoint(corners[0]).y);
+            if (right > listLeft) {
+                ok = false;
+                details = others[i].gameObject.name + " reaches " + right + ", the list starts at " + listLeft;
+            }
+        }
+        Check(ok, s + ": layout, nothing reaching into the list", details);
+        Check(listTop >= othersTop - 0.5f && listBottom <= othersBottom + 0.5f,
+            s + ": layout, the list the full height",
+            "list " + listBottom + " to " + listTop + ", the rest " + othersBottom + " to " + othersTop);
+        RectTransform canvasRect = view.GetComponent<RectTransform>();
+        Check(listLeft + listRect.rect.width <= canvasRect.rect.width / 2 + 0.5f, s + ": layout, the list on the canvas",
+            "right edge " + (listLeft + listRect.rect.width) + " of " + canvasRect.rect.width / 2);
+    }
+
+    Vector3[] WorldCorners(RectTransform rect) {
+        Vector3[] corners = new Vector3[4];
+        rect.GetWorldCorners(corners);
+        return corners;
+    }
+
+    // The list's cells from the first row against moves (SAN by cell, "" for an empty one; the rest empty), with the
+    // cell at current (the cell's index in moves, -1 for none) yellow and only cells with a move clickable.
+    void CheckMoveCells(string[] moves, int current, string name) {
+        bool ok = true;
+        string details = "";
+        for (int i = 0; i < view.moveCells.Length && ok; i++) {
+            string expected = i < moves.Length ? moves[i] : "";
+            bool clickable = i < moves.Length && view.MoveCellPly(i) >= 0;
+            if (view.moveCellLabels[i].text != expected) {
+                ok = false;
+                details = "cell " + i + " reads \"" + view.moveCellLabels[i].text + "\", expected \"" + expected + "\"";
+            } else if (view.moveCells[i].interactable != clickable) {
+                ok = false;
+                details = "cell " + i + (clickable ? " not clickable" : " clickable");
+            } else if (view.IsMoveCellCurrent(i) != (i == current)) {
+                ok = false;
+                details = "cell " + i + (i == current ? " not yellow" : " yellow");
+            } else if (i == current && view.moveCellLabels[i].color != view.currentMoveTextColor) {
+                ok = false;
+                details = "cell " + i + "'s text not in the current move's colour";
+            }
+        }
+        Check(ok, name + ": cells", details);
+    }
+
+    // Plays a legal move for the side to move (the first one that isn't a promotion, from an index varying with the
+    // game's length), false when there's none or it's refused.
+    bool PlayAny(ChessBoard board) {
+        int[] legal = new int[ChessMoves.MaxMoves];
+        byte[] position = new byte[64];
+        int[] state = new int[ChessPosition.StateLength];
+        System.Array.Copy(board.board, position, 64);
+        System.Array.Copy(board.state, state, ChessPosition.StateLength);
+        int legalCount = ChessMoves.GenerateLegalMoves(position, state, legal, true);
+        for (int i = 0; i < legalCount; i++) {
+            int move = legal[(board.moveCount * 7 + i) % legalCount];
+            if (((move >> ChessRules.MovePromotionShift) & ChessRules.MoveTypeMask) != 0) continue;
+            int side = board.SideToMove();
+            string player = side == ChessRules.White ? board.whitePlayer : board.blackPlayer;
+            int result = board.PieceDroppedAs(player, (move >> ChessRules.MoveFromShift) & ChessRules.MoveSquareMask,
+                (move >> ChessRules.MoveToShift) & ChessRules.MoveSquareMask);
+            return result == ChessBoard.InputAccepted;
+        }
+        return false;
+    }
+
+    // The legal move from-to in position, 0 for none.
+    int FindMove(byte[] position, int[] state, string from, string to) {
+        int[] legal = new int[ChessMoves.MaxMoves];
+        int legalCount = ChessMoves.GenerateLegalMoves(position, state, legal, true);
+        for (int i = 0; i < legalCount; i++) {
+            int move = legal[i];
+            if (((move >> ChessRules.MoveFromShift) & ChessRules.MoveSquareMask) == Sq(from)
+                && ((move >> ChessRules.MoveToShift) & ChessRules.MoveSquareMask) == Sq(to)) {
+                return move;
+            }
+        }
+        return 0;
+    }
+
+    void CheckFloat(float actual, float expected, string name) {
+        Check(Mathf.Abs(actual - expected) < 0.5f, name, "got " + actual + ", expected " + expected);
     }
 
     // ---- A long game (12.14: rebuilding the position from the latest each time) ----

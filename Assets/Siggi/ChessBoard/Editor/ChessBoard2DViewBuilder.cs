@@ -10,9 +10,10 @@ using UnityEngine.UI;
 using VRC.SDK3.Components;
 using VRC.Udon;
 
-// Builds the 2D board view (PLAN.md 12.13, 12.14, ChessBoard2DView.cs, docs/board-2d.md) in the open scene: a
+// Builds the 2D board view (PLAN.md 12.13 to 12.15, ChessBoard2DView.cs, docs/board-2d.md) in the open scene: a
 // world-space canvas with the selector (left, "Board N", right), the 8x8 board with a piece image on each square, the
-// players and status texts under it, and the step buttons (<<, <, >, >>) along the bottom. The pieces wear the sprites
+// players and status texts under it, the step buttons (<<, <, >, >>) along the bottom, and the move list (12.15) to the
+// right, the full height. The pieces wear the sprites
 // in Sprites2D/ (KingW.png ... PawnB.png), whose import is set to Sprite here when it isn't. Its boards are every board
 // in the scene by board number.
 // - Create 2D Board View: the selected 2D view, or the scene's only one, is replaced where it stands, keeping its
@@ -23,6 +24,8 @@ using VRC.Udon;
 public static class ChessBoard2DViewBuilder {
     const string ViewScriptPath = "Assets/Siggi/ChessBoard/ChessBoard2DView.cs";
     const string ViewProgramPath = "Assets/Siggi/ChessBoard/ChessBoard2DView.asset";
+    const string CellScriptPath = "Assets/Siggi/ChessBoard/ChessMoveListCell.cs";
+    const string CellProgramPath = "Assets/Siggi/ChessBoard/ChessMoveListCell.asset";
     const string SpritesFolder = "Assets/Siggi/ChessBoard/Sprites2D/";
     // The sprites' names by piece type, pawn to king (ChessRules.Pawn - 1 on), with W or B after.
     static readonly string[] SpriteNames = { "Pawn", "Knight", "Bishop", "Rook", "Queen", "King" };
@@ -30,7 +33,6 @@ public static class ChessBoard2DViewBuilder {
     const float Margin = 40;
     const float SquareSize = 100;
     const float BoardSize = 8 * SquareSize;
-    const float CanvasWidth = BoardSize + 2 * Margin;
     const float SelectorHeight = 90;
     const float SelectorButtonWidth = 120;
     const float Gap = 20;
@@ -39,6 +41,17 @@ public static class ChessBoard2DViewBuilder {
     const float StepHeight = 90;
     const float CanvasHeight = Margin + SelectorHeight + Gap + BoardSize + Gap + PlayersHeight + StatusHeight + Gap
         + StepHeight + Margin;
+    // The move list (12.15), right of the board and the full height between the margins: a row per move number, its
+    // number then White's and Black's cells, and a scrollbar on the right. The canvas grows to make room (decided in
+    // 12.15), the board keeping its size.
+    const float MoveRowHeight = 50;
+    const float MoveNumberWidth = 80;
+    const float MoveCellWidth = 170;
+    const float MoveGap = 6;
+    const float ScrollbarWidth = 24;
+    const float MoveListWidth = MoveNumberWidth + 2 * (MoveCellWidth + MoveGap) + MoveGap + ScrollbarWidth;
+    const float MoveListHeight = CanvasHeight - 2 * Margin;
+    const float CanvasWidth = Margin + BoardSize + Gap + MoveListWidth + Margin;
     // The step buttons' labels, StepFirst to StepLast.
     static readonly string[] StepTexts = { "<<", "<", ">", ">>" };
     static readonly string[] StepEvents = {
@@ -130,7 +143,7 @@ public static class ChessBoard2DViewBuilder {
         view.leftButton = AddButton(root, udon, "Button Left", "<", nameof(ChessBoard2DView.PressLeft), font,
             new Vector2(Margin, Margin), new Vector2(SelectorButtonWidth, SelectorHeight));
         view.rightButton = AddButton(root, udon, "Button Right", ">", nameof(ChessBoard2DView.PressRight), font,
-            new Vector2(CanvasWidth - Margin - SelectorButtonWidth, Margin),
+            new Vector2(Margin + BoardSize - SelectorButtonWidth, Margin),
             new Vector2(SelectorButtonWidth, SelectorHeight));
         view.boardLabel = NewText(root, "Board Label", font, 56, new Vector2(Margin + SelectorButtonWidth + Gap, Margin),
             new Vector2(BoardSize - 2 * (SelectorButtonWidth + Gap), SelectorHeight));
@@ -172,6 +185,8 @@ public static class ChessBoard2DViewBuilder {
             view.stepButtons[i] = button;
             view.stepLabels[i] = button.GetComponentInChildren<Text>();
         }
+
+        BuildMoveList(root, view, udon, font);
         UdonSharpEditorUtility.CopyProxyToUdon(view);
 
         int repointed = 0;
@@ -192,6 +207,110 @@ public static class ChessBoard2DViewBuilder {
             + ", " + (view.synced ? "synced" : "not synced")
             + (replaced ? ", " + repointed + " behaviour(s) pointed at it" : "")
             + "). Move it where you like and save the scene.");
+    }
+
+    // The move list (12.15) right of the board: a scroll rect over the rows (its content an empty rect sized by the view
+    // to every row, which scrolling moves), the pooled rows in its viewport (enough to fill it and one more, moved by
+    // the view within a row's height as it scrolls), and its scrollbar, shown while the rows don't fit. Each cell is
+    // a button with a ChessMoveListCell calling the view's PressMoveCell. Dragging or the wheel over a cell scrolls the
+    // list (the cells' parents carry the scroll rect).
+    static void BuildMoveList(GameObject root, ChessBoard2DView view, UdonBehaviour udon, Font font) {
+        GameObject list = NewChild(root, "Move List", new Vector2(Margin + BoardSize + Gap, Margin),
+            new Vector2(MoveListWidth, MoveListHeight));
+        Image background = list.AddComponent<Image>();
+        background.color = new Color(0.16f, 0.16f, 0.19f, 1f);
+        background.raycastTarget = false;
+        ScrollRect scroll = list.AddComponent<ScrollRect>();
+
+        float viewportWidth = MoveListWidth - ScrollbarWidth;
+        GameObject viewport = NewChild(list, "Viewport", Vector2.zero, new Vector2(viewportWidth, MoveListHeight));
+        Image viewportImage = viewport.AddComponent<Image>();
+        // Clear but hit by the pointer, so a drag anywhere on the list scrolls it.
+        viewportImage.color = new Color(0, 0, 0, 0);
+        viewport.AddComponent<RectMask2D>();
+        GameObject content = NewChild(viewport, "Content", Vector2.zero, new Vector2(viewportWidth, 0));
+        GameObject rows = NewChild(viewport, "Rows", Vector2.zero, Vector2.zero);
+
+        int poolRows = Mathf.CeilToInt(MoveListHeight / MoveRowHeight) + 1;
+        rows.GetComponent<RectTransform>().sizeDelta = new Vector2(viewportWidth, poolRows * MoveRowHeight);
+        view.moveNumbers = new Text[poolRows];
+        view.moveCells = new Button[2 * poolRows];
+        view.moveCellImages = new Image[2 * poolRows];
+        view.moveCellLabels = new Text[2 * poolRows];
+        for (int r = 0; r < poolRows; r++) {
+            GameObject row = NewChild(rows, "Row " + (r + 1), new Vector2(0, r * MoveRowHeight),
+                new Vector2(viewportWidth, MoveRowHeight));
+            Text number = NewText(row, "Number", font, 30, Vector2.zero, new Vector2(MoveNumberWidth, MoveRowHeight));
+            number.alignment = TextAnchor.MiddleRight;
+            number.color = new Color(0.65f, 0.65f, 0.7f);
+            number.text = "";
+            view.moveNumbers[r] = number;
+            for (int c = 0; c < 2; c++) {
+                int cell = 2 * r + c;
+                GameObject cellObject = NewChild(row, c == 0 ? "White" : "Black",
+                    new Vector2(MoveNumberWidth + MoveGap + c * (MoveCellWidth + MoveGap), 2),
+                    new Vector2(MoveCellWidth, MoveRowHeight - 4));
+                Image image = cellObject.AddComponent<Image>();
+                image.color = view.moveCellColor;
+                Button button = cellObject.AddComponent<Button>();
+                button.targetGraphic = image;
+                ChessMoveListCell target = UdonSharpUndo.AddComponent<ChessMoveListCell>(cellObject);
+                target.view = view;
+                target.cell = cell;
+                UdonSharpEditorUtility.CopyProxyToUdon(target);
+                UnityEventTools.AddStringPersistentListener(button.onClick,
+                    new UnityAction<string>(UdonSharpEditorUtility.GetBackingUdonBehaviour(target).SendCustomEvent),
+                    nameof(ChessMoveListCell.Press));
+                Text label = NewText(cellObject, "Label", font, 34, new Vector2(12, 0),
+                    new Vector2(MoveCellWidth - 12, MoveRowHeight - 4));
+                label.color = view.moveTextColor;
+                label.text = "";
+                view.moveCells[cell] = button;
+                view.moveCellImages[cell] = image;
+                view.moveCellLabels[cell] = label;
+            }
+        }
+
+        // The scrollbar along the right edge.
+        GameObject bar = NewChild(list, "Scrollbar", new Vector2(viewportWidth, 0),
+            new Vector2(ScrollbarWidth, MoveListHeight));
+        Image track = bar.AddComponent<Image>();
+        track.color = new Color(0.22f, 0.22f, 0.26f, 1f);
+        GameObject area = NewChild(bar, "Sliding Area", Vector2.zero, Vector2.zero);
+        RectTransform areaRect = area.GetComponent<RectTransform>();
+        areaRect.anchorMin = Vector2.zero;
+        areaRect.anchorMax = Vector2.one;
+        areaRect.offsetMin = new Vector2(3, 3);
+        areaRect.offsetMax = new Vector2(-3, -3);
+        GameObject handle = NewChild(area, "Handle", Vector2.zero, Vector2.zero);
+        RectTransform handleRect = handle.GetComponent<RectTransform>();
+        handleRect.anchorMin = Vector2.zero;
+        handleRect.anchorMax = Vector2.one;
+        handleRect.offsetMin = Vector2.zero;
+        handleRect.offsetMax = Vector2.zero;
+        Image handleImage = handle.AddComponent<Image>();
+        handleImage.color = new Color(0.7f, 0.7f, 0.75f, 1f);
+        Scrollbar scrollbar = bar.AddComponent<Scrollbar>();
+        scrollbar.handleRect = handleRect;
+        scrollbar.targetGraphic = handleImage;
+        scrollbar.direction = Scrollbar.Direction.BottomToTop;
+
+        scroll.content = content.GetComponent<RectTransform>();
+        scroll.viewport = viewport.GetComponent<RectTransform>();
+        scroll.horizontal = false;
+        scroll.vertical = true;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+        scroll.scrollSensitivity = MoveRowHeight;
+        scroll.verticalScrollbar = scrollbar;
+        scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+        UnityEventTools.AddStringPersistentListener(scroll.onValueChanged, new UnityAction<string>(udon.SendCustomEvent),
+            nameof(ChessBoard2DView.OnMoveListScrolled));
+
+        view.moveList = scroll;
+        view.moveListViewport = viewport.GetComponent<RectTransform>();
+        view.moveListContent = content.GetComponent<RectTransform>();
+        view.moveListRows = rows.GetComponent<RectTransform>();
+        view.moveRowHeight = MoveRowHeight;
     }
 
     // Each colour's piece sprites, pawn to king, from Sprites2D/ (null where one is missing, with a warning). A texture
@@ -302,23 +421,31 @@ public static class ChessBoard2DViewBuilder {
         box.isTrigger = true;
     }
 
-    // As the other builders: the view's program asset, created and compiled when missing, after which the menu item
-    // has to be run again.
+    // As ChessSettingsMenuBuilder.EnsureProgramAssets: the view's and the move list cells' program assets, created and
+    // compiled when missing, after which the menu item has to be run again.
     static bool EnsureProgramAsset() {
-        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(ViewProgramPath) != null) return true;
-        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(ViewScriptPath);
+        bool created = CreateProgramAssetIfMissing(ViewScriptPath, ViewProgramPath);
+        created |= CreateProgramAssetIfMissing(CellScriptPath, CellProgramPath);
+        if (!created) return true;
+        AssetDatabase.SaveAssets();
+        UdonSharpProgramAsset.CompileAllCsPrograms(true);
+        EditorUtility.DisplayDialog("Create 2D Board View", "Created the missing program assets next to "
+            + ViewScriptPath + ". Once UdonSharp has finished compiling, run Tools > Chess Board > Create 2D Board View "
+            + "again.", "OK");
+        return false;
+    }
+
+    static bool CreateProgramAssetIfMissing(string scriptPath, string programPath) {
+        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(programPath) != null) return false;
+        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(scriptPath);
         if (script == null) {
-            Debug.LogError("[ChessBoard2DViewBuilder] " + ViewScriptPath + " not found.");
-            return false;
+            Debug.LogError("[ChessBoard2DViewBuilder] " + scriptPath + " not found.");
+            return true;
         }
         UdonSharpProgramAsset program = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();
         program.sourceCsScript = script;
-        AssetDatabase.CreateAsset(program, ViewProgramPath);
-        AssetDatabase.SaveAssets();
-        UdonSharpProgramAsset.CompileAllCsPrograms(true);
-        EditorUtility.DisplayDialog("Create 2D Board View", "Created the view's program asset (" + ViewProgramPath
-            + "). Once UdonSharp has finished compiling, run Tools > Chess Board > Create 2D Board View again.", "OK");
-        return false;
+        AssetDatabase.CreateAsset(program, programPath);
+        return true;
     }
 
     // A child rect at a position from the parent's top left, in canvas pixels.

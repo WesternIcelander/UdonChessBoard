@@ -15,6 +15,10 @@ namespace SiggiChessBoard {
     // from the board's history on a scratch position, whatever the board's own replay shows. On the latest position it
     // follows the game; the step buttons (<<, <, >, >>) move it. With lockedBoard set it shows only that board.
     //
+    // To the right, a move list (12.15): White's and Black's moves in two columns, the move into the position shown in
+    // yellow, a click on a move showing the position after it. Its rows are a pool filling the list's height, drawn
+    // with the rows its scroll position puts there, so a game of any length needs no more.
+    //
     // With synced on, the board and the ply shown are synced (a press takes ownership), so everyone sees the same,
     // late joiners included; with it off, each player chooses for themselves and nothing is sent.
     [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
@@ -61,6 +65,23 @@ namespace SiggiChessBoard {
         public Color checkTint = new Color(0.9f, 0.3f, 0.3f);
         public Color stepLabelColor = Color.black;
         public Color stepLabelDisabledColor = new Color(0.45f, 0.45f, 0.45f);
+        // The move list (12.15): the scroll rect, its viewport (the list's visible part), its content (sized to every
+        // row, moved by scrolling) and the pooled rows, moved within a row's height as it scrolls. Each pooled row has
+        // its move number and two cells, White's (2 * row) and Black's (2 * row + 1), each a button with its image and
+        // label.
+        public ScrollRect moveList;
+        public RectTransform moveListViewport;
+        public RectTransform moveListContent;
+        public RectTransform moveListRows;
+        public float moveRowHeight = 50;
+        public Text[] moveNumbers = new Text[0];
+        public Button[] moveCells = new Button[0];
+        public Image[] moveCellImages = new Image[0];
+        public Text[] moveCellLabels = new Text[0];
+        public Color moveCellColor = new Color(0, 0, 0, 0);
+        public Color currentMoveColor = new Color(1f, 0.85f, 0.2f);
+        public Color moveTextColor = Color.white;
+        public Color currentMoveTextColor = Color.black;
 
         // The index in boards of the board chosen, and the ply shown (LatestPly for the latest), when synced.
         [UdonSynced] int syncedIndex;
@@ -85,6 +106,11 @@ namespace SiggiChessBoard {
         float nextStatusUpdate;
         int[] checkers = new int[2];
         int[] kings = new int[2];
+        // The move list's first row drawn in the pool, and the board and ply it last scrolled for (scrolled again only
+        // when they change, so a player's own scrolling stays).
+        int listFirstRow;
+        ChessBoard listBoard;
+        int listPly = -1;
 
         void Start() {
             if (!IsLocked() && (boards == null || boards.Length == 0)) {
@@ -111,8 +137,9 @@ namespace SiggiChessBoard {
             }
         }
 
-        // Only the move list's text changed: the replay line may name a move it didn't know before.
+        // Only the move list's text changed: the list and the replay line may name moves they didn't know before.
         public override void OnNotationFilled() {
+            DrawMoveList();
             UpdateStatus();
         }
 
@@ -393,6 +420,177 @@ namespace SiggiChessBoard {
             return position[square];
         }
 
+        // ---- The move list (12.15) ----
+
+        // A move list cell pressed (its ChessMoveListCell): the position after its move, as a step button would.
+        public void PressMoveCell(int cell) {
+            int ply = MoveCellPly(cell);
+            if (ply >= 0) ShowPly(ply + 1);
+        }
+
+        // The scroll rect moved (its onValueChanged): the rows it now shows.
+        public void OnMoveListScrolled() {
+            DrawMoveList();
+        }
+
+        // The move (index in the history) in the pool's cell at cell as drawn, -1 for none. For tests too.
+        public int MoveCellPly(int cell) {
+            ChessBoard board = ShownBoard();
+            if (!Utilities.IsValid(board) || moveCells == null || cell < 0 || cell >= moveCells.Length) return -1;
+            int ply = listFirstRow * 2 + cell - LeadCells(board);
+            return ply >= 0 && ply < board.moveCount ? ply : -1;
+        }
+
+        // The pool's cell drawing move ply (index in the history), -1 when it's scrolled out of the pool. For tests.
+        public int MoveCellOf(int ply) {
+            ChessBoard board = ShownBoard();
+            if (!Utilities.IsValid(board) || ply < 0 || ply >= board.moveCount || moveCells == null) return -1;
+            int cell = ply + LeadCells(board) - listFirstRow * 2;
+            return cell >= 0 && cell < moveCells.Length ? cell : -1;
+        }
+
+        // Whether move ply's row is wholly inside the list's visible part. For tests.
+        public bool IsMoveInView(int ply) {
+            ChessBoard board = ShownBoard();
+            if (!Utilities.IsValid(board) || !Utilities.IsValid(moveListContent) || ply < 0 || ply >= board.moveCount) {
+                return false;
+            }
+            float top = (ply + LeadCells(board)) / 2 * moveRowHeight;
+            float offset = moveListContent.anchoredPosition.y;
+            return top >= offset - 0.5f && top + moveRowHeight <= offset + ViewportHeight() + 0.5f;
+        }
+
+        // How far the list is scrolled down, in canvas pixels (0 at the top), and how far it can be. For tests.
+        public float MoveListScroll() {
+            return Utilities.IsValid(moveListContent) ? moveListContent.anchoredPosition.y : 0;
+        }
+
+        public float MoveListMaxScroll() {
+            ChessBoard board = ShownBoard();
+            return Mathf.Max(0, MoveRows(board) * moveRowHeight - ViewportHeight());
+        }
+
+        // Scrolls the list to offset (clamped to the rows there are) and draws it, as a player's scrolling would.
+        // For tests.
+        public void ScrollMoveList(float offset) {
+            SetScroll(offset);
+            DrawMoveList();
+        }
+
+        // The cells before the game's first move: 1 when it started with Black to move (White's cell left empty).
+        static int LeadCells(ChessBoard board) {
+            // The side that made the first move: the side to move now, or the other after an odd number of moves.
+            int firstSide = board.SideToMove();
+            if (board.moveCount % 2 == 1) firstSide = ChessRules.OtherColor(firstSide);
+            return firstSide == ChessRules.Black ? 1 : 0;
+        }
+
+        // The list's rows for board's game: none before the first move.
+        static int MoveRows(ChessBoard board) {
+            if (!Utilities.IsValid(board) || board.moveCount == 0) return 0;
+            return (board.moveCount + LeadCells(board) + 1) / 2;
+        }
+
+        float ViewportHeight() {
+            return Utilities.IsValid(moveListViewport) ? moveListViewport.rect.height : 0;
+        }
+
+        void SetScroll(float offset) {
+            if (!Utilities.IsValid(moveListContent)) return;
+            offset = Mathf.Clamp(offset, 0, MoveListMaxScroll());
+            Vector2 position = moveListContent.anchoredPosition;
+            if (position.y != offset) moveListContent.anchoredPosition = new Vector2(position.x, offset);
+        }
+
+        // On Refresh: when the board or the ply shown has changed, scrolls just enough to bring the move into the
+        // position shown into view (the top at the start); then draws the list.
+        void UpdateMoveList(ChessBoard board, bool valid) {
+            if (!Utilities.IsValid(moveListContent)) return;
+            if (board != listBoard || viewPly != listPly) {
+                listBoard = board;
+                listPly = viewPly;
+                float offset = moveListContent.anchoredPosition.y;
+                if (!valid || viewPly == 0) {
+                    offset = 0;
+                } else {
+                    float top = (viewPly - 1 + LeadCells(board)) / 2 * moveRowHeight;
+                    float height = ViewportHeight();
+                    if (top < offset) offset = top;
+                    else if (top + moveRowHeight > offset + height) offset = top + moveRowHeight - height;
+                }
+                if (Utilities.IsValid(moveList)) moveList.StopMovement();
+                SetContentHeight(board);
+                SetScroll(offset);
+            }
+            DrawMoveList();
+        }
+
+        void SetContentHeight(ChessBoard board) {
+            Vector2 size = moveListContent.sizeDelta;
+            float height = MoveRows(board) * moveRowHeight;
+            if (size.y != height) moveListContent.sizeDelta = new Vector2(size.x, height);
+        }
+
+        // Draws the pooled rows with the rows the scroll position puts in view: each move number, each cell's SAN
+        // (empty until the board fills it in), the move into the position shown in yellow, and the cells without a
+        // move not clickable.
+        void DrawMoveList() {
+            if (!Utilities.IsValid(moveListContent)) return;
+            ChessBoard board = ShownBoard();
+            bool valid = Utilities.IsValid(board);
+            SetContentHeight(board);
+            int count = valid ? board.moveCount : 0;
+            int lead = valid ? LeadCells(board) : 0;
+            int rows = MoveRows(board);
+            float offset = Mathf.Clamp(moveListContent.anchoredPosition.y, 0, MoveListMaxScroll());
+            int first = moveRowHeight > 0 ? Mathf.FloorToInt(offset / moveRowHeight) : 0;
+            listFirstRow = first;
+            if (Utilities.IsValid(moveListRows)) {
+                Vector2 shift = new Vector2(moveListRows.anchoredPosition.x, offset - first * moveRowHeight);
+                if (moveListRows.anchoredPosition != shift) moveListRows.anchoredPosition = shift;
+            }
+            int current = viewPly - 1;
+            int poolRows = moveNumbers == null ? 0 : moveNumbers.Length;
+            for (int r = 0; r < poolRows; r++) {
+                int row = first + r;
+                SetText(moveNumbers[r], valid && row < rows ?(board.startMoveNumber + row) + "." : "");
+                for (int c = 0; c < 2; c++) {
+                    int cell = 2 * r + c;
+                    int ply = 2 * row + c - lead;
+                    bool has = ply >= 0 && ply < count;
+                    string san = has ? board.notation[ply] : "";
+                    bool isCurrent = has && ply == current;
+                    if (moveCellLabels != null && cell < moveCellLabels.Length) {
+                        Text label = moveCellLabels[cell];
+                        SetText(label, san == null ? "" : san);
+                        if (Utilities.IsValid(label)) {
+                            Color textColor = isCurrent ? currentMoveTextColor : moveTextColor;
+                            if (label.color != textColor) label.color = textColor;
+                        }
+                    }
+                    if (moveCellImages != null && cell < moveCellImages.Length
+                        && Utilities.IsValid(moveCellImages[cell])) {
+                        Color color = isCurrent ? currentMoveColor : moveCellColor;
+                        if (moveCellImages[cell].color != color) moveCellImages[cell].color = color;
+                    }
+                    if (moveCells != null && cell < moveCells.Length && Utilities.IsValid(moveCells[cell])
+                        && moveCells[cell].interactable != has) {
+                        moveCells[cell].interactable = has;
+                    }
+                }
+            }
+        }
+
+        static void SetText(Text text, string value) {
+            if (Utilities.IsValid(text) && text.text != value) text.text = value;
+        }
+
+        // Whether the pool's cell at cell is drawn as the current move (yellow). For tests.
+        public bool IsMoveCellCurrent(int cell) {
+            return moveCellImages != null && cell >= 0 && cell < moveCellImages.Length
+                && Utilities.IsValid(moveCellImages[cell]) && moveCellImages[cell].color == currentMoveColor;
+        }
+
         // ---- Drawing ----
 
         // Brings the view up to the board shown now. Called on the frame after a change; public for tests.
@@ -413,6 +611,7 @@ namespace SiggiChessBoard {
             if (Utilities.IsValid(boardLabel)) boardLabel.text = valid ? "Board " + (board.boardNumber + 1) : "";
             DrawSquares(valid && viewPly > 0 ? board.moveHistory[viewPly - 1] : 0);
             UpdateStepButtons(valid, count);
+            UpdateMoveList(board, valid);
             UpdateStatus();
         }
 
