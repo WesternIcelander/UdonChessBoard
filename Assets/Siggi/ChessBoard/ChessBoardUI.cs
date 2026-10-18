@@ -713,6 +713,18 @@ namespace SiggiChessBoard {
         // their time is up, and, playing on untimed after a flag fall, whose time ran out (12.9); the result of an ended or loaded game (EndingText); a pending draw offer and takeback
         // request; the replay position (ReplayText).
         public static string StatusTextFor(ChessBoard board, double now) {
+            string text = GameStatusTextFor(board, now);
+            if (!Utilities.IsValid(board)) return text;
+            if (board.takebackColor != ChessRules.NoColor) {
+                text = AddLine(text, ColorText(board.takebackColor) + " asks to take back to here");
+            }
+            if (board.replayMode) text = AddLine(text, ReplayTextFor(board));
+            return text;
+        }
+
+        // StatusTextFor without the lines about the board's replay position (the takeback request, which is for the
+        // ply shown, and the replay line), for the 2D view (step 12.14), whose replay is its own.
+        public static string GameStatusTextFor(ChessBoard board, double now) {
             if (!Utilities.IsValid(board)) return "";
             int lifecycle = board.lifecycle;
             if (lifecycle == ChessBoard.LifecycleReset) return "Join White or Black to play";
@@ -739,10 +751,6 @@ namespace SiggiChessBoard {
             if (board.drawOfferColor != ChessRules.NoColor) {
                 text = AddLine(text, ColorText(board.drawOfferColor) + " offers a draw");
             }
-            if (board.takebackColor != ChessRules.NoColor) {
-                text = AddLine(text, ColorText(board.takebackColor) + " asks to take back to here");
-            }
-            if (board.replayMode) text = AddLine(text, ReplayTextFor(board));
             return text;
         }
 
@@ -772,7 +780,12 @@ namespace SiggiChessBoard {
         // while its notation is missing), "Replay: start (0 of 4)", or "Replay: custom position" after free moves.
         public static string ReplayTextFor(ChessBoard board) {
             if (board.replayCustom) return "Replay: custom position";
-            int ply = board.replayIndex;
+            return PlyTextFor(board, board.replayIndex);
+        }
+
+        // The game's position before move ply as the replay line names it: "Replay: 2. Nf3 (3 of 4)", "Replay: start
+        // (0 of 4)". For the board's replay (ReplayTextFor) and the 2D view's own (step 12.14).
+        public static string PlyTextFor(ChessBoard board, int ply) {
             string of = " (" + ply + " of " + board.moveCount + ")";
             if (ply <= 0 || ply > board.moveCount) return "Replay: start" + of;
             // The side that made the first move: the side to move now, or the other after an odd number of moves.

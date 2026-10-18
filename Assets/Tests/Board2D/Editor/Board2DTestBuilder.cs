@@ -56,10 +56,16 @@ public static class Board2DTestBuilder {
             + (test.archiveTest != null ? "ArchiveTest" : "no ArchiveTest") + ". Save the scene.");
     }
 
-    // Turns the scene's 2D views' Synced on or off, for the several-client checks of both cases (12.13).
+    // Turns the selected 2D view's Synced on or off, or every 2D view's in the scene when none is selected, for the
+    // several-client checks of both cases (12.13, 12.14).
     [MenuItem("Tools/Chess Board/Toggle 2D View Synced")]
     static void ToggleSynced() {
-        ChessBoard2DView[] views = Object.FindObjectsOfType<ChessBoard2DView>(true);
+        ChessBoard2DView selected = Selection.activeGameObject != null
+            ? Selection.activeGameObject.GetComponent<ChessBoard2DView>()
+            : null;
+        ChessBoard2DView[] views = selected != null
+            ? new[] { selected }
+            : Object.FindObjectsOfType<ChessBoard2DView>(true);
         for (int i = 0; i < views.Length; i++) {
             Undo.RecordObject(views[i], "Toggle 2D View Synced");
             views[i].synced = !views[i].synced;

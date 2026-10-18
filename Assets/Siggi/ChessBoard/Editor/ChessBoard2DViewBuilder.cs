@@ -10,12 +10,16 @@ using UnityEngine.UI;
 using VRC.SDK3.Components;
 using VRC.Udon;
 
-// Builds the 2D board view (PLAN.md 12.13, ChessBoard2DView.cs, docs/board-2d.md) in the open scene: a world-space
-// canvas with the selector (left, "Board N", right), the 8x8 board with a piece image on each square, and the players
-// and status texts under it. The pieces wear the sprites in Sprites2D/ (KingW.png ... PawnB.png), whose import is set
-// to Sprite here when it isn't. Its boards are every board in the scene by board number. The selected 2D view, or the
-// scene's only one, is replaced where it stands, keeping its boards and Synced; otherwise a new one stands behind the
-// boards, facing them. Menu: Tools > Chess Board > Create 2D Board View. Plain editor C#, not Udon.
+// Builds the 2D board view (PLAN.md 12.13, 12.14, ChessBoard2DView.cs, docs/board-2d.md) in the open scene: a
+// world-space canvas with the selector (left, "Board N", right), the 8x8 board with a piece image on each square, the
+// players and status texts under it, and the step buttons (<<, <, >, >>) along the bottom. The pieces wear the sprites
+// in Sprites2D/ (KingW.png ... PawnB.png), whose import is set to Sprite here when it isn't. Its boards are every board
+// in the scene by board number.
+// - Create 2D Board View: the selected 2D view, or the scene's only one, is replaced where it stands, keeping its
+//   boards, locked board and Synced; otherwise a new one stands behind the boards, facing them.
+// - Create Locked 2D Board View: a view locked to the selected board (12.14), replacing one already locked to it where
+//   it stands, or new behind that board.
+// Plain editor C#, not Udon.
 public static class ChessBoard2DViewBuilder {
     const string ViewScriptPath = "Assets/Siggi/ChessBoard/ChessBoard2DView.cs";
     const string ViewProgramPath = "Assets/Siggi/ChessBoard/ChessBoard2DView.asset";
@@ -32,23 +36,70 @@ public static class ChessBoard2DViewBuilder {
     const float Gap = 20;
     const float PlayersHeight = 90;
     const float StatusHeight = 200;
-    const float CanvasHeight = Margin + SelectorHeight + Gap + BoardSize + Gap + PlayersHeight + StatusHeight + Margin;
+    const float StepHeight = 90;
+    const float CanvasHeight = Margin + SelectorHeight + Gap + BoardSize + Gap + PlayersHeight + StatusHeight + Gap
+        + StepHeight + Margin;
+    // The step buttons' labels, StepFirst to StepLast.
+    static readonly string[] StepTexts = { "<<", "<", ">", ">>" };
+    static readonly string[] StepEvents = {
+        nameof(ChessBoard2DView.PressFirst), nameof(ChessBoard2DView.PressBack), nameof(ChessBoard2DView.PressForward),
+        nameof(ChessBoard2DView.PressLast)
+    };
     // The square's share the piece image fills.
     const float PieceInset = 4;
     // Where a new view goes: this far behind the boards (along +z), its centre this high above them.
     const float ViewDistance = 2.5f;
     const float ViewHeight = 1.4f;
+    // Where a new locked view goes: this far behind its board.
+    const float LockedViewDistance = 1.2f;
 
     [MenuItem("Tools/Chess Board/Create 2D Board View")]
     static void Create() {
+        ChessBoard2DView old = ExistingView();
+        Build(old, old != null ? old.lockedBoard : null, NewViewPosition());
+    }
+
+    // A view locked to the selected board (12.14).
+    [MenuItem("Tools/Chess Board/Create Locked 2D Board View")]
+    static void CreateLocked() {
+        ChessBoard board = Selection.activeGameObject != null
+            ? Selection.activeGameObject.GetComponent<ChessBoard>()
+            : null;
+        if (board == null) {
+            EditorUtility.DisplayDialog("Create Locked 2D Board View",
+                "Select the board (its ChessBoard object) the view shows, then try again.", "OK");
+            return;
+        }
+        ChessBoard2DView old = null;
+        ChessBoard2DView[] views = Object.FindObjectsOfType<ChessBoard2DView>(true);
+        for (int i = 0; i < views.Length && old == null; i++) {
+            if (views[i].lockedBoard == board) old = views[i];
+        }
+        Vector3 position = board.transform.position + new Vector3(0, ViewHeight, LockedViewDistance);
+        Build(old, board, position);
+    }
+
+    // One more view, whatever is selected: beside the new view's place, a view's width (and a gap) along +x per view
+    // already in the scene (e.g. one synced and one not, 12.14's several-client run).
+    [MenuItem("Tools/Chess Board/Create Another 2D Board View")]
+    static void CreateAnother() {
+        int count = Object.FindObjectsOfType<ChessBoard2DView>(true).Length;
+        Build(null, null, NewViewPosition() + Vector3.right * (count * (CanvasWidth * 0.001f + 0.2f)));
+    }
+
+    // Builds a view locked to locked (none when null), replacing old where it stands (keeping its name, boards and
+    // Synced), or new at position, named ChessBoard2DView, or ChessBoard2DView (N) beside N - 1 others.
+    static void Build(ChessBoard2DView old, ChessBoard locked, Vector3 position) {
         if (!EnsureProgramAsset()) return;
         Sprite[] whiteSprites = LoadPieceSprites(ChessRules.White);
         Sprite[] blackSprites = LoadPieceSprites(ChessRules.Black);
-        ChessBoard2DView old = ExistingView();
+        int others = Object.FindObjectsOfType<ChessBoard2DView>(true).Length;
+        string name = old != null ? old.gameObject.name
+            : others == 0 ? "ChessBoard2DView" : "ChessBoard2DView (" + (others + 1) + ")";
 
         Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        GameObject root = new GameObject("ChessBoard2DView");
+        GameObject root = new GameObject(name);
         Undo.RegisterCreatedObjectUndo(root, "Create 2D Board View");
         root.layer = LayerMask.NameToLayer("Default");
         Canvas canvas = root.AddComponent<Canvas>();
@@ -57,7 +108,7 @@ public static class ChessBoard2DViewBuilder {
         rootRect.sizeDelta = new Vector2(CanvasWidth, CanvasHeight);
         rootRect.localScale = Vector3.one * 0.001f;
         // Facing the boards: seen from them, looking along +z.
-        rootRect.position = NewViewPosition();
+        rootRect.position = position;
         rootRect.rotation = Quaternion.identity;
         root.AddComponent<CanvasScaler>();
         root.AddComponent<GraphicRaycaster>();
@@ -69,15 +120,16 @@ public static class ChessBoard2DViewBuilder {
 
         ChessBoard2DView view = UdonSharpUndo.AddComponent<ChessBoard2DView>(root);
         view.boards = old != null ? old.boards : SceneBoards();
+        view.lockedBoard = locked;
         view.synced = old != null && old.synced;
         view.whiteSprites = whiteSprites;
         view.blackSprites = blackSprites;
         UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(view);
 
-        // The selector: left, the board's name, right.
-        AddButton(root, udon, "Button Left", "<", nameof(ChessBoard2DView.PressLeft), font,
+        // The selector: left, the board's name, right (hidden by the view when locked).
+        view.leftButton = AddButton(root, udon, "Button Left", "<", nameof(ChessBoard2DView.PressLeft), font,
             new Vector2(Margin, Margin), new Vector2(SelectorButtonWidth, SelectorHeight));
-        AddButton(root, udon, "Button Right", ">", nameof(ChessBoard2DView.PressRight), font,
+        view.rightButton = AddButton(root, udon, "Button Right", ">", nameof(ChessBoard2DView.PressRight), font,
             new Vector2(CanvasWidth - Margin - SelectorButtonWidth, Margin),
             new Vector2(SelectorButtonWidth, SelectorHeight));
         view.boardLabel = NewText(root, "Board Label", font, 56, new Vector2(Margin + SelectorButtonWidth + Gap, Margin),
@@ -107,9 +159,23 @@ public static class ChessBoard2DViewBuilder {
         view.statusLabel = NewText(root, "Status", font, 30, new Vector2(Margin, textTop + PlayersHeight),
             new Vector2(BoardSize, StatusHeight));
         view.statusLabel.alignment = TextAnchor.UpperLeft;
+
+        // The step buttons along the bottom, the board's width between them: <<, <, >, >>.
+        float stepTop = textTop + PlayersHeight + StatusHeight + Gap;
+        float stepWidth = (BoardSize - 3 * Gap) / 4;
+        view.stepButtons = new Button[4];
+        view.stepLabels = new Text[4];
+        for (int i = 0; i < 4; i++) {
+            Button button = AddButton(root, udon, "Button " + StepEvents[i].Substring("Press".Length), StepTexts[i],
+                StepEvents[i], font, new Vector2(Margin + i * (stepWidth + Gap), stepTop),
+                new Vector2(stepWidth, StepHeight));
+            view.stepButtons[i] = button;
+            view.stepLabels[i] = button.GetComponentInChildren<Text>();
+        }
         UdonSharpEditorUtility.CopyProxyToUdon(view);
 
         int repointed = 0;
+        bool replaced = old != null;
         if (old != null) {
             root.transform.SetParent(old.transform.parent, false);
             root.transform.SetSiblingIndex(old.transform.GetSiblingIndex());
@@ -121,9 +187,10 @@ public static class ChessBoard2DViewBuilder {
         }
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
-        Debug.Log("[ChessBoard2DViewBuilder] " + (old != null ? "Replaced" : "Created") + " the 2D board view ("
-            + view.boards.Length + " board(s), " + (view.synced ? "synced" : "not synced")
-            + (old != null ? ", " + repointed + " behaviour(s) pointed at it" : "")
+        Debug.Log("[ChessBoard2DViewBuilder] " + (replaced ? "Replaced" : "Created") + " the 2D board view ("
+            + (locked != null ? "locked to Board " + (locked.boardNumber + 1) : view.boards.Length + " board(s)")
+            + ", " + (view.synced ? "synced" : "not synced")
+            + (replaced ? ", " + repointed + " behaviour(s) pointed at it" : "")
             + "). Move it where you like and save the scene.");
     }
 
@@ -203,13 +270,17 @@ public static class ChessBoard2DViewBuilder {
         return new Vector3(middle.x, middle.y + ViewHeight, maxZ + ViewDistance);
     }
 
-    static void AddButton(GameObject parent, UdonBehaviour udon, string name, string label, string eventName, Font font,
-        Vector2 topLeft, Vector2 size) {
+    // A button calling eventName on the view, greyed while not interactable.
+    static Button AddButton(GameObject parent, UdonBehaviour udon, string name, string label, string eventName,
+        Font font, Vector2 topLeft, Vector2 size) {
         GameObject buttonObject = NewChild(parent, name, topLeft, size);
         Image image = buttonObject.AddComponent<Image>();
         image.color = new Color(0.85f, 0.85f, 0.88f);
         Button button = buttonObject.AddComponent<Button>();
         button.targetGraphic = image;
+        ColorBlock colors = button.colors;
+        colors.disabledColor = new Color(0.45f, 0.45f, 0.48f, 1f);
+        button.colors = colors;
         UnityEventTools.AddStringPersistentListener(button.onClick, new UnityAction<string>(udon.SendCustomEvent),
             eventName);
         Text text = NewText(buttonObject, "Label", font, 56, Vector2.zero, size);
@@ -217,6 +288,7 @@ public static class ChessBoard2DViewBuilder {
         text.fontStyle = FontStyle.Bold;
         text.color = Color.black;
         text.text = label;
+        return button;
     }
 
     // As GameHistoryWallBuilder.AddTriggerCollider: a trigger box over the whole canvas, so players walk through it
