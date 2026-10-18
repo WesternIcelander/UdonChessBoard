@@ -1,8 +1,8 @@
 # Compatibility with existing worlds
 
-Once the package is released (step 13), worlds will already be using it. A world creator updating to a newer version should only have to import the new package: no re-wiring, no re-placing, no lost customizations. Where that can't be done (a new feature that only the world creator can decide on), the change must be as small as possible and say exactly what to do.
+Once the package is released (step 15), worlds will already be using it. A world creator updating to a newer version should only have to import the new package: no re-wiring, no re-placing, no lost customizations. Where that can't be done (a new feature that only the world creator can decide on), the change must be as small as possible and say exactly what to do.
 
-These rules apply to every change made after the first release (version 1, step 13.13). Before then, nothing outside this project depends on the prefabs, so the builders may still rebuild them from scratch.
+These rules apply to every change made after the first release (version 1, step 15.1). Before then, nothing outside this project depends on the prefabs, so the builders may still rebuild them from scratch.
 
 ## What a world holds
 
@@ -29,7 +29,7 @@ Anything that changes one of these identities, IDs, names or signatures without 
 6. **The public API keeps working.** Public methods and fields that world scripts may use (everything step 14 documents, and `ChessBoardListener`'s virtual methods) keep their names and parameters. A changed signature gets a new method, with the old one kept, forwarding to it, and marked deprecated in its comment and in the changelog. Public method names also stay because `SendCustomEvent` calls them by name. Return codes and constants keep their values; new ones get new values.
 7. **Changes that do reach every world are deliberate.** A changed default in a prefab reaches every instance that didn't override it, and a changed behaviour reaches every world. Both are allowed when they're improvements every world wants (better pieces, a bug fix), but never by accident: list them in the changelog.
 8. **Every release has a changelog entry.** `CHANGELOG.md` in the package: what changed, what the migrator does to an existing world, and anything the world creator must do by hand (ideally nothing), with the version number.
-9. **Every release is tested against the previous one.** A test scene saved with the previous release (instances with typical overrides) is opened under the new version: the migrator must upgrade it with no error, nothing it overrode may be lost, and every Play Mode test must pass on it (step 13.13).
+9. **Every release is tested against the previous one.** A test scene saved with the previous release (instances with typical overrides) is opened under the new version: the migrator must upgrade it with no error, nothing it overrode may be lost, and every Play Mode test must pass on it (step 15.1).
 
 ## Not a concern
 
