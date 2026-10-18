@@ -1048,7 +1048,7 @@ public static class ChessBoardViewBuilder {
     }
 
     // The material asset of this name, made with the Standard shader if missing.
-    static Material MaterialAsset(string name, Color color, float smoothness) {
+    public static Material MaterialAsset(string name, Color color, float smoothness) {
         string path = ModelsFolder + "/" + name + ".mat";
         Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
         if (material != null) return material;

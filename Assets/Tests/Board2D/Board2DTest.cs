@@ -2,21 +2,24 @@ using SiggiChessBoard;
 using UdonSharp;
 using UnityEngine;
 using UnityEngine.UI;
+using VRC.SDK3.Components;
 using VRC.SDKBase;
 
-// Step 12.13 to 12.15 test behaviour (PLAN.md 12.13 to 12.15, docs/board-2d.md): the 2D board view, ChessBoard2DView.
+// Step 12.13 to 12.16 test behaviour (PLAN.md 12.13 to 12.16, docs/board-2d.md): the 2D board view, ChessBoard2DView.
 // Stepping is checked on its own (StepTarget, with five boards) and on the scene's boards through the view: which
 // board it shows, that it listens to that one only, its pieces, highlights, board label and texts against the board
 // and the board's UI's texts, as moves are played. Then its own replay (12.14): the step buttons, following the game,
 // the board's replay and takebacks, switching board, locking to one board, the move list (12.15) and a long game's
-// timing. The boards are synced, so like BoardTest it runs only with no one else in the instance, once BoardTest,
-// ViewTest and ArchiveTest have finished with the boards. The view's Synced is turned off for the checks (nothing is
-// sent) and put back. Logs "[Board2DTest] PASS: <check>" or
+// timing, and the holder moving and resizing it (12.16). The boards are synced, so like BoardTest it runs only with no
+// one else in the instance, once BoardTest, ViewTest and ArchiveTest have finished with the boards. The view's Synced
+// is turned off for the checks (nothing is sent) and put back. Logs "[Board2DTest] PASS: <check>" or
 // "[Board2DTest] FAIL: <check>: <details>" per check, then a summary line. Built in the scene by Tools > Chess Board >
 // Create 2D View Test (Editor/Board2DTestBuilder.cs).
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
 public class Board2DTest : UdonSharpBehaviour {
     public ChessBoard2DView view;
+    // The view's holder (12.16), when it's movable; its checks are skipped without one.
+    public ChessBoard2DViewHolder holder;
     // Waited for, since they change the boards; none to start at once.
     public BoardTest boardTest;
     public ViewTest viewTest;
@@ -263,6 +266,7 @@ public class Board2DTest : UdonSharpBehaviour {
     public void CheckNotationLater() {
         RunNotationLaterChecks();
         RunLongGameCheck();
+        RunHolderChecks();
         ResetBoth();
         view.synced = savedSynced;
         view.Show(0);
@@ -802,6 +806,166 @@ public class Board2DTest : UdonSharpBehaviour {
             + Mathf.Round((float)toFirst * 10) / 10 + " ms");
         Check(toStart < 100, s + ": << within 100 ms", Mathf.Round((float)toStart * 10) / 10 + " ms");
         CheckInt(first.ResetBoardAs(Ana, true), ChessBoard.InputAccepted, s + ": reset");
+    }
+
+    // ---- Moving and resizing (12.16) ----
+
+    void RunHolderChecks() {
+        string s = "holder";
+        // The sums on their own: the view's bottom right corner along +x at size 1.
+        Vector3 baseRight = new Vector3(0.7f, 0, 0);
+        CheckNear(ChessBoard2DViewHolder.SizeFor(baseRight, baseRight, 0.25f, 3), 1, s + ": size 1 at the corner");
+        CheckNear(ChessBoard2DViewHolder.SizeFor(baseRight * 2, baseRight, 0.25f, 3), 2, s + ": size 2 twice as far");
+        CheckNear(ChessBoard2DViewHolder.SizeFor(baseRight * 2 + new Vector3(0, -0.2f, 0.3f), baseRight, 0.25f, 3), 2,
+            s + ": size 2, off the bottom edge");
+        CheckNear(ChessBoard2DViewHolder.SizeFor(baseRight * 5, baseRight, 0.25f, 3), 3, s + ": size clamped to 3");
+        CheckNear(ChessBoard2DViewHolder.SizeFor(-baseRight, baseRight, 0.25f, 3), 0.25f, s + ": size clamped to 0.25");
+        Quaternion tilted = Quaternion.Euler(30, 90, 25);
+        CheckNearVector(ChessBoard2DViewHolder.Upright(tilted, Quaternion.identity) * Vector3.forward, Vector3.right,
+            s + ": upright keeps the heading");
+        CheckNearVector(ChessBoard2DViewHolder.Upright(tilted, Quaternion.identity) * Vector3.up, Vector3.up,
+            s + ": upright stands up");
+        Quaternion fallback = Quaternion.Euler(0, 45, 0);
+        CheckNearVector(ChessBoard2DViewHolder.Upright(Quaternion.Euler(90, 0, 0), fallback) * Vector3.forward,
+            fallback * Vector3.forward, s + ": facing straight down keeps the heading before");
+
+        if (!Utilities.IsValid(holder)) {
+            Debug.Log("[Board2DTest] holder checks skipped: the view has no holder (Create Movable 2D Board View)");
+            return;
+        }
+        Check(holder.view == view, s + ": its view is the view tested", "another view");
+        Check(Utilities.IsValid(holder.grip) && Utilities.IsValid(holder.gripPickup) && Utilities.IsValid(holder.corner)
+            && Utilities.IsValid(holder.cornerPickup), s + ": grip and corner assigned", "one missing");
+        if (!Utilities.IsValid(holder.grip) || !Utilities.IsValid(holder.corner)) return;
+        Check(holder.handleRenderers != null && holder.handleRenderers.Length == 2, s + ": two handle renderers",
+            "wrong count");
+        CheckNear(holder.minSize, ChessBoard2DViewHolder.DefaultMinSize, s + ": smallest size 0.25");
+        bool gripSync = holder.grip.GetComponent<VRCObjectSync>() != null;
+        Check(gripSync == savedSynced, s + ": the grip has a VRCObjectSync exactly when the view is synced",
+            "VRCObjectSync " + (gripSync ? "there" : "missing") + ", Synced " + (savedSynced ? "on" : "off"));
+        Check(view.GetComponent<VRCObjectSync>() == null && holder.GetComponent<VRCObjectSync>() == null,
+            s + ": no VRCObjectSync on the view or the holder (manual sync)", "one has one");
+        Check(holder.movable && holder.gripPickup.pickupable && holder.cornerPickup.pickupable,
+            s + ": movable, both pickupable", "movable " + holder.movable);
+        // ClientSim is desktop, so the pickups keep their own reach.
+        Check(holder.gripPickup.proximity > holder.vrReach, s + ": on desktop, the pickups' own reach",
+            "proximity " + holder.gripPickup.proximity);
+
+        Transform v = view.transform;
+        Transform grip = holder.grip;
+        Vector3 startGrip = grip.position;
+        Quaternion startGripTurn = grip.rotation;
+        Vector3 startView = v.position;
+        Quaternion startViewTurn = v.rotation;
+        Vector3 startScale = v.localScale;
+        Vector3 startCorner = holder.corner.position;
+        Vector3 startBottom = ViewBottom(0);
+        Vector3 startRight = ViewBottom(1);
+        CheckNear(holder.Size(), 1, s + ": size 1 to start");
+
+        // Moved, turned a quarter round and tilted: the view follows, turned and tilted with it.
+        Vector3 moved = startGrip + new Vector3(1, 0.2f, -0.5f);
+        Quaternion turn = Quaternion.Euler(20, 90, 15);
+        grip.SetPositionAndRotation(moved, turn * startGripTurn);
+        holder.Follow();
+        CheckNearVector(v.position, moved + turn * (startView - startGrip), s + ": moved, the view follows the grip");
+        CheckNearVector(v.up, turn * (startViewTurn * Vector3.up), s + ": moved, tilted with the grip");
+        CheckNearVector(v.forward, turn * (startViewTurn * Vector3.forward), s + ": moved, turned with the grip");
+        CheckNearVector(holder.corner.position, moved + turn * (startCorner - startGrip),
+            s + ": moved, the corner follows");
+        CheckNearVector(v.localScale, startScale, s + ": moved, the size kept");
+        // As after a desktop player picked it up: the view upright, turned with the grip's heading alone, the bar
+        // turned upright on the grip, which isn't turned itself (VRChat places a held pickup).
+        Check(!holder.IsUpright(), s + ": not upright before anyone picks it up", "upright");
+        holder.SetUpright(true);
+        holder.Follow();
+        Quaternion quarter = Quaternion.Euler(0, 90, 0);
+        CheckNearVector(grip.up, turn * (startGripTurn * Vector3.up), s + ": upright, the grip left as held");
+        CheckNearVector(v.position, moved + quarter * (startView - startGrip), s + ": upright, the view above it");
+        CheckNearVector(v.up, quarter * (startViewTurn * Vector3.up), s + ": upright, the view upright");
+        CheckNearVector(v.forward, quarter * (startViewTurn * Vector3.forward),
+            s + ": upright, the view turned with the heading");
+        Check(Utilities.IsValid(holder.gripModel), s + ": the bar assigned", "missing");
+        if (Utilities.IsValid(holder.gripModel)) {
+            CheckNearVector(holder.gripModel.up, Vector3.up, s + ": upright, the bar upright");
+        }
+        // As after a VR player picked it up: tilted with the grip again.
+        holder.SetUpright(false);
+        holder.Follow();
+        CheckNearVector(v.up, turn * (startViewTurn * Vector3.up), s + ": not upright, the view tilted with the grip");
+        if (Utilities.IsValid(holder.gripModel)) {
+            CheckNearVector(holder.gripModel.up, grip.up, s + ": not upright, the bar with the grip");
+        }
+        // Upright for the size checks below.
+        holder.SetUpright(true);
+        holder.Follow();
+        turn = quarter;
+
+        // Resized about the view's bottom edge, which stays where it was from the grip, the corner beside its corner.
+        holder.SetSize(2);
+        CheckNear(holder.Size(), 2, s + ": size 2");
+        CheckNearVector(v.localScale, startScale * 2, s + ": size 2, twice the scale");
+        CheckNearVector(ViewBottom(0), moved + turn * (startBottom - startGrip),
+            s + ": size 2, the bottom edge kept above the grip");
+        CheckNearVector(holder.corner.position - ViewBottom(1), turn * (startCorner - startRight),
+            s + ": size 2, the corner beside the view's corner");
+        holder.SetSize(100);
+        CheckNear(holder.Size(), holder.maxSize, s + ": size clamped to the largest");
+        holder.SetSize(0);
+        CheckNear(holder.Size(), holder.minSize, s + ": size clamped to the smallest");
+        CheckNearVector(ViewBottom(0), moved + turn * (startBottom - startGrip),
+            s + ": smallest, the bottom edge kept above the grip");
+
+        // Not movable: nothing to pick up, the handles hidden; and back.
+        holder.SetMovable(false);
+        bool hidden = true;
+        for (int i = 0; i < holder.handleRenderers.Length; i++) {
+            if (Utilities.IsValid(holder.handleRenderers[i]) && holder.handleRenderers[i].enabled) hidden = false;
+        }
+        Check(!holder.gripPickup.pickupable && !holder.cornerPickup.pickupable && hidden,
+            s + ": not movable, nothing pickupable and the handles hidden", "grip " + holder.gripPickup.pickupable
+                + ", corner " + holder.cornerPickup.pickupable + ", hidden " + hidden);
+        holder.SetMovable(true);
+        Check(holder.gripPickup.pickupable && holder.cornerPickup.pickupable
+            && holder.handleRenderers[0].enabled, s + ": movable again", "still off");
+
+        // The view still draws where it's been moved (real clicks on it are left to a client run).
+        view.Show(0);
+        view.Refresh();
+        CheckView(s + ": the view drawn after moving");
+
+        // Put back where it was placed, at its size there.
+        holder.PutBack();
+        CheckNear(holder.Size(), 1, s + ": put back, size 1");
+        CheckNearVector(grip.position, startGrip, s + ": put back, the grip where it was");
+        CheckNearVector(v.position, startView, s + ": put back, the view where it was");
+        CheckNearVector(v.forward, startViewTurn * Vector3.forward, s + ": put back, turned as it was");
+        CheckNearVector(v.localScale, startScale, s + ": put back, its scale as it was");
+
+        // At the smallest size, upright where it was placed, the bar and the corner don't meet.
+        holder.SetSize(0);
+        BoxCollider gripBox = grip.GetComponent<BoxCollider>();
+        BoxCollider cornerBox = holder.corner.GetComponent<BoxCollider>();
+        Check(Utilities.IsValid(gripBox) && Utilities.IsValid(cornerBox)
+            && !gripBox.bounds.Intersects(cornerBox.bounds), s + ": smallest, the bar clear of the corner",
+            Utilities.IsValid(gripBox) && Utilities.IsValid(cornerBox)
+                ? "bar " + gripBox.bounds + ", corner " + cornerBox.bounds : "a collider missing");
+        holder.SetSize(1);
+        holder.SetUpright(false);
+    }
+
+    // The view's bottom edge in the world: its middle (0) or its right end (1).
+    Vector3 ViewBottom(int right) {
+        Rect rect = view.GetComponent<RectTransform>().rect;
+        return view.transform.TransformPoint(new Vector3(right == 1 ? rect.xMax : rect.center.x, rect.yMin, 0));
+    }
+
+    void CheckNear(float actual, float expected, string name) {
+        Check(Mathf.Abs(actual - expected) < 0.001f, name, "got " + actual + ", expected " + expected);
+    }
+
+    void CheckNearVector(Vector3 actual, Vector3 expected, string name) {
+        Check(Vector3.Distance(actual, expected) < 0.001f, name, "got " + actual + ", expected " + expected);
     }
 
     void StartGame(ChessBoard board) {

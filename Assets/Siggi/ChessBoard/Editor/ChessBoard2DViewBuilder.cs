@@ -20,13 +20,18 @@ using VRC.Udon;
 //   boards, locked board and Synced; otherwise a new one stands behind the boards, facing them.
 // - Create Locked 2D Board View: a view locked to the selected board (12.14), replacing one already locked to it where
 //   it stands, or new behind that board.
+// - Create Movable 2D Board View (12.16): the selected view (or the selected holder's) put in a holder with a grip and
+//   a corner to move and resize it (ChessBoard2DViewHolder.cs), its grip and corner rebuilt where the view stands;
+//   with nothing selected, a new view beside the others, in a new holder.
 // Plain editor C#, not Udon.
 public static class ChessBoard2DViewBuilder {
     const string ViewScriptPath = "Assets/Siggi/ChessBoard/ChessBoard2DView.cs";
     const string ViewProgramPath = "Assets/Siggi/ChessBoard/ChessBoard2DView.asset";
     const string CellScriptPath = "Assets/Siggi/ChessBoard/ChessMoveListCell.cs";
     const string CellProgramPath = "Assets/Siggi/ChessBoard/ChessMoveListCell.asset";
-    const string SpritesFolder = "Assets/Siggi/ChessBoard/Sprites2D/";
+    const string HolderScriptPath = "Assets/Siggi/ChessBoard/ChessBoard2DViewHolder.cs";
+    const string HolderProgramPath = "Assets/Siggi/ChessBoard/ChessBoard2DViewHolder.asset";
+    const string SpritesFolder ="Assets/Siggi/ChessBoard/Sprites2D/";
     // The sprites' names by piece type, pawn to king (ChessRules.Pawn - 1 on), with W or B after.
     static readonly string[] SpriteNames = { "Pawn", "Knight", "Bishop", "Rook", "Queen", "King" };
 
@@ -102,8 +107,8 @@ public static class ChessBoard2DViewBuilder {
 
     // Builds a view locked to locked (none when null), replacing old where it stands (keeping its name, boards and
     // Synced), or new at position, named ChessBoard2DView, or ChessBoard2DView (N) beside N - 1 others.
-    static void Build(ChessBoard2DView old, ChessBoard locked, Vector3 position) {
-        if (!EnsureProgramAsset()) return;
+    static ChessBoard2DView Build(ChessBoard2DView old, ChessBoard locked, Vector3 position) {
+        if (!EnsureProgramAsset()) return null;
         Sprite[] whiteSprites = LoadPieceSprites(ChessRules.White);
         Sprite[] blackSprites = LoadPieceSprites(ChessRules.Black);
         int others = Object.FindObjectsOfType<ChessBoard2DView>(true).Length;
@@ -207,6 +212,154 @@ public static class ChessBoard2DViewBuilder {
             + ", " + (view.synced ? "synced" : "not synced")
             + (replaced ? ", " + repointed + " behaviour(s) pointed at it" : "")
             + "). Move it where you like and save the scene.");
+        return view;
+    }
+
+    // ---- The movable view (12.16) ----
+
+    // A view players can move and resize: the selected view (or the view of the selected holder) in a holder, its
+    // grip and corner rebuilt where the view stands; otherwise a new view beside the others, in a new holder.
+    [MenuItem("Tools/Chess Board/Create Movable 2D Board View")]
+    static void CreateMovable() {
+        if (!EnsureProgramAsset()) return;
+        ChessBoard2DView view = null;
+        ChessBoard2DViewHolder holder = null;
+        GameObject selected = Selection.activeGameObject;
+        if (selected != null) {
+            holder = selected.GetComponent<ChessBoard2DViewHolder>();
+            view = holder != null ? holder.view : selected.GetComponent<ChessBoard2DView>();
+            if (holder == null && view != null) holder = HolderOf(view);
+        }
+        if (view == null) {
+            int count = Object.FindObjectsOfType<ChessBoard2DView>(true).Length;
+            view = Build(null, null, NewViewPosition() + Vector3.right * (count * (CanvasWidth * 0.001f + 0.2f)));
+            if (view == null) return;
+        }
+        BuildHolder(view, holder);
+    }
+
+    // The holder whose view this is (its parent's), or null.
+    public static ChessBoard2DViewHolder HolderOf(ChessBoard2DView view) {
+        Transform parent = view.transform.parent;
+        ChessBoard2DViewHolder holder = parent != null ? parent.GetComponent<ChessBoard2DViewHolder>() : null;
+        return holder != null && holder.view == view ? holder : null;
+    }
+
+    // The grip bar's size (m; at most this wide, narrower to stay clear of the corner at the smallest size by
+    // GripClearance), how far under the view it is, and the corner's size, outside the view's bottom right.
+    static readonly Vector3 GripSize = new Vector3(0.5f, 0.05f, 0.05f);
+    const float GripClearance = 0.02f;
+    const float GripGap = 0.04f;
+    const float CornerSize = 0.08f;
+
+    // Puts view in holder (a new one, named after the view, when null), replacing the holder's grip and corner with
+    // new ones placed from where the view stands: the grip centred under its bottom edge, the corner just outside its
+    // bottom right. Keeps the holder's Movable; its Min Size and Max Size go back to the defaults, as the grip's width is
+    // fitted to the smallest size. The grip has a VRCObjectSync when the view is synced.
+    static void BuildHolder(ChessBoard2DView view, ChessBoard2DViewHolder holder) {
+        Transform viewTransform = view.transform;
+        bool created = holder == null;
+        if (created) {
+            GameObject root = new GameObject(view.gameObject.name + " Holder");
+            Undo.RegisterCreatedObjectUndo(root, "Create Movable 2D Board View");
+            root.transform.SetParent(viewTransform.parent, false);
+            root.transform.SetSiblingIndex(viewTransform.GetSiblingIndex());
+            root.transform.SetPositionAndRotation(viewTransform.position, viewTransform.rotation);
+            holder = UdonSharpUndo.AddComponent<ChessBoard2DViewHolder>(root);
+            Undo.SetTransformParent(viewTransform, root.transform, "Create Movable 2D Board View");
+        } else {
+            if (holder.grip != null) Undo.DestroyObjectImmediate(holder.grip.gameObject);
+            if (holder.corner != null) Undo.DestroyObjectImmediate(holder.corner.gameObject);
+            if (viewTransform.parent != holder.transform) {
+                Undo.SetTransformParent(viewTransform, holder.transform, "Create Movable 2D Board View");
+            }
+        }
+        Undo.RecordObject(holder, "Create Movable 2D Board View");
+        holder.view = view;
+        holder.minSize = ChessBoard2DViewHolder.DefaultMinSize;
+        holder.maxSize = 3;
+
+        // The view's size and corners in the world, from its rect.
+        RectTransform rect = viewTransform.GetComponent<RectTransform>();
+        Quaternion heading = viewTransform.rotation;
+        Vector3 half = Vector3.Scale(new Vector3(rect.sizeDelta.x, rect.sizeDelta.y, 0) * 0.5f, viewTransform.lossyScale);
+        Vector3 bottomCentre = viewTransform.TransformPoint(new Vector3(rect.rect.center.x, rect.rect.yMin, 0));
+        Vector3 bottomRight = viewTransform.TransformPoint(new Vector3(rect.rect.xMax, rect.rect.yMin, 0));
+        Material material = ChessBoardViewBuilder.MaterialAsset("2D View Handle", new Color(0.55f, 0.56f, 0.6f), 0.4f);
+
+        // The corner's inner edge is half the view's width times the size from the grip's middle.
+        Vector3 gripSize = GripSize;
+        gripSize.x = Mathf.Max(0.1f, Mathf.Min(GripSize.x, 2 * (half.x * holder.minSize - GripClearance)));
+        Renderer gripRenderer;
+        holder.gripPickup = AddHandle(holder.transform, "Grip", gripSize, "Move",
+            bottomCentre - heading * new Vector3(0, GripGap + gripSize.y * 0.5f, 0), heading, material,
+            out gripRenderer);
+        holder.grip = holder.gripPickup.transform;
+        holder.gripModel = gripRenderer.transform;
+        Renderer cornerRenderer;
+        Vector3 cornerOut = new Vector3(CornerSize * 0.5f, -CornerSize * 0.5f, 0);
+        holder.cornerPickup = AddHandle(holder.transform, "Corner", Vector3.one * CornerSize, "Resize",
+            bottomRight + heading * cornerOut, heading, material, out cornerRenderer);
+        holder.corner = holder.cornerPickup.transform;
+        holder.handleRenderers = new[] { gripRenderer, cornerRenderer };
+        MatchObjectSync(holder);
+        UdonSharpEditorUtility.CopyProxyToUdon(holder);
+
+        EditorSceneManager.MarkSceneDirty(holder.gameObject.scene);
+        Selection.activeGameObject = holder.gameObject;
+        Debug.Log("[ChessBoard2DViewBuilder] " + (created ? "Put " : "Rebuilt the grip and corner of ") + view.gameObject.name
+            + (created ? " in " + holder.gameObject.name : "") + " (" + (view.synced ? "synced, with" : "not synced, no")
+            + " VRCObjectSync; " + (holder.movable ? "movable" : "not movable") + ", " + (half.x * 2).ToString("0.00")
+            + " m wide, a " + gripSize.x.ToString("0.00") + " m bar). Save the scene.");
+    }
+
+    // A handle to pick up: an object with a trigger box collider of size, a kinematic rigidbody without gravity (it
+    // stays where it's let go) and a VRCPickup, on the Pickup layer, with a cube of that size as its visible part.
+    static VRCPickup AddHandle(Transform parent, string name, Vector3 size, string text, Vector3 position,
+            Quaternion rotation, Material material, out Renderer renderer) {
+        GameObject handle = new GameObject(name);
+        Undo.RegisterCreatedObjectUndo(handle, "Create Movable 2D Board View");
+        int pickupLayer = LayerMask.NameToLayer("Pickup");
+        if (pickupLayer >= 0) handle.layer = pickupLayer;
+        handle.transform.SetParent(parent, false);
+        handle.transform.SetPositionAndRotation(position, rotation);
+        BoxCollider box = handle.AddComponent<BoxCollider>();
+        box.size = size;
+        box.isTrigger = true;
+        Rigidbody body = handle.AddComponent<Rigidbody>();
+        body.isKinematic = true;
+        body.useGravity = false;
+        VRCPickup pickup = handle.AddComponent<VRCPickup>();
+        pickup.InteractionText = text;
+        pickup.UseText = text;
+
+        GameObject visible = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        visible.name = "Model";
+        visible.layer = handle.layer;
+        Object.DestroyImmediate(visible.GetComponent<Collider>());
+        visible.transform.SetParent(handle.transform, false);
+        visible.transform.localScale = size;
+        renderer = visible.GetComponent<MeshRenderer>();
+        renderer.sharedMaterial = material;
+        return pickup;
+    }
+
+    // Gives the holder's grip a VRCObjectSync when its view is synced and takes it away when not; whether it changed
+    // anything. For the builders and the build callback (ChessBoard2DViewSyncCheck), as a prefab holds one set of
+    // components whatever the view's Synced tick.
+    public static bool MatchObjectSync(ChessBoard2DViewHolder holder) {
+        if (holder == null || holder.grip == null || holder.view == null) return false;
+        VRCObjectSync sync = holder.grip.GetComponent<VRCObjectSync>();
+        if (holder.view.synced && sync == null) {
+            sync = Undo.AddComponent<VRCObjectSync>(holder.grip.gameObject);
+            sync.AllowCollisionOwnershipTransfer = false;
+            return true;
+        }
+        if (!holder.view.synced && sync != null) {
+            Undo.DestroyObjectImmediate(sync);
+            return true;
+        }
+        return false;
     }
 
     // The move list (12.15) right of the board: a scroll rect over the rows (its content an empty rect sized by the view
@@ -426,11 +579,12 @@ public static class ChessBoard2DViewBuilder {
     static bool EnsureProgramAsset() {
         bool created = CreateProgramAssetIfMissing(ViewScriptPath, ViewProgramPath);
         created |= CreateProgramAssetIfMissing(CellScriptPath, CellProgramPath);
+        created |= CreateProgramAssetIfMissing(HolderScriptPath, HolderProgramPath);
         if (!created) return true;
         AssetDatabase.SaveAssets();
         UdonSharpProgramAsset.CompileAllCsPrograms(true);
         EditorUtility.DisplayDialog("Create 2D Board View", "Created the missing program assets next to "
-            + ViewScriptPath + ". Once UdonSharp has finished compiling, run Tools > Chess Board > Create 2D Board View "
+            + ViewScriptPath + ". Once UdonSharp has finished compiling, run the Tools > Chess Board menu item "
             + "again.", "OK");
         return false;
     }

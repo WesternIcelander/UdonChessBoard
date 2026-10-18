@@ -32,6 +32,7 @@ public static class Board2DTestBuilder {
         Undo.RegisterCreatedObjectUndo(root, "Create 2D View Test");
         Board2DTest test = UdonSharpUndo.AddComponent<Board2DTest>(root);
         test.view = view;
+        test.holder = ChessBoard2DViewBuilder.HolderOf(view);
         BoardTest[] boardTests = Object.FindObjectsOfType<BoardTest>(true);
         test.boardTest = boardTests.Length > 0 ? boardTests[0] : null;
         ViewTest[] viewTests = Object.FindObjectsOfType<ViewTest>(true);
@@ -50,7 +51,8 @@ public static class Board2DTestBuilder {
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[Board2DTestBuilder] " + (olds.Length > 0 ? "Replaced" : "Created") + " Board2DTest for "
-            + view.gameObject.name + " (" + view.boards.Length + " board(s)), waiting for "
+            + view.gameObject.name + " (" + view.boards.Length + " board(s), "
+            + (test.holder != null ? "in a holder" : "no holder") + "), waiting for "
             + (test.boardTest != null ? "BoardTest" : "no BoardTest") + ", "
             + (test.viewTest != null ? "ViewTest" : "no ViewTest") + " and "
             + (test.archiveTest != null ? "ArchiveTest" : "no ArchiveTest") + ". Save the scene.");
@@ -70,9 +72,11 @@ public static class Board2DTestBuilder {
             Undo.RecordObject(views[i], "Toggle 2D View Synced");
             views[i].synced = !views[i].synced;
             UdonSharpEditorUtility.CopyProxyToUdon(views[i]);
+            ChessBoard2DViewHolder holder = ChessBoard2DViewBuilder.HolderOf(views[i]);
+            if (holder != null) ChessBoard2DViewBuilder.MatchObjectSync(holder);
             EditorSceneManager.MarkSceneDirty(views[i].gameObject.scene);
             Debug.Log("[Board2DTestBuilder] " + views[i].gameObject.name + ": Synced " + (views[i].synced ? "on" : "off")
-                + ". Save the scene.");
+                + (holder != null ? " (its grip's VRCObjectSync matched)" : "") + ". Save the scene.");
         }
     }
 
