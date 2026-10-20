@@ -76,7 +76,7 @@ public static class ChessBoard2DViewBuilder {
     [MenuItem("Tools/Chess Board/Create 2D Board View")]
     static void Create() {
         ChessBoard2DView old = ExistingView();
-        Build(old, old != null ? old.lockedBoard : null, NewViewPosition());
+        Build("Create 2D Board View", old, old != null ? old.lockedBoard : null, NewViewPosition());
     }
 
     // A view locked to the selected board (12.14).
@@ -96,7 +96,7 @@ public static class ChessBoard2DViewBuilder {
             if (views[i].lockedBoard == board) old = views[i];
         }
         Vector3 position = board.transform.position + new Vector3(0, ViewHeight, LockedViewDistance);
-        Build(old, board, position);
+        Build("Create Locked 2D Board View", old, board, position);
     }
 
     // One more view, whatever is selected: beside the new view's place, a view's width (and a gap) along +x per view
@@ -104,13 +104,14 @@ public static class ChessBoard2DViewBuilder {
     [MenuItem("Tools/Chess Board/Create Another 2D Board View")]
     static void CreateAnother() {
         int count = Object.FindObjectsOfType<ChessBoard2DView>(true).Length;
-        Build(null, null, NewViewPosition() + Vector3.right * (count * (CanvasWidth * 0.001f + 0.2f)));
+        Build("Create Another 2D Board View", null, null,
+            NewViewPosition() + Vector3.right * (count * (CanvasWidth * 0.001f + 0.2f)));
     }
 
     // Builds a view locked to locked (none when null), replacing old where it stands (keeping its name, boards and
     // Synced), or new at position, named ChessBoard2DView, or ChessBoard2DView (N) beside N - 1 others.
-    static ChessBoard2DView Build(ChessBoard2DView old, ChessBoard locked, Vector3 position) {
-        if (!EnsureProgramAsset()) return null;
+    static ChessBoard2DView Build(string menuItem, ChessBoard2DView old, ChessBoard locked, Vector3 position) {
+        if (!ProgramAssetsReady(menuItem)) return null;
         Sprite[] whiteSprites = LoadPieceSprites(ChessRules.White);
         Sprite[] blackSprites = LoadPieceSprites(ChessRules.Black);
         int others = Object.FindObjectsOfType<ChessBoard2DView>(true).Length;
@@ -222,7 +223,7 @@ public static class ChessBoard2DViewBuilder {
     // grip and corner rebuilt where the view stands; otherwise a new view beside the others, in a new holder.
     [MenuItem("Tools/Chess Board/Create Movable 2D Board View")]
     static void CreateMovable() {
-        if (!EnsureProgramAsset()) return;
+        if (!ProgramAssetsReady("Create Movable 2D Board View")) return;
         ChessBoard2DView view = null;
         ChessBoard2DViewHolder holder = null;
         GameObject selected = Selection.activeGameObject;
@@ -233,7 +234,8 @@ public static class ChessBoard2DViewBuilder {
         }
         if (view == null) {
             int count = Object.FindObjectsOfType<ChessBoard2DView>(true).Length;
-            view = Build(null, null, NewViewPosition() + Vector3.right * (count * (CanvasWidth * 0.001f + 0.2f)));
+            view = Build("Create Movable 2D Board View", null, null,
+                NewViewPosition() + Vector3.right * (count * (CanvasWidth * 0.001f + 0.2f)));
             if (view == null) return;
         }
         BuildHolder(view, holder);
@@ -564,33 +566,9 @@ public static class ChessBoard2DViewBuilder {
         return button;
     }
 
-    // As ChessSettingsMenuBuilder.EnsureProgramAssets: the view's and the move list cells' program assets, created and
-    // compiled when missing, after which the menu item has to be run again.
-    static bool EnsureProgramAsset() {
-        bool created = CreateProgramAssetIfMissing(ViewScriptPath, ViewProgramPath, "ChessBoard2DViewBuilder");
-        created |= CreateProgramAssetIfMissing(CellScriptPath, CellProgramPath, "ChessBoard2DViewBuilder");
-        created |= CreateProgramAssetIfMissing(HolderScriptPath, HolderProgramPath, "ChessBoard2DViewBuilder");
-        if (!created) return true;
-        AssetDatabase.SaveAssets();
-        UdonSharpProgramAsset.CompileAllCsPrograms(true);
-        EditorUtility.DisplayDialog("Create 2D Board View", "Created the missing program assets next to "
-            + ViewScriptPath + ". Once UdonSharp has finished compiling, run the Tools > Chess Board menu item "
-            + "again.", "OK");
-        return false;
-    }
-
-    // A text at a position from the parent's top left, in canvas pixels.
-    static TextMeshProUGUI NewText(GameObject parent, string name, TMP_FontAsset font, int size, Vector2 topLeft,
-        Vector2 extent) {
-        GameObject child = NewChild(parent, name, topLeft, extent);
-        TextMeshProUGUI text = child.AddComponent<TextMeshProUGUI>();
-        text.font = font;
-        text.fontSize = size;
-        text.alignment = TextAlignmentOptions.Left;
-        text.color = Color.white;
-        text.raycastTarget = false;
-        text.enableWordWrapping = true;
-        text.overflowMode = TextOverflowModes.Truncate;
-        return text;
+    // The view's, the move list cells' and the holder's program assets (EnsureProgramAssets), for menuItem.
+    static bool ProgramAssetsReady(string menuItem) {
+        return EnsureProgramAssets(menuItem, ViewScriptPath, ViewProgramPath, CellScriptPath, CellProgramPath,
+            HolderScriptPath, HolderProgramPath);
     }
 }

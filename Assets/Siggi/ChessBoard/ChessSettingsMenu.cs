@@ -168,7 +168,8 @@ namespace SiggiChessBoard {
             bool done = Apply(item, action);
             arbiter.EndChange();
             resnapshotText = "";
-            Debug.Log("[ChessSettingsMenu] " + LocalName() + ": " + ScopeText() + ", " + ChangeText(item, action)
+            Debug.Log("[ChessSettingsMenu] " + ChessUtil.LocalName("?") + ": " + ScopeText()
+                + ", " + ChangeText(item, action)
                 + (done ? "" : " (not changed)"));
             Refresh();
             return done;
@@ -219,7 +220,8 @@ namespace SiggiChessBoard {
             }
             resnapshotText = ResnapshotText(updated, unused, refused);
             ChessUtil.SetText(resnapshotLabel, resnapshotText);
-            Debug.Log("[ChessSettingsMenu] " + LocalName() + ": " + ScopeText() + ", re-snapshot: " + resnapshotText);
+            Debug.Log("[ChessSettingsMenu] " + ChessUtil.LocalName("?") + ": " + ScopeText()
+                + ", re-snapshot: " + resnapshotText);
             return updated > 0;
         }
 
@@ -475,11 +477,6 @@ namespace SiggiChessBoard {
             string text = ItemText(item).Trim() + ": " + ActionText(item, action);
             if (!IsSettingItem(item) && action != ActionDefault) text += " (now " + ValueText(item) + ")";
             return text;
-        }
-
-        static string LocalName() {
-            VRCPlayerApi local = Networking.LocalPlayer;
-            return Utilities.IsValid(local) ? local.displayName : "?";
         }
     }
 }

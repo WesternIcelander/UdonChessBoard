@@ -188,7 +188,10 @@ namespace SiggiChessBoard {
 
         public override void OnBoardChanged() {
             dirty = true;
-            if (Utilities.IsValid(board)) NoteSound(board.lastChange);
+            if (Utilities.IsValid(board)) {
+                ChessUtil.NoteSound(board.lastChange, MakesSound(board.lastChange), board, soundsFrom, ref caughtUp,
+                    ref soundChanges, ref soundChange);
+            }
         }
 
         // An import started from the PGN box (step 11.2b) moved on: once loaded the box closes (the board shows the
@@ -236,18 +239,13 @@ namespace SiggiChessBoard {
 
         // ---- Sound effects (step 12.12) ----
 
-        // Notes a change's sound for the next Refresh: a reset, a start or continuation, a request, an ending, a move
-        // or a replay step (for a game it ends), heard (SoundAllowed) and alone since the last Refresh. A touch from
-        // another client doesn't count.
-        void NoteSound(int change) {
-            if (change == ChessBoard.ChangeActivity) return;
-            soundChanges++;
-            bool sounding = ChessUtil.SoundAllowed(board, soundsFrom, caughtUp, out caughtUp)
-                && (change == ChessBoard.ChangeReset || change == ChessBoard.ChangeStarted
+        // Whether a change has a sound (ChessUtil.NoteSound): a reset, a start or continuation, a request, an ending, a
+        // move or a replay step (for a game it ends).
+        static bool MakesSound(int change) {
+            return change == ChessBoard.ChangeReset || change == ChessBoard.ChangeStarted
                 || change == ChessBoard.ChangeContinued || change == ChessBoard.ChangeRequest
                 || change == ChessBoard.ChangeEnded || change == ChessBoard.ChangeMove
-                || change == ChessBoard.ChangeReplayStep);
-            soundChange = soundChanges == 1 && sounding ? change : ChessBoard.ChangeNone;
+                || change == ChessBoard.ChangeReplayStep;
         }
 
         // Plays the sound of change, which Refresh has just brought the UI up to (ChangeNone for none). Any sound
@@ -874,9 +872,9 @@ namespace SiggiChessBoard {
             string text = GameStatusTextFor(board, now);
             if (!Utilities.IsValid(board)) return text;
             if (board.takebackColor != ChessRules.NoColor) {
-                text = AddLine(text, ColorText(board.takebackColor) + " asks to take back to here");
+                text = ChessUtil.AddLine(text, ColorText(board.takebackColor) + " asks to take back to here");
             }
-            if (board.replayMode) text = AddLine(text, ReplayTextFor(board));
+            if (board.replayMode) text = ChessUtil.AddLine(text, ReplayTextFor(board));
             return text;
         }
 
@@ -902,12 +900,13 @@ namespace SiggiChessBoard {
                 }
                 int playOnFlagged = PlayOnFlaggedColor(board);
                 if (playOnFlagged != ChessRules.NoColor) {
-                    text = AddLine(text, "Playing on untimed: " + ColorText(playOnFlagged) + " ran out of time");
+                    text = ChessUtil.AddLine(text,
+                        "Playing on untimed: " + ColorText(playOnFlagged) + " ran out of time");
                 }
             }
-            text = AddLine(text, EndingTextFor(board));
+            text = ChessUtil.AddLine(text, EndingTextFor(board));
             if (board.drawOfferColor != ChessRules.NoColor) {
-                text = AddLine(text, ColorText(board.drawOfferColor) + " offers a draw");
+                text = ChessUtil.AddLine(text, ColorText(board.drawOfferColor) + " offers a draw");
             }
             return text;
         }
@@ -979,11 +978,6 @@ namespace SiggiChessBoard {
         // A loaded game's name tag, "?" when it had none.
         static string TagText(string value) {
             return value != null && value.Length > 0 ? value : "?";
-        }
-
-        static string AddLine(string text, string line) {
-            if (line.Length == 0) return text;
-            return text.Length == 0 ? line : text + "\n" + line;
         }
     }
 }

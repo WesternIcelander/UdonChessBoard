@@ -164,7 +164,7 @@ namespace SiggiChessBoard {
             if (received == targetSize) return;
             targetSize = received;
             Debug.Log("[ChessBoard2DViewHolder] " + gameObject.name + ": resized to " + Round(received) + " by "
-                + OwnerName());
+                + ChessUtil.OwnerName(gameObject, "?"));
         }
 
         // ---- Moving and resizing ----
@@ -286,11 +286,6 @@ namespace SiggiChessBoard {
             if (!Utilities.IsValid(pickup) || !pickup.IsHeld) return false;
             VRCPlayerApi holder = pickup.currentPlayer;
             return Utilities.IsValid(holder) && holder.isLocal;
-        }
-
-        string OwnerName() {
-            VRCPlayerApi owner = Networking.GetOwner(gameObject);
-            return Utilities.IsValid(owner) ? owner.displayName : "?";
         }
 
         static string Round(float value) {

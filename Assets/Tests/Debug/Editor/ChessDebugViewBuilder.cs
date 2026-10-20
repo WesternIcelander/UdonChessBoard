@@ -56,15 +56,15 @@ public static class ChessDebugViewBuilder {
 
     [MenuItem("Tools/Chess Board/Create Debug View")]
     static void Create() {
-        ChessBoard board = FindBoard();
+        ChessBoard board = FindBoard("Create Debug View", "debug view");
         if (board == null) return;
-        if (!EnsureProgramAsset()) return;
+        if (!EnsureProgramAssets("Create Debug View", ViewScriptPath, ViewProgramPath)) return;
         EnsureImporter(board);
 
         TMP_FontAsset font = DefaultFont();
         GameObject root = new GameObject("ChessDebugView (" + board.gameObject.name + ")");
         Undo.RegisterCreatedObjectUndo(root, "Create Debug View");
-        GameObject old = ExistingView(board);
+        GameObject old = ExistingFor<ChessDebugView>(board, existing => existing.board);
         root.layer = LayerMask.NameToLayer("Default");
         Canvas canvas = root.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
@@ -106,9 +106,9 @@ public static class ChessDebugViewBuilder {
         float statusLeft = Margin * 2 + 8 * SquareSize;
         GameObject status = NewChild(root, "Status", new Vector2(statusLeft, Margin),
             new Vector2(CanvasWidth - statusLeft - Margin, 8 * SquareSize + StatusExtra));
-        view.statusText = NewText(status, "Text", font, 20, TextAlignmentOptions.TopLeft);
+        view.statusText = AddText(AddStretched(status, "Text", new Vector2(4, 2), new Vector2(-4, -2)), font, 20,
+            TextAlignmentOptions.TopLeft, Color.white);
         view.statusText.richText = true;
-        view.statusText.enableWordWrapping = true;
         view.statusText.overflowMode = TextOverflowModes.Overflow;
 
         UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(view);
@@ -126,8 +126,8 @@ public static class ChessDebugViewBuilder {
             button.targetGraphic = image;
             UnityEventTools.AddStringPersistentListener(button.onClick,
                 new UnityAction<string>(udon.SendCustomEvent), Buttons[i, 1]);
-            TextMeshProUGUI label = NewText(buttonObject, "Label", font, 20, TextAlignmentOptions.Center);
-            label.color = Color.black;
+            TextMeshProUGUI label = AddText(AddStretched(buttonObject, "Label", new Vector2(4, 2), new Vector2(-4, -2)),
+                font, 20, TextAlignmentOptions.Center, Color.black);
             label.text = Buttons[i, 0];
         }
 
@@ -172,69 +172,6 @@ public static class ChessDebugViewBuilder {
         Debug.LogWarning("[ChessDebugViewBuilder] No ChessBoardView for " + board.gameObject.name + "; the Input style "
             + "and Take piece buttons need one in the debug view's Board View field.");
         return null;
-    }
-
-    // The scene's debug view for a board (built earlier), or null.
-    static GameObject ExistingView(ChessBoard board) {
-        ChessDebugView[] views = Object.FindObjectsOfType<ChessDebugView>(true);
-        for (int i = 0; i < views.Length; i++) {
-            if (views[i].board == board) return views[i].gameObject;
-        }
-        return null;
-    }
-
-    // The selected ChessBoard, or the scene's only one.
-    static ChessBoard FindBoard() {
-        if (Selection.activeGameObject != null) {
-            ChessBoard selected = Selection.activeGameObject.GetComponent<ChessBoard>();
-            if (selected != null) return selected;
-        }
-        ChessBoard[] boards = Object.FindObjectsOfType<ChessBoard>(true);
-        if (boards.Length == 1) return boards[0];
-        EditorUtility.DisplayDialog("Create Debug View", boards.Length == 0
-            ? "There's no ChessBoard in the open scene."
-            : "There are several ChessBoards in the scene. Select the one the debug view is for, then try again.", "OK");
-        return null;
-    }
-
-    // UdonSharp needs a compiled program asset next to the script before the behaviour can be added. The repository
-    // has one; if it's missing it's created and compiled, and the menu item has to be run again afterwards.
-    static bool EnsureProgramAsset() {
-        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(ViewProgramPath) != null) return true;
-        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(ViewScriptPath);
-        if (script == null) {
-            Debug.LogError("[ChessDebugViewBuilder] " + ViewScriptPath + " not found.");
-            return false;
-        }
-        UdonSharpProgramAsset program = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();
-        program.sourceCsScript = script;
-        AssetDatabase.CreateAsset(program, ViewProgramPath);
-        AssetDatabase.SaveAssets();
-        UdonSharpProgramAsset.CompileAllCsPrograms(true);
-        EditorUtility.DisplayDialog("Create Debug View", "Created the debug view's program asset (" + ViewProgramPath
-            + "). Once UdonSharp has finished compiling, run Tools > Chess Board > Create Debug View again.", "OK");
-        return false;
-    }
-
-    // A text filling its parent.
-    static TextMeshProUGUI NewText(GameObject parent, string name, TMP_FontAsset font, int size,
-        TextAlignmentOptions alignment) {
-        GameObject child = new GameObject(name, typeof(RectTransform));
-        child.layer = parent.layer;
-        RectTransform rect = child.GetComponent<RectTransform>();
-        rect.SetParent(parent.transform, false);
-        rect.anchorMin = Vector2.zero;
-        rect.anchorMax = Vector2.one;
-        rect.offsetMin = new Vector2(4, 2);
-        rect.offsetMax = new Vector2(-4, -2);
-        TextMeshProUGUI text = child.AddComponent<TextMeshProUGUI>();
-        text.font = font;
-        text.fontSize = size;
-        text.alignment = alignment;
-        text.overflowMode = TextOverflowModes.Truncate;
-        text.color = Color.white;
-        text.raycastTarget = false;
-        return text;
     }
 
     static string SquareName(int square) {

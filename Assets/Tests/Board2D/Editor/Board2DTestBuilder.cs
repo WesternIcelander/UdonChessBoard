@@ -4,6 +4,7 @@ using UdonSharpEditor;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using static ChessBuilderUtil;
 
 // Adds Board2DTest (PLAN.md step 12.13) to the open scene for the scene's only 2D board view (or the selected one),
 // with the scene's BoardTest, ViewTest and ArchiveTest to wait for. An existing Board2DTest is replaced.
@@ -25,7 +26,7 @@ public static class Board2DTestBuilder {
                 : "There are several 2D board views in the scene. Select the one to test, then try again.", "OK");
             return;
         }
-        if (!EnsureProgramAsset()) return;
+        if (!EnsureProgramAssets("Create 2D View Test", TestScriptPath, TestProgramPath)) return;
 
         Board2DTest[] olds = Object.FindObjectsOfType<Board2DTest>(true);
         GameObject root = new GameObject("Board2DTest");
@@ -78,23 +79,5 @@ public static class Board2DTestBuilder {
             Debug.Log("[Board2DTestBuilder] " + views[i].gameObject.name + ": Synced " + (views[i].synced ? "on" : "off")
                 + (holder != null ? " (its grip's VRCObjectSync matched)" : "") + ". Save the scene.");
         }
-    }
-
-    // As ChessBoardViewBuilder.EnsureProgramAsset.
-    static bool EnsureProgramAsset() {
-        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(TestProgramPath) != null) return true;
-        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(TestScriptPath);
-        if (script == null) {
-            Debug.LogError("[Board2DTestBuilder] " + TestScriptPath + " not found.");
-            return false;
-        }
-        UdonSharpProgramAsset program = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();
-        program.sourceCsScript = script;
-        AssetDatabase.CreateAsset(program, TestProgramPath);
-        AssetDatabase.SaveAssets();
-        UdonSharpProgramAsset.CompileAllCsPrograms(true);
-        EditorUtility.DisplayDialog("Create 2D View Test", "Created the test's program asset (" + TestProgramPath
-            + "). Once UdonSharp has finished compiling, run Tools > Chess Board > Create 2D View Test again.", "OK");
-        return false;
     }
 }

@@ -6,7 +6,11 @@ using UnityEngine;
 // Step 5 test behaviour (PLAN.md section 5): PGN export and import, with no world objects.
 // Logs "[PgnTest] PASS: <check>" or "[PgnTest] FAIL: <check>: <details>" per check, then a summary line.
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
-public class PgnTest : UdonSharpBehaviour {
+public class PgnTest : ChessTest {
+    protected override string TestName() {
+        return "PgnTest";
+    }
+
     // The PGN test set (docs/testing.md), found by name (the file name without .txt).
     public TextAsset[] pgnFiles;
     // The importer the multi-frame import checks (5.3) run on; they fail if it isn't assigned.
@@ -14,8 +18,6 @@ public class PgnTest : UdonSharpBehaviour {
 
     Regex tokenRegex;
     Regex clockRegex;
-    int passed;
-    int failed;
 
     void Start() {
         TestTags();
@@ -31,21 +33,6 @@ public class PgnTest : UdonSharpBehaviour {
         TestRoundTrip();
         // The importer checks take frames; the summary is logged once they finish.
         StartFrameImports();
-    }
-
-    void LogSummary() {
-        Debug.Log("[PgnTest] done: " + passed + " passed, " + failed + " failed"
-            + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
-    }
-
-    void Check(bool ok, string name, string details) {
-        if (ok) {
-            passed++;
-            Debug.Log("[PgnTest] PASS: " + name);
-        } else {
-            failed++;
-            Debug.Log("[PgnTest] FAIL: " + name + ": " + details);
-        }
     }
 
     void CheckText(string actual, string expected, string name) {

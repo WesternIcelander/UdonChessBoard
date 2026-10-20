@@ -6,14 +6,15 @@ using UnityEngine;
 // Logs "[RulesTest] PASS: <check>" or "[RulesTest] FAIL: <check>: <details>" per check, then a summary line.
 // The deep perft runs (3.3a, 3.3b) are spread across frames in Update, so the summary line comes after them.
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
-public class RulesTest : UdonSharpBehaviour {
+public class RulesTest : ChessTest {
+    protected override string TestName() {
+        return "RulesTest";
+    }
+
     [Tooltip("Run the deep perft checks (3.3a, 3.3b), which take a few minutes in the Editor.")]
     public bool deepPerft = true;
     [Tooltip("Deep perft work done per frame, in milliseconds. Keeps each Update well under Udon's time limit.")]
     public float perftMsPerFrame = 20f;
-
-    int passed;
-    int failed;
 
     void Start() {
         TestSquares();
@@ -37,21 +38,6 @@ public class RulesTest : UdonSharpBehaviour {
         TestGames();
         if (deepPerft) StartDeepPerft();
         else LogSummary();
-    }
-
-    void LogSummary() {
-        Debug.Log("[RulesTest] done: " + passed + " passed, " + failed + " failed"
-            + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
-    }
-
-    void Check(bool ok, string name, string details) {
-        if (ok) {
-            passed++;
-            Debug.Log("[RulesTest] PASS: " + name);
-        } else {
-            failed++;
-            Debug.Log("[RulesTest] FAIL: " + name + ": " + details);
-        }
     }
 
     // ---- 2.1 ----

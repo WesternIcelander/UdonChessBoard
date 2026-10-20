@@ -48,7 +48,8 @@ public static class GameHistoryWallBuilder {
                 : "There are several GameArchives in the scene; the wall needs exactly one.", "OK");
             return;
         }
-        if (!EnsureProgramAssets()) return;
+        if (!EnsureProgramAssets("Create History Wall", WallScriptPath, WallProgramPath, RowScriptPath,
+            RowProgramPath)) return;
         GameArchive archive = archives[0];
         int rowCount = archive.holders.Length * GameArchiveHolder.Capacity;
         int rowsPerColumn = (rowCount + Columns - 1) / Columns;
@@ -149,8 +150,6 @@ public static class GameHistoryWallBuilder {
 
         TextMeshProUGUI text = NewText(rowObject, "Label", font, RowFontSize, new Vector2(RowInset, 0),
             new Vector2(extent.x - 2 * RowInset, extent.y));
-        text.enableWordWrapping = true;
-        text.overflowMode = TextOverflowModes.Truncate;
         wall.rows[index] = text;
         wall.rowTargets[index] = target;
     }
@@ -183,41 +182,5 @@ public static class GameHistoryWallBuilder {
         }
         Vector3 middle = sum / boards.Length;
         return new Vector3(minX - WallDistance, middle.y + WallHeight, middle.z);
-    }
-
-    // A text at a position from the parent's top left, in canvas pixels.
-    static TextMeshProUGUI NewText(GameObject parent, string name, TMP_FontAsset font, int size, Vector2 topLeft,
-        Vector2 extent) {
-        GameObject child = new GameObject(name, typeof(RectTransform));
-        child.layer = parent.layer;
-        RectTransform rect = child.GetComponent<RectTransform>();
-        rect.SetParent(parent.transform, false);
-        rect.anchorMin = new Vector2(0, 1);
-        rect.anchorMax = new Vector2(0, 1);
-        rect.pivot = new Vector2(0, 1);
-        rect.anchoredPosition = new Vector2(topLeft.x, -topLeft.y);
-        rect.sizeDelta = extent;
-        TextMeshProUGUI text = child.AddComponent<TextMeshProUGUI>();
-        text.font = font;
-        text.fontSize = size;
-        text.alignment = TextAlignmentOptions.Left;
-        text.color = Color.white;
-        text.raycastTarget = false;
-        text.overflowMode = TextOverflowModes.Truncate;
-        return text;
-    }
-
-    // As ChessBoardViewBuilder.EnsureProgramAssets: the wall's and the rows' program assets, created and compiled
-    // when missing, after which the menu item has to be run again.
-    static bool EnsureProgramAssets() {
-        bool created = CreateProgramAssetIfMissing(WallScriptPath, WallProgramPath, "GameHistoryWallBuilder");
-        created |= CreateProgramAssetIfMissing(RowScriptPath, RowProgramPath, "GameHistoryWallBuilder");
-        if (!created) return true;
-        AssetDatabase.SaveAssets();
-        UdonSharpProgramAsset.CompileAllCsPrograms(true);
-        EditorUtility.DisplayDialog("Create History Wall", "Created the missing program assets next to "
-            + WallScriptPath + ". Once UdonSharp has finished compiling, run Tools > Chess Board > Create History "
-            + "Wall again.", "OK");
-        return false;
     }
 }

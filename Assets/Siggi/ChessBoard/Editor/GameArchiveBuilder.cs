@@ -18,7 +18,8 @@ public static class GameArchiveBuilder {
 
     [MenuItem("Tools/Chess Board/Create Game Archive")]
     static void Create() {
-        if (!EnsureProgramAssets()) return;
+        if (!EnsureProgramAssets("Create Game Archive", ArchiveScriptPath, ArchiveProgramPath, HolderScriptPath,
+            HolderProgramPath)) return;
 
         GameArchive[] olds = Object.FindObjectsOfType<GameArchive>(true);
         GameObject root = new GameObject("GameArchive");
@@ -66,18 +67,5 @@ public static class GameArchiveBuilder {
         holder.localOnly = localOnly;
         UdonSharpEditorUtility.CopyProxyToUdon(holder);
         return holder;
-    }
-
-    // As ChessBoardViewBuilder.EnsureProgramAssets.
-    static bool EnsureProgramAssets() {
-        bool created = CreateProgramAssetIfMissing(ArchiveScriptPath, ArchiveProgramPath, "GameArchiveBuilder");
-        created |= CreateProgramAssetIfMissing(HolderScriptPath, HolderProgramPath, "GameArchiveBuilder");
-        if (!created) return true;
-        AssetDatabase.SaveAssets();
-        UdonSharpProgramAsset.CompileAllCsPrograms(true);
-        EditorUtility.DisplayDialog("Create Game Archive", "Created the missing program assets next to "
-            + ArchiveScriptPath + " or " + HolderScriptPath + ". Once UdonSharp has finished compiling, run Tools > "
-            + "Chess Board > Create Game Archive again.", "OK");
-        return false;
     }
 }

@@ -146,11 +146,13 @@ namespace SiggiChessBoard {
 
         public override void OnDeserialization() {
             if (!synced) return;
-            if (!IsLocked() && syncedIndex != shown) LogShown(syncedIndex, "chosen by " + OwnerName());
+            if (!IsLocked() && syncedIndex != shown) {
+                LogShown(syncedIndex, "chosen by " + ChessUtil.OwnerName(gameObject, "nobody"));
+            }
             Listen(syncedIndex);
             int before = viewPly;
             ApplyPly(syncedPly);
-            if (viewPly != before) LogPly("chosen by " + OwnerName());
+            if (viewPly != before) LogPly("chosen by " + ChessUtil.OwnerName(gameObject, "nobody"));
             Refresh();
         }
 
@@ -250,11 +252,6 @@ namespace SiggiChessBoard {
             else return;
             Debug.Log("[ChessBoard2DView] " + gameObject.name + ": showing "
                 + (Utilities.IsValid(board) ? "Board " + (board.boardNumber + 1) : "nothing") + " (" + why + ")");
-        }
-
-        string OwnerName() {
-            VRCPlayerApi owner = Networking.GetOwner(gameObject);
-            return Utilities.IsValid(owner) ? owner.displayName : "nobody";
         }
 
         // Takes ownership of the view for the local player, to send a choice.
@@ -707,14 +704,12 @@ namespace SiggiChessBoard {
             if (!Utilities.IsValid(board)) return "";
             string text = ChessBoardUI.GameStatusTextFor(board, now);
             if (board.takebackColor != ChessRules.NoColor) {
-                text = AddLine(text, ChessBoardUI.ColorText(board.takebackColor) + " asks for a takeback");
+                text = ChessUtil.AddLine(text, ChessBoardUI.ColorText(board.takebackColor) + " asks for a takeback");
             }
-            if (ply >= 0 && ply < board.moveCount) text = AddLine(text, ChessBoardUI.PlyTextFor(board, ply));
+            if (ply >= 0 && ply < board.moveCount) {
+                text = ChessUtil.AddLine(text, ChessBoardUI.PlyTextFor(board, ply));
+            }
             return text;
-        }
-
-        static string AddLine(string text, string line) {
-            return text.Length == 0 ? line : text + "\n" + line;
         }
     }
 }

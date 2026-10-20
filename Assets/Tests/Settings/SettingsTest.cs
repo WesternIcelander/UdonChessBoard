@@ -8,7 +8,11 @@ using VRC.SDKBase;
 // settings, and the menu changing them.
 // Logs "[SettingsTest] PASS: <check>" or "[SettingsTest] FAIL: <check>: <details>" per check, then a summary line.
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
-public class SettingsTest : UdonSharpBehaviour {
+public class SettingsTest : ChessTest {
+    protected override string TestName() {
+        return "SettingsTest";
+    }
+
     // The arbiter under test; its checks fail if it isn't assigned. Set any values on it in the editor: the checks
     // compare what it reports with them, and its report is logged for comparing by eye.
     public ChessArbiter arbiter;
@@ -19,8 +23,6 @@ public class SettingsTest : UdonSharpBehaviour {
     InstanceMasterAuth instanceMasterAuth;
     NoOneAuth noOneAuth;
 
-    int passed;
-    int failed;
     bool started;
     bool joined;
     bool ran;
@@ -54,26 +56,7 @@ public class SettingsTest : UdonSharpBehaviour {
         TestChanging();
         TestMenu();
         TestMenuResnapshot();
-        Debug.Log("[SettingsTest] done: " + passed + " passed, " + failed + " failed"
-            + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
-    }
-
-    void Check(bool ok, string name, string details) {
-        if (ok) {
-            passed++;
-            Debug.Log("[SettingsTest] PASS: " + name);
-        } else {
-            failed++;
-            Debug.Log("[SettingsTest] FAIL: " + name + ": " + details);
-        }
-    }
-
-    void CheckInt(int actual, int expected, string name) {
-        Check(actual == expected, name, "expected " + expected + ", got " + actual);
-    }
-
-    void CheckText(string actual, string expected, string name) {
-        Check(actual == expected, name, "expected \"" + expected + "\", got \"" + actual + "\"");
+        LogSummary();
     }
 
     // ---- 6.1a ----
@@ -98,11 +81,11 @@ public class SettingsTest : UdonSharpBehaviour {
                 | ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced
                 | ChessArbiter.SettingPlayOnAfterFlagFall),
             "bits: draw rules are the six draw settings");
-        CheckText(ChessArbiter.SettingsToString(0), "none", "bits text: none");
-        CheckText(ChessArbiter.SettingsToString(all),
+        CheckString(ChessArbiter.SettingsToString(0), "none", "bits text: none");
+        CheckString(ChessArbiter.SettingsToString(all),
             "takebacks agreement threefold fifty-move fivefold seventy-five-move dead-position mode-forced clock-forced"
             + " play-on", "bits text: all");
-        CheckText(ChessArbiter.SettingsToString(ChessArbiter.SettingTakebacks | ChessArbiter.SettingClockForced),
+        CheckString(ChessArbiter.SettingsToString(ChessArbiter.SettingTakebacks | ChessArbiter.SettingClockForced),
             "takebacks clock-forced", "bits text: two");
     }
 
@@ -317,7 +300,7 @@ public class SettingsTest : UdonSharpBehaviour {
             if (arbiter.overrideMask[b] != 0 || arbiter.EffectiveSettings(b) != defaults) clear = false;
         }
         Check(clear, "cleared: boards 0 to 2 have the defaults", "");
-        CheckText(ChessArbiter.NumbersToString(arbiter.defaultNumbers), defaultText, "cleared: defaults unchanged");
+        CheckString(ChessArbiter.NumbersToString(arbiter.defaultNumbers), defaultText, "cleared: defaults unchanged");
     }
 
     void CheckBoard(int board, int expectedSettings, string expectedNumbers, string name) {
@@ -365,7 +348,7 @@ public class SettingsTest : UdonSharpBehaviour {
                 "auth: the arbiter's simpleAuth is its FirstJoinerAuth",
                 Utilities.IsValid(arbiter.simpleAuth) ? "it is " + arbiter.simpleAuth.GetUdonTypeName() : "it is empty");
             if (Utilities.IsValid(firstJoinerAuth)) {
-                CheckText(firstJoinerAuth.firstJoiner, local.displayName, "auth: first joiner is the local player");
+                CheckString(firstJoinerAuth.firstJoiner, local.displayName, "auth: first joiner is the local player");
                 Check(firstJoinerAuth.IsAuthorized(local), "auth: FirstJoinerAuth authorizes the local player", "");
                 Check(!firstJoinerAuth.IsAuthorized(null), "auth: FirstJoinerAuth refuses no player", "");
             }
@@ -521,7 +504,7 @@ public class SettingsTest : UdonSharpBehaviour {
                 missing += " " + item + "/" + ChessSettingsMenu.ActionDefault;
             }
         }
-        CheckText(missing, "", "menu: every item has its buttons, each with its image");
+        CheckString(missing, "", "menu: every item has its buttons, each with its image");
         Check(Utilities.IsValid(menu.controls) && Utilities.IsValid(menu.notice) && Utilities.IsValid(menu.scopeLabel),
             "menu: controls, notice and scope label assigned", "");
         Check(MenuButton(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn) >= 0
@@ -530,7 +513,7 @@ public class SettingsTest : UdonSharpBehaviour {
         SimpleAuth auth = arbiter.simpleAuth;
         if (arbiter.simpleAuthMissing) {
             menu.UpdateVisibility();
-            CheckText(menu.notice.text, ChessSettingsMenu.SimpleAuthMissingText,
+            CheckString(menu.notice.text, ChessSettingsMenu.SimpleAuthMissingText,
                 "menu: the empty Simple Auth field shown in the notice");
         }
         if (!Utilities.IsValid(auth) || !arbiter.IsOrganizer(local)) {
@@ -563,7 +546,7 @@ public class SettingsTest : UdonSharpBehaviour {
         // Visibility.
         menu.UpdateVisibility();
         Check(menu.controlsShown && menu.controls.activeSelf, "menu: controls shown to an organizer", "");
-        CheckText(menu.notice.text, "", "menu: no notice for an organizer");
+        CheckString(menu.notice.text, "", "menu: no notice for an organizer");
         if (Utilities.IsValid(noOneAuth)) {
             arbiter.simpleAuth = noOneAuth;
             menu.UpdateVisibility();
@@ -574,7 +557,7 @@ public class SettingsTest : UdonSharpBehaviour {
             arbiter.simpleAuth = auth;
             menu.UpdateVisibility();
             Check(hidden, "menu: controls hidden from a non-organizer", "");
-            CheckText(notice, "Only organizers can change these settings.", "menu: a non-organizer's notice");
+            CheckString(notice, "Only organizers can change these settings.", "menu: a non-organizer's notice");
             Check(!pressed && takebacks, "menu: a non-organizer's press changes nothing", "");
             Check(menu.controlsShown && menu.controls.activeSelf && menu.notice.text == "",
                 "menu: controls shown again to the organizer", "");
@@ -588,9 +571,9 @@ public class SettingsTest : UdonSharpBehaviour {
             arbiter.simpleAuthMissing = false;
             menu.UpdateVisibility();
             Check(hiddenMissing, "menu: controls hidden while the Simple Auth field is empty", "");
-            CheckText(noticeMissing, ChessSettingsMenu.SimpleAuthMissingText,
+            CheckString(noticeMissing, ChessSettingsMenu.SimpleAuthMissingText,
                 "menu: the empty Simple Auth field shown in the notice");
-            CheckText(menu.notice.text, "", "menu: no notice once the field is set again");
+            CheckString(menu.notice.text, "", "menu: no notice once the field is set again");
         } else {
             Check(false, "menu: non-organizer", "no NoOneAuth on the test object");
         }
@@ -604,8 +587,8 @@ public class SettingsTest : UdonSharpBehaviour {
 
         // All boards: on and off.
         int t = ChessSettingsMenu.ItemTakebacks;
-        CheckText(menu.scopeLabel.text, "All boards", "menu: all boards: scope shown");
-        CheckText(menu.values[t].text, "On", "menu: all boards: takebacks shown on");
+        CheckString(menu.scopeLabel.text, "All boards", "menu: all boards: scope shown");
+        CheckString(menu.values[t].text, "On", "menu: all boards: takebacks shown on");
         Check(menu.IsSelected(t, ChessSettingsMenu.ActionOn) && !menu.IsSelected(t, ChessSettingsMenu.ActionOff),
             "menu: all boards: On marked", "");
         Check(ButtonColorIs(t, ChessSettingsMenu.ActionOn, menu.selectedButtonColor)
@@ -620,24 +603,24 @@ public class SettingsTest : UdonSharpBehaviour {
         Check(menu.Press(t, ChessSettingsMenu.ActionOff) && !arbiter.IsDefaultOn(ChessArbiter.SettingTakebacks),
             "menu: all boards: takebacks off", ChessArbiter.SettingsToString(arbiter.defaultSettings));
         Check(Networking.IsOwner(arbiter.gameObject), "menu: the organizer owns the arbiter after a change", "");
-        CheckText(menu.values[t].text, "Off", "menu: all boards: takebacks shown off");
+        CheckString(menu.values[t].text, "Off", "menu: all boards: takebacks shown off");
         Check(menu.IsSelected(t, ChessSettingsMenu.ActionOff) && ButtonColorIs(t, ChessSettingsMenu.ActionOff,
             menu.selectedButtonColor), "menu: all boards: Off marked", "");
         menu.Press(t, ChessSettingsMenu.ActionOn);
 
         // All boards: the draw rules together and apart.
         int d = ChessSettingsMenu.ItemDrawRules;
-        CheckText(menu.values[d].text, "Off (No draws)", "menu: all boards: No draws shown");
+        CheckString(menu.values[d].text, "Off (No draws)", "menu: all boards: No draws shown");
         Check(menu.Press(d, ChessSettingsMenu.ActionOn), "menu: all boards: all draw rules on", "");
         CheckInt(arbiter.defaultSettings & ChessArbiter.SettingsDrawRules, ChessArbiter.SettingsDrawRules,
             "menu: all boards: every draw rule on");
-        CheckText(menu.values[d].text, "On", "menu: all boards: all draw rules shown on");
+        CheckString(menu.values[d].text, "On", "menu: all boards: all draw rules shown on");
         menu.Press(ChessSettingsMenu.ItemThreefoldRepetition, ChessSettingsMenu.ActionOff);
         CheckInt(arbiter.defaultSettings & ChessArbiter.SettingsDrawRules,
             ChessArbiter.SettingsDrawRules & ~ChessArbiter.SettingThreefoldRepetition,
             "menu: all boards: threefold alone off");
-        CheckText(menu.values[d].text, "Mixed", "menu: all boards: draw rules shown mixed");
-        CheckText(menu.values[ChessSettingsMenu.ItemThreefoldRepetition].text, "Off",
+        CheckString(menu.values[d].text, "Mixed", "menu: all boards: draw rules shown mixed");
+        CheckString(menu.values[ChessSettingsMenu.ItemThreefoldRepetition].text, "Off",
             "menu: all boards: threefold shown off");
         Check(!menu.IsSelected(d, ChessSettingsMenu.ActionOn) && !menu.IsSelected(d, ChessSettingsMenu.ActionOff),
             "menu: all boards: nothing marked for mixed draw rules", "");
@@ -653,11 +636,11 @@ public class SettingsTest : UdonSharpBehaviour {
 
         // All boards: playing on untimed after a flag fall (12.9), off in the known defaults.
         int p = ChessSettingsMenu.ItemPlayOnAfterFlagFall;
-        CheckText(ChessSettingsMenu.ItemText(p), "Play on untimed after a flag fall", "menu: play-on row's label");
-        CheckText(menu.values[p].text, "Off", "menu: all boards: play-on shown off");
+        CheckString(ChessSettingsMenu.ItemText(p), "Play on untimed after a flag fall", "menu: play-on row's label");
+        CheckString(menu.values[p].text, "Off", "menu: all boards: play-on shown off");
         Check(menu.Press(p, ChessSettingsMenu.ActionOn) && arbiter.IsDefaultOn(ChessArbiter.SettingPlayOnAfterFlagFall),
             "menu: all boards: play-on on", ChessArbiter.SettingsToString(arbiter.defaultSettings));
-        CheckText(menu.values[p].text, "On", "menu: all boards: play-on shown on");
+        CheckString(menu.values[p].text, "On", "menu: all boards: play-on shown on");
         Check(menu.Press(p, ChessSettingsMenu.ActionOff)
                 && !arbiter.IsDefaultOn(ChessArbiter.SettingPlayOnAfterFlagFall),
             "menu: all boards: play-on off again", ChessArbiter.SettingsToString(arbiter.defaultSettings));
@@ -665,7 +648,7 @@ public class SettingsTest : UdonSharpBehaviour {
         // All boards: times, with Never last.
         int r = ChessSettingsMenu.ItemResetAvailableTime;
         int a = ChessSettingsMenu.ItemAutoResetTime;
-        CheckText(menu.values[r].text, "2 min", "menu: all boards: reset-available time shown");
+        CheckString(menu.values[r].text, "2 min", "menu: all boards: reset-available time shown");
         menu.Press(r, ChessSettingsMenu.ActionNext);
         CheckDefault(ChessArbiter.NumberResetAvailableTime, 300, "5 min", r, "menu: all boards: reset-available >");
         menu.Press(r, ChessSettingsMenu.ActionPrevious);
@@ -674,7 +657,7 @@ public class SettingsTest : UdonSharpBehaviour {
         CheckDefault(ChessArbiter.NumberAutoResetTime, 900, "15 min", a, "menu: all boards: auto-reset >");
         arbiter.SetDefaultNumber(ChessArbiter.NumberAutoResetTime, 3600);
         menu.Refresh();
-        CheckText(menu.values[a].text, "1 h", "menu: all boards: an hour shown");
+        CheckString(menu.values[a].text, "1 h", "menu: all boards: an hour shown");
         menu.Press(a, ChessSettingsMenu.ActionNext);
         CheckDefault(ChessArbiter.NumberAutoResetTime, ChessArbiter.Never, "Never", a,
             "menu: all boards: auto-reset > after the longest time is Never");
@@ -689,7 +672,7 @@ public class SettingsTest : UdonSharpBehaviour {
         arbiter.SetDefaultNumber(ChessArbiter.NumberAutoResetTime, ChessArbiter.Never);
         arbiter.SetDefaultNumber(ChessArbiter.NumberResetAvailableTime, 90);
         menu.Refresh();
-        CheckText(menu.values[r].text, "1 min 30 s", "menu: all boards: a time off the list shown");
+        CheckString(menu.values[r].text, "1 min 30 s", "menu: all boards: a time off the list shown");
         menu.Press(r, ChessSettingsMenu.ActionNext);
         CheckDefault(ChessArbiter.NumberResetAvailableTime, 120, "2 min", r, "menu: all boards: > from off the list");
         arbiter.SetDefaultNumber(ChessArbiter.NumberResetAvailableTime, 90);
@@ -704,13 +687,13 @@ public class SettingsTest : UdonSharpBehaviour {
         int m = ChessSettingsMenu.ItemForcedMode;
         int bt = ChessSettingsMenu.ItemForcedBaseTime;
         int inc = ChessSettingsMenu.ItemForcedIncrement;
-        CheckText(menu.values[m].text, "Standard", "menu: all boards: forced mode shown");
+        CheckString(menu.values[m].text, "Standard", "menu: all boards: forced mode shown");
         Check(!menu.Press(m, ChessSettingsMenu.ActionPrevious), "menu: all boards: nothing before Standard", "");
         menu.Press(m, ChessSettingsMenu.ActionNext);
         CheckDefault(ChessArbiter.NumberForcedMode, ChessGame.ModeChess960, "Chess960", m,
             "menu: all boards: forced mode >");
         Check(!menu.Press(m, ChessSettingsMenu.ActionNext), "menu: all boards: nothing after Chess960", "");
-        CheckText(menu.values[bt].text, "10 min", "menu: all boards: forced base time shown");
+        CheckString(menu.values[bt].text, "10 min", "menu: all boards: forced base time shown");
         menu.Press(bt, ChessSettingsMenu.ActionPrevious);
         CheckDefault(ChessArbiter.NumberForcedBaseTime, 300, "5 min", bt, "menu: all boards: forced base time <");
         arbiter.SetDefaultNumber(ChessArbiter.NumberForcedBaseTime, 60);
@@ -720,7 +703,7 @@ public class SettingsTest : UdonSharpBehaviour {
         Check(!menu.Press(bt, ChessSettingsMenu.ActionPrevious), "menu: all boards: nothing before no clock", "");
         menu.Press(bt, ChessSettingsMenu.ActionNext);
         CheckDefault(ChessArbiter.NumberForcedBaseTime, 60, "1 min", bt, "menu: all boards: forced base time >");
-        CheckText(menu.values[inc].text, "0 s", "menu: all boards: forced increment shown");
+        CheckString(menu.values[inc].text, "0 s", "menu: all boards: forced increment shown");
         menu.Press(inc, ChessSettingsMenu.ActionNext);
         CheckDefault(ChessArbiter.NumberForcedIncrement, 1, "1 s", inc, "menu: all boards: forced increment >");
 
@@ -729,11 +712,11 @@ public class SettingsTest : UdonSharpBehaviour {
         int[] numbersNow = Copy(arbiter.defaultNumbers);
         Check(menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionNext) && menu.scope == 0,
             "menu: scope > from all boards is board 1", "scope " + menu.scope);
-        CheckText(menu.scopeLabel.text, "Board 1", "menu: board 1: scope shown");
+        CheckString(menu.scopeLabel.text, "Board 1", "menu: board 1: scope shown");
         Check(ButtonActive(t, ChessSettingsMenu.ActionDefault)
                 && ButtonActive(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionDefault),
             "menu: board 1: Default buttons shown", "");
-        CheckText(menu.values[t].text, "On (default)", "menu: board 1: takebacks from the default");
+        CheckString(menu.values[t].text, "On (default)", "menu: board 1: takebacks from the default");
         Check(menu.IsSelected(t, ChessSettingsMenu.ActionDefault) && !menu.IsSelected(t, ChessSettingsMenu.ActionOn),
             "menu: board 1: Default marked", "");
         Check(menu.Press(t, ChessSettingsMenu.ActionOff), "menu: board 1: takebacks off pressed", "");
@@ -743,27 +726,27 @@ public class SettingsTest : UdonSharpBehaviour {
             "menu: board 1: takebacks overridden off", "");
         Check(arbiter.defaultSettings == defaultsNow && arbiter.overrideMask[1] == 0,
             "menu: board 1: the defaults and board 2 untouched", "");
-        CheckText(menu.values[t].text, "Off", "menu: board 1: takebacks shown off");
+        CheckString(menu.values[t].text, "Off", "menu: board 1: takebacks shown off");
         Check(menu.IsSelected(t, ChessSettingsMenu.ActionOff) && !menu.IsSelected(t, ChessSettingsMenu.ActionDefault),
             "menu: board 1: Off marked", "");
         Check(menu.Press(t, ChessSettingsMenu.ActionDefault)
                 && !arbiter.IsSettingOverridden(0, ChessArbiter.SettingTakebacks),
             "menu: board 1: takebacks back to the default", "");
-        CheckText(menu.values[t].text, "On (default)", "menu: board 1: takebacks shown from the default again");
+        CheckString(menu.values[t].text, "On (default)", "menu: board 1: takebacks shown from the default again");
         Check(!menu.Press(t, ChessSettingsMenu.ActionDefault), "menu: board 1: Default again changes nothing", "");
 
         Check(menu.Press(ChessSettingsMenu.ItemDrawAgreement, ChessSettingsMenu.ActionOn)
                 && arbiter.IsEffectiveOn(0, ChessArbiter.SettingDrawAgreement),
             "menu: board 1: draw by agreement on", "");
-        CheckText(menu.values[d].text, "Mixed", "menu: board 1: draw rules mixed, partly overridden");
+        CheckString(menu.values[d].text, "Mixed", "menu: board 1: draw rules mixed, partly overridden");
         Check(!menu.IsSelected(d, ChessSettingsMenu.ActionDefault), "menu: board 1: partly overridden, Default not marked",
             "");
         Check(menu.Press(d, ChessSettingsMenu.ActionDefault)
                 && (arbiter.overrideMask[0] & ChessArbiter.SettingsDrawRules) == 0,
             "menu: board 1: draw rules all back to the default", "");
-        CheckText(menu.values[d].text, "Off (No draws) (default)", "menu: board 1: No draws from the default");
+        CheckString(menu.values[d].text, "Off (No draws) (default)", "menu: board 1: No draws from the default");
 
-        CheckText(menu.values[r].text, "30 s (default)", "menu: board 1: reset-available time from the default");
+        CheckString(menu.values[r].text, "30 s (default)", "menu: board 1: reset-available time from the default");
         Check(menu.IsSelected(r, ChessSettingsMenu.ActionDefault), "menu: board 1: a time from the default marked", "");
         menu.Press(r, ChessSettingsMenu.ActionNext);
         Check(arbiter.IsNumberOverridden(0, ChessArbiter.NumberResetAvailableTime)
@@ -771,7 +754,7 @@ public class SettingsTest : UdonSharpBehaviour {
                 && arbiter.DefaultNumber(ChessArbiter.NumberResetAvailableTime) == 30,
             "menu: board 1: reset-available time overridden",
             "override " + arbiter.NumberOverrideValue(0, ChessArbiter.NumberResetAvailableTime));
-        CheckText(menu.values[r].text, "1 min", "menu: board 1: overridden time shown");
+        CheckString(menu.values[r].text, "1 min", "menu: board 1: overridden time shown");
         Check(!menu.IsSelected(r, ChessSettingsMenu.ActionDefault), "menu: board 1: overridden time, Default unmarked",
             "");
         menu.Press(a, ChessSettingsMenu.ActionPrevious);
@@ -788,7 +771,7 @@ public class SettingsTest : UdonSharpBehaviour {
         Check(menu.Press(r, ChessSettingsMenu.ActionDefault)
                 && !arbiter.IsNumberOverridden(0, ChessArbiter.NumberResetAvailableTime),
             "menu: board 1: reset-available time back to the default", "");
-        CheckText(menu.values[r].text, "30 s (default)", "menu: board 1: time shown from the default again");
+        CheckString(menu.values[r].text, "30 s (default)", "menu: board 1: time shown from the default again");
         Check(menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionDefault) && arbiter.overrideMask[0] == 0,
             "menu: board 1: All default clears its overrides", "mask " + arbiter.overrideMask[0]);
         Check(!menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionDefault),
@@ -796,7 +779,7 @@ public class SettingsTest : UdonSharpBehaviour {
 
         // Scope.
         menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionNext);
-        CheckText(menu.scopeLabel.text, "Board 2", "menu: scope > to board 2");
+        CheckString(menu.scopeLabel.text, "Board 2", "menu: scope > to board 2");
         menu.Press(t, ChessSettingsMenu.ActionOff);
         Check(arbiter.IsSettingOverridden(1, ChessArbiter.SettingTakebacks) && arbiter.overrideMask[0] == 0,
             "menu: board 2: its own override", "");
@@ -805,7 +788,7 @@ public class SettingsTest : UdonSharpBehaviour {
         Check(menu.scope == ChessSettingsMenu.ScopeAllBoards && menu.scopeLabel.text == "All boards",
             "menu: scope < back to all boards", "scope " + menu.scope);
         menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionPrevious);
-        CheckText(menu.scopeLabel.text, "Board " + boards, "menu: scope < from all boards wraps to the last board");
+        CheckString(menu.scopeLabel.text, "Board " + boards, "menu: scope < from all boards wraps to the last board");
         menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionNext);
         CheckInt(menu.scope, ChessSettingsMenu.ScopeAllBoards, "menu: scope > from the last board wraps to all boards");
         menu.scope = boards;
@@ -813,7 +796,7 @@ public class SettingsTest : UdonSharpBehaviour {
         CheckInt(menu.scope, ChessSettingsMenu.ScopeAllBoards, "menu: a board without overrides shows all boards");
 
         // Texts.
-        CheckText(ChessSettingsMenu.DurationText(45) + "|" + ChessSettingsMenu.DurationText(5400) + "|"
+        CheckString(ChessSettingsMenu.DurationText(45) + "|" + ChessSettingsMenu.DurationText(5400) + "|"
                 + ChessSettingsMenu.DurationText(7200) + "|" + ChessSettingsMenu.DurationText(0),
             "45 s|90 min|2 h|0 s", "menu: durations");
 
@@ -836,7 +819,7 @@ public class SettingsTest : UdonSharpBehaviour {
     // this runs only with nobody else in the instance; it needs both boards reset to start with, and resets them at
     // the end (no moves, so nothing is logged). Settings are put back and sent.
     void TestMenuResnapshot() {
-        CheckText(ChessSettingsMenu.ResnapshotText(0, 0, 0) + "|" + ChessSettingsMenu.ResnapshotText(1, 2, 0) + "|"
+        CheckString(ChessSettingsMenu.ResnapshotText(0, 0, 0) + "|" + ChessSettingsMenu.ResnapshotText(1, 2, 0) + "|"
                 + ChessSettingsMenu.ResnapshotText(2, 0, 1) + "|" + ChessSettingsMenu.ResnapshotText(0, 3, 0),
             "No such board|1 board updated, 2 not in use|2 boards updated, 1 refused|No board in use: each takes the "
                 + "settings when next used", "re-snapshot: outcome texts");
@@ -864,7 +847,7 @@ public class SettingsTest : UdonSharpBehaviour {
             if (b.boardNumber == 0 && first == null) first = b;
             if (b.boardNumber == 1 && second == null) second = b;
         }
-        CheckText(wiring, "", "re-snapshot: the menu's boards are on its arbiter");
+        CheckString(wiring, "", "re-snapshot: the menu's boards are on its arbiter");
         if (first == null || second == null) {
             Check(false, "re-snapshot: boards numbered 0 and 1", "the menu has " + menu.boards.Length + " board(s); "
                 + "create a second board (Tools > Chess Board > Create Board) and run Create Settings Menu again");
@@ -895,9 +878,9 @@ public class SettingsTest : UdonSharpBehaviour {
 
         Check(!menu.Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn),
             "re-snapshot: nothing taken with every board reset", "");
-        CheckText(menu.resnapshotText, ChessSettingsMenu.ResnapshotText(0, others + 2, 0),
+        CheckString(menu.resnapshotText, ChessSettingsMenu.ResnapshotText(0, others + 2, 0),
             "re-snapshot: reset boards reported not in use");
-        CheckText(menu.resnapshotLabel.text, menu.resnapshotText, "re-snapshot: the outcome shown");
+        CheckString(menu.resnapshotLabel.text, menu.resnapshotText, "re-snapshot: the outcome shown");
         Check(first.lifecycle == ChessBoard.LifecycleReset && first.gameSettings == 0,
             "re-snapshot: a reset board left without a snapshot", "");
 
@@ -910,10 +893,10 @@ public class SettingsTest : UdonSharpBehaviour {
         Check(first.IsGameSettingOn(t), "re-snapshot: a changed default doesn't reach a board in use by itself", "");
 
         menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionNext);
-        CheckText(menu.resnapshotText, "", "re-snapshot: the outcome cleared when the scope changes");
+        CheckString(menu.resnapshotText, "", "re-snapshot: the outcome cleared when the scope changes");
         Check(menu.Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn),
             "re-snapshot: board 1 pressed", "");
-        CheckText(menu.resnapshotText, "1 board updated", "re-snapshot: board 1's outcome");
+        CheckString(menu.resnapshotText, "1 board updated", "re-snapshot: board 1's outcome");
         Check(!first.IsGameSettingOn(t), "re-snapshot: board 1 took the new default", "");
         Check(second.IsGameSettingOn(t), "re-snapshot: board 2 kept its snapshot", "");
         Check(Networking.IsOwner(first.gameObject), "re-snapshot: the organizer owns board 1 after it", "");
@@ -923,7 +906,7 @@ public class SettingsTest : UdonSharpBehaviour {
         menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionPrevious);
         Check(menu.Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn),
             "re-snapshot: all boards pressed", "");
-        CheckText(menu.resnapshotText, ChessSettingsMenu.ResnapshotText(2, others, 0),
+        CheckString(menu.resnapshotText, ChessSettingsMenu.ResnapshotText(2, others, 0),
             "re-snapshot: all boards' outcome");
         Check(!second.IsGameSettingOn(t), "re-snapshot: board 2 took the new default", "");
         Check(second.IsModeForced() && second.mode == ChessGame.ModeChess960,
@@ -959,7 +942,7 @@ public class SettingsTest : UdonSharpBehaviour {
     // A default number after a menu press, and its value text.
     void CheckDefault(int number, int expected, string expectedText, int item, string name) {
         CheckInt(arbiter.DefaultNumber(number), expected, name);
-        CheckText(menu.values[item].text, expectedText, name + ": shown");
+        CheckString(menu.values[item].text, expectedText, name + ": shown");
     }
 
     // The index of the menu's button for an item and action with its object and image, -1 for none.

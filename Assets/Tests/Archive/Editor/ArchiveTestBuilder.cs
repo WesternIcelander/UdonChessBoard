@@ -4,6 +4,7 @@ using UdonSharpEditor;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using static ChessBuilderUtil;
 
 // Adds ArchiveTest (PLAN.md step 10.1a) to the open scene for the scene's only GameArchive: a board using it, its
 // history wall (10.2a), the board's UI (10.2b, 12.1), and the scene's BoardTest and ViewTest to wait for. An existing
@@ -21,7 +22,7 @@ public static class ArchiveTestBuilder {
                 : "There are several GameArchives in the scene; the test needs exactly one.", "OK");
             return;
         }
-        if (!EnsureProgramAsset()) return;
+        if (!EnsureProgramAssets("Create Archive Test", TestScriptPath, TestProgramPath)) return;
         GameArchive archive = archives[0];
 
         ArchiveTest[] olds = Object.FindObjectsOfType<ArchiveTest>(true);
@@ -63,23 +64,5 @@ public static class ArchiveTestBuilder {
             + (test.wall != null ? "with the history wall" : "with no history wall (Create History Wall first)")
             + (test.ui != null ? ", with its UI" : ", with no UI of the board")
             + ". Save the scene.");
-    }
-
-    // As ChessBoardViewBuilder.EnsureProgramAsset.
-    static bool EnsureProgramAsset() {
-        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(TestProgramPath) != null) return true;
-        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(TestScriptPath);
-        if (script == null) {
-            Debug.LogError("[ArchiveTestBuilder] " + TestScriptPath + " not found.");
-            return false;
-        }
-        UdonSharpProgramAsset program = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();
-        program.sourceCsScript = script;
-        AssetDatabase.CreateAsset(program, TestProgramPath);
-        AssetDatabase.SaveAssets();
-        UdonSharpProgramAsset.CompileAllCsPrograms(true);
-        EditorUtility.DisplayDialog("Create Archive Test", "Created the test's program asset (" + TestProgramPath
-            + "). Once UdonSharp has finished compiling, run Tools > Chess Board > Create Archive Test again.", "OK");
-        return false;
     }
 }

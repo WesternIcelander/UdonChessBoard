@@ -10,7 +10,11 @@ using VRC.SDKBase;
 // "[ArchiveTest] PASS: <check>" or "[ArchiveTest] FAIL: <check>: <details>" per check, then a summary line.
 // Built in the scene by Tools > Chess Board > Create Archive Test (Editor/ArchiveTestBuilder.cs).
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
-public class ArchiveTest : UdonSharpBehaviour {
+public class ArchiveTest : ChessTest {
+    protected override string TestName() {
+        return "ArchiveTest";
+    }
+
     public GameArchive archive;
     // A board whose archive is the one above, for a game logged by a board.
     public ChessBoard board;
@@ -21,19 +25,14 @@ public class ArchiveTest : UdonSharpBehaviour {
     public GameHistoryWall wall;
     // The board's UI, for its Load it here button (steps 10.2b, 12.1).
     public ChessBoardUI ui;
-    // Set once the checks are done or skipped, for Board2DTest (step 12.13) to wait for.
-    [System.NonSerialized] public bool finished;
 
     const int HolderCount = 10;
     const int Capacity = HolderCount * GameArchiveHolder.Capacity;
     // A kept game's numbers: mode, ending, winner, base time, increment.
     const int InfoLength = 5;
 
-    int passed;
-    int failed;
     bool joined;
     bool ran;
-    int waitedFrames;
     int[] sendsBefore = new int[HolderCount];
     int[] scratch = new int[16];
     // The games archived before the checks (by BoardTest, ViewTest, or played), put back when done (SaveGames).
@@ -58,10 +57,7 @@ public class ArchiveTest : UdonSharpBehaviour {
 
     public void WaitForTests() {
         if (ran) return;
-        if (!joined || (Utilities.IsValid(boardTest) && !boardTest.finished)
-            || (Utilities.IsValid(viewTest) && !viewTest.finished)) {
-            waitedFrames++;
-            if (waitedFrames % 3000 == 0) Debug.Log("[ArchiveTest] still waiting for BoardTest and ViewTest to finish");
+        if (!ReadyAfter(joined, boardTest, viewTest, null, "BoardTest and ViewTest to finish")) {
             SendCustomEventDelayedFrames(nameof(WaitForTests), 1);
             return;
         }
@@ -592,7 +588,7 @@ public class ArchiveTest : UdonSharpBehaviour {
         }
         CheckInt(board.FirstMissingNotation(), 0, "notation: none on loading (the archive keeps none)");
         Check(board.FillNotationFor(float.MaxValue), "notation: filled in", "gaps left");
-        CheckString(NotationText(4), "f3 e5 g4 Qh4#", "notation: the fool's mate's");
+        CheckString(NotationText(board, 4), "f3 e5 g4 Qh4#", "notation: the fool's mate's");
         CheckInt(board.LoadArchivedGame(firstId), ChessBoard.InputRejected, "load: refused on a loaded board");
 
         // The unfinished game: no result.
@@ -602,7 +598,7 @@ public class ArchiveTest : UdonSharpBehaviour {
         CheckString(board.replaySourceResult, "*", "load: unfinished, result *");
         CheckInt(board.ending, ChessGame.EndingNone, "load: unfinished, no result");
         Check(board.FillNotationFor(float.MaxValue), "notation: unfinished, filled in", "gaps left");
-        CheckString(NotationText(2), "e4 c5", "notation: unfinished, the game's");
+        CheckString(NotationText(board, 2), "e4 c5", "notation: unfinished, the game's");
         board.ClearState();
         if (hasUI) ui.UpdateButtons();
     }
@@ -630,12 +626,6 @@ public class ArchiveTest : UdonSharpBehaviour {
         Check(errors.Length == 0, name, errors);
     }
 
-    // The board's first count notation entries, separated by spaces.
-    string NotationText(int count) {
-        string text = "";
-        for (int i = 0; i < count; i++) text += (i == 0 ? "" : " ") + board.notation[i];
-        return text;
-    }
 
     // ---- Test games ----
 
@@ -698,29 +688,5 @@ public class ArchiveTest : UdonSharpBehaviour {
 
     int Sq(string name) {
         return ChessRules.ParseSquare(name);
-    }
-
-    void LogSummary() {
-        finished = true;
-        Debug.Log("[ArchiveTest] done: " + passed + " passed, " + failed + " failed"
-            + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
-    }
-
-    void CheckInt(int actual, int expected, string name) {
-        Check(actual == expected, name, "got " + actual + ", expected " + expected);
-    }
-
-    void CheckString(string actual, string expected, string name) {
-        Check(actual == expected, name, "got \"" + actual + "\", expected \"" + expected + "\"");
-    }
-
-    void Check(bool ok, string name, string details) {
-        if (ok) {
-            passed++;
-            Debug.Log("[ArchiveTest] PASS: " + name);
-        } else {
-            failed++;
-            Debug.Log("[ArchiveTest] FAIL: " + name + ": " + details);
-        }
     }
 }

@@ -1,10 +1,11 @@
+using SiggiChessBoard;
 using TMPro;
 using UdonSharp;
 using UnityEditor;
 using UnityEngine;
 
-// Helpers shared by the Tools > Chess Board builders and the test builders (step 12.18), so a change to one is made
-// once.
+// Helpers shared by the Tools > Chess Board builders and the test builders (steps 12.18 and 12.19), so a change to
+// one is made once.
 public static class ChessBuilderUtil {
     // A UI canvas's collider: a trigger box over the whole canvas, so players walk through it. VRCUiShape uses a box
     // collider the canvas already has (and adds a solid one when there's none); a trigger still takes the pointer.
@@ -17,19 +18,55 @@ public static class ChessBuilderUtil {
         box.isTrigger = true;
     }
 
-    // Creates the program asset for a script if it's missing; whether it did, after which the menu item has to stop
-    // (also when the script is missing, logged with builderName, which stops the build the same way).
-    public static bool CreateProgramAssetIfMissing(string scriptPath, string programPath, string builderName) {
-        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(programPath) != null) return false;
-        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(scriptPath);
-        if (script == null) {
-            Debug.LogError("[" + builderName + "] " + scriptPath + " not found.");
-            return true;
+    // UdonSharp needs a compiled program asset next to a script before its behaviour can be added. The repository
+    // has them; any that's missing is created and compiled, after which menuItem (under Tools > Chess Board) has to
+    // be run again, as a dialog says. paths are pairs of a script's path and its program asset's. Whether every
+    // program asset was there; false also when a script is missing (logged).
+    public static bool EnsureProgramAssets(string menuItem, params string[] paths) {
+        string created = "";
+        for (int i = 0; i + 1 < paths.Length; i += 2) {
+            if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(paths[i + 1]) != null) continue;
+            MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(paths[i]);
+            if (script == null) {
+                Debug.LogError("[" + menuItem + "] " + paths[i] + " not found.");
+                return false;
+            }
+            UdonSharpProgramAsset program = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();
+            program.sourceCsScript = script;
+            AssetDatabase.CreateAsset(program, paths[i + 1]);
+            created += (created.Length > 0 ? ", " : "") + paths[i + 1];
         }
-        UdonSharpProgramAsset program = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();
-        program.sourceCsScript = script;
-        AssetDatabase.CreateAsset(program, programPath);
-        return true;
+        if (created.Length == 0) return true;
+        AssetDatabase.SaveAssets();
+        UdonSharpProgramAsset.CompileAllCsPrograms(true);
+        EditorUtility.DisplayDialog(menuItem, "Created the missing program assets (" + created + "). Once UdonSharp "
+            + "has finished compiling, run Tools > Chess Board > " + menuItem + " again.", "OK");
+        return false;
+    }
+
+    // The selected ChessBoard, or the scene's only one; otherwise null, after a dialog titled menuItem saying to
+    // select the board the what (e.g. "view") is for.
+    public static ChessBoard FindBoard(string menuItem, string what) {
+        if (Selection.activeGameObject != null) {
+            ChessBoard selected = Selection.activeGameObject.GetComponent<ChessBoard>();
+            if (selected != null) return selected;
+        }
+        ChessBoard[] boards = Object.FindObjectsOfType<ChessBoard>(true);
+        if (boards.Length == 1) return boards[0];
+        EditorUtility.DisplayDialog(menuItem, boards.Length == 0
+            ? "There's no ChessBoard in the open scene."
+            : "There are several ChessBoards in the scene. Select the one the " + what + " is for, then try again.",
+            "OK");
+        return null;
+    }
+
+    // The object of the scene's T (built earlier) for board, the one whose board (read by boardOf) it is, or null.
+    public static GameObject ExistingFor<T>(ChessBoard board, System.Func<T, ChessBoard> boardOf) where T : Component {
+        T[] found = Object.FindObjectsOfType<T>(true);
+        for (int i = 0; i < found.Length; i++) {
+            if (boardOf(found[i]) == board) return found[i].gameObject;
+        }
+        return null;
     }
 
     // A child rect at a position from the parent's top left, in canvas pixels.
@@ -44,6 +81,47 @@ public static class ChessBuilderUtil {
         rect.anchoredPosition = new Vector2(topLeft.x, -topLeft.y);
         rect.sizeDelta = size;
         return child;
+    }
+
+    // A child of parent filling it, inset by offsetMin and offsetMax.
+    public static GameObject AddStretched(GameObject parent, string name, Vector2 offsetMin, Vector2 offsetMax) {
+        return AddAnchored(parent, name, Vector2.zero, Vector2.one, offsetMin, offsetMax);
+    }
+
+    // A child of parent between the anchors (fractions of parent), inset by offsetMin and offsetMax. The anchors are
+    // set first: setting them afterwards would move the offsets.
+    public static GameObject AddAnchored(GameObject parent, string name, Vector2 anchorMin, Vector2 anchorMax,
+        Vector2 offsetMin, Vector2 offsetMax) {
+        GameObject child = new GameObject(name, typeof(RectTransform));
+        child.layer = parent.layer;
+        RectTransform rect = child.GetComponent<RectTransform>();
+        rect.SetParent(parent.transform, false);
+        rect.anchorMin = anchorMin;
+        rect.anchorMax = anchorMax;
+        rect.offsetMin = offsetMin;
+        rect.offsetMax = offsetMax;
+        return child;
+    }
+
+    // A text on target (a rect, e.g. from NewChild or AddStretched) filling it: wrapping, cut off at its rect, and
+    // not taking the pointer, so a button under it does.
+    public static TextMeshProUGUI AddText(GameObject target, TMP_FontAsset font, float size,
+        TextAlignmentOptions alignment, Color color) {
+        TextMeshProUGUI text = target.AddComponent<TextMeshProUGUI>();
+        text.font = font;
+        text.fontSize = size;
+        text.alignment = alignment;
+        text.color = color;
+        text.raycastTarget = false;
+        text.enableWordWrapping = true;
+        text.overflowMode = TextOverflowModes.Truncate;
+        return text;
+    }
+
+    // A white, left-aligned text at a position from the parent's top left, in canvas pixels (AddText).
+    public static TextMeshProUGUI NewText(GameObject parent, string name, TMP_FontAsset font, float size,
+        Vector2 topLeft, Vector2 extent) {
+        return AddText(NewChild(parent, name, topLeft, extent), font, size, TextAlignmentOptions.Left, Color.white);
     }
 
     // TextMeshPro's default font (LiberationSans SDF, from TMP Essential Resources), by the GUID it always has

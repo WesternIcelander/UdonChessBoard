@@ -8,6 +8,10 @@ Neither codebase has tests yet, and UdonSharp code only runs inside Unity, so te
 - **Networking needs real clients.** ClientSim runs a single local player, so ownership, sync and late joiners have to be tested with several clients, e.g. VRChat's Build & Test with multiple instances of the client.
 - PGN import and export are tested with the PGN test set below, comparing against the Java (on `port-reference`) where the Java can read the file.
 
+## Test behaviours
+
+Every test behaviour (`RulesTest`, `PgnTest`, `SettingsTest`, `BoardTest`, `ViewTest`, `ArchiveTest`, `Board2DTest`) derives from `ChessTest` (`Assets/Tests/ChessTest.cs`, step 12.19), an abstract `ChessBoardListener` holding what they share: the pass and fail counts, `Check(ok, name, details)` logging `[<test>] PASS: <check>` or `[<test>] FAIL: <check>: <details>`, `CheckInt` and `CheckString` (details `got …, expected …`), `LogSummary` (the `[<test>] done: N passed, M failed` line, setting `finished`), `ReadyAfter` (for a test waiting for others: the local player joined and each test given finished, logging every 3000 frames that it still waits) and `NotationText`. Each test overrides `TestName()` with its name for the log lines. `PgnTest` keeps its own `CheckText`, which lays a multi-line PGN out on lines of its own, and `ViewTest`'s `CheckText` checks a square's object. Helpers alike only in purpose (`FindMove`, `Sq`, `StartGame`, `Play`) stay with their tests, as their code differs.
+
 ## One VR client
 
 Only one VR headset is available, so a check may need at most one client in VR; every other client is on desktop. Checks written for VR players (pickups, carrying, snapping back, castling by drop) run on desktop clients through the view's `inputStyle` override, and are seen once more with the one VR client where the hand matters.

@@ -16,7 +16,11 @@ using VRC.SDKBase;
 // "[Board2DTest] FAIL: <check>: <details>" per check, then a summary line. Built in the scene by Tools > Chess Board >
 // Create 2D View Test (Editor/Board2DTestBuilder.cs).
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
-public class Board2DTest : UdonSharpBehaviour {
+public class Board2DTest : ChessTest {
+    protected override string TestName() {
+        return "Board2DTest";
+    }
+
     public ChessBoard2DView view;
     // The view's holder (12.16), when it's movable; its checks are skipped without one.
     public ChessBoard2DViewHolder holder;
@@ -28,11 +32,8 @@ public class Board2DTest : UdonSharpBehaviour {
     const string Ana = "2D Ana";
     const string Bo = "2D Bo";
 
-    int passed;
-    int failed;
     bool joined;
     bool ran;
-    int waitedFrames;
     bool savedSynced;
     ChessBoard first;
     ChessBoard second;
@@ -47,11 +48,7 @@ public class Board2DTest : UdonSharpBehaviour {
 
     public void WaitForTests() {
         if (ran) return;
-        if (!joined || (Utilities.IsValid(boardTest) && !boardTest.finished)
-            || (Utilities.IsValid(viewTest) && !viewTest.finished)
-            || (Utilities.IsValid(archiveTest) && !archiveTest.finished)) {
-            waitedFrames++;
-            if (waitedFrames % 3000 == 0) Debug.Log("[Board2DTest] still waiting for the other tests to finish");
+        if (!ReadyAfter(joined, boardTest, viewTest, archiveTest, "the other tests to finish")) {
             SendCustomEventDelayedFrames(nameof(WaitForTests), 1);
             return;
         }
@@ -1122,28 +1119,5 @@ public class Board2DTest : UdonSharpBehaviour {
 
     int Sq(string name) {
         return ChessRules.ParseSquare(name);
-    }
-
-    void LogSummary() {
-        Debug.Log("[Board2DTest] done: " + passed + " passed, " + failed + " failed"
-            + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
-    }
-
-    void CheckInt(int actual, int expected, string name) {
-        Check(actual == expected, name, "got " + actual + ", expected " + expected);
-    }
-
-    void CheckString(string actual, string expected, string name) {
-        Check(actual == expected, name, "got \"" + actual + "\", expected \"" + expected + "\"");
-    }
-
-    void Check(bool ok, string name, string details) {
-        if (ok) {
-            passed++;
-            Debug.Log("[Board2DTest] PASS: " + name);
-        } else {
-            failed++;
-            Debug.Log("[Board2DTest] FAIL: " + name + ": " + details);
-        }
     }
 }

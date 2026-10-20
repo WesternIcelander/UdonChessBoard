@@ -56,7 +56,8 @@ public static class ChessSettingsMenuBuilder {
                 : "There are several ChessArbiters in the scene; the menu needs exactly one.", "OK");
             return;
         }
-        if (!EnsureProgramAssets()) return;
+        if (!EnsureProgramAssets("Create Settings Menu", MenuScriptPath, MenuProgramPath, ButtonScriptPath,
+            ButtonProgramPath)) return;
         ChessArbiter arbiter = arbiters[0];
         float itemsTop = Margin + TitleHeight + NoticeHeight + ScopeHeight;
         float resnapshotTop = itemsTop + ChessSettingsMenu.ItemCount * RowHeight + SectionGap;
@@ -267,42 +268,5 @@ public static class ChessSettingsMenuBuilder {
         }
         Vector3 middle = sum / boards.Length;
         return new Vector3(maxX + MenuDistance, middle.y + MenuHeight, middle.z);
-    }
-
-    // A text at a position from the parent's top left, in canvas pixels.
-    static TextMeshProUGUI NewText(GameObject parent, string name, TMP_FontAsset font, int size, Vector2 topLeft,
-        Vector2 extent) {
-        GameObject child = new GameObject(name, typeof(RectTransform));
-        child.layer = parent.layer;
-        RectTransform rect = child.GetComponent<RectTransform>();
-        rect.SetParent(parent.transform, false);
-        rect.anchorMin = new Vector2(0, 1);
-        rect.anchorMax = new Vector2(0, 1);
-        rect.pivot = new Vector2(0, 1);
-        rect.anchoredPosition = new Vector2(topLeft.x, -topLeft.y);
-        rect.sizeDelta = extent;
-        TextMeshProUGUI text = child.AddComponent<TextMeshProUGUI>();
-        text.font = font;
-        text.fontSize = size;
-        text.alignment = TextAlignmentOptions.Left;
-        text.color = Color.white;
-        text.raycastTarget = false;
-        text.enableWordWrapping = true;
-        text.overflowMode = TextOverflowModes.Truncate;
-        return text;
-    }
-
-    // As GameHistoryWallBuilder.EnsureProgramAssets: the menu's and the buttons' program assets, created and compiled
-    // when missing, after which the menu item has to be run again.
-    static bool EnsureProgramAssets() {
-        bool created = CreateProgramAssetIfMissing(MenuScriptPath, MenuProgramPath, "ChessSettingsMenuBuilder");
-        created |= CreateProgramAssetIfMissing(ButtonScriptPath, ButtonProgramPath, "ChessSettingsMenuBuilder");
-        if (!created) return true;
-        AssetDatabase.SaveAssets();
-        UdonSharpProgramAsset.CompileAllCsPrograms(true);
-        EditorUtility.DisplayDialog("Create Settings Menu", "Created the missing program assets next to "
-            + MenuScriptPath + ". Once UdonSharp has finished compiling, run Tools > Chess Board > Create Settings "
-            + "Menu again.", "OK");
-        return false;
     }
 }

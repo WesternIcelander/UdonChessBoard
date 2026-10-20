@@ -523,7 +523,8 @@ namespace SiggiChessBoard {
             if (changesSinceRefresh == 0) changesAnimate = true;
             changesSinceRefresh++;
             if (!ChangeAnimates(change)) changesAnimate = false;
-            NoteSound(change);
+            ChessUtil.NoteSound(change, MakesSound(change), board, soundsFrom, ref caughtUp, ref soundChanges,
+                ref soundChange);
             // The position the promotion was asked in may be gone; a touch from another client changed nothing.
             if (change != ChessBoard.ChangeActivity) ClearPromotion();
             if (mappingStale) return;
@@ -593,15 +594,10 @@ namespace SiggiChessBoard {
 
         // ---- Sound effects (step 12.12) ----
 
-        // Notes a change's sound for the next Refresh: a move, a replay step or a free move, heard (SoundAllowed) and
-        // alone since the last Refresh. A touch from another client doesn't count.
-        void NoteSound(int change) {
-            if (change == ChessBoard.ChangeActivity) return;
-            soundChanges++;
-            bool sounding = ChessUtil.SoundAllowed(board, soundsFrom, caughtUp, out caughtUp)
-                && (change == ChessBoard.ChangeMove || change == ChessBoard.ChangeReplayStep
-                || change == ChessBoard.ChangeFreeMove);
-            soundChange = soundChanges == 1 && sounding ? change : ChessBoard.ChangeNone;
+        // Whether a change has a sound (ChessUtil.NoteSound): a move, a replay step or a free move.
+        static bool MakesSound(int change) {
+            return change == ChessBoard.ChangeMove || change == ChessBoard.ChangeReplayStep
+                || change == ChessBoard.ChangeFreeMove;
         }
 
         // The move sound for change, placed with the position shown now holding pieceCount pieces and shownChecks

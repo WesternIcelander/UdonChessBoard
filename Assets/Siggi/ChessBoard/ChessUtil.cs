@@ -4,8 +4,8 @@ using UnityEngine;
 using VRC.SDKBase;
 
 namespace SiggiChessBoard {
-    // Small helpers shared by several behaviours (step 12.18), so a change to one is made once. Holds no state;
-    // everything comes in through parameters (see docs/architecture.md).
+    // Small helpers shared by several behaviours (steps 12.18 and 12.19), so a change to one is made once. Holds no
+    // state; everything comes in through parameters (see docs/architecture.md).
     // Abstract because it is never placed as a component, only used for its static methods.
     public abstract class ChessUtil : UdonSharpBehaviour {
         // Sets label's text (nothing for none) only when it has changed.
@@ -16,6 +16,24 @@ namespace SiggiChessBoard {
         // value with a leading zero below 10 ("05").
         public static string TwoDigits(int value) {
             return value < 10 ? "0" + value : value.ToString();
+        }
+
+        // text with line added on a line of its own; text unchanged for an empty line.
+        public static string AddLine(string text, string line) {
+            if (line.Length == 0) return text;
+            return text.Length == 0 ? line : text + "\n" + line;
+        }
+
+        // The local player's display name, fallback when there's none.
+        public static string LocalName(string fallback) {
+            VRCPlayerApi player = Networking.LocalPlayer;
+            return Utilities.IsValid(player) ? player.displayName : fallback;
+        }
+
+        // The display name of target's owner, fallback when there's none.
+        public static string OwnerName(GameObject target, string fallback) {
+            VRCPlayerApi owner = Networking.GetOwner(target);
+            return Utilities.IsValid(owner) ? owner.displayName : fallback;
         }
 
         // ---- Sound effects (step 12.12), for ChessBoardView and ChessBoardUI ----
@@ -30,6 +48,20 @@ namespace SiggiChessBoard {
             if (caughtUp) return true;
             nowCaughtUp = true;
             return !board.lastChangeReceived;
+        }
+
+        // Notes the sound of change, just told by board, for the behaviour's next Refresh (step 12.12): soundChange
+        // becomes change when it makes a sound (makesSound, from the behaviour's own list), is heard (SoundAllowed,
+        // with soundsFrom and caughtUp) and is alone since the last Refresh (soundChanges, which counts it, set back
+        // by Refresh), ChangeNone otherwise. A touch from another client (ChangeActivity) doesn't count.
+        public static void NoteSound(int change, bool makesSound, ChessBoard board, float soundsFrom, ref bool caughtUp,
+            ref int soundChanges, ref int soundChange) {
+            if (change == ChessBoard.ChangeActivity) return;
+            soundChanges++;
+            bool nowCaughtUp;
+            bool heard = SoundAllowed(board, soundsFrom, caughtUp, out nowCaughtUp);
+            caughtUp = nowCaughtUp;
+            soundChange = soundChanges == 1 && heard && makesSound ? change : ChessBoard.ChangeNone;
         }
 
         // Plays clip from audioSource unless muted or audioSource is none. Whether there was a clip (false for none),

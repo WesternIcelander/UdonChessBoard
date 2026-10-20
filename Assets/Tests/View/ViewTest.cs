@@ -11,7 +11,11 @@ using VRC.SDKBase;
 // instance. Logs "[ViewTest] PASS: <check>" or "[ViewTest] FAIL: <check>: <details>" per check, then a summary line.
 // Built in the scene by Tools > Chess Board > Create View Test (Editor/ViewTestBuilder.cs).
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
-public class ViewTest : UdonSharpBehaviour {
+public class ViewTest : ChessTest {
+    protected override string TestName() {
+        return "ViewTest";
+    }
+
     // The board, its view and its UI under test.
     public ChessBoard board;
     public ChessBoardView view;
@@ -24,18 +28,13 @@ public class ViewTest : UdonSharpBehaviour {
     public TextAsset promotionsPgn;
     // A second chess piece set (step 12.3): models turned 90°, twice the size, origin off centre, two material slots.
     public ChessPieceSet testPieceSet;
-    // Set once the checks are over (or skipped), so ArchiveTest (step 10) can use the board after them.
-    [System.NonSerialized] public bool finished;
 
     const string Files = "abcdefgh";
     const string Ranks = "12345678";
 
     string localName;
-    int passed;
-    int failed;
     bool joined;
     bool ran;
-    int waitedFrames;
     bool savedAnimate;
     int savedAnimationStyle;
     Vector3[] before = new Vector3[ChessBoardView.PieceCount];
@@ -50,9 +49,7 @@ public class ViewTest : UdonSharpBehaviour {
 
     public void WaitForBoardTest() {
         if (ran) return;
-        if (!joined || (Utilities.IsValid(boardTest) && !boardTest.finished)) {
-            waitedFrames++;
-            if (waitedFrames % 3000 == 0) Debug.Log("[ViewTest] still waiting for BoardTest to finish");
+        if (!ReadyAfter(joined, boardTest, null, null, "BoardTest to finish")) {
             SendCustomEventDelayedFrames(nameof(WaitForBoardTest), 1);
             return;
         }
@@ -3722,29 +3719,5 @@ public class ViewTest : UdonSharpBehaviour {
         string letters = "?PNBRQK";
         string letter = letters.Substring(ChessRules.PieceTypeOf(piece), 1);
         return ChessRules.PieceColorOf(piece) == ChessRules.White ? letter : letter.ToLower();
-    }
-
-    void LogSummary() {
-        finished = true;
-        Debug.Log("[ViewTest] done: " + passed + " passed, " + failed + " failed"
-            + (failed == 0 ? " ALL PASS" : " SOME FAIL"));
-    }
-
-    void CheckInt(int actual, int expected, string name) {
-        Check(actual == expected, name, "got " + actual + ", expected " + expected);
-    }
-
-    void CheckString(string actual, string expected, string name) {
-        Check(actual == expected, name, "got \"" + actual + "\", expected \"" + expected + "\"");
-    }
-
-    void Check(bool ok, string name, string details) {
-        if (ok) {
-            passed++;
-            Debug.Log("[ViewTest] PASS: " + name);
-        } else {
-            failed++;
-            Debug.Log("[ViewTest] FAIL: " + name + ": " + details);
-        }
     }
 }

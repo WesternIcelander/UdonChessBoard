@@ -4,6 +4,7 @@ using UdonSharpEditor;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using static ChessBuilderUtil;
 
 // Adds ViewTest (PLAN.md section 9) to the open scene for the scene's board view: the board, the view, the board's UI
 // (step 12.1), the scene's BoardTest to wait for, an importer of its own (a child), the two PGNs and a second piece
@@ -19,7 +20,7 @@ public static class ViewTestBuilder {
     static void Create() {
         ChessBoardView view = FindView();
         if (view == null) return;
-        if (!EnsureProgramAsset()) return;
+        if (!EnsureProgramAssets("Create View Test", TestScriptPath, TestProgramPath)) return;
         ChessBoardUI ui = null;
         ChessBoardUI[] uis = Object.FindObjectsOfType<ChessBoardUI>(true);
         for (int i = 0; i < uis.Length && ui == null; i++) {
@@ -161,23 +162,5 @@ public static class ViewTestBuilder {
         material.color = color;
         AssetDatabase.CreateAsset(material, path);
         return material;
-    }
-
-    // As ChessBoardViewBuilder.EnsureProgramAsset.
-    static bool EnsureProgramAsset() {
-        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(TestProgramPath) != null) return true;
-        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(TestScriptPath);
-        if (script == null) {
-            Debug.LogError("[ViewTestBuilder] " + TestScriptPath + " not found.");
-            return false;
-        }
-        UdonSharpProgramAsset program = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();
-        program.sourceCsScript = script;
-        AssetDatabase.CreateAsset(program, TestProgramPath);
-        AssetDatabase.SaveAssets();
-        UdonSharpProgramAsset.CompileAllCsPrograms(true);
-        EditorUtility.DisplayDialog("Create View Test", "Created the test's program asset (" + TestProgramPath
-            + "). Once UdonSharp has finished compiling, run Tools > Chess Board > Create View Test again.", "OK");
-        return false;
     }
 }

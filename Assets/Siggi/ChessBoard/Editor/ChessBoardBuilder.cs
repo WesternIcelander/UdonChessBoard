@@ -20,7 +20,8 @@ public static class ChessBoardBuilder {
 
     [MenuItem("Tools/Chess Board/Create Board")]
     static void Create() {
-        if (!EnsureProgramAssets()) return;
+        if (!EnsureProgramAssets("Create Board", BoardScriptPath, BoardProgramPath, ImporterScriptPath,
+            ImporterProgramPath)) return;
         ChessBoard[] boards = Object.FindObjectsOfType<ChessBoard>(true);
         ChessArbiter arbiter = null;
         GameArchive archive = null;
@@ -73,18 +74,5 @@ public static class ChessBoardBuilder {
             + (arbiter != null ? arbiter.gameObject.name : "none") + ", archive "
             + (archive != null ? archive.gameObject.name : "none") + "). With it selected, run Tools > Chess Board > "
             + "Create Board View and Create Debug View, then save the scene.");
-    }
-
-    // As ChessBoardViewBuilder.EnsureProgramAssets.
-    static bool EnsureProgramAssets() {
-        bool created = CreateProgramAssetIfMissing(BoardScriptPath, BoardProgramPath, "ChessBoardBuilder");
-        created |= CreateProgramAssetIfMissing(ImporterScriptPath, ImporterProgramPath, "ChessBoardBuilder");
-        if (!created) return true;
-        AssetDatabase.SaveAssets();
-        UdonSharpProgramAsset.CompileAllCsPrograms(true);
-        EditorUtility.DisplayDialog("Create Board", "Created the missing program assets next to " + BoardScriptPath
-            + " or " + ImporterScriptPath + ". Once UdonSharp has finished compiling, run Tools > Chess Board > Create "
-            + "Board again.", "OK");
-        return false;
     }
 }

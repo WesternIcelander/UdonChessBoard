@@ -797,13 +797,6 @@ namespace SiggiChessBoard {
             Array.Copy(board, replayBoard, 64);
         }
 
-        // The local player's display name, "" if there's none.
-        string LocalName() {
-            VRCPlayerApi player = Networking.LocalPlayer;
-            if (!Utilities.IsValid(player)) return "";
-            return player.displayName;
-        }
-
         // ---- Seats (docs/board-lifecycle.md) ----
 
         // The Join White and Join Black buttons, for the local player.
@@ -816,7 +809,7 @@ namespace SiggiChessBoard {
         }
 
         public int Join(int color) {
-            return JoinAs(color, LocalName());
+            return JoinAs(color, ChessUtil.LocalName(""));
         }
 
         // Seats the player with this display name as color. Allowed on a reset board, which then enters the lobby, in
@@ -837,7 +830,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanJoin(int color) {
-            return CanJoinAs(color, LocalName());
+            return CanJoinAs(color, ChessUtil.LocalName(""));
         }
 
         // Whether the Join button of color applies to name: the seats are open (a reset board, the lobby or a loaded
@@ -939,11 +932,11 @@ namespace SiggiChessBoard {
         }
 
         public int SetMode(int newMode) {
-            return SetModeAs(LocalName(), newMode);
+            return SetModeAs(ChessUtil.LocalName(""), newMode);
         }
 
         public bool CanSetMode() {
-            return CanSetModeAs(LocalName());
+            return CanSetModeAs(ChessUtil.LocalName(""));
         }
 
         // Whether name may choose the mode: a seated player in the lobby (a loaded game's mode is the game's own),
@@ -962,11 +955,11 @@ namespace SiggiChessBoard {
         }
 
         public int SetClock(int newBaseTime, int newIncrement) {
-            return SetClockAs(LocalName(), newBaseTime, newIncrement);
+            return SetClockAs(ChessUtil.LocalName(""), newBaseTime, newIncrement);
         }
 
         public bool CanSetClock() {
-            return CanSetClockAs(LocalName());
+            return CanSetClockAs(ChessUtil.LocalName(""));
         }
 
         // Whether name may choose the clock: a seated player in the lobby or on a loaded board (which continues with
@@ -994,11 +987,11 @@ namespace SiggiChessBoard {
         }
 
         public int StartGame() {
-            return StartGameAs(LocalName());
+            return StartGameAs(ChessUtil.LocalName(""));
         }
 
         public bool CanStartGame() {
-            return CanStartGameAs(LocalName());
+            return CanStartGameAs(ChessUtil.LocalName(""));
         }
 
         // Whether the Start button applies to name: a seated player in the lobby with both seats filled (a loaded
@@ -1415,7 +1408,7 @@ namespace SiggiChessBoard {
         }
 
         public int Resign(int color) {
-            return ResignAs(color, LocalName());
+            return ResignAs(color, ChessUtil.LocalName(""));
         }
 
         // The resign button: name resigns for color (CanResignAs), and the other side wins.
@@ -1500,7 +1493,7 @@ namespace SiggiChessBoard {
         // Whether the local player may touch the pieces (docs/physical-pieces.md): the view makes the pieces pickups
         // for them only while this holds, and the pieces' OnOwnershipRequest asks PlayerMayTouchPieces.
         public bool MayTouchPieces() {
-            return MayTouchPiecesAs(LocalName(), LocalIsOrganizer());
+            return MayTouchPiecesAs(ChessUtil.LocalName(""), LocalIsOrganizer());
         }
 
         public bool PlayerMayTouchPieces(VRCPlayerApi who) {
@@ -1521,8 +1514,8 @@ namespace SiggiChessBoard {
         }
 
         public int PiecePickedUp(int square) {
-            if (replayMode) return ReplayPiecePickedUpAs(LocalName(), LocalIsOrganizer(), square);
-            return PiecePickedUpAs(LocalName(), square);
+            if (replayMode) return ReplayPiecePickedUpAs(ChessUtil.LocalName(""), LocalIsOrganizer(), square);
+            return PiecePickedUpAs(ChessUtil.LocalName(""), square);
         }
 
         // Whether name may pick up the piece on square: a game is in progress and not in replay, the side to move
@@ -1535,7 +1528,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanPickUp(int square) {
-            return CanPickUpAs(LocalName(), LocalIsOrganizer(), square);
+            return CanPickUpAs(ChessUtil.LocalName(""), LocalIsOrganizer(), square);
         }
 
         // Whether PiecePickedUp would accept name's pickup of the piece on square (in replay, a free move's pickup,
@@ -1554,8 +1547,8 @@ namespace SiggiChessBoard {
         }
 
         public int PieceDropped(int from, int to) {
-            if (replayMode) return ReplayPieceDroppedAs(LocalName(), LocalIsOrganizer(), from, to);
-            return PieceDroppedAs(LocalName(), from, to);
+            if (replayMode) return ReplayPieceDroppedAs(ChessUtil.LocalName(""), LocalIsOrganizer(), from, to);
+            return PieceDroppedAs(ChessUtil.LocalName(""), from, to);
         }
 
         // name dropped the piece from from on to. Plays the legal move it matches, answers InputPromotionNeeded for a
@@ -1570,7 +1563,7 @@ namespace SiggiChessBoard {
         }
 
         public int PromotionChosen(int from, int to, int pieceType) {
-            return PromotionChosenAs(LocalName(), from, to, pieceType);
+            return PromotionChosenAs(ChessUtil.LocalName(""), from, to, pieceType);
         }
 
         // The follow-up to InputPromotionNeeded: plays the promotion from-to to pieceType (ChessRules.Queen, Rook,
@@ -1656,7 +1649,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanResign(int color) {
-            return CanResignAs(color, LocalName());
+            return CanResignAs(color, ChessUtil.LocalName(""));
         }
 
         // Whether name may resign for color: the game is running and name has that seat (a player in both seats
@@ -1666,7 +1659,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanOfferDraw(int color) {
-            return CanOfferDrawAs(color, LocalName());
+            return CanOfferDrawAs(color, ChessUtil.LocalName(""));
         }
 
         // Whether name may offer a draw for color: the snapshot allows draws by agreement, the game is running, name
@@ -1677,7 +1670,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanAcceptDraw(int color) {
-            return CanAnswerDrawAs(color, LocalName());
+            return CanAnswerDrawAs(color, ChessUtil.LocalName(""));
         }
 
         public bool CanAcceptDrawAs(int color, string name) {
@@ -1685,7 +1678,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanDeclineDraw(int color) {
-            return CanAnswerDrawAs(color, LocalName());
+            return CanAnswerDrawAs(color, ChessUtil.LocalName(""));
         }
 
         public bool CanDeclineDrawAs(int color, string name) {
@@ -1718,7 +1711,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanClaimDraw() {
-            return CanClaimDrawAs(LocalName());
+            return CanClaimDrawAs(ChessUtil.LocalName(""));
         }
 
         // Whether name may claim a draw: the game is running, name has the side to move's seat and ClaimableDraw has
@@ -1733,7 +1726,7 @@ namespace SiggiChessBoard {
         // after each move (AutomaticDraw).
 
         public int OfferDraw(int color) {
-            return OfferDrawAs(color, LocalName());
+            return OfferDrawAs(color, ChessUtil.LocalName(""));
         }
 
         // The offer draw button: name offers a draw for color (CanOfferDrawAs). The offer stands until the other side
@@ -1746,7 +1739,7 @@ namespace SiggiChessBoard {
         }
 
         public int AcceptDraw(int color) {
-            return AcceptDrawAs(color, LocalName());
+            return AcceptDrawAs(color, ChessUtil.LocalName(""));
         }
 
         // The accept draw button: name accepts, for color, the other side's offer (CanAcceptDrawAs), and the game is
@@ -1759,7 +1752,7 @@ namespace SiggiChessBoard {
         }
 
         public int DeclineDraw(int color) {
-            return DeclineDrawAs(color, LocalName());
+            return DeclineDrawAs(color, ChessUtil.LocalName(""));
         }
 
         // The decline draw button: name declines, for color, the other side's offer (CanDeclineDrawAs), and the game
@@ -1772,7 +1765,7 @@ namespace SiggiChessBoard {
         }
 
         public int ClaimDraw() {
-            return ClaimDrawAs(LocalName());
+            return ClaimDrawAs(ChessUtil.LocalName(""));
         }
 
         // The claim draw button: name, seated as the side to move, claims the draw ClaimableDraw has
@@ -1792,7 +1785,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanEnterReplay() {
-            return CanEnterReplayAs(LocalName(), LocalIsOrganizer());
+            return CanEnterReplayAs(ChessUtil.LocalName(""), LocalIsOrganizer());
         }
 
         // Whether name may enter replay: a game in progress or ended, not already in replay, and name may work the
@@ -1803,7 +1796,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanLeaveReplay() {
-            return CanLeaveReplayAs(LocalName(), LocalIsOrganizer());
+            return CanLeaveReplayAs(ChessUtil.LocalName(""), LocalIsOrganizer());
         }
 
         // Whether name may leave replay: in replay of a game in progress or ended (a loaded board has no game to go
@@ -1814,7 +1807,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanStepTo(int ply) {
-            return CanStepToAs(LocalName(), LocalIsOrganizer(), ply);
+            return CanStepToAs(ChessUtil.LocalName(""), LocalIsOrganizer(), ply);
         }
 
         // Whether name may step the replay to ply (0 before the first move to moveCount after the last): in replay,
@@ -1834,7 +1827,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanRequestTakeback(int color) {
-            return CanRequestTakebackAs(color, LocalName());
+            return CanRequestTakebackAs(color, ChessUtil.LocalName(""));
         }
 
         // Whether name may ask, for color, to continue from the replay position (docs/replay.md): the snapshot allows
@@ -1845,7 +1838,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanAcceptTakeback(int color) {
-            return CanAnswerTakebackAs(color, LocalName());
+            return CanAnswerTakebackAs(color, ChessUtil.LocalName(""));
         }
 
         public bool CanAcceptTakebackAs(int color, string name) {
@@ -1853,7 +1846,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanDeclineTakeback(int color) {
-            return CanAnswerTakebackAs(color, LocalName());
+            return CanAnswerTakebackAs(color, ChessUtil.LocalName(""));
         }
 
         public bool CanDeclineTakebackAs(int color, string name) {
@@ -1870,7 +1863,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanContinue() {
-            return CanContinueAs(LocalName());
+            return CanContinueAs(ChessUtil.LocalName(""));
         }
 
         // Whether name may press "Continue from here" on a loaded game (docs/replay.md): both seats filled, name
@@ -1900,7 +1893,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanReset() {
-            return CanResetAs(LocalName(), LocalIsOrganizer());
+            return CanResetAs(ChessUtil.LocalName(""), LocalIsOrganizer());
         }
 
         // Whether name may reset the board (docs/board-lifecycle.md, Reset): a board that isn't reset already, by a
@@ -1912,7 +1905,7 @@ namespace SiggiChessBoard {
         }
 
         public int ResetBoard() {
-            return ResetBoardAs(LocalName(), LocalIsOrganizer());
+            return ResetBoardAs(ChessUtil.LocalName(""), LocalIsOrganizer());
         }
 
         // The reset button (CanResetAs; named ResetBoard since Reset is a Unity message): clears the board and both
@@ -1950,7 +1943,7 @@ namespace SiggiChessBoard {
         int[] replayState = new int[ChessPosition.StateLength];
 
         public int EnterReplay() {
-            return EnterReplayAs(LocalName(), LocalIsOrganizer());
+            return EnterReplayAs(ChessUtil.LocalName(""), LocalIsOrganizer());
         }
 
         // The enter replay button (CanEnterReplayAs): the replay shows the game's current position.
@@ -1963,7 +1956,7 @@ namespace SiggiChessBoard {
         }
 
         public int LeaveReplay() {
-            return LeaveReplayAs(LocalName(), LocalIsOrganizer());
+            return LeaveReplayAs(ChessUtil.LocalName(""), LocalIsOrganizer());
         }
 
         // The leave replay button (CanLeaveReplayAs): back to the game, which replay never changed. The replay fields
@@ -1977,7 +1970,7 @@ namespace SiggiChessBoard {
         }
 
         public int StepTo(int ply) {
-            return StepToAs(LocalName(), LocalIsOrganizer(), ply);
+            return StepToAs(ChessUtil.LocalName(""), LocalIsOrganizer(), ply);
         }
 
         // The replay's step buttons (CanStepToAs): shows the position before ply of the game's moves (0 the starting
@@ -2039,7 +2032,7 @@ namespace SiggiChessBoard {
         // request is for the ply shown, and changing the replay position cancels it (ShowPly, ReplayPieceDroppedAs).
 
         public int RequestTakeback(int color) {
-            return RequestTakebackAs(color, LocalName());
+            return RequestTakebackAs(color, ChessUtil.LocalName(""));
         }
 
         // The takeback button: name asks, for color, to continue from the position the replay shows
@@ -2053,7 +2046,7 @@ namespace SiggiChessBoard {
         }
 
         public int DeclineTakeback(int color) {
-            return DeclineTakebackAs(color, LocalName());
+            return DeclineTakebackAs(color, ChessUtil.LocalName(""));
         }
 
         // The decline takeback button: name declines, for color, the other side's request (CanDeclineTakebackAs).
@@ -2066,7 +2059,7 @@ namespace SiggiChessBoard {
         }
 
         public int AcceptTakeback(int color) {
-            return AcceptTakebackAs(color, LocalName());
+            return AcceptTakebackAs(color, ChessUtil.LocalName(""));
         }
 
         // The accept takeback button: name accepts, for color, the other side's request (CanAcceptTakebackAs), and the
@@ -2346,7 +2339,7 @@ namespace SiggiChessBoard {
         }
 
         public int ContinueGame() {
-            return ContinueGameAs(LocalName());
+            return ContinueGameAs(ChessUtil.LocalName(""));
         }
 
         // The "Continue from here" button (CanContinueAs): the seated players play the loaded game on from the ply the

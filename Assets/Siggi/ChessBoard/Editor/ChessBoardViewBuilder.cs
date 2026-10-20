@@ -50,6 +50,8 @@ public static class ChessBoardViewBuilder {
     // status panel's near edge about 2 cm clear of the board.
     const float TableDepthFactor = 2.25f;
 
+    // The status panels' and the PGN box's light text.
+    static readonly Color PaleText = new Color(0.95f, 0.95f, 0.95f);
     static readonly string[] TypeNames = { "", "Pawn", "Knight", "Bishop", "Rook", "Queen", "King" };
     // The back rank from a to h, by piece type, for the pieces' places in the editor.
     static readonly int[] BackRank = {
@@ -59,9 +61,11 @@ public static class ChessBoardViewBuilder {
 
     [MenuItem("Tools/Chess Board/Create Board View")]
     static void Create() {
-        ChessBoard board = FindBoard();
+        ChessBoard board = FindBoard("Create Board View", "view");
         if (board == null) return;
-        if (!EnsureProgramAssets()) return;
+        if (!EnsureProgramAssets("Create Board View", ViewScriptPath, ViewProgramPath, UIScriptPath, UIProgramPath,
+            PieceScriptPath, PieceProgramPath, SquareScriptPath, SquareProgramPath, PieceSetScriptPath,
+            PieceSetProgramPath, GhostScriptPath, GhostProgramPath)) return;
 
         Mesh[] meshes = PieceMeshes();
         Material whitePieces = MaterialAsset("White Pieces", new Color(0.92f, 0.89f, 0.82f), 0.55f);
@@ -74,7 +78,7 @@ public static class ChessBoardViewBuilder {
 
         GameObject root = new GameObject("ChessBoardView (" + board.gameObject.name + ")");
         Undo.RegisterCreatedObjectUndo(root, "Create Board View");
-        GameObject old = ExistingView(board);
+        GameObject old = ExistingFor<ChessBoardView>(board, existing => existing.board);
         root.transform.position = board.transform.position + new Vector3(0, TableHeight, 0);
 
         float boardWidth = 8 * SquareSize + 2 * Border;
@@ -719,13 +723,7 @@ public static class ChessBoardViewBuilder {
             new Vector2(-8, PgnBarHeight));
         GameObject statusObject = AddStretched(bar, "Status", Vector2.zero,
             new Vector2(-2 * (PgnBarButtonWidth + 6), 0));
-        TextMeshProUGUI status = statusObject.AddComponent<TextMeshProUGUI>();
-        status.font = font;
-        status.fontSize = 12;
-        status.alignment = TextAlignmentOptions.Left;
-        status.overflowMode = TextOverflowModes.Truncate;
-        status.color = new Color(0.95f, 0.95f, 0.95f);
-        status.raycastTarget = false;
+        TextMeshProUGUI status = AddText(statusObject, font, 12, TextAlignmentOptions.Left, PaleText);
         status.richText = false;
         status.text = "";
         GameObject importButton = AddBarButton(bar, font, udon, "Import", "PressImport", 1);
@@ -742,38 +740,11 @@ public static class ChessBoardViewBuilder {
         ui.pgnImportButton = importButton;
     }
 
-    // A child of parent filling it, inset by offsetMin and offsetMax.
-    static GameObject AddStretched(GameObject parent, string name, Vector2 offsetMin, Vector2 offsetMax) {
-        return AddAnchored(parent, name, Vector2.zero, Vector2.one, offsetMin, offsetMax);
-    }
-
-    // A child of parent between the anchors (fractions of parent), inset by offsetMin and offsetMax. The anchors are
-    // set first: setting them afterwards would move the offsets.
-    static GameObject AddAnchored(GameObject parent, string name, Vector2 anchorMin, Vector2 anchorMax,
-        Vector2 offsetMin, Vector2 offsetMax) {
-        GameObject child = new GameObject(name, typeof(RectTransform));
-        child.layer = parent.layer;
-        RectTransform rect = child.GetComponent<RectTransform>();
-        rect.SetParent(parent.transform, false);
-        rect.anchorMin = anchorMin;
-        rect.anchorMax = anchorMax;
-        rect.offsetMin = offsetMin;
-        rect.offsetMax = offsetMax;
-        return child;
-    }
-
     // The PGN box's hint line, along the top of part.
     static void AddPgnHint(GameObject part, TMP_FontAsset font, string text) {
         GameObject hintObject = AddAnchored(part, "Hint", new Vector2(0, 1), Vector2.one,
             new Vector2(10, -PgnHintHeight), new Vector2(-10, 0));
-        TextMeshProUGUI hint = hintObject.AddComponent<TextMeshProUGUI>();
-        hint.font = font;
-        hint.fontSize = 12;
-        hint.alignment = TextAlignmentOptions.Left;
-        hint.overflowMode = TextOverflowModes.Truncate;
-        hint.color = new Color(0.95f, 0.95f, 0.95f);
-        hint.raycastTarget = false;
-        hint.text = text;
+        AddText(hintObject, font, 12, TextAlignmentOptions.Left, PaleText).text = text;
     }
 
     // The PGN box's multi-line text field, filling part under the hint line down to bottom: read-only for copying,
@@ -785,12 +756,10 @@ public static class ChessBoardViewBuilder {
         GameObject areaObject = AddStretched(fieldObject, "Text Area", new Vector2(6, 4), new Vector2(-6, -4));
         areaObject.AddComponent<RectMask2D>();
         GameObject textObject = AddStretched(areaObject, "Text", Vector2.zero, Vector2.zero);
-        TextMeshProUGUI text = textObject.AddComponent<TextMeshProUGUI>();
-        text.font = font;
-        text.fontSize = 10;
-        text.alignment = TextAlignmentOptions.TopLeft;
-        text.enableWordWrapping = true;
-        text.color = Color.black;
+        TextMeshProUGUI text = AddText(textObject, font, 10, TextAlignmentOptions.TopLeft, Color.black);
+        // The field scrolls its text in the text area, so it isn't cut off at its rect, and it takes the pointer.
+        text.overflowMode = TextOverflowModes.Overflow;
+        text.raycastTarget = true;
         // Names may hold anything; the field draws its text raw.
         text.richText = false;
         TMP_InputField field = fieldObject.AddComponent<TMP_InputField>();
@@ -823,14 +792,7 @@ public static class ChessBoardViewBuilder {
         UnityEventTools.AddStringPersistentListener(button.onClick,
             new UnityAction<string>(udon.SendCustomEvent), eventName);
         GameObject labelObject = AddStretched(buttonObject, "Label", Vector2.zero, Vector2.zero);
-        TextMeshProUGUI text = labelObject.AddComponent<TextMeshProUGUI>();
-        text.font = font;
-        text.fontSize = 14;
-        text.alignment = TextAlignmentOptions.Center;
-        text.overflowMode = TextOverflowModes.Truncate;
-        text.color = Color.black;
-        text.raycastTarget = false;
-        text.text = label;
+        AddText(labelObject, font, 14, TextAlignmentOptions.Center, Color.black).text = label;
         return buttonObject;
     }
 
@@ -924,21 +886,8 @@ public static class ChessBoardViewBuilder {
                 button.navigation = new Navigation { mode = Navigation.Mode.None };
                 UnityEventTools.AddStringPersistentListener(button.onClick,
                     new UnityAction<string>(udon.SendCustomEvent), ButtonEvents[action]);
-                GameObject labelObject = new GameObject("Label", typeof(RectTransform));
-                labelObject.layer = canvasObject.layer;
-                RectTransform labelRect = labelObject.GetComponent<RectTransform>();
-                labelRect.SetParent(buttonObject.transform, false);
-                labelRect.anchorMin = Vector2.zero;
-                labelRect.anchorMax = Vector2.one;
-                labelRect.offsetMin = new Vector2(3, 2);
-                labelRect.offsetMax = new Vector2(-3, -2);
-                TextMeshProUGUI label = labelObject.AddComponent<TextMeshProUGUI>();
-                label.font = font;
-                label.fontSize = 16;
-                label.alignment = TextAlignmentOptions.Center;
-                label.overflowMode = TextOverflowModes.Truncate;
-                label.color = Color.black;
-                label.raycastTarget = false;
+                GameObject labelObject = AddStretched(buttonObject, "Label", new Vector2(3, 2), new Vector2(-3, -2));
+                TextMeshProUGUI label = AddText(labelObject, font, 16, TextAlignmentOptions.Center, Color.black);
                 label.text = ui.ButtonText(action);
                 ui.buttons[index] = buttonObject;
                 ui.buttonActions[index] = action;
@@ -992,35 +941,14 @@ public static class ChessBoardViewBuilder {
     // A column of a status panel, from xMin to xMax of its width, left-aligned and shrinking its text to fit.
     static TextMeshProUGUI StatusText(GameObject canvasObject, string name, TMP_FontAsset font, float xMin,
         float xMax, int size, string text) {
-        GameObject labelObject = new GameObject(name, typeof(RectTransform));
-        labelObject.layer = canvasObject.layer;
-        RectTransform labelRect = labelObject.GetComponent<RectTransform>();
-        labelRect.SetParent(canvasObject.transform, false);
-        labelRect.anchorMin = new Vector2(xMin, 0);
-        labelRect.anchorMax = new Vector2(xMax, 1);
-        labelRect.offsetMin = new Vector2(10, 6);
-        labelRect.offsetMax = new Vector2(-10, -6);
-        TextMeshProUGUI label = labelObject.AddComponent<TextMeshProUGUI>();
-        label.font = font;
-        label.fontSize = size;
+        GameObject labelObject = AddAnchored(canvasObject, name, new Vector2(xMin, 0), new Vector2(xMax, 1),
+            new Vector2(10, 6), new Vector2(-10, -6));
+        TextMeshProUGUI label = AddText(labelObject, font, size, TextAlignmentOptions.Left, PaleText);
         label.enableAutoSizing = true;
         label.fontSizeMin = 8;
         label.fontSizeMax = size;
-        label.alignment = TextAlignmentOptions.Left;
-        label.overflowMode = TextOverflowModes.Truncate;
-        label.color = new Color(0.95f, 0.95f, 0.95f);
-        label.raycastTarget = false;
         label.text = text;
         return label;
-    }
-
-    // The scene's board view for a board (built earlier), or null.
-    static GameObject ExistingView(ChessBoard board) {
-        ChessBoardView[] views = Object.FindObjectsOfType<ChessBoardView>(true);
-        for (int i = 0; i < views.Length; i++) {
-            if (views[i].board == board) return views[i].gameObject;
-        }
-        return null;
     }
 
     // The scene's UI for a board (built earlier) other than ui, or null.
@@ -1041,40 +969,6 @@ public static class ChessBoardViewBuilder {
             if (walls[i].archive == board.archive) return walls[i];
         }
         return null;
-    }
-
-    // The selected ChessBoard, or the scene's only one.
-    static ChessBoard FindBoard() {
-        if (Selection.activeGameObject != null) {
-            ChessBoard selected = Selection.activeGameObject.GetComponent<ChessBoard>();
-            if (selected != null) return selected;
-        }
-        ChessBoard[] boards = Object.FindObjectsOfType<ChessBoard>(true);
-        if (boards.Length == 1) return boards[0];
-        EditorUtility.DisplayDialog("Create Board View", boards.Length == 0
-            ? "There's no ChessBoard in the open scene."
-            : "There are several ChessBoards in the scene. Select the one the view is for, then try again.", "OK");
-        return null;
-    }
-
-    // UdonSharp needs a compiled program asset next to a script before its behaviour can be added. The repository
-    // has them (the view's, the UI's, the pieces', the squares', the piece set's and the promotion ghosts'); any
-    // that's missing is created and compiled, and the menu item has to be run again afterwards.
-    static bool EnsureProgramAssets() {
-        bool created = CreateProgramAssetIfMissing(ViewScriptPath, ViewProgramPath, "ChessBoardViewBuilder");
-        created |= CreateProgramAssetIfMissing(UIScriptPath, UIProgramPath, "ChessBoardViewBuilder");
-        created |= CreateProgramAssetIfMissing(PieceScriptPath, PieceProgramPath, "ChessBoardViewBuilder");
-        created |= CreateProgramAssetIfMissing(SquareScriptPath, SquareProgramPath, "ChessBoardViewBuilder");
-        created |= CreateProgramAssetIfMissing(PieceSetScriptPath, PieceSetProgramPath, "ChessBoardViewBuilder");
-        created |= CreateProgramAssetIfMissing(GhostScriptPath, GhostProgramPath, "ChessBoardViewBuilder");
-        if (!created) return true;
-        AssetDatabase.SaveAssets();
-        UdonSharpProgramAsset.CompileAllCsPrograms(true);
-        EditorUtility.DisplayDialog("Create Board View", "Created the missing program assets next to "
-            + ViewScriptPath + ", " + UIScriptPath + ", " + PieceScriptPath + ", " + SquareScriptPath + ", "
-            + PieceSetScriptPath + " or " + GhostScriptPath
-            + ". Once UdonSharp has finished compiling, run Tools > Chess Board > Create Board View again.", "OK");
-        return false;
     }
 
     // ---- Generated assets ----
