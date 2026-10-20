@@ -7,10 +7,10 @@ using VRC.SDKBase;
 namespace SiggiChessBoard {
     // The physical board (docs/architecture.md, docs/physical-pieces.md): the 32 piece objects in the world, placed on
     // the squares the logical board says, with what goes with them on the table: pickups and clicks, highlights,
-    // animations, the promotion ghosts and the player blocker. The buttons, the status display and the PGN box are the
-    // UI's (ChessBoardUI, step 12.1), which this view doesn't know. Holds no game state and no synced fields; it reads
-    // the board after each change. Built in the scene by Tools > Chess Board > Create Board View
-    // (Editor/ChessBoardViewBuilder.cs).
+    // animations, the promotion ghosts, the player blocker and the move sounds. The buttons, the status display, the
+    // PGN box and the other sounds are the UI's (ChessBoardUI, step 12.1), which this view doesn't know. Holds no game
+    // state and no synced fields; it reads the board after each change. Built in the scene by Tools > Chess Board >
+    // Create Board View (Editor/ChessBoardViewBuilder.cs).
     //
     // The view's local space: the playing surface at y = 0, files a to h along +x, ranks 1 to 8 along +z (White at
     // -z), the board's centre at the origin. Everything is placed in it, so the view can be scaled as a whole, and
@@ -140,6 +140,34 @@ namespace SiggiChessBoard {
         [NonSerialized] public float[] fallTarget = new float[PieceCount];
         [NonSerialized] public float[] fallStart = new float[PieceCount];
         bool falling;
+        // Sound effects (step 12.12): the move sounds, played from audioSource (a spatial source on the table) on every
+        // client, for a change as it happens: a move, a replay step or a free move plays the sound the position it
+        // leads to would play if its last move had just been made, the most specific one (checkSound when a king is in
+        // check, then promoteSound, captureSound, moveSound); the start of a game plays nothing. Every other sound is
+        // the UI's (ChessBoardUI). A promoting pawn landing on the last rank plays its move or capture sound on the
+        // promoting player's client (WaitForPromotion). Nothing plays for a late joiner's first update, during the
+        // first StartupSilence seconds, or for changes that come several between two Refreshes (a test's thousands; a
+        // received update is one change, whatever it holds).
+        public AudioSource audioSource;
+        public AudioClip moveSound;
+        public AudioClip captureSound;
+        public AudioClip promoteSound;
+        public AudioClip checkSound;
+        public const float StartupSilence = 1;
+        // For tests: nothing is heard while muted, but lastSound and soundsPlayed follow what would have been.
+        [NonSerialized] public bool muted;
+        [NonSerialized] public AudioClip lastSound;
+        [NonSerialized] public int soundsPlayed;
+        // When sounds may start (Time.time), whether this client has caught up with the board (a change seen after
+        // the silence: made here, or a received one, the first of which is silent), the change whose sound the next
+        // Refresh plays (ChangeNone for none) and how many changes have come since the last Refresh, and the number of
+        // pieces in the position shown at the last Refresh (a free move that leaves fewer captured one).
+        float soundsFrom;
+        bool caughtUp;
+        int soundChange = ChessBoard.ChangeNone;
+        int soundChanges;
+        int shownPieceCount = -1;
+        int shownChecks;
 
         // Which object stands on each square (NoObject for none), and the other way round (NoSquare for an object
         // off the board: captured, or not needed by the position). objectType is the piece type each object stands
@@ -257,6 +285,7 @@ namespace SiggiChessBoard {
                 objectPlace[i] = NoPlace;
                 placedSquare[i] = NeverPlaced;
             }
+            soundsFrom = Time.time + StartupSilence;
             if (!Utilities.IsValid(board)) {
                 Debug.LogError("[ChessBoardView] " + gameObject.name + ": the Board field is empty.");
                 return;
@@ -494,6 +523,7 @@ namespace SiggiChessBoard {
             if (changesSinceRefresh == 0) changesAnimate = true;
             changesSinceRefresh++;
             if (!ChangeAnimates(change)) changesAnimate = false;
+            NoteSound(change);
             // The position the promotion was asked in may be gone; a touch from another client changed nothing.
             if (change != ChessBoard.ChangeActivity) ClearPromotion();
             if (mappingStale) return;
@@ -521,6 +551,9 @@ namespace SiggiChessBoard {
         // differs), the meshes swapped and every object placed. Called on the frame after a change; public for tests.
         public void Refresh() {
             dirty = false;
+            int change = soundChange;
+            soundChange = ChessBoard.ChangeNone;
+            soundChanges = 0;
             if (!Utilities.IsValid(board)) return;
             bool replay = board.replayMode;
             byte[] shown = replay ? board.replayBoard : board.board;
@@ -553,6 +586,66 @@ namespace SiggiChessBoard {
             UpdateCheckLines();
             UpdatePromotionGhosts();
             UpdateBlocker();
+            int pieceCount = CountPieces(shown);
+            PlaySound(ChangeSound(change, pieceCount));
+            shownPieceCount = pieceCount;
+        }
+
+        // ---- Sound effects (step 12.12) ----
+
+        // Notes a change's sound for the next Refresh: a move, a replay step or a free move, heard (SoundAllowed) and
+        // alone since the last Refresh. A touch from another client doesn't count.
+        void NoteSound(int change) {
+            if (change == ChessBoard.ChangeActivity) return;
+            soundChanges++;
+            bool sounding = SoundAllowed() && (change == ChessBoard.ChangeMove || change == ChessBoard.ChangeReplayStep
+                || change == ChessBoard.ChangeFreeMove);
+            soundChange = soundChanges == 1 && sounding ? change : ChessBoard.ChangeNone;
+        }
+
+        // Whether the change the board has just told is heard: not during the first StartupSilence seconds (the
+        // board's own start), nor a late joiner's first update (catching up), which is the first received change when
+        // no change has been seen here since the silence.
+        bool SoundAllowed() {
+            if (Time.time < soundsFrom) return false;
+            if (caughtUp) return true;
+            caughtUp = true;
+            return !board.lastChangeReceived;
+        }
+
+        // The move sound for change, placed with the position shown now holding pieceCount pieces and shownChecks
+        // checks: for a move or a replay step, the sound of the move that led to the position (checkSound when it
+        // checks, then promoteSound for a promotion, captureSound, moveSound), none at the start; for a free move,
+        // checkSound when a king is in check, captureSound when it took a piece, moveSound otherwise. None for any
+        // other change. Public for tests.
+        public AudioClip ChangeSound(int change, int pieceCount) {
+            if (change == ChessBoard.ChangeFreeMove) {
+                if (shownChecks > 0) return checkSound;
+                return pieceCount < shownPieceCount ? captureSound : moveSound;
+            }
+            if (change != ChessBoard.ChangeMove && change != ChessBoard.ChangeReplayStep) return null;
+            int move = board.LastMove();
+            if (move == 0) return null;
+            if (shownChecks > 0) return checkSound;
+            if (ChessRules.MovePromotion(move) != ChessRules.NoPieceType) return promoteSound;
+            if (ChessRules.MoveCaptured(move) != ChessRules.NoPieceType) return captureSound;
+            return moveSound;
+        }
+
+        // Plays clip from audioSource (nothing for none) unless muted; lastSound and soundsPlayed follow it either way.
+        void PlaySound(AudioClip clip) {
+            if (!Utilities.IsValid(clip)) return;
+            lastSound = clip;
+            soundsPlayed++;
+            if (!muted && Utilities.IsValid(audioSource)) audioSource.PlayOneShot(clip);
+        }
+
+        static int CountPieces(byte[] squares) {
+            int count = 0;
+            for (int i = 0; i < 64; i++) {
+                if (squares[i] != ChessRules.Empty) count++;
+            }
+            return count;
         }
 
         // Enables the blocker unless the local player has a seat (either colour), so only the seated players can walk
@@ -626,9 +719,11 @@ namespace SiggiChessBoard {
         // ---- Promotion ghosts (step 12.11) ----
 
         // The board asked for a promotion's piece: obj, the pawn, stands on to while the ghosts float over it, and
-        // dropping it there has committed to promoting. Meanwhile no piece is a pickup or a click target, so a hand
-        // near a piece reaches the ghosts rather than the piece.
+        // dropping it there has committed to promoting, so its move or capture sound plays now (step 12.12; the
+        // promotion's own sound when it's chosen). Meanwhile no piece is a pickup or a click target, so a hand near a
+        // piece reaches the ghosts rather than the piece.
         void WaitForPromotion(int obj, int from, int to) {
+            PlaySound(board.PieceAt(to) != ChessRules.Empty ? captureSound : moveSound);
             promotionObject = obj;
             promotionFrom = from;
             promotionTo = to;
@@ -774,6 +869,7 @@ namespace SiggiChessBoard {
         // too, and once a game ends in checkmate), hiding the rest. Called on every Refresh.
         public void UpdateCheckLines() {
             int count = Utilities.IsValid(board) ? board.Checks(checkers, checkedKings) : 0;
+            shownChecks = count;
             for (int i = 0; i < checkLines.Length; i++) {
                 if (!Utilities.IsValid(checkLines[i])) continue;
                 if (i < count) PlaceLine(checkLines[i], checkers[i], checkedKings[i]);

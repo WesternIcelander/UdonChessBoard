@@ -1,0 +1,17 @@
+Copied from MS-VRCSA-Billiards:
+- table_reset - NewTurn.wav
+- time_out - FourBallPoint.wav
+- ui_click - ButtonUp.wav
+
+vadim-makes-sound: https://pixabay.com/users/vadim_makes_sound-54823268/
+- time_warning - https://pixabay.com/sound-effects/technology-soft-ui-warning-alert-2-614157/
+- notification_pop - https://pixabay.com/sound-effects/film-special-effects-soft-app-button-tap-sound-5-547873/
+
+Copied from chess.com:
+- move-self
+- capture
+- promote
+- move-check
+- game-start
+- game-end
+

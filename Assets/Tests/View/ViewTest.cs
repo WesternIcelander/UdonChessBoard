@@ -74,6 +74,9 @@ public class ViewTest : UdonSharpBehaviour {
         // Every check but the animation checks (9.5b) looks at pieces in place straight after a change.
         savedAnimate = view.animateMoves;
         view.animateMoves = false;
+        // Nothing is heard during the checks (step 12.12); the sound checks read what would have played.
+        view.muted = true;
+        ui.muted = true;
         RunGameChecks();
     }
 
@@ -2461,8 +2464,304 @@ public class ViewTest : UdonSharpBehaviour {
         Redraw();
         CheckFalls(f + ": cleared");
         CheckView(f + ": cleared");
+        SendCustomEventDelayedFrames(nameof(RunSoundChecks), 1);
+    }
+
+    // ---- 12.12: sound effects ----
+
+    // The view's and the UI's sound counts when last checked (CheckSounds).
+    int viewSounds;
+    int uiSounds;
+    // The view's input style before the sound checks, put back at the end.
+    int savedSoundStyle;
+
+    // A frame after the fall checks: the sources and clips wired; each change's sound, one per change, the move sounds
+    // the view's and every other one the UI's; none for several changes at once; the promotion's landing; the time
+    // warning; then the checkmate's game over, waiting for the check sound (RunSoundEndChecks).
+    public void RunSoundChecks() {
+        string s = "sounds";
+        CheckSource(view.audioSource, s + ": the view's source");
+        CheckSource(ui.audioSource, s + ": the UI's source");
+        CheckClip(view.moveSound, "move", s + ": view: moveSound");
+        CheckClip(view.captureSound, "capture", s + ": view: captureSound");
+        CheckClip(view.promoteSound, "promote", s + ": view: promoteSound");
+        CheckClip(view.checkSound, "move-check", s + ": view: checkSound");
+        CheckClip(ui.clickSound, "ui-click", s + ": UI: clickSound");
+        CheckClip(ui.gameStartSound, "game-start", s + ": UI: gameStartSound");
+        CheckClip(ui.notificationSound, "notification-pop", s + ": UI: notificationSound");
+        CheckClip(ui.gameEndSound, "game-end", s + ": UI: gameEndSound");
+        CheckClip(ui.resetSound, "table-reset", s + ": UI: resetSound");
+        CheckClip(ui.timeWarningSound, "time-warning", s + ": UI: timeWarningSound");
+        CheckClip(ui.timeOutSound, "time-out", s + ": UI: timeOutSound");
+        CheckClip(ui.checkSound, "move-check", s + ": UI: checkSound (the view's)");
+        savedSoundStyle = view.inputStyle;
+        view.SetInputStyle(ChessBoardView.InputPickups);
+
+        board.ClearState();
+        Redraw();
+        MarkSounds();
+        // A press clicks at once, refused or not; the change's own sound follows on the next Refresh.
+        ui.PressButton(ChessBoardUI.ButtonResignWhite);
+        CheckSounds(null, ui.clickSound, s + ": a refused press clicks");
+        Redraw();
+        CheckSounds(null, null, s + ": nothing follows a refused press");
+        CheckInt(board.JoinAs(ChessRules.White, localName), ChessBoard.InputAccepted, s + ": joined White");
+        Redraw();
+        CheckSounds(null, null, s + ": joined White");
+        CheckInt(board.JoinAs(ChessRules.Black, localName), ChessBoard.InputAccepted, s + ": joined Black");
+        Redraw();
+        CheckSounds(null, null, s + ": joined Black");
+        Unforce();
+        board.mode = ChessGame.ModeStandard;
+        CheckInt(board.StartGameAs(localName), ChessBoard.InputAccepted, s + ": started");
+        Redraw();
+        CheckSounds(null, ui.gameStartSound, s + ": started");
+        SetRequestRules(true);
+
+        MoveSound("e2e4", view.moveSound, null, s + ": e4");
+        MoveSound("e7e5", view.moveSound, null, s + ": e5");
+        MoveSound("f1c4", view.moveSound, null, s + ": Bc4");
+        MoveSound("b8c6", view.moveSound, null, s + ": Nc6");
+        // A capture that checks plays only the check sound.
+        MoveSound("c4f7", view.checkSound, null, s + ": Bxf7+");
+        MoveSound("e8f7", view.captureSound, null, s + ": Kxf7");
+        // Several changes before a Refresh play nothing (a test's, or a received update's is one change).
+        PlayMoves("g1f3 g8f6", s + ": two moves at once");
+        CheckSounds(null, null, s + ": two moves before a Refresh");
+        MoveSound("e1g1", view.moveSound, null, s + ": O-O");
+        MoveSound("c6d4", view.moveSound, null, s + ": Nd4");
+        MoveSound("f3e5", view.checkSound, null, s + ": Nxe5+");
+
+        // Requests: made, the notification; declined, nothing.
+        CheckInt(board.OfferDrawAs(ChessRules.Black, localName), ChessBoard.InputAccepted, s + ": Black offers a draw");
+        Redraw();
+        CheckSounds(null, ui.notificationSound, s + ": draw offered");
+        CheckInt(board.DeclineDrawAs(ChessRules.White, localName), ChessBoard.InputAccepted, s + ": declined");
+        Redraw();
+        CheckSounds(null, null, s + ": draw declined");
+
+        // Replay: each step plays the shown position's sound (none at the start), entering and leaving none.
+        CheckInt(board.EnterReplayAs(localName, false), ChessBoard.InputAccepted, s + ": replay entered");
+        Redraw();
+        CheckSounds(null, null, s + ": replay entered");
+        StepSound(4, view.moveSound, s + ": stepped to ply 4 (Nc6)");
+        StepSound(5, view.checkSound, s + ": stepped to ply 5 (Bxf7+)");
+        StepSound(6, view.captureSound, s + ": stepped to ply 6 (Kxf7)");
+        StepSound(0, null, s + ": stepped to the start");
+        StepSound(1, view.moveSound, s + ": stepped to ply 1");
+        // The step buttons don't click: only the step's own sound.
+        PressStepSound(ChessBoardUI.ButtonStepForward, 2, view.moveSound, s + ": > pressed");
+        PressStepSound(ChessBoardUI.ButtonStepFirst, 0, null, s + ": << pressed");
+        PressStepSound(ChessBoardUI.ButtonStepLast, board.moveCount, view.checkSound, s + ": >> pressed (Nxe5+)");
+        PressStepSound(ChessBoardUI.ButtonStepBack, board.moveCount - 1, view.moveSound, s + ": < pressed (Nd4)");
+        StepSound(1, view.moveSound, s + ": stepped back to ply 1");
+        CheckInt(board.RequestTakebackAs(ChessRules.Black, localName), ChessBoard.InputAccepted,
+            s + ": Black asks to take back");
+        Redraw();
+        CheckSounds(null, ui.notificationSound, s + ": takeback requested");
+        CheckInt(board.DeclineTakebackAs(ChessRules.White, localName), ChessBoard.InputAccepted,
+            s + ": takeback declined");
+        Redraw();
+        CheckSounds(null, null, s + ": takeback declined");
+        // Free moves: a move, a capture, a check.
+        FreeMoveSound("e4", "e5", view.moveSound, s + ": free move e4-e5");
+        FreeMoveSound("d1", "d7", view.checkSound, s + ": free move Qxd7+");
+        FreeMoveSound("e8", "d7", view.captureSound, s + ": free move Kxd7");
+        CheckInt(board.LeaveReplayAs(localName, false), ChessBoard.InputAccepted, s + ": back to the game");
+        Redraw();
+        CheckSounds(null, null, s + ": back to the game");
+
+        // Ending: a resignation is the UI's game over alone; stepping to its end in replay is just the last move's.
+        CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, s + ": White resigns");
+        Redraw();
+        CheckSounds(null, ui.gameEndSound, s + ": resigned");
+        CheckInt(board.EnterReplayAs(localName, false), ChessBoard.InputAccepted, s + ": resigned: replay");
+        Redraw();
+        StepSound(1, view.moveSound, s + ": resigned: ply 1");
+        StepSound(board.moveCount, view.checkSound, s + ": resigned: the last ply (Nxe5+)");
+        Check(ui.gameEndAt < 0, s + ": resigned: no game over waits at the last ply", "at " + ui.gameEndAt);
+        CheckInt(board.ResetBoardAs(localName, true), ChessBoard.InputAccepted, s + ": reset");
+        Redraw();
+        CheckSounds(null, ui.resetSound, s + ": reset");
+
+        // Promotion: the landing's move or capture sound at once, then the promotion's (check when it checks).
+        PromotionSound("8/1P6/8/7k/8/8/8/K7 w - - 0 1", "b8", ChessRules.Queen, view.moveSound, view.promoteSound,
+            s + ": b8=Q");
+        PromotionSound("r7/1P6/8/7k/8/8/8/K7 w - - 0 1", "a8", ChessRules.Rook, view.captureSound,
+            view.promoteSound, s + ": bxa8=R");
+        PromotionSound("7k/1P6/8/8/8/8/8/K7 w - - 0 1", "b8", ChessRules.Queen, view.moveSound, view.checkSound,
+            s + ": b8=Q+");
+        // Continue from here is a game start.
+        LoadFen("8/1P6/8/7k/8/8/8/K7 w - - 0 1", s + ": continued");
+        MarkSounds();
+        CheckInt(board.JoinAs(ChessRules.White, localName), ChessBoard.InputAccepted, s + ": continued: joined White");
+        CheckInt(board.JoinAs(ChessRules.Black, localName), ChessBoard.InputAccepted, s + ": continued: joined Black");
+        Redraw();
+        CheckInt(board.ContinueGameAs(localName), ChessBoard.InputAccepted, s + ": continued");
+        Redraw();
+        CheckSounds(null, ui.gameStartSound, s + ": continued");
+
+        // The time warning, sampled at chosen times in a 3+0 game: at each of 1:00, 0:30 and 0:10 once, nothing
+        // between, once for two passed at one sample; then a flag fall's time-out in place of game over.
+        board.ClearState();
+        CheckInt(board.JoinAs(ChessRules.White, localName), ChessBoard.InputAccepted, s + ": timed: joined White");
+        CheckInt(board.JoinAs(ChessRules.Black, localName), ChessBoard.InputAccepted, s + ": timed: joined Black");
+        Redraw();
+        Unforce();
+        board.mode = ChessGame.ModeStandard;
+        board.baseTime = 180;
+        board.increment = 0;
+        CheckInt(board.StartGameAs(localName), ChessBoard.InputAccepted, s + ": timed: started");
+        Redraw();
+        CheckSounds(null, ui.gameStartSound, s + ": timed: started");
+        double start = board.turnStart;
+        WarningSound(start + 1, false, s + ": timed: 2:59 left");
+        WarningSound(start + 119.5, false, s + ": timed: 1:00.5 left");
+        WarningSound(start + 120.5, true, s + ": timed: 0:59.5 left");
+        WarningSound(start + 121, false, s + ": timed: 0:59 left");
+        WarningSound(start + 150.5, true, s + ": timed: 0:29.5 left");
+        WarningSound(start + 170.5, true, s + ": timed: 0:09.5 left");
+        WarningSound(start + 175, false, s + ": timed: 0:05 left");
+        WarningSound(start + 1, false, s + ": timed: a new look from 2:59");
+        WarningSound(start + 171, true, s + ": timed: all three passed at once: one warning");
+        Check(board.CheckFlagFallAt(start + 181), s + ": timed: the flag falls", "the game didn't end on time");
+        Redraw();
+        CheckSounds(null, ui.timeOutSound, s + ": timed: flag fall");
+
+        // A game ended by its last move: the view's sound, then game over once the check sound has finished.
+        board.ClearState();
+        StartUnforced(s + ": mate");
+        PlayMoves("f2f3 e7e5 g2g4", s + ": mate");
+        MarkSounds();
+        CheckInt(board.PieceDroppedAs(localName, Sq("d8"), Sq("h4")), ChessBoard.InputAccepted, s + ": Qh4#");
+        Redraw();
+        CheckSounds(view.checkSound, null, s + ": Qh4#: the check sound first");
+        float wait = view.checkSound != null ? view.checkSound.length : 0;
+        Check(ui.gameEndAt >= Time.time + wait - 0.01f && ui.gameEndAt <= Time.time + wait + 0.01f,
+            s + ": Qh4#: game over waits for the check sound", "at " + ui.gameEndAt + ", now " + Time.time + ", the "
+            + "check sound " + wait + " s");
+        SendCustomEventDelayedSeconds(nameof(RunSoundEndChecks), wait + 0.3f);
+    }
+
+    // The frame after the check sound: the checkmate's game over played once; in replay, stepping onto the mate
+    // waiting for game over again and a step back dropping it; a stalemate's game over waiting too; cleared.
+    public void RunSoundEndChecks() {
+        string s = "sounds";
+        CheckSounds(null, ui.gameEndSound, s + ": Qh4#: then game over");
+        CheckInt(board.EnterReplayAs(localName, false), ChessBoard.InputAccepted, s + ": mate: replay");
+        Redraw();
+        StepSound(3, view.moveSound, s + ": mate: ply 3");
+        Check(ui.gameEndAt < 0, s + ": mate: no game over waits at ply 3", "at " + ui.gameEndAt);
+        StepSound(4, view.checkSound, s + ": mate: stepped to the mate");
+        Check(ui.gameEndAt > Time.time, s + ": mate: stepped to the mate: game over waits", "at " + ui.gameEndAt);
+        StepSound(3, view.moveSound, s + ": mate: stepped back");
+        Check(ui.gameEndAt < 0, s + ": mate: stepped back: game over no longer waits", "at " + ui.gameEndAt);
+
+        board.ClearState();
+        StartUnforced(s + ": stalemate");
+        PlayMoves(LoydStalemate.Substring(0, LoydStalemate.Length - 5), s + ": stalemate");
+        MoveSound("c8e6", view.moveSound, null, s + ": Qe6 stalemates");
+        CheckInt(board.ending, ChessGame.EndingStalemate, s + ": stalemated");
+        Check(ui.gameEndAt > Time.time, s + ": stalemate: game over waits", "at " + ui.gameEndAt);
+        CheckInt(board.ResetBoardAs(localName, true), ChessBoard.InputAccepted, s + ": stalemate: reset");
+        Redraw();
+        CheckSounds(null, ui.resetSound, s + ": stalemate: reset");
+        Check(ui.gameEndAt < 0, s + ": stalemate: the reset drops the waiting game over", "at " + ui.gameEndAt);
+
+        board.ClearState();
+        Redraw();
+        SetRequestRules(false);
+        view.SetInputStyle(savedSoundStyle);
         view.animateMoves = savedAnimate;
+        view.muted = false;
+        ui.muted = false;
         LogSummary();
+    }
+
+    void CheckSource(AudioSource source, string name) {
+        Check(Utilities.IsValid(source) && source.spatialBlend == 1 && !source.playOnAwake, name + ": spatial, not "
+            + "playing on awake", Utilities.IsValid(source) ? "spatialBlend " + source.spatialBlend + ", playOnAwake "
+            + source.playOnAwake : "none");
+    }
+
+    void CheckClip(AudioClip clip, string expected, string name) {
+        CheckString(clip != null ? clip.name : "(none)", expected, name);
+    }
+
+    void MarkSounds() {
+        viewSounds = view.soundsPlayed;
+        uiSounds = ui.soundsPlayed;
+    }
+
+    // Whether, since the last check, the view played exactly viewClip and the UI exactly uiClip (none for null).
+    void CheckSounds(AudioClip viewClip, AudioClip uiClip, string name) {
+        int viewCount = view.soundsPlayed - viewSounds;
+        int uiCount = ui.soundsPlayed - uiSounds;
+        bool viewOk = viewClip == null ? viewCount == 0 : viewCount == 1 && view.lastSound == viewClip;
+        bool uiOk = uiClip == null ? uiCount == 0 : uiCount == 1 && ui.lastSound == uiClip;
+        Check(viewOk && uiOk, name + ": view " + ClipName(viewClip) + ", UI " + ClipName(uiClip), "view played "
+            + viewCount + " (last " + ClipName(view.lastSound) + "), UI " + uiCount + " (last "
+            + ClipName(ui.lastSound) + ")");
+        MarkSounds();
+    }
+
+    string ClipName(AudioClip clip) {
+        return clip != null ? clip.name : "nothing";
+    }
+
+    // Plays a move ("e2e4") on the board, then checks the sounds after the Refresh.
+    void MoveSound(string move, AudioClip viewClip, AudioClip uiClip, string name) {
+        MarkSounds();
+        CheckInt(board.PieceDroppedAs(localName, Sq(move.Substring(0, 2)), Sq(move.Substring(2, 2))),
+            ChessBoard.InputAccepted, name + ": played");
+        Redraw();
+        CheckSounds(viewClip, uiClip, name);
+    }
+
+    // Steps the replay to ply, then checks the view's sound after the Refresh (the UI's none).
+    void StepSound(int ply, AudioClip viewClip, string name) {
+        MarkSounds();
+        CheckInt(board.StepToAs(localName, false, ply), ChessBoard.InputAccepted, name + ": stepped");
+        Redraw();
+        CheckSounds(viewClip, null, name);
+    }
+
+    // Presses a step button on the UI, landing on ply, then checks the view's sound after the Refresh (the UI's none,
+    // no click).
+    void PressStepSound(int action, int ply, AudioClip viewClip, string name) {
+        MarkSounds();
+        CheckInt(ui.PressButton(action), ChessBoard.InputAccepted, name + ": pressed");
+        CheckInt(board.replayIndex, ply, name + ": at ply " + ply);
+        Redraw();
+        CheckSounds(viewClip, null, name);
+    }
+
+    // A free move in replay, then the view's sound after the Refresh.
+    void FreeMoveSound(string from, string to, AudioClip viewClip, string name) {
+        MarkSounds();
+        CheckInt(board.PieceDroppedAs(localName, Sq(from), Sq(to)), ChessBoard.InputAccepted, name + ": played");
+        Redraw();
+        CheckSounds(viewClip, null, name);
+    }
+
+    // A promotion dropped through the view on a game continued from fen: landing on square plays landing at once,
+    // choosing type plays chosen after the Refresh.
+    void PromotionSound(string fen, string square, int type, AudioClip landing, AudioClip chosen, string name) {
+        LoadFen(fen, name);
+        ContinueLoaded(name);
+        MarkSounds();
+        DropOver("b7", square, name + ": dropped");
+        CheckSounds(landing, null, name + ": landed");
+        CheckInt(view.ChoosePromotion(type), ChessBoard.InputAccepted, name + ": chosen");
+        Redraw();
+        CheckSounds(chosen, null, name + ": chosen");
+    }
+
+    // Samples the time warning at server time now: whether it played.
+    void WarningSound(double now, bool warns, string name) {
+        MarkSounds();
+        ui.CheckTimeWarningAt(now);
+        CheckSounds(null, warns ? ui.timeWarningSound : null, name);
     }
 
     // No king fallen in the position shown, and every object standing, none falling.

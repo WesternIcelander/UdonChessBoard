@@ -8,7 +8,8 @@ namespace SiggiChessBoard {
     // The board's UI (docs/architecture.md, docs/player-input.md; PLAN.md 12.1): the button panels, the status
     // display, the PGN box (copying a game out, pasting one in) and Load it here for the history wall's pick. A
     // listener of its own, holding no game state and no synced fields: it reads the board after each change and acts
-    // through the board's methods, never through the physical board (ChessBoardView), which it doesn't know. Built in
+    // through the board's methods, never through the physical board (ChessBoardView), which it doesn't know. It plays
+    // every sound but the move sounds (step 12.12), so a UI of a world's own replaces them all with it. Built in
     // the scene with the view by Tools > Chess Board > Create Board View (Editor/ChessBoardViewBuilder.cs).
     //
     // Its local space is the view's: the builder stands it at the board's centre, files along +x, White's end at -z,
@@ -108,8 +109,52 @@ namespace SiggiChessBoard {
         // (for Reset) change without the board changing.
         float nextButtonCheck;
         const float ButtonCheckInterval = 1;
+        // Sound effects (step 12.12): every sound but the move sounds (ChessBoardView's), from audioSource (a spatial
+        // source the builder stands at the UI's origin, the board's centre). clickSound plays for a button pressed, on
+        // the presser's client; the rest on every client, for a change as it happens: gameStartSound for Start or
+        // Continue from here, notificationSound for a draw offered or a takeback requested, gameEndSound when a game
+        // ends (timeOutSound instead for a flag fall), resetSound for a reset, and timeWarningSound as the side to
+        // move's clock passes each of timeWarningSeconds. A move that ends the game, or a replay step onto such an end,
+        // plays game over once the view's check sound has finished (checkSound, held here for its length only; the
+        // view plays the move's sound meanwhile). Nothing plays for a late joiner's first update, during the first
+        // StartupSilence seconds, or for changes that come several between two Refreshes (a test's thousands).
+        public AudioSource audioSource;
+        public AudioClip clickSound;
+        public AudioClip gameStartSound;
+        public AudioClip notificationSound;
+        public AudioClip gameEndSound;
+        public AudioClip resetSound;
+        public AudioClip timeWarningSound;
+        public AudioClip timeOutSound;
+        [Tooltip("The board view's Check Sound, for its length only: game over waits for it after a mating move.")]
+        public AudioClip checkSound;
+        [Tooltip("The times left on the side to move's clock, in seconds, at which the time warning plays.")]
+        public int[] timeWarningSeconds = { 60, 30, 10 };
+        public const float StartupSilence = 1;
+        // For tests: nothing is heard while muted, but lastSound and soundsPlayed follow what would have been.
+        [NonSerialized] public bool muted;
+        [NonSerialized] public AudioClip lastSound;
+        [NonSerialized] public int soundsPlayed;
+        // When the waiting game-over sound plays (Time.time; -1 for none).
+        [NonSerialized] public float gameEndAt = -1;
+        // When sounds may start (Time.time), whether this client has caught up with the board (a change seen after
+        // the silence: made here, or a received one, the first of which is silent), the change whose sound the next
+        // Refresh plays (ChangeNone for none) and how many changes have come since the last Refresh, and the draw
+        // offer and takeback request at the last Refresh (a ChangeRequest that makes one plays its sound).
+        float soundsFrom;
+        bool caughtUp;
+        int soundChange = ChessBoard.ChangeNone;
+        int soundChanges;
+        int seenDrawOffer = ChessRules.NoColor;
+        int seenTakeback = ChessRules.NoColor;
+        // The side to move's clock at the last status update: its colour (NoColor while no clock runs), its turn's
+        // start and its time left, for the time warning.
+        int warnColor = ChessRules.NoColor;
+        double warnTurnStart;
+        int warnLeft;
 
         void Start() {
+            soundsFrom = Time.time + StartupSilence;
             if (!Utilities.IsValid(board)) {
                 Debug.LogError("[ChessBoardUI] " + gameObject.name + ": the Board field is empty.");
                 return;
@@ -129,6 +174,10 @@ namespace SiggiChessBoard {
             }
             // The clocks run without the board changing.
             if (Time.time >= nextStatusUpdate) UpdateStatus();
+            if (gameEndAt >= 0 && Time.time >= gameEndAt) {
+                gameEndAt = -1;
+                PlaySound(gameEndSound);
+            }
             // An import's progress moves on without the board changing.
             if (pgnShown && pgnPasting && importWatched && Utilities.IsValid(board)
                 && board.importStatus == ChessBoard.ImportRunning) {
@@ -138,6 +187,7 @@ namespace SiggiChessBoard {
 
         public override void OnBoardChanged() {
             dirty = true;
+            if (Utilities.IsValid(board)) NoteSound(board.lastChange);
         }
 
         // An import started from the PGN box (step 11.2b) moved on: once loaded the box closes (the board shows the
@@ -171,10 +221,116 @@ namespace SiggiChessBoard {
         // a change; public for tests.
         public void Refresh() {
             dirty = false;
+            int change = soundChange;
+            soundChange = ChessBoard.ChangeNone;
+            soundChanges = 0;
             if (!Utilities.IsValid(board)) return;
             UpdatePgnBox();
             UpdateButtons();
             UpdateStatus();
+            PlayChangeSound(change);
+            seenDrawOffer = board.drawOfferColor;
+            seenTakeback = board.takebackColor;
+        }
+
+        // ---- Sound effects (step 12.12) ----
+
+        // Notes a change's sound for the next Refresh: a reset, a start or continuation, a request, an ending, a move
+        // or a replay step (for a game it ends), heard (SoundAllowed) and alone since the last Refresh. A touch from
+        // another client doesn't count.
+        void NoteSound(int change) {
+            if (change == ChessBoard.ChangeActivity) return;
+            soundChanges++;
+            bool sounding = SoundAllowed() && (change == ChessBoard.ChangeReset || change == ChessBoard.ChangeStarted
+                || change == ChessBoard.ChangeContinued || change == ChessBoard.ChangeRequest
+                || change == ChessBoard.ChangeEnded || change == ChessBoard.ChangeMove
+                || change == ChessBoard.ChangeReplayStep);
+            soundChange = soundChanges == 1 && sounding ? change : ChessBoard.ChangeNone;
+        }
+
+        // Whether the change the board has just told is heard: not during the first StartupSilence seconds (the
+        // board's own start), nor a late joiner's first update (catching up), which is the first received change when
+        // no change has been seen here since the silence.
+        bool SoundAllowed() {
+            if (Time.time < soundsFrom) return false;
+            if (caughtUp) return true;
+            caughtUp = true;
+            return !board.lastChangeReceived;
+        }
+
+        // Plays the sound of change, which Refresh has just brought the UI up to (ChangeNone for none). Any sound
+        // change drops a game over still waiting.
+        void PlayChangeSound(int change) {
+            if (change == ChessBoard.ChangeNone) return;
+            gameEndAt = -1;
+            if (change == ChessBoard.ChangeReset) {
+                PlaySound(resetSound);
+            } else if (change == ChessBoard.ChangeStarted || change == ChessBoard.ChangeContinued) {
+                PlaySound(gameStartSound);
+            } else if (change == ChessBoard.ChangeRequest) {
+                bool offered = board.drawOfferColor != ChessRules.NoColor && seenDrawOffer == ChessRules.NoColor;
+                bool asked = board.takebackColor != ChessRules.NoColor && seenTakeback == ChessRules.NoColor;
+                if (offered || asked) PlaySound(notificationSound);
+            } else if (change == ChessBoard.ChangeEnded) {
+                PlaySound(IsFlagFall(board) ? timeOutSound : gameEndSound);
+            } else if (ShowsEndByMove(board)) {
+                // The view plays the move's sound first.
+                gameEndAt = Time.time + (Utilities.IsValid(checkSound) ? checkSound.length : 0);
+            }
+        }
+
+        // Whether the board's game has just ended on time (told as ChangeEnded): ended by a time forfeit, or playing on
+        // untimed after its flag fell (step 12.9).
+        public static bool IsFlagFall(ChessBoard board) {
+            if (board.lifecycle == ChessBoard.LifecycleEnded) return board.ending == ChessGame.EndingTimeForfeit;
+            return board.lifecycle == ChessBoard.LifecycleInGame && board.ClocksFromPreviousGame();
+        }
+
+        // Whether the position shown is the end of a game (ended or loaded) that its last move ended: checkmate,
+        // stalemate, a draw the board makes by itself, the king captured. Not a game resigned, agreed drawn, claimed
+        // drawn or lost on time after its last move.
+        public static bool ShowsEndByMove(ChessBoard board) {
+            int lifecycle = board.lifecycle;
+            if (lifecycle != ChessBoard.LifecycleEnded && lifecycle != ChessBoard.LifecycleLoaded) return false;
+            if (board.moveCount == 0) return false;
+            if (board.replayMode && (board.replayCustom || board.replayIndex != board.moveCount)) return false;
+            int ending = board.ending;
+            return ending == ChessGame.EndingCheckmate || ending == ChessGame.EndingStalemate
+                || ending == ChessGame.EndingFivefoldRepetition || ending == ChessGame.EndingSeventyFiveMoveRule
+                || ending == ChessGame.EndingInsufficientMaterial || ending == ChessGame.EndingKingCaptured;
+        }
+
+        // The time warning: timeWarningSound as the side to move's clock passes each of timeWarningSeconds during its
+        // turn, at server time now, seen by sampling it on every status update (every StatusInterval while it runs). A
+        // turn first seen with less time left (a late joiner, a takeback) warns only for what passes from then on.
+        // Public for tests.
+        public void CheckTimeWarningAt(double now) {
+            if (!Utilities.IsValid(board) || !board.IsClockRunning()) {
+                warnColor = ChessRules.NoColor;
+                return;
+            }
+            int color = board.SideToMove();
+            int left = board.RemainingTimeAt(color, now);
+            if (color == warnColor && board.turnStart == warnTurnStart && Time.time >= soundsFrom) {
+                for (int i = 0; i < timeWarningSeconds.Length; i++) {
+                    int at = timeWarningSeconds[i] * 1000;
+                    if (warnLeft > at && left <= at) {
+                        PlaySound(timeWarningSound);
+                        break;
+                    }
+                }
+            }
+            warnColor = color;
+            warnTurnStart = board.turnStart;
+            warnLeft = left;
+        }
+
+        // Plays clip from audioSource (nothing for none) unless muted; lastSound and soundsPlayed follow it either way.
+        void PlaySound(AudioClip clip) {
+            if (!Utilities.IsValid(clip)) return;
+            lastSound = clip;
+            soundsPlayed++;
+            if (!muted && Utilities.IsValid(audioSource)) audioSource.PlayOneShot(clip);
         }
 
         // ---- Buttons (docs/player-input.md, Buttons; steps 9.4a and 9.4b) ----
@@ -308,10 +464,12 @@ namespace SiggiChessBoard {
 
         // The PGN box's own buttons (step 11.2b).
         public void PressImport() {
+            PlaySound(clickSound);
             ImportPasted();
         }
 
         public void PressPgnClose() {
+            PlaySound(clickSound);
             OpenPgnBox(false, false);
             UpdateButtons();
         }
@@ -336,6 +494,11 @@ namespace SiggiChessBoard {
 
         // The ply a step button for action steps the replay to: the start, one back, one on, or the game's current
         // position. -1 for any other action (and for one back from the start).
+        static bool IsStepButton(int action) {
+            return action == ButtonStepFirst || action == ButtonStepBack || action == ButtonStepForward
+                || action == ButtonStepLast;
+        }
+
         int StepTarget(int action) {
             if (action == ButtonStepFirst) return 0;
             if (action == ButtonStepBack) return board.replayIndex - 1;
@@ -347,8 +510,11 @@ namespace SiggiChessBoard {
         // Does what the button for action does, for the local player: the board's answer (InputRejected for an
         // unknown action). Mode switches between Standard and Chess960; Clock picks the next of clockBases and
         // clockIncrements after the board's time control (the first when it isn't one of them); the step buttons
-        // step the replay to StepTarget; the others call the board's method for their colour.
+        // step the replay to StepTarget; the others call the board's method for their colour. Plays the click sound
+        // here (step 12.12), and the change's own sound follows on the next Refresh; not for the step buttons, whose
+        // step plays the shown position's move sound instead.
         public int PressButton(int action) {
+            if (!IsStepButton(action)) PlaySound(clickSound);
             if (!Utilities.IsValid(board)) return ChessBoard.InputRejected;
             int result = ChessBoard.InputRejected;
             int color = ButtonColor(action);
@@ -647,6 +813,7 @@ namespace SiggiChessBoard {
             bool valid = Utilities.IsValid(board);
             nextStatusUpdate = Time.time + (valid && board.IsClockRunning() ? StatusInterval : 1);
             double now = valid ? board.ServerTime() : 0;
+            CheckTimeWarningAt(now);
             string players = PlayersTextAt(now);
             string status = StatusTextAt(now);
             for (int i = 0; i < statusPlayerLabels.Length; i++) {

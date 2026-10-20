@@ -16,7 +16,8 @@ using VRC.Udon;
 // ghosts (step 12.11) and the captured-piece places (step 12.4), wired to a ChessBoardView; and its UI (step 12.1,
 // ChessBoardUI.cs) on an object of its own beside the view, standing where the view does (the board's centre): the
 // button panels (steps 9.4a and 9.4b), the
-// status panels (step 9.5c) and the PGN box (steps 11.2a, 11.2b). Players walk through all of it (no solid colliders
+// status panels (step 9.5c) and the PGN box (steps 11.2a, 11.2b); and a sound source on each, with the clips in
+// Sounds/ (step 12.12: the view's move sounds, the UI's the rest). Players walk through all of it (no solid colliders
 // but the pieces', on the Pickup layer); the view's blocker keeps out those without a seat (step 9.5a2). An existing
 // view for the same board is replaced, keeping its place, and so is its UI; a world creator's own model in it, and
 // the model parts they deleted, are kept (step 12.2, KeepCustomModel). The piece meshes, the highlight meshes
@@ -144,6 +145,7 @@ public static class ChessBoardViewBuilder {
         AddHighlights(root, view);
         AddPromotionGhosts(root, view, meshes, ghost);
         AddCapturedPlaces(root, view);
+        AddViewSounds(root, view);
         UdonSharpEditorUtility.CopyProxyToUdon(view);
 
         // The UI (step 12.1), a behaviour of its own on an object beside the view, standing where the view does (the
@@ -158,6 +160,7 @@ public static class ChessBoardViewBuilder {
         AddButtons(uiObject, ui, boardWidth * TableDepthFactor);
         AddStatusPanels(uiObject, ui, boardWidth * TableDepthFactor);
         AddPgnBox(uiObject, ui);
+        AddUISounds(uiObject, ui);
         UdonSharpEditorUtility.CopyProxyToUdon(ui);
 
         // Read before old is destroyed, after which Unity compares it equal to null.
@@ -202,7 +205,7 @@ public static class ChessBoardViewBuilder {
     static readonly string[] ModelParts = { "Table", "Board", "Squares" };
     static readonly string[] BuiltChildren = {
         "Table", "Player Blocker", "Board", "Squares", "Pieces", "Square Targets", "Highlights", "Promotion Picker",
-        PromotionGhostsName, CapturedPlacesName,
+        PromotionGhostsName, CapturedPlacesName, SoundsName,
     };
 
     // The captured-piece places (step 12.4), under "Captured Places": 16 per colour (enough for every piece a side
@@ -212,6 +215,56 @@ public static class ChessBoardViewBuilder {
     // their own in the view's fields.
     const string CapturedPlacesName = "Captured Places";
     const string PromotionGhostsName = "Promotion Ghosts";
+
+    // Sound effects (step 12.12): a spatial AudioSource on "Sounds" at the parent's origin (the board's centre), just
+    // above the surface, heard around the table and fading out over a room. The clips are the user's in
+    // Assets/Siggi/ChessBoard/Sounds/.
+    const string SoundsName = "Sounds";
+    const string SoundsFolder = "Assets/Siggi/ChessBoard/Sounds";
+
+    static AudioSource AddSoundSource(GameObject parent) {
+        GameObject sounds = new GameObject(SoundsName);
+        sounds.transform.SetParent(parent.transform, false);
+        sounds.transform.localPosition = new Vector3(0, 0.1f, 0);
+        AudioSource source = sounds.AddComponent<AudioSource>();
+        source.playOnAwake = false;
+        source.spatialBlend = 1;
+        source.dopplerLevel = 0;
+        source.rolloffMode = AudioRolloffMode.Logarithmic;
+        source.minDistance = 1;
+        source.maxDistance = 15;
+        return source;
+    }
+
+    // The clip Sounds/<name>.wav, with a warning when it's missing (null).
+    static AudioClip SoundClip(string name) {
+        string path = SoundsFolder + "/" + name + ".wav";
+        AudioClip clip = AssetDatabase.LoadAssetAtPath<AudioClip>(path);
+        if (clip == null) Debug.LogWarning("[ChessBoardViewBuilder] No sound at " + path + "; left empty.");
+        return clip;
+    }
+
+    // The view's move sounds.
+    static void AddViewSounds(GameObject root, ChessBoardView view) {
+        view.audioSource = AddSoundSource(root);
+        view.moveSound = SoundClip("move");
+        view.captureSound = SoundClip("capture");
+        view.promoteSound = SoundClip("promote");
+        view.checkSound = SoundClip("move-check");
+    }
+
+    // The UI's sounds: every other one, and the view's check sound for its length.
+    static void AddUISounds(GameObject root, ChessBoardUI ui) {
+        ui.audioSource = AddSoundSource(root);
+        ui.clickSound = SoundClip("ui-click");
+        ui.gameStartSound = SoundClip("game-start");
+        ui.notificationSound = SoundClip("notification-pop");
+        ui.gameEndSound = SoundClip("game-end");
+        ui.resetSound = SoundClip("table-reset");
+        ui.timeWarningSound = SoundClip("time-warning");
+        ui.timeOutSound = SoundClip("time-out");
+        ui.checkSound = SoundClip("move-check");
+    }
 
     static void AddCapturedPlaces(GameObject root, ChessBoardView view) {
         GameObject parent = new GameObject(CapturedPlacesName);
