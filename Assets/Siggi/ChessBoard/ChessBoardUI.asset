@@ -230,7 +230,7 @@ MonoBehaviour:
       Data: 13|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: UnityEngine.UI.Text[], UnityEngine.UI
+      Data: TMPro.TextMeshProUGUI[], Unity.TextMeshPro
     - Name: 
       Entry: 8
       Data: 
@@ -692,7 +692,7 @@ MonoBehaviour:
       Data: 36|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: UnityEngine.UI.InputField, UnityEngine.UI
+      Data: TMPro.TMP_InputField, Unity.TextMeshPro
     - Name: 
       Entry: 8
       Data: 
@@ -950,7 +950,7 @@ MonoBehaviour:
       Data: 49|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: UnityEngine.UI.Text, UnityEngine.UI
+      Data: TMPro.TextMeshProUGUI, Unity.TextMeshPro
     - Name: 
       Entry: 8
       Data: 
