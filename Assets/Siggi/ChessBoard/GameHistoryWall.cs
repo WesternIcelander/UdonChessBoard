@@ -47,8 +47,8 @@ namespace SiggiChessBoard {
             drawnChanges = archive.changes;
             int count = archive.GameCount();
             if (selectedGameId.Length > 0 && archive.IndexOf(selectedGameId) < 0) SetSelection("");
-            SetText(title, TitleText());
-            for (int i = 0; i < rows.Length; i++) SetText(rows[i], i < count ? RowText(i) : "");
+            ChessUtil.SetText(title, TitleText());
+            for (int i = 0; i < rows.Length; i++) ChessUtil.SetText(rows[i], i < count ? RowText(i) : "");
             DrawSelection();
         }
 
@@ -120,10 +120,6 @@ namespace SiggiChessBoard {
 
         static string NameText(string name) {
             return name != null && name.Length > 0 ? name : "?";
-        }
-
-        static void SetText(TextMeshProUGUI label, string text) {
-            if (Utilities.IsValid(label) && label.text != text) label.text = text;
         }
     }
 }

@@ -554,7 +554,7 @@ namespace SiggiChessBoard {
             int poolRows = moveNumbers == null ? 0 : moveNumbers.Length;
             for (int r = 0; r < poolRows; r++) {
                 int row = first + r;
-                SetText(moveNumbers[r], valid && row < rows ?(board.startMoveNumber + row) + "." : "");
+                ChessUtil.SetText(moveNumbers[r], valid && row < rows ?(board.startMoveNumber + row) + "." : "");
                 for (int c = 0; c < 2; c++) {
                     int cell = 2 * r + c;
                     int ply = 2 * row + c - lead;
@@ -563,7 +563,7 @@ namespace SiggiChessBoard {
                     bool isCurrent = has && ply == current;
                     if (moveCellLabels != null && cell < moveCellLabels.Length) {
                         TextMeshProUGUI label = moveCellLabels[cell];
-                        SetText(label, san == null ? "" : san);
+                        ChessUtil.SetText(label, san == null ? "" : san);
                         if (Utilities.IsValid(label)) {
                             Color textColor = isCurrent ? currentMoveTextColor : moveTextColor;
                             if (label.color != textColor) label.color = textColor;
@@ -580,10 +580,6 @@ namespace SiggiChessBoard {
                     }
                 }
             }
-        }
-
-        static void SetText(TextMeshProUGUI text, string value) {
-            if (Utilities.IsValid(text) && text.text != value) text.text = value;
         }
 
         // Whether the pool's cell at cell is drawn as the current move (yellow). For tests.

@@ -4,6 +4,7 @@ using UdonSharpEditor;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using static ChessBuilderUtil;
 
 // Adds another ChessBoard (the logical board, docs/architecture.md) to the open scene, beside the last one: the next
 // free board number, the scene's arbiter and archive, and a ChessPgnImporter of its own as a child. Its physical view
@@ -76,8 +77,8 @@ public static class ChessBoardBuilder {
 
     // As ChessBoardViewBuilder.EnsureProgramAssets.
     static bool EnsureProgramAssets() {
-        bool created = CreateProgramAssetIfMissing(BoardScriptPath, BoardProgramPath);
-        created |= CreateProgramAssetIfMissing(ImporterScriptPath, ImporterProgramPath);
+        bool created = CreateProgramAssetIfMissing(BoardScriptPath, BoardProgramPath, "ChessBoardBuilder");
+        created |= CreateProgramAssetIfMissing(ImporterScriptPath, ImporterProgramPath, "ChessBoardBuilder");
         if (!created) return true;
         AssetDatabase.SaveAssets();
         UdonSharpProgramAsset.CompileAllCsPrograms(true);
@@ -85,18 +86,5 @@ public static class ChessBoardBuilder {
             + " or " + ImporterScriptPath + ". Once UdonSharp has finished compiling, run Tools > Chess Board > Create "
             + "Board again.", "OK");
         return false;
-    }
-
-    static bool CreateProgramAssetIfMissing(string scriptPath, string programPath) {
-        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(programPath) != null) return false;
-        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(scriptPath);
-        if (script == null) {
-            Debug.LogError("[ChessBoardBuilder] " + scriptPath + " not found.");
-            return true;
-        }
-        UdonSharpProgramAsset program = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();
-        program.sourceCsScript = script;
-        AssetDatabase.CreateAsset(program, programPath);
-        return true;
     }
 }

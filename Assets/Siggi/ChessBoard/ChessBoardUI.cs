@@ -242,21 +242,12 @@ namespace SiggiChessBoard {
         void NoteSound(int change) {
             if (change == ChessBoard.ChangeActivity) return;
             soundChanges++;
-            bool sounding = SoundAllowed() && (change == ChessBoard.ChangeReset || change == ChessBoard.ChangeStarted
+            bool sounding = ChessUtil.SoundAllowed(board, soundsFrom, caughtUp, out caughtUp)
+                && (change == ChessBoard.ChangeReset || change == ChessBoard.ChangeStarted
                 || change == ChessBoard.ChangeContinued || change == ChessBoard.ChangeRequest
                 || change == ChessBoard.ChangeEnded || change == ChessBoard.ChangeMove
                 || change == ChessBoard.ChangeReplayStep);
             soundChange = soundChanges == 1 && sounding ? change : ChessBoard.ChangeNone;
-        }
-
-        // Whether the change the board has just told is heard: not during the first StartupSilence seconds (the
-        // board's own start), nor a late joiner's first update (catching up), which is the first received change when
-        // no change has been seen here since the silence.
-        bool SoundAllowed() {
-            if (Time.time < soundsFrom) return false;
-            if (caughtUp) return true;
-            caughtUp = true;
-            return !board.lastChangeReceived;
         }
 
         // Plays the sound of change, which Refresh has just brought the UI up to (ChangeNone for none). Any sound
@@ -328,10 +319,9 @@ namespace SiggiChessBoard {
 
         // Plays clip from audioSource (nothing for none) unless muted; lastSound and soundsPlayed follow it either way.
         void PlaySound(AudioClip clip) {
-            if (!Utilities.IsValid(clip)) return;
+            if (!ChessUtil.PlaySound(clip, audioSource, muted)) return;
             lastSound = clip;
             soundsPlayed++;
-            if (!muted && Utilities.IsValid(audioSource)) audioSource.PlayOneShot(clip);
         }
 
         // ---- Buttons (docs/player-input.md, Buttons; steps 9.4a and 9.4b) ----
@@ -969,14 +959,13 @@ namespace SiggiChessBoard {
             if (milliseconds < 0) milliseconds = 0;
             int seconds = milliseconds / 1000;
             int minutes = seconds / 60;
-            if (minutes >= 60) return (minutes / 60) + ":" + TwoDigits(minutes % 60) + ":" + TwoDigits(seconds % 60);
-            string text = minutes + ":" + TwoDigits(seconds % 60);
+            if (minutes >= 60) {
+                return (minutes / 60) + ":" + ChessUtil.TwoDigits(minutes % 60) + ":"
+                    + ChessUtil.TwoDigits(seconds % 60);
+            }
+            string text = minutes + ":" + ChessUtil.TwoDigits(seconds % 60);
             if (milliseconds < 10000) text += "." + (milliseconds / 100 % 10);
             return text;
-        }
-
-        static string TwoDigits(int value) {
-            return value < 10 ? "0" + value : value.ToString();
         }
 
         public static string ColorText(int color) {

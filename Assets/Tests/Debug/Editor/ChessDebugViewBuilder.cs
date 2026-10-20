@@ -10,6 +10,7 @@ using UnityEngine.Events;
 using UnityEngine.UI;
 using VRC.SDK3.Components;
 using VRC.Udon;
+using static ChessBuilderUtil;
 
 // Builds the debug view (PLAN.md 8.1, ChessDebugView.cs) in the open scene for the selected ChessBoard, or the scene's
 // only one: a world-space canvas with the 8x8 board (the 2D view's piece sprites, 12.13), the status text and one
@@ -213,28 +214,6 @@ public static class ChessDebugViewBuilder {
         EditorUtility.DisplayDialog("Create Debug View", "Created the debug view's program asset (" + ViewProgramPath
             + "). Once UdonSharp has finished compiling, run Tools > Chess Board > Create Debug View again.", "OK");
         return false;
-    }
-
-    // TextMeshPro's default font (LiberationSans SDF, from TMP Essential Resources), by the GUID it always has
-    // (step 12.17), or TMP's own default when it isn't there.
-    static TMP_FontAsset DefaultFont() {
-        TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
-            AssetDatabase.GUIDToAssetPath("8f586378b4e144a9851e7b34d9b748ee"));
-        return font != null ? font : TMP_Settings.defaultFontAsset;
-    }
-
-    // A child rect at a position from the parent's top left, in canvas pixels.
-    static GameObject NewChild(GameObject parent, string name, Vector2 topLeft, Vector2 size) {
-        GameObject child = new GameObject(name, typeof(RectTransform));
-        child.layer = parent.layer;
-        RectTransform rect = child.GetComponent<RectTransform>();
-        rect.SetParent(parent.transform, false);
-        rect.anchorMin = new Vector2(0, 1);
-        rect.anchorMax = new Vector2(0, 1);
-        rect.pivot = new Vector2(0, 1);
-        rect.anchoredPosition = new Vector2(topLeft.x, -topLeft.y);
-        rect.sizeDelta = size;
-        return child;
     }
 
     // A text filling its parent.

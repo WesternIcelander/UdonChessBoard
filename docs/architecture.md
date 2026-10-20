@@ -58,6 +58,13 @@ Each board is split into behaviours that never reach into each other's domain.
 
 The same split applies to the instance-wide objects: the archive's history wall and the settings menu are views of `GameArchive` and `ChessArbiter`.
 
+## Shared helpers
+
+Code that several behaviours or builders need is written once (step 12.18):
+
+- **`ChessUtil`** (`Assets/Siggi/ChessBoard/ChessUtil.cs`): static methods for the behaviours, on an abstract behaviour like `ChessPgn` (never placed, so no program asset). `SetText` (set a label only when its text changed), `TwoDigits`, and the sound effects' shared part: `SoundAllowed(board, soundsFrom, caughtUp, out caughtUp)`, the behaviour handing in its own state and taking back its `caughtUp` flag through the `out` parameter, and `PlaySound(clip, audioSource, muted)`, which plays the clip and says whether there was one, the view and the UI each keeping a two-line `PlaySound` that counts it (`lastSound`, `soundsPlayed`). The view and the UI still don't know each other: each calls the static methods with its own fields.
+- **`ChessBuilderUtil`** (`Assets/Siggi/ChessBoard/Editor/ChessBuilderUtil.cs`): plain editor C# for the **Tools > Chess Board** builders and the debug view's builder, imported with `using static ChessBuilderUtil`: `AddTriggerCollider` (a canvas's trigger box), `CreateProgramAssetIfMissing` (with the builder's name for its error), `NewChild` (a top-left-anchored rect) and `DefaultFont` (TMP's default font, step 12.17).
+
 ## Instance-wide objects
 
 Besides the boards, the world has two shared objects, the settings object [`ChessArbiter`](settings.md), one behaviour with its own synced fields, and the game archive [`GameArchive`](archive.md), a controller with 10 synced holders of games.

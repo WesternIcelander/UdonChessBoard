@@ -10,6 +10,7 @@ using UnityEngine.Events;
 using UnityEngine.UI;
 using VRC.SDK3.Components;
 using VRC.Udon;
+using static ChessBuilderUtil;
 
 // Builds the settings menu (docs/settings.md, ChessSettingsMenu.cs) in the open scene for its only ChessArbiter: a
 // world-space canvas with a title, a notice, and the controls only organizers see: the scope row (All boards or one
@@ -253,16 +254,6 @@ public static class ChessSettingsMenuBuilder {
         return field != null && field.FieldType == typeof(ChessSettingsMenu);
     }
 
-    // As GameHistoryWallBuilder.AddTriggerCollider.
-    static void AddTriggerCollider(GameObject canvasObject) {
-        BoxCollider box = canvasObject.GetComponent<BoxCollider>();
-        if (box == null) box = canvasObject.AddComponent<BoxCollider>();
-        Vector2 size = canvasObject.GetComponent<RectTransform>().sizeDelta;
-        box.center = Vector3.zero;
-        box.size = new Vector3(size.x, size.y, 1);
-        box.isTrigger = true;
-    }
-
     // Right of the rightmost board, level with the boards' middle along z; beside the origin when there are none.
     static Vector3 NewMenuPosition() {
         ChessBoard[] boards = Object.FindObjectsOfType<ChessBoard>(true);
@@ -276,14 +267,6 @@ public static class ChessSettingsMenuBuilder {
         }
         Vector3 middle = sum / boards.Length;
         return new Vector3(maxX + MenuDistance, middle.y + MenuHeight, middle.z);
-    }
-
-    // TextMeshPro's default font (LiberationSans SDF, from TMP Essential Resources), by the GUID it always has
-    // (step 12.17), or TMP's own default when it isn't there.
-    static TMP_FontAsset DefaultFont() {
-        TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
-            AssetDatabase.GUIDToAssetPath("8f586378b4e144a9851e7b34d9b748ee"));
-        return font != null ? font : TMP_Settings.defaultFontAsset;
     }
 
     // A text at a position from the parent's top left, in canvas pixels.
@@ -312,8 +295,8 @@ public static class ChessSettingsMenuBuilder {
     // As GameHistoryWallBuilder.EnsureProgramAssets: the menu's and the buttons' program assets, created and compiled
     // when missing, after which the menu item has to be run again.
     static bool EnsureProgramAssets() {
-        bool created = CreateProgramAssetIfMissing(MenuScriptPath, MenuProgramPath);
-        created |= CreateProgramAssetIfMissing(ButtonScriptPath, ButtonProgramPath);
+        bool created = CreateProgramAssetIfMissing(MenuScriptPath, MenuProgramPath, "ChessSettingsMenuBuilder");
+        created |= CreateProgramAssetIfMissing(ButtonScriptPath, ButtonProgramPath, "ChessSettingsMenuBuilder");
         if (!created) return true;
         AssetDatabase.SaveAssets();
         UdonSharpProgramAsset.CompileAllCsPrograms(true);
@@ -321,18 +304,5 @@ public static class ChessSettingsMenuBuilder {
             + MenuScriptPath + ". Once UdonSharp has finished compiling, run Tools > Chess Board > Create Settings "
             + "Menu again.", "OK");
         return false;
-    }
-
-    static bool CreateProgramAssetIfMissing(string scriptPath, string programPath) {
-        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(programPath) != null) return false;
-        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(scriptPath);
-        if (script == null) {
-            Debug.LogError("[ChessSettingsMenuBuilder] " + scriptPath + " not found.");
-            return true;
-        }
-        UdonSharpProgramAsset program = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();
-        program.sourceCsScript = script;
-        AssetDatabase.CreateAsset(program, programPath);
-        return true;
     }
 }

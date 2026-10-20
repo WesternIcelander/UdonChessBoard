@@ -93,14 +93,10 @@ namespace SiggiChessBoard {
             int tenths = milliseconds / 100;
             int seconds = tenths / 10;
             int minutes = seconds / 60;
-            string text = (minutes / 60).ToString() + ":" + TwoDigits(minutes % 60) + ":"
-                + TwoDigits(seconds % 60);
+            string text = (minutes / 60).ToString() + ":" + ChessUtil.TwoDigits(minutes % 60) + ":"
+                + ChessUtil.TwoDigits(seconds % 60);
             if (tenths % 10 != 0) text += "." + (tenths % 10).ToString();
             return text;
-        }
-
-        static string TwoDigits(int value) {
-            return value < 10 ? "0" + value.ToString() : value.ToString();
         }
 
         // Appends a unit of move text, after a space or, if that would make the line longer than lineWidth, on a

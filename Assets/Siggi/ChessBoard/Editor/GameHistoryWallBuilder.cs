@@ -10,6 +10,7 @@ using UnityEngine.Events;
 using UnityEngine.UI;
 using VRC.SDK3.Components;
 using VRC.Udon;
+using static ChessBuilderUtil;
 
 // Builds the history wall (docs/archive.md, GameHistoryWall.cs) in the open scene for its only GameArchive: a
 // world-space canvas with a title and one row per game the archive holds, in Columns columns, oldest first down each
@@ -169,17 +170,6 @@ public static class GameHistoryWallBuilder {
         return count;
     }
 
-    // As ChessBoardViewBuilder.AddTriggerCollider: a trigger box over the whole canvas, so players walk through it
-    // and the pointer still hits it.
-    static void AddTriggerCollider(GameObject canvasObject) {
-        BoxCollider box = canvasObject.GetComponent<BoxCollider>();
-        if (box == null) box = canvasObject.AddComponent<BoxCollider>();
-        Vector2 size = canvasObject.GetComponent<RectTransform>().sizeDelta;
-        box.center = Vector3.zero;
-        box.size = new Vector3(size.x, size.y, 1);
-        box.isTrigger = true;
-    }
-
     // Left of the leftmost board, level with the boards' middle along z; beside the origin when there are none.
     static Vector3 NewWallPosition() {
         ChessBoard[] boards = Object.FindObjectsOfType<ChessBoard>(true);
@@ -193,14 +183,6 @@ public static class GameHistoryWallBuilder {
         }
         Vector3 middle = sum / boards.Length;
         return new Vector3(minX - WallDistance, middle.y + WallHeight, middle.z);
-    }
-
-    // TextMeshPro's default font (LiberationSans SDF, from TMP Essential Resources), by the GUID it always has
-    // (step 12.17), or TMP's own default when it isn't there.
-    static TMP_FontAsset DefaultFont() {
-        TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
-            AssetDatabase.GUIDToAssetPath("8f586378b4e144a9851e7b34d9b748ee"));
-        return font != null ? font : TMP_Settings.defaultFontAsset;
     }
 
     // A text at a position from the parent's top left, in canvas pixels.
@@ -228,8 +210,8 @@ public static class GameHistoryWallBuilder {
     // As ChessBoardViewBuilder.EnsureProgramAssets: the wall's and the rows' program assets, created and compiled
     // when missing, after which the menu item has to be run again.
     static bool EnsureProgramAssets() {
-        bool created = CreateProgramAssetIfMissing(WallScriptPath, WallProgramPath);
-        created |= CreateProgramAssetIfMissing(RowScriptPath, RowProgramPath);
+        bool created = CreateProgramAssetIfMissing(WallScriptPath, WallProgramPath, "GameHistoryWallBuilder");
+        created |= CreateProgramAssetIfMissing(RowScriptPath, RowProgramPath, "GameHistoryWallBuilder");
         if (!created) return true;
         AssetDatabase.SaveAssets();
         UdonSharpProgramAsset.CompileAllCsPrograms(true);
@@ -237,19 +219,5 @@ public static class GameHistoryWallBuilder {
             + WallScriptPath + ". Once UdonSharp has finished compiling, run Tools > Chess Board > Create History "
             + "Wall again.", "OK");
         return false;
-    }
-
-    // Whether the menu item has to stop: an asset created, or a script missing.
-    static bool CreateProgramAssetIfMissing(string scriptPath, string programPath) {
-        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(programPath) != null) return false;
-        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(scriptPath);
-        if (script == null) {
-            Debug.LogError("[GameHistoryWallBuilder] " + scriptPath + " not found.");
-            return true;
-        }
-        UdonSharpProgramAsset program = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();
-        program.sourceCsScript = script;
-        AssetDatabase.CreateAsset(program, programPath);
-        return true;
     }
 }

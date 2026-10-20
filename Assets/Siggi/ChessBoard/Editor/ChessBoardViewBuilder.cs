@@ -11,6 +11,7 @@ using UnityEngine.Events;
 using UnityEngine.UI;
 using VRC.SDK3.Components;
 using VRC.Udon;
+using static ChessBuilderUtil;
 
 // Builds the physical board (PLAN.md 9.1, ChessBoardView.cs) in the open scene for the selected ChessBoard, or the
 // scene's only one: a table, the board's surface and squares, the 32 piece objects, the highlights, the promotion
@@ -683,14 +684,6 @@ public static class ChessBoardViewBuilder {
     const float PgnBarHeight = 40;
     const float PgnBarButtonWidth = 80;
 
-    // TextMeshPro's default font (LiberationSans SDF, from TMP Essential Resources), by the GUID it always has
-    // (step 12.17), or TMP's own default when it isn't there.
-    static TMP_FontAsset DefaultFont() {
-        TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
-            AssetDatabase.GUIDToAssetPath("8f586378b4e144a9851e7b34d9b748ee"));
-        return font != null ? font : TMP_Settings.defaultFontAsset;
-    }
-
     // The PGN box (steps 11.2a, 11.2b): a world-space canvas (with VRCUiShape, so the pointer reaches the text)
     // standing upright over the far edge of the board from White's end, facing it unturned, holding two parts the UI
     // shows one at a time. Copying: a hint line and a read-only multi-line text field the UI fills with the game's
@@ -839,17 +832,6 @@ public static class ChessBoardViewBuilder {
         text.raycastTarget = false;
         text.text = label;
         return buttonObject;
-    }
-
-    // A UI canvas's collider: a trigger box over the whole canvas, so players walk through it. VRCUiShape uses a box
-    // collider the canvas already has (and adds a solid one when there's none); a trigger still takes the pointer.
-    static void AddTriggerCollider(GameObject canvasObject) {
-        BoxCollider box = canvasObject.GetComponent<BoxCollider>();
-        if (box == null) box = canvasObject.AddComponent<BoxCollider>();
-        Vector2 size = canvasObject.GetComponent<RectTransform>().sizeDelta;
-        box.center = Vector3.zero;
-        box.size = new Vector3(size.x, size.y, 1);
-        box.isTrigger = true;
     }
 
     // The UI's Press... event for each ChessBoardUI.Button* action, by action.
@@ -1079,12 +1061,12 @@ public static class ChessBoardViewBuilder {
     // has them (the view's, the UI's, the pieces', the squares', the piece set's and the promotion ghosts'); any
     // that's missing is created and compiled, and the menu item has to be run again afterwards.
     static bool EnsureProgramAssets() {
-        bool created = CreateProgramAssetIfMissing(ViewScriptPath, ViewProgramPath);
-        created |= CreateProgramAssetIfMissing(UIScriptPath, UIProgramPath);
-        created |= CreateProgramAssetIfMissing(PieceScriptPath, PieceProgramPath);
-        created |= CreateProgramAssetIfMissing(SquareScriptPath, SquareProgramPath);
-        created |= CreateProgramAssetIfMissing(PieceSetScriptPath, PieceSetProgramPath);
-        created |= CreateProgramAssetIfMissing(GhostScriptPath, GhostProgramPath);
+        bool created = CreateProgramAssetIfMissing(ViewScriptPath, ViewProgramPath, "ChessBoardViewBuilder");
+        created |= CreateProgramAssetIfMissing(UIScriptPath, UIProgramPath, "ChessBoardViewBuilder");
+        created |= CreateProgramAssetIfMissing(PieceScriptPath, PieceProgramPath, "ChessBoardViewBuilder");
+        created |= CreateProgramAssetIfMissing(SquareScriptPath, SquareProgramPath, "ChessBoardViewBuilder");
+        created |= CreateProgramAssetIfMissing(PieceSetScriptPath, PieceSetProgramPath, "ChessBoardViewBuilder");
+        created |= CreateProgramAssetIfMissing(GhostScriptPath, GhostProgramPath, "ChessBoardViewBuilder");
         if (!created) return true;
         AssetDatabase.SaveAssets();
         UdonSharpProgramAsset.CompileAllCsPrograms(true);
@@ -1093,21 +1075,6 @@ public static class ChessBoardViewBuilder {
             + PieceSetScriptPath + " or " + GhostScriptPath
             + ". Once UdonSharp has finished compiling, run Tools > Chess Board > Create Board View again.", "OK");
         return false;
-    }
-
-    // Creates the program asset for a script if it's missing; whether it did (also logged when the script is missing,
-    // which stops the build the same way).
-    static bool CreateProgramAssetIfMissing(string scriptPath, string programPath) {
-        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(programPath) != null) return false;
-        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(scriptPath);
-        if (script == null) {
-            Debug.LogError("[ChessBoardViewBuilder] " + scriptPath + " not found.");
-            return true;
-        }
-        UdonSharpProgramAsset program = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();
-        program.sourceCsScript = script;
-        AssetDatabase.CreateAsset(program, programPath);
-        return true;
     }
 
     // ---- Generated assets ----

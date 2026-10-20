@@ -10,6 +10,7 @@ using UnityEngine.Events;
 using UnityEngine.UI;
 using VRC.SDK3.Components;
 using VRC.Udon;
+using static ChessBuilderUtil;
 
 // Builds the 2D board view (PLAN.md 12.13 to 12.15, ChessBoard2DView.cs, docs/board-2d.md) in the open scene: a
 // world-space canvas with the selector (left, "Board N", right), the 8x8 board with a piece image on each square, the
@@ -563,23 +564,12 @@ public static class ChessBoard2DViewBuilder {
         return button;
     }
 
-    // As GameHistoryWallBuilder.AddTriggerCollider: a trigger box over the whole canvas, so players walk through it
-    // and the pointer still hits it.
-    static void AddTriggerCollider(GameObject canvasObject) {
-        BoxCollider box = canvasObject.GetComponent<BoxCollider>();
-        if (box == null) box = canvasObject.AddComponent<BoxCollider>();
-        Vector2 size = canvasObject.GetComponent<RectTransform>().sizeDelta;
-        box.center = Vector3.zero;
-        box.size = new Vector3(size.x, size.y, 1);
-        box.isTrigger = true;
-    }
-
     // As ChessSettingsMenuBuilder.EnsureProgramAssets: the view's and the move list cells' program assets, created and
     // compiled when missing, after which the menu item has to be run again.
     static bool EnsureProgramAsset() {
-        bool created = CreateProgramAssetIfMissing(ViewScriptPath, ViewProgramPath);
-        created |= CreateProgramAssetIfMissing(CellScriptPath, CellProgramPath);
-        created |= CreateProgramAssetIfMissing(HolderScriptPath, HolderProgramPath);
+        bool created = CreateProgramAssetIfMissing(ViewScriptPath, ViewProgramPath, "ChessBoard2DViewBuilder");
+        created |= CreateProgramAssetIfMissing(CellScriptPath, CellProgramPath, "ChessBoard2DViewBuilder");
+        created |= CreateProgramAssetIfMissing(HolderScriptPath, HolderProgramPath, "ChessBoard2DViewBuilder");
         if (!created) return true;
         AssetDatabase.SaveAssets();
         UdonSharpProgramAsset.CompileAllCsPrograms(true);
@@ -587,41 +577,6 @@ public static class ChessBoard2DViewBuilder {
             + ViewScriptPath + ". Once UdonSharp has finished compiling, run the Tools > Chess Board menu item "
             + "again.", "OK");
         return false;
-    }
-
-    static bool CreateProgramAssetIfMissing(string scriptPath, string programPath) {
-        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(programPath) != null) return false;
-        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(scriptPath);
-        if (script == null) {
-            Debug.LogError("[ChessBoard2DViewBuilder] " + scriptPath + " not found.");
-            return true;
-        }
-        UdonSharpProgramAsset program = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();
-        program.sourceCsScript = script;
-        AssetDatabase.CreateAsset(program, programPath);
-        return true;
-    }
-
-    // A child rect at a position from the parent's top left, in canvas pixels.
-    static GameObject NewChild(GameObject parent, string name, Vector2 topLeft, Vector2 size) {
-        GameObject child = new GameObject(name, typeof(RectTransform));
-        child.layer = parent.layer;
-        RectTransform rect = child.GetComponent<RectTransform>();
-        rect.SetParent(parent.transform, false);
-        rect.anchorMin = new Vector2(0, 1);
-        rect.anchorMax = new Vector2(0, 1);
-        rect.pivot = new Vector2(0, 1);
-        rect.anchoredPosition = new Vector2(topLeft.x, -topLeft.y);
-        rect.sizeDelta = size;
-        return child;
-    }
-
-    // TextMeshPro's default font (LiberationSans SDF, from TMP Essential Resources), by the GUID it always has
-    // (step 12.17), or TMP's own default when it isn't there.
-    static TMP_FontAsset DefaultFont() {
-        TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
-            AssetDatabase.GUIDToAssetPath("8f586378b4e144a9851e7b34d9b748ee"));
-        return font != null ? font : TMP_Settings.defaultFontAsset;
     }
 
     // A text at a position from the parent's top left, in canvas pixels.

@@ -598,19 +598,10 @@ namespace SiggiChessBoard {
         void NoteSound(int change) {
             if (change == ChessBoard.ChangeActivity) return;
             soundChanges++;
-            bool sounding = SoundAllowed() && (change == ChessBoard.ChangeMove || change == ChessBoard.ChangeReplayStep
+            bool sounding = ChessUtil.SoundAllowed(board, soundsFrom, caughtUp, out caughtUp)
+                && (change == ChessBoard.ChangeMove || change == ChessBoard.ChangeReplayStep
                 || change == ChessBoard.ChangeFreeMove);
             soundChange = soundChanges == 1 && sounding ? change : ChessBoard.ChangeNone;
-        }
-
-        // Whether the change the board has just told is heard: not during the first StartupSilence seconds (the
-        // board's own start), nor a late joiner's first update (catching up), which is the first received change when
-        // no change has been seen here since the silence.
-        bool SoundAllowed() {
-            if (Time.time < soundsFrom) return false;
-            if (caughtUp) return true;
-            caughtUp = true;
-            return !board.lastChangeReceived;
         }
 
         // The move sound for change, placed with the position shown now holding pieceCount pieces and shownChecks
@@ -634,10 +625,9 @@ namespace SiggiChessBoard {
 
         // Plays clip from audioSource (nothing for none) unless muted; lastSound and soundsPlayed follow it either way.
         void PlaySound(AudioClip clip) {
-            if (!Utilities.IsValid(clip)) return;
+            if (!ChessUtil.PlaySound(clip, audioSource, muted)) return;
             lastSound = clip;
             soundsPlayed++;
-            if (!muted && Utilities.IsValid(audioSource)) audioSource.PlayOneShot(clip);
         }
 
         static int CountPieces(byte[] squares) {

@@ -4,6 +4,7 @@ using UdonSharpEditor;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using static ChessBuilderUtil;
 
 // Adds the instance's GameArchive (docs/archive.md) to the open scene: the archive with HolderCount synced holders and
 // the local-only recent holder as children, and every ChessBoard's Archive field set to it. An existing archive is
@@ -69,8 +70,8 @@ public static class GameArchiveBuilder {
 
     // As ChessBoardViewBuilder.EnsureProgramAssets.
     static bool EnsureProgramAssets() {
-        bool created = CreateProgramAssetIfMissing(ArchiveScriptPath, ArchiveProgramPath);
-        created |= CreateProgramAssetIfMissing(HolderScriptPath, HolderProgramPath);
+        bool created = CreateProgramAssetIfMissing(ArchiveScriptPath, ArchiveProgramPath, "GameArchiveBuilder");
+        created |= CreateProgramAssetIfMissing(HolderScriptPath, HolderProgramPath, "GameArchiveBuilder");
         if (!created) return true;
         AssetDatabase.SaveAssets();
         UdonSharpProgramAsset.CompileAllCsPrograms(true);
@@ -78,18 +79,5 @@ public static class GameArchiveBuilder {
             + ArchiveScriptPath + " or " + HolderScriptPath + ". Once UdonSharp has finished compiling, run Tools > "
             + "Chess Board > Create Game Archive again.", "OK");
         return false;
-    }
-
-    static bool CreateProgramAssetIfMissing(string scriptPath, string programPath) {
-        if (AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(programPath) != null) return false;
-        MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(scriptPath);
-        if (script == null) {
-            Debug.LogError("[GameArchiveBuilder] " + scriptPath + " not found.");
-            return true;
-        }
-        UdonSharpProgramAsset program = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();
-        program.sourceCsScript = script;
-        AssetDatabase.CreateAsset(program, programPath);
-        return true;
     }
 }

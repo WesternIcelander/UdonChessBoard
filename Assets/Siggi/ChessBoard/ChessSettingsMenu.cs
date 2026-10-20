@@ -110,7 +110,7 @@ namespace SiggiChessBoard {
             bool shown = Utilities.IsValid(arbiter) && arbiter.IsOrganizer(Networking.LocalPlayer);
             if (Utilities.IsValid(controls) && controls.activeSelf != shown) controls.SetActive(shown);
             controlsShown = shown;
-            SetText(notice, NoticeText());
+            ChessUtil.SetText(notice, NoticeText());
         }
 
         // Redraws if the arbiter's settings have changed since the last drawing. Returns whether it did.
@@ -125,10 +125,12 @@ namespace SiggiChessBoard {
             if (!Utilities.IsValid(arbiter)) return;
             drawnChanges = arbiter.changes;
             FixScope();
-            SetText(title, "Chess settings");
-            SetText(scopeLabel, ScopeText());
-            for (int item = 0; item < ItemCount && item < values.Length; item++) SetText(values[item], ValueText(item));
-            SetText(resnapshotLabel, resnapshotText);
+            ChessUtil.SetText(title, "Chess settings");
+            ChessUtil.SetText(scopeLabel, ScopeText());
+            for (int item = 0; item < ItemCount && item < values.Length; item++) {
+                ChessUtil.SetText(values[item], ValueText(item));
+            }
+            ChessUtil.SetText(resnapshotLabel, resnapshotText);
             for (int i = 0; i < buttons.Length; i++) {
                 GameObject button = buttons[i];
                 if (!Utilities.IsValid(button) || i >= buttonItems.Length || i >= buttonActions.Length) continue;
@@ -141,7 +143,7 @@ namespace SiggiChessBoard {
                     if (buttonImages[i].color != color) buttonImages[i].color = color;
                 }
             }
-            SetText(notice, NoticeText());
+            ChessUtil.SetText(notice, NoticeText());
         }
 
         // ---- Pressing ----
@@ -216,7 +218,7 @@ namespace SiggiChessBoard {
                 }
             }
             resnapshotText = ResnapshotText(updated, unused, refused);
-            SetText(resnapshotLabel, resnapshotText);
+            ChessUtil.SetText(resnapshotLabel, resnapshotText);
             Debug.Log("[ChessSettingsMenu] " + LocalName() + ": " + ScopeText() + ", re-snapshot: " + resnapshotText);
             return updated > 0;
         }
@@ -478,10 +480,6 @@ namespace SiggiChessBoard {
         static string LocalName() {
             VRCPlayerApi local = Networking.LocalPlayer;
             return Utilities.IsValid(local) ? local.displayName : "?";
-        }
-
-        static void SetText(TextMeshProUGUI label, string text) {
-            if (Utilities.IsValid(label) && label.text != text) label.text = text;
         }
     }
 }
