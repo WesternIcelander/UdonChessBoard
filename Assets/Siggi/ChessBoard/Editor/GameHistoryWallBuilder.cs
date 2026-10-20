@@ -1,4 +1,5 @@
 using SiggiChessBoard;
+using TMPro;
 using UdonSharp;
 using UdonSharpEditor;
 using UnityEditor;
@@ -52,8 +53,7 @@ public static class GameHistoryWallBuilder {
         int rowsPerColumn = (rowCount + Columns - 1) / Columns;
         float canvasHeight = Margin * 2 + TitleHeight + Margin / 2 + rowsPerColumn * RowHeight;
 
-        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        TMP_FontAsset font = DefaultFont();
         GameHistoryWall[] olds = Object.FindObjectsOfType<GameHistoryWall>(true);
         GameObject root = new GameObject("GameHistoryWall");
         Undo.RegisterCreatedObjectUndo(root, "Create History Wall");
@@ -78,11 +78,11 @@ public static class GameHistoryWallBuilder {
         wall.archive = archive;
         wall.title = NewText(root, "Title", font, TitleFontSize, new Vector2(Margin, Margin),
             new Vector2(CanvasWidth - 2 * Margin, TitleHeight));
-        wall.title.fontStyle = FontStyle.Bold;
+        wall.title.fontStyle = FontStyles.Bold;
         wall.title.text = "Previous games";
         float columnWidth = (CanvasWidth - 2 * Margin - (Columns - 1) * ColumnGap) / Columns;
         float rowsTop = Margin + TitleHeight + Margin / 2;
-        wall.rows = new Text[rowCount];
+        wall.rows = new TextMeshProUGUI[rowCount];
         wall.rowTargets = new GameHistoryRow[rowCount];
         for (int i = 0; i < rowCount; i++) {
             int column = i / rowsPerColumn;
@@ -113,7 +113,7 @@ public static class GameHistoryWallBuilder {
 
     // A row: a button over the row's area (clear until pointed at) with a GameHistoryRow calling the wall's
     // SelectRow, and the row's text inside it.
-    static void AddRow(GameObject root, GameHistoryWall wall, int index, Font font, Vector2 topLeft, Vector2 extent) {
+    static void AddRow(GameObject root, GameHistoryWall wall, int index, TMP_FontAsset font, Vector2 topLeft, Vector2 extent) {
         GameObject rowObject = new GameObject("Row " + (index + 1), typeof(RectTransform));
         rowObject.layer = root.layer;
         RectTransform rect = rowObject.GetComponent<RectTransform>();
@@ -146,10 +146,10 @@ public static class GameHistoryWallBuilder {
         UnityEventTools.AddStringPersistentListener(button.onClick, new UnityAction<string>(udon.SendCustomEvent),
             "Press");
 
-        Text text = NewText(rowObject, "Label", font, RowFontSize, new Vector2(RowInset, 0),
+        TextMeshProUGUI text = NewText(rowObject, "Label", font, RowFontSize, new Vector2(RowInset, 0),
             new Vector2(extent.x - 2 * RowInset, extent.y));
-        text.horizontalOverflow = HorizontalWrapMode.Wrap;
-        text.verticalOverflow = VerticalWrapMode.Truncate;
+        text.enableWordWrapping = true;
+        text.overflowMode = TextOverflowModes.Truncate;
         wall.rows[index] = text;
         wall.rowTargets[index] = target;
     }
@@ -195,8 +195,17 @@ public static class GameHistoryWallBuilder {
         return new Vector3(minX - WallDistance, middle.y + WallHeight, middle.z);
     }
 
+    // TextMeshPro's default font (LiberationSans SDF, from TMP Essential Resources), by the GUID it always has
+    // (step 12.17), or TMP's own default when it isn't there.
+    static TMP_FontAsset DefaultFont() {
+        TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
+            AssetDatabase.GUIDToAssetPath("8f586378b4e144a9851e7b34d9b748ee"));
+        return font != null ? font : TMP_Settings.defaultFontAsset;
+    }
+
     // A text at a position from the parent's top left, in canvas pixels.
-    static Text NewText(GameObject parent, string name, Font font, int size, Vector2 topLeft, Vector2 extent) {
+    static TextMeshProUGUI NewText(GameObject parent, string name, TMP_FontAsset font, int size, Vector2 topLeft,
+        Vector2 extent) {
         GameObject child = new GameObject(name, typeof(RectTransform));
         child.layer = parent.layer;
         RectTransform rect = child.GetComponent<RectTransform>();
@@ -206,12 +215,13 @@ public static class GameHistoryWallBuilder {
         rect.pivot = new Vector2(0, 1);
         rect.anchoredPosition = new Vector2(topLeft.x, -topLeft.y);
         rect.sizeDelta = extent;
-        Text text = child.AddComponent<Text>();
+        TextMeshProUGUI text = child.AddComponent<TextMeshProUGUI>();
         text.font = font;
         text.fontSize = size;
-        text.alignment = TextAnchor.MiddleLeft;
+        text.alignment = TextAlignmentOptions.Left;
         text.color = Color.white;
         text.raycastTarget = false;
+        text.overflowMode = TextOverflowModes.Truncate;
         return text;
     }
 

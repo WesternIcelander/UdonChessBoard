@@ -1,4 +1,5 @@
 using UdonSharp;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using VRC.SDKBase;
@@ -13,9 +14,9 @@ namespace SiggiChessBoard {
     public class GameHistoryWall : UdonSharpBehaviour {
         public GameArchive archive;
         // The heading ("Previous games").
-        public Text title;
+        public TextMeshProUGUI title;
         // One text per archived game, oldest first: as many as the archive holds.
-        public Text[] rows = new Text[0];
+        public TextMeshProUGUI[] rows = new TextMeshProUGUI[0];
         // Each row's click target (the same index), calling SelectRow.
         public GameHistoryRow[] rowTargets = new GameHistoryRow[0];
         // A row's text colour, and the selected game's.
@@ -88,7 +89,7 @@ namespace SiggiChessBoard {
         void DrawSelection() {
             int selected = SelectedIndex();
             for (int i = 0; i < rows.Length; i++) {
-                Text row = rows[i];
+                TextMeshProUGUI row = rows[i];
                 if (!Utilities.IsValid(row)) continue;
                 Color color = i == selected ? selectedColor : rowColor;
                 if (row.color != color) row.color = color;
@@ -121,7 +122,7 @@ namespace SiggiChessBoard {
             return name != null && name.Length > 0 ? name : "?";
         }
 
-        static void SetText(Text label, string text) {
+        static void SetText(TextMeshProUGUI label, string text) {
             if (Utilities.IsValid(label) && label.text != text) label.text = text;
         }
     }

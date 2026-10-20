@@ -77,3 +77,11 @@ A 2D board view ([2D board view](board-2d.md)) stays where it's placed unless it
 - **Everyone or each player:** the view's own **Synced** decides both what it shows and where it is: on, a move or resize is seen by everyone, late joiners included; off, each player's stays their own. The grip's `VRCObjectSync` follows the tick by itself before every build.
 - **Laying it out:** move the holder to place it all; or move the **Grip** and **Corner** relative to the view in the editor (the view keeps the place it has from the grip, and the corner sizes it from where it is), without scaling them. Scale the view itself, not the holder, to change its starting size.
 - **Putting it back:** call the holder's `PutBack()` from a button of your own (as `SendCustomEvent("PutBack")`) to bring it back where you placed it, at its size there.
+
+## Text and font (step 12.17)
+
+Every text on the boards' UIs, the 2D views, the settings menu and the history wall is TextMeshPro (`TextMeshProUGUI`, and `TMP_InputField` for the PGN box's fields), so it stays sharp up close.
+
+- **The font** is TextMeshPro's default, **LiberationSans SDF**, from TMP Essential Resources (`Assets/TextMesh Pro/`). The package doesn't ship them: when a world without them places one of the chess objects, TMP's importer pops up to import them (the VRChat SDK asks too). The objects point at the font by the GUID those resources always have (`8f586378b4e144a9851e7b34d9b748ee`), so they find it once imported.
+- **Characters:** the font and its fallback (**LiberationSans SDF - Fallback**, a dynamic font asset) cover Latin, Greek and Cyrillic, so names such as `Siggі` or `Кот` and the board's own texts (`½-½`, `…`) all show. Characters outside them (Japanese, Chinese, Korean, emoji) show as `□` in Unity (in Play Mode too), with a warning naming the character in the log. In VRChat they show: the client brings its own TextMeshPro fallback fonts (checked with a Japanese player name from a pasted PGN, 2026-10-20).
+- **Your own font:** give a text another font asset in its **Font Asset** field, or add a font asset with the characters you need to **LiberationSans SDF**'s **Fallback Font Assets** list.

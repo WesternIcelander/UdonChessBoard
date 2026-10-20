@@ -1,5 +1,6 @@
 using System;
 using UdonSharp;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using VRC.SDKBase;
@@ -62,7 +63,7 @@ namespace SiggiChessBoard {
         // event for its action.
         public GameObject[] buttons = new GameObject[0];
         public int[] buttonActions = new int[0];
-        public Text[] buttonLabels = new Text[0];
+        public TextMeshProUGUI[] buttonLabels = new TextMeshProUGUI[0];
         // The time controls the Clock button steps through, in seconds (base ChessArbiter.NoClock for none).
         public int[] clockBases = { ChessArbiter.NoClock, 60, 180, 300, 600, 900, 1800 };
         public int[] clockIncrements = { 0, 0, 2, 3, 0, 10, 0 };
@@ -75,8 +76,8 @@ namespace SiggiChessBoard {
         // check, the result, pending offers and requests, a loaded game's names, the replay position), at the same
         // index. Brought up to date on every Refresh, every StatusInterval while a clock runs and once a second
         // otherwise.
-        public Text[] statusPlayerLabels = new Text[0];
-        public Text[] statusLabels = new Text[0];
+        public TextMeshProUGUI[] statusPlayerLabels = new TextMeshProUGUI[0];
+        public TextMeshProUGUI[] statusLabels = new TextMeshProUGUI[0];
         public const float StatusInterval = 0.1f;
         float nextStatusUpdate;
         // The PGN box (step 11.2a): a child of this UI, shown only to the local player once they open it with the PGN
@@ -85,7 +86,7 @@ namespace SiggiChessBoard {
         // height and distance, the UI only which side of the board it stands on. Kept up to date while it shows, and
         // closed when the game has no moves left (a reset).
         public GameObject pgnBox;
-        public InputField pgnField;
+        public TMP_InputField pgnField;
         [NonSerialized] public bool pgnShown;
         // The box's two parts (step 11.2b), one shown at a time: copying (its hint and pgnField) and pasting, opened
         // with Load PGN on a reset board: its hint, an editable field (pgnPasteField), a line saying how the import is
@@ -94,8 +95,8 @@ namespace SiggiChessBoard {
         // the paste part.
         public GameObject pgnCopyPart;
         public GameObject pgnPastePart;
-        public InputField pgnPasteField;
-        public Text pgnImportLabel;
+        public TMP_InputField pgnPasteField;
+        public TextMeshProUGUI pgnImportLabel;
         public GameObject pgnImportButton;
         [NonSerialized] public bool pgnPasting;
         // Whether the board's import was started from this box (so its progress and outcome are shown here), and a
@@ -817,11 +818,11 @@ namespace SiggiChessBoard {
             string players = PlayersTextAt(now);
             string status = StatusTextAt(now);
             for (int i = 0; i < statusPlayerLabels.Length; i++) {
-                Text label = statusPlayerLabels[i];
+                TextMeshProUGUI label = statusPlayerLabels[i];
                 if (Utilities.IsValid(label) && label.text != players) label.text = players;
             }
             for (int i = 0; i < statusLabels.Length; i++) {
-                Text label = statusLabels[i];
+                TextMeshProUGUI label = statusLabels[i];
                 if (Utilities.IsValid(label) && label.text != status) label.text = status;
             }
         }

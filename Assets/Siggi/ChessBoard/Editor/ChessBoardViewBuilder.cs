@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using SiggiChessBoard;
+using TMPro;
 using UdonSharp;
 using UdonSharpEditor;
 using UnityEditor;
@@ -682,6 +683,14 @@ public static class ChessBoardViewBuilder {
     const float PgnBarHeight = 40;
     const float PgnBarButtonWidth = 80;
 
+    // TextMeshPro's default font (LiberationSans SDF, from TMP Essential Resources), by the GUID it always has
+    // (step 12.17), or TMP's own default when it isn't there.
+    static TMP_FontAsset DefaultFont() {
+        TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
+            AssetDatabase.GUIDToAssetPath("8f586378b4e144a9851e7b34d9b748ee"));
+        return font != null ? font : TMP_Settings.defaultFontAsset;
+    }
+
     // The PGN box (steps 11.2a, 11.2b): a world-space canvas (with VRCUiShape, so the pointer reaches the text)
     // standing upright over the far edge of the board from White's end, facing it unturned, holding two parts the UI
     // shows one at a time. Copying: a hint line and a read-only multi-line text field the UI fills with the game's
@@ -690,8 +699,7 @@ public static class ChessBoardViewBuilder {
     // player and turns it to face the end they opened it from.
     static void AddPgnBox(GameObject root, ChessBoardUI ui) {
         UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(ui);
-        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        TMP_FontAsset font = DefaultFont();
         GameObject canvasObject = new GameObject("PGN Box", typeof(RectTransform));
         canvasObject.layer = LayerMask.NameToLayer("Default");
         canvasObject.transform.SetParent(root.transform, false);
@@ -709,22 +717,23 @@ public static class ChessBoardViewBuilder {
 
         GameObject copy = AddStretched(canvasObject, "Copy", Vector2.zero, Vector2.zero);
         AddPgnHint(copy, font, "PGN of this game. To copy it on desktop: click the text, then Ctrl+A and Ctrl+C.");
-        InputField field = AddPgnField(copy, font, 8, true);
+        TMP_InputField field = AddPgnField(copy, font, 8, true);
 
         GameObject paste = AddStretched(canvasObject, "Paste", Vector2.zero, Vector2.zero);
         AddPgnHint(paste, font, "Paste a PGN here, then press Import. On desktop: click the box, then Ctrl+V.");
-        InputField pasteField = AddPgnField(paste, font, 8 + PgnBarHeight, false);
+        TMP_InputField pasteField = AddPgnField(paste, font, 8 + PgnBarHeight, false);
         GameObject bar = AddAnchored(paste, "Bar", Vector2.zero, new Vector2(1, 0), new Vector2(8, 4),
             new Vector2(-8, PgnBarHeight));
         GameObject statusObject = AddStretched(bar, "Status", Vector2.zero,
             new Vector2(-2 * (PgnBarButtonWidth + 6), 0));
-        Text status = statusObject.AddComponent<Text>();
+        TextMeshProUGUI status = statusObject.AddComponent<TextMeshProUGUI>();
         status.font = font;
         status.fontSize = 12;
-        status.alignment = TextAnchor.MiddleLeft;
+        status.alignment = TextAlignmentOptions.Left;
+        status.overflowMode = TextOverflowModes.Truncate;
         status.color = new Color(0.95f, 0.95f, 0.95f);
         status.raycastTarget = false;
-        status.supportRichText = false;
+        status.richText = false;
         status.text = "";
         GameObject importButton = AddBarButton(bar, font, udon, "Import", "PressImport", 1);
         AddBarButton(bar, font, udon, "Close", "PressPgnClose", 0);
@@ -761,38 +770,44 @@ public static class ChessBoardViewBuilder {
     }
 
     // The PGN box's hint line, along the top of part.
-    static void AddPgnHint(GameObject part, Font font, string text) {
+    static void AddPgnHint(GameObject part, TMP_FontAsset font, string text) {
         GameObject hintObject = AddAnchored(part, "Hint", new Vector2(0, 1), Vector2.one,
             new Vector2(10, -PgnHintHeight), new Vector2(-10, 0));
-        Text hint = hintObject.AddComponent<Text>();
+        TextMeshProUGUI hint = hintObject.AddComponent<TextMeshProUGUI>();
         hint.font = font;
         hint.fontSize = 12;
-        hint.alignment = TextAnchor.MiddleLeft;
+        hint.alignment = TextAlignmentOptions.Left;
+        hint.overflowMode = TextOverflowModes.Truncate;
         hint.color = new Color(0.95f, 0.95f, 0.95f);
         hint.raycastTarget = false;
         hint.text = text;
     }
 
     // The PGN box's multi-line text field, filling part under the hint line down to bottom: read-only for copying,
-    // editable for pasting.
-    static InputField AddPgnField(GameObject part, Font font, float bottom, bool readOnly) {
+    // editable for pasting. The text sits in a masked text area (the field's viewport), which it scrolls in.
+    static TMP_InputField AddPgnField(GameObject part, TMP_FontAsset font, float bottom, bool readOnly) {
         GameObject fieldObject = AddStretched(part, "Field", new Vector2(8, bottom), new Vector2(-8, -PgnHintHeight));
         Image fieldImage = fieldObject.AddComponent<Image>();
         fieldImage.color = new Color(0.95f, 0.95f, 0.93f);
-        GameObject textObject = AddStretched(fieldObject, "Text", new Vector2(6, 4), new Vector2(-6, -4));
-        Text text = textObject.AddComponent<Text>();
+        GameObject areaObject = AddStretched(fieldObject, "Text Area", new Vector2(6, 4), new Vector2(-6, -4));
+        areaObject.AddComponent<RectMask2D>();
+        GameObject textObject = AddStretched(areaObject, "Text", Vector2.zero, Vector2.zero);
+        TextMeshProUGUI text = textObject.AddComponent<TextMeshProUGUI>();
         text.font = font;
         text.fontSize = 10;
-        text.alignment = TextAnchor.UpperLeft;
-        text.horizontalOverflow = HorizontalWrapMode.Wrap;
-        text.verticalOverflow = VerticalWrapMode.Truncate;
+        text.alignment = TextAlignmentOptions.TopLeft;
+        text.enableWordWrapping = true;
         text.color = Color.black;
-        // Names may hold anything; InputField draws its text raw.
-        text.supportRichText = false;
-        InputField field = fieldObject.AddComponent<InputField>();
+        // Names may hold anything; the field draws its text raw.
+        text.richText = false;
+        TMP_InputField field = fieldObject.AddComponent<TMP_InputField>();
+        field.textViewport = areaObject.GetComponent<RectTransform>();
         field.textComponent = text;
+        field.fontAsset = font;
+        field.pointSize = 10;
+        field.richText = false;
         field.targetGraphic = fieldImage;
-        field.lineType = InputField.LineType.MultiLineNewline;
+        field.lineType = TMP_InputField.LineType.MultiLineNewline;
         field.readOnly = readOnly;
         field.characterLimit = 0;
         field.navigation = new Navigation { mode = Navigation.Mode.None };
@@ -802,7 +817,7 @@ public static class ChessBoardViewBuilder {
 
     // A button at the right end of the PGN box's bar, slot places from the right (0 the rightmost), calling the UI's
     // eventName.
-    static GameObject AddBarButton(GameObject bar, Font font, UdonBehaviour udon, string label, string eventName,
+    static GameObject AddBarButton(GameObject bar, TMP_FontAsset font, UdonBehaviour udon, string label, string eventName,
         int slot) {
         float right = -slot * (PgnBarButtonWidth + 6);
         GameObject buttonObject = AddAnchored(bar, label, new Vector2(1, 0), Vector2.one,
@@ -815,10 +830,11 @@ public static class ChessBoardViewBuilder {
         UnityEventTools.AddStringPersistentListener(button.onClick,
             new UnityAction<string>(udon.SendCustomEvent), eventName);
         GameObject labelObject = AddStretched(buttonObject, "Label", Vector2.zero, Vector2.zero);
-        Text text = labelObject.AddComponent<Text>();
+        TextMeshProUGUI text = labelObject.AddComponent<TextMeshProUGUI>();
         text.font = font;
         text.fontSize = 14;
-        text.alignment = TextAnchor.MiddleCenter;
+        text.alignment = TextAlignmentOptions.Center;
+        text.overflowMode = TextOverflowModes.Truncate;
         text.color = Color.black;
         text.raycastTarget = false;
         text.text = label;
@@ -878,15 +894,14 @@ public static class ChessBoardViewBuilder {
     // its action; the UI shows only those whose action applies, and the grid packs the shown ones together.
     static void AddButtons(GameObject root, ChessBoardUI ui, float tableDepth) {
         UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(ui);
-        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        TMP_FontAsset font = DefaultFont();
         int perPanel = 0;
         foreach (int action in ButtonOrder) {
             if (ChessBoardUI.ButtonColor(action) != ChessRules.Black) perPanel++;
         }
         ui.buttons = new GameObject[2 * perPanel];
         ui.buttonActions = new int[2 * perPanel];
-        ui.buttonLabels = new Text[2 * perPanel];
+        ui.buttonLabels = new TextMeshProUGUI[2 * perPanel];
         int next = 0;
         float z = ButtonPanelZ(tableDepth);
         for (int panel = 0; panel < 2; panel++) {
@@ -935,10 +950,11 @@ public static class ChessBoardViewBuilder {
                 labelRect.anchorMax = Vector2.one;
                 labelRect.offsetMin = new Vector2(3, 2);
                 labelRect.offsetMax = new Vector2(-3, -2);
-                Text label = labelObject.AddComponent<Text>();
+                TextMeshProUGUI label = labelObject.AddComponent<TextMeshProUGUI>();
                 label.font = font;
                 label.fontSize = 16;
-                label.alignment = TextAnchor.MiddleCenter;
+                label.alignment = TextAlignmentOptions.Center;
+                label.overflowMode = TextOverflowModes.Truncate;
                 label.color = Color.black;
                 label.raycastTarget = false;
                 label.text = ui.ButtonText(action);
@@ -962,10 +978,9 @@ public static class ChessBoardViewBuilder {
     // buttons, leaning back as they do, with the players' names and clocks on the left and the board's status on the
     // right. Nothing on it is clickable, so it has no collider and no VRCUiShape. The UI writes both texts.
     static void AddStatusPanels(GameObject root, ChessBoardUI ui, float tableDepth) {
-        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        ui.statusPlayerLabels = new Text[2];
-        ui.statusLabels = new Text[2];
+        TMP_FontAsset font = DefaultFont();
+        ui.statusPlayerLabels = new TextMeshProUGUI[2];
+        ui.statusLabels = new TextMeshProUGUI[2];
         // Nearer the board than the buttons, the gap measured along the leaning panels; its near edge stays clear of
         // the board.
         float z = ButtonPanelZ(tableDepth) - (PanelHeight + StatusHeight) * 0.001f / 2 - 0.008f;
@@ -993,8 +1008,8 @@ public static class ChessBoardViewBuilder {
     }
 
     // A column of a status panel, from xMin to xMax of its width, left-aligned and shrinking its text to fit.
-    static Text StatusText(GameObject canvasObject, string name, Font font, float xMin, float xMax, int size,
-        string text) {
+    static TextMeshProUGUI StatusText(GameObject canvasObject, string name, TMP_FontAsset font, float xMin,
+        float xMax, int size, string text) {
         GameObject labelObject = new GameObject(name, typeof(RectTransform));
         labelObject.layer = canvasObject.layer;
         RectTransform labelRect = labelObject.GetComponent<RectTransform>();
@@ -1003,13 +1018,14 @@ public static class ChessBoardViewBuilder {
         labelRect.anchorMax = new Vector2(xMax, 1);
         labelRect.offsetMin = new Vector2(10, 6);
         labelRect.offsetMax = new Vector2(-10, -6);
-        Text label = labelObject.AddComponent<Text>();
+        TextMeshProUGUI label = labelObject.AddComponent<TextMeshProUGUI>();
         label.font = font;
         label.fontSize = size;
-        label.resizeTextForBestFit = true;
-        label.resizeTextMinSize = 8;
-        label.resizeTextMaxSize = size;
-        label.alignment = TextAnchor.MiddleLeft;
+        label.enableAutoSizing = true;
+        label.fontSizeMin = 8;
+        label.fontSizeMax = size;
+        label.alignment = TextAlignmentOptions.Left;
+        label.overflowMode = TextOverflowModes.Truncate;
         label.color = new Color(0.95f, 0.95f, 0.95f);
         label.raycastTarget = false;
         label.text = text;

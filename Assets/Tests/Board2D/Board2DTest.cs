@@ -658,9 +658,10 @@ public class Board2DTest : UdonSharpBehaviour {
         float listBottom = canvas.InverseTransformPoint(list[0]).y;
         float listTop = canvas.InverseTransformPoint(list[1]).y;
         RectTransform[] others = {
-            view.squareImages[0].transform.parent.GetComponent<RectTransform>(), view.boardLabel.rectTransform,
+            view.squareImages[0].transform.parent.GetComponent<RectTransform>(),
+            view.boardLabel.GetComponent<RectTransform>(),
             view.leftButton.GetComponent<RectTransform>(), view.rightButton.GetComponent<RectTransform>(),
-            view.playersLabel.rectTransform, view.statusLabel.rectTransform,
+            view.playersLabel.GetComponent<RectTransform>(), view.statusLabel.GetComponent<RectTransform>(),
             view.stepButtons[0].GetComponent<RectTransform>(), view.stepButtons[3].GetComponent<RectTransform>()
         };
         bool ok = true;

@@ -1,5 +1,6 @@
 using SiggiChessBoard;
 using UdonSharp;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using VRC.SDK3.Components;
@@ -21,7 +22,7 @@ public class ChessDebugView : ChessBoardListener {
     public Sprite[] whiteSprites = new Sprite[6];
     public Sprite[] blackSprites = new Sprite[6];
     // Everything else about the board, and the result of the last button pressed.
-    public Text statusText;
+    public TextMeshProUGUI statusText;
     // The PGN the import buttons import (8.7): Assets/Tests/PGN/Siggi-vs-Nuka.pgn.txt, set by the builder.
     public TextAsset importPgn;
     // The board's physical view, for the pieces' buttons and lines (9.2); found by the builder.

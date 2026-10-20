@@ -1,5 +1,6 @@
 using System;
 using UdonSharp;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using VRC.SDKBase;
@@ -50,15 +51,15 @@ namespace SiggiChessBoard {
         [Tooltip("Black's piece sprites: pawn, knight, bishop, rook, queen, king.")]
         public Sprite[] blackSprites = new Sprite[6];
         // "Board 2", the board's players (both seats, with their clocks) and its status lines.
-        public Text boardLabel;
-        public Text playersLabel;
-        public Text statusLabel;
+        public TextMeshProUGUI boardLabel;
+        public TextMeshProUGUI playersLabel;
+        public TextMeshProUGUI statusLabel;
         // The selector's buttons, hidden on a locked view.
         public Button leftButton;
         public Button rightButton;
         // The step buttons and their labels, StepFirst to StepLast: <<, <, >, >>.
         public Button[] stepButtons = new Button[4];
-        public Text[] stepLabels = new Text[4];
+        public TextMeshProUGUI[] stepLabels = new TextMeshProUGUI[4];
         public Color lightSquare = new Color(0.93f, 0.85f, 0.71f);
         public Color darkSquare = new Color(0.71f, 0.53f, 0.39f);
         public Color lastMoveTint = new Color(0.85f, 0.85f, 0.3f);
@@ -74,10 +75,10 @@ namespace SiggiChessBoard {
         public RectTransform moveListContent;
         public RectTransform moveListRows;
         public float moveRowHeight = 50;
-        public Text[] moveNumbers = new Text[0];
+        public TextMeshProUGUI[] moveNumbers = new TextMeshProUGUI[0];
         public Button[] moveCells = new Button[0];
         public Image[] moveCellImages = new Image[0];
-        public Text[] moveCellLabels = new Text[0];
+        public TextMeshProUGUI[] moveCellLabels = new TextMeshProUGUI[0];
         public Color moveCellColor = new Color(0, 0, 0, 0);
         public Color currentMoveColor = new Color(1f, 0.85f, 0.2f);
         public Color moveTextColor = Color.white;
@@ -561,7 +562,7 @@ namespace SiggiChessBoard {
                     string san = has ? board.notation[ply] : "";
                     bool isCurrent = has && ply == current;
                     if (moveCellLabels != null && cell < moveCellLabels.Length) {
-                        Text label = moveCellLabels[cell];
+                        TextMeshProUGUI label = moveCellLabels[cell];
                         SetText(label, san == null ? "" : san);
                         if (Utilities.IsValid(label)) {
                             Color textColor = isCurrent ? currentMoveTextColor : moveTextColor;
@@ -581,7 +582,7 @@ namespace SiggiChessBoard {
             }
         }
 
-        static void SetText(Text text, string value) {
+        static void SetText(TextMeshProUGUI text, string value) {
             if (Utilities.IsValid(text) && text.text != value) text.text = value;
         }
 

@@ -1,4 +1,5 @@
 using SiggiChessBoard;
+using TMPro;
 using UdonSharp;
 using UdonSharpEditor;
 using UnityEditor;
@@ -59,7 +60,7 @@ public static class ChessDebugViewBuilder {
         if (!EnsureProgramAsset()) return;
         EnsureImporter(board);
 
-        Font font = BuiltinFont();
+        TMP_FontAsset font = DefaultFont();
         GameObject root = new GameObject("ChessDebugView (" + board.gameObject.name + ")");
         Undo.RegisterCreatedObjectUndo(root, "Create Debug View");
         GameObject old = ExistingView(board);
@@ -104,10 +105,10 @@ public static class ChessDebugViewBuilder {
         float statusLeft = Margin * 2 + 8 * SquareSize;
         GameObject status = NewChild(root, "Status", new Vector2(statusLeft, Margin),
             new Vector2(CanvasWidth - statusLeft - Margin, 8 * SquareSize + StatusExtra));
-        view.statusText = NewText(status, "Text", font, 20, TextAnchor.UpperLeft);
-        view.statusText.supportRichText = true;
-        view.statusText.horizontalOverflow = HorizontalWrapMode.Wrap;
-        view.statusText.verticalOverflow = VerticalWrapMode.Overflow;
+        view.statusText = NewText(status, "Text", font, 20, TextAlignmentOptions.TopLeft);
+        view.statusText.richText = true;
+        view.statusText.enableWordWrapping = true;
+        view.statusText.overflowMode = TextOverflowModes.Overflow;
 
         UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(view);
         float buttonsTop = Margin * 2 + 8 * SquareSize + StatusExtra;
@@ -124,7 +125,7 @@ public static class ChessDebugViewBuilder {
             button.targetGraphic = image;
             UnityEventTools.AddStringPersistentListener(button.onClick,
                 new UnityAction<string>(udon.SendCustomEvent), Buttons[i, 1]);
-            Text label = NewText(buttonObject, "Label", font, 20, TextAnchor.MiddleCenter);
+            TextMeshProUGUI label = NewText(buttonObject, "Label", font, 20, TextAlignmentOptions.Center);
             label.color = Color.black;
             label.text = Buttons[i, 0];
         }
@@ -214,9 +215,12 @@ public static class ChessDebugViewBuilder {
         return false;
     }
 
-    static Font BuiltinFont() {
-        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        return font != null ? font : Resources.GetBuiltinResource<Font>("Arial.ttf");
+    // TextMeshPro's default font (LiberationSans SDF, from TMP Essential Resources), by the GUID it always has
+    // (step 12.17), or TMP's own default when it isn't there.
+    static TMP_FontAsset DefaultFont() {
+        TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
+            AssetDatabase.GUIDToAssetPath("8f586378b4e144a9851e7b34d9b748ee"));
+        return font != null ? font : TMP_Settings.defaultFontAsset;
     }
 
     // A child rect at a position from the parent's top left, in canvas pixels.
@@ -234,7 +238,8 @@ public static class ChessDebugViewBuilder {
     }
 
     // A text filling its parent.
-    static Text NewText(GameObject parent, string name, Font font, int size, TextAnchor alignment) {
+    static TextMeshProUGUI NewText(GameObject parent, string name, TMP_FontAsset font, int size,
+        TextAlignmentOptions alignment) {
         GameObject child = new GameObject(name, typeof(RectTransform));
         child.layer = parent.layer;
         RectTransform rect = child.GetComponent<RectTransform>();
@@ -243,10 +248,11 @@ public static class ChessDebugViewBuilder {
         rect.anchorMax = Vector2.one;
         rect.offsetMin = new Vector2(4, 2);
         rect.offsetMax = new Vector2(-4, -2);
-        Text text = child.AddComponent<Text>();
+        TextMeshProUGUI text = child.AddComponent<TextMeshProUGUI>();
         text.font = font;
         text.fontSize = size;
         text.alignment = alignment;
+        text.overflowMode = TextOverflowModes.Truncate;
         text.color = Color.white;
         text.raycastTarget = false;
         return text;

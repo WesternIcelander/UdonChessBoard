@@ -1,4 +1,5 @@
 using SiggiChessBoard;
+using TMPro;
 using UdonSharp;
 using UdonSharpEditor;
 using UnityEditor;
@@ -60,8 +61,7 @@ public static class ChessSettingsMenuBuilder {
         float resnapshotTop = itemsTop + ChessSettingsMenu.ItemCount * RowHeight + SectionGap;
         float canvasHeight = resnapshotTop + 2 * RowHeight + Margin;
 
-        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        TMP_FontAsset font = DefaultFont();
         ChessSettingsMenu[] olds = Object.FindObjectsOfType<ChessSettingsMenu>(true);
         GameObject root = new GameObject("ChessSettingsMenu");
         Undo.RegisterCreatedObjectUndo(root, "Create Settings Menu");
@@ -86,7 +86,7 @@ public static class ChessSettingsMenuBuilder {
         menu.arbiter = arbiter;
         menu.title = NewText(root, "Title", font, TitleFontSize, new Vector2(Margin, Margin),
             new Vector2(CanvasWidth - 2 * Margin, TitleHeight));
-        menu.title.fontStyle = FontStyle.Bold;
+        menu.title.fontStyle = FontStyles.Bold;
         menu.title.text = "Chess settings";
         menu.notice = NewText(root, "Notice", font, TextFontSize, new Vector2(Margin, Margin + TitleHeight),
             new Vector2(CanvasWidth - 2 * Margin, NoticeHeight));
@@ -109,12 +109,12 @@ public static class ChessSettingsMenuBuilder {
         menu.buttonImages = new Image[buttonCount];
         menu.buttonItems = new int[buttonCount];
         menu.buttonActions = new int[buttonCount];
-        menu.values = new Text[ChessSettingsMenu.ItemCount];
+        menu.values = new TextMeshProUGUI[ChessSettingsMenu.ItemCount];
         int next = 0;
         float scopeTop = Margin + TitleHeight + NoticeHeight;
         menu.scopeLabel = AddRow(controls, menu, ChessSettingsMenu.ItemScope, "Settings for", font,
             scopeTop + (ScopeHeight - RowHeight) / 2, ref next);
-        menu.scopeLabel.fontStyle = FontStyle.Bold;
+        menu.scopeLabel.fontStyle = FontStyles.Bold;
         for (int item = 0; item < ChessSettingsMenu.ItemCount; item++) {
             menu.values[item] = AddRow(controls, menu, item, ChessSettingsMenu.ItemText(item), font,
                 itemsTop + item * RowHeight, ref next);
@@ -161,12 +161,12 @@ public static class ChessSettingsMenuBuilder {
     }
 
     // A row: its label, its value text (returned), and its three buttons, each a ChessSettingsButton calling Press.
-    static Text AddRow(GameObject parent, ChessSettingsMenu menu, int item, string label, Font font, float top,
+    static TextMeshProUGUI AddRow(GameObject parent, ChessSettingsMenu menu, int item, string label, TMP_FontAsset font, float top,
             ref int next) {
         NewText(parent, "Label " + item, font, TextFontSize, new Vector2(Margin, top),
                 new Vector2(LabelWidth, RowHeight))
             .text = label;
-        Text value = NewText(parent, "Value " + item, font, TextFontSize, new Vector2(Margin + LabelWidth, top),
+        TextMeshProUGUI value = NewText(parent, "Value " + item, font, TextFontSize, new Vector2(Margin + LabelWidth, top),
             new Vector2(ValueWidth, RowHeight));
         bool setting = ChessSettingsMenu.IsSettingItem(item);
         int[] actions = setting
@@ -181,7 +181,7 @@ public static class ChessSettingsMenuBuilder {
         return value;
     }
 
-    static void AddButton(GameObject parent, ChessSettingsMenu menu, int item, int action, Font font, Vector2 topLeft,
+    static void AddButton(GameObject parent, ChessSettingsMenu menu, int item, int action, TMP_FontAsset font, Vector2 topLeft,
             int index) {
         string text = ChessSettingsMenu.ActionText(item, action);
         GameObject buttonObject = new GameObject("Button " + item + " " + text, typeof(RectTransform));
@@ -208,9 +208,9 @@ public static class ChessSettingsMenuBuilder {
         UnityEventTools.AddStringPersistentListener(button.onClick, new UnityAction<string>(udon.SendCustomEvent),
             "Press");
 
-        Text label = NewText(buttonObject, "Label", font, ButtonFontSize, Vector2.zero,
+        TextMeshProUGUI label = NewText(buttonObject, "Label", font, ButtonFontSize, Vector2.zero,
             new Vector2(ButtonWidth, ButtonHeight));
-        label.alignment = TextAnchor.MiddleCenter;
+        label.alignment = TextAlignmentOptions.Center;
         label.color = Color.black;
         label.text = text;
         menu.buttons[index] = buttonObject;
@@ -278,8 +278,17 @@ public static class ChessSettingsMenuBuilder {
         return new Vector3(maxX + MenuDistance, middle.y + MenuHeight, middle.z);
     }
 
+    // TextMeshPro's default font (LiberationSans SDF, from TMP Essential Resources), by the GUID it always has
+    // (step 12.17), or TMP's own default when it isn't there.
+    static TMP_FontAsset DefaultFont() {
+        TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
+            AssetDatabase.GUIDToAssetPath("8f586378b4e144a9851e7b34d9b748ee"));
+        return font != null ? font : TMP_Settings.defaultFontAsset;
+    }
+
     // A text at a position from the parent's top left, in canvas pixels.
-    static Text NewText(GameObject parent, string name, Font font, int size, Vector2 topLeft, Vector2 extent) {
+    static TextMeshProUGUI NewText(GameObject parent, string name, TMP_FontAsset font, int size, Vector2 topLeft,
+        Vector2 extent) {
         GameObject child = new GameObject(name, typeof(RectTransform));
         child.layer = parent.layer;
         RectTransform rect = child.GetComponent<RectTransform>();
@@ -289,14 +298,14 @@ public static class ChessSettingsMenuBuilder {
         rect.pivot = new Vector2(0, 1);
         rect.anchoredPosition = new Vector2(topLeft.x, -topLeft.y);
         rect.sizeDelta = extent;
-        Text text = child.AddComponent<Text>();
+        TextMeshProUGUI text = child.AddComponent<TextMeshProUGUI>();
         text.font = font;
         text.fontSize = size;
-        text.alignment = TextAnchor.MiddleLeft;
+        text.alignment = TextAlignmentOptions.Left;
         text.color = Color.white;
         text.raycastTarget = false;
-        text.horizontalOverflow = HorizontalWrapMode.Wrap;
-        text.verticalOverflow = VerticalWrapMode.Truncate;
+        text.enableWordWrapping = true;
+        text.overflowMode = TextOverflowModes.Truncate;
         return text;
     }
 

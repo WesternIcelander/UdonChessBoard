@@ -1,4 +1,5 @@
 using SiggiChessBoard;
+using TMPro;
 using UdonSharp;
 using UdonSharpEditor;
 using UnityEditor;
@@ -115,8 +116,7 @@ public static class ChessBoard2DViewBuilder {
         string name = old != null ? old.gameObject.name
             : others == 0 ? "ChessBoard2DView" : "ChessBoard2DView (" + (others + 1) + ")";
 
-        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        TMP_FontAsset font = DefaultFont();
         GameObject root = new GameObject(name);
         Undo.RegisterCreatedObjectUndo(root, "Create 2D Board View");
         root.layer = LayerMask.NameToLayer("Default");
@@ -152,8 +152,8 @@ public static class ChessBoard2DViewBuilder {
             new Vector2(SelectorButtonWidth, SelectorHeight));
         view.boardLabel = NewText(root, "Board Label", font, 56, new Vector2(Margin + SelectorButtonWidth + Gap, Margin),
             new Vector2(BoardSize - 2 * (SelectorButtonWidth + Gap), SelectorHeight));
-        view.boardLabel.alignment = TextAnchor.MiddleCenter;
-        view.boardLabel.fontStyle = FontStyle.Bold;
+        view.boardLabel.alignment = TextAlignmentOptions.Center;
+        view.boardLabel.fontStyle = FontStyles.Bold;
 
         // The board, White at the bottom: a1 bottom left.
         float boardTop = Margin + SelectorHeight + Gap;
@@ -176,19 +176,19 @@ public static class ChessBoard2DViewBuilder {
             new Vector2(BoardSize, PlayersHeight));
         view.statusLabel = NewText(root, "Status", font, 30, new Vector2(Margin, textTop + PlayersHeight),
             new Vector2(BoardSize, StatusHeight));
-        view.statusLabel.alignment = TextAnchor.UpperLeft;
+        view.statusLabel.alignment = TextAlignmentOptions.TopLeft;
 
         // The step buttons along the bottom, the board's width between them: <<, <, >, >>.
         float stepTop = textTop + PlayersHeight + StatusHeight + Gap;
         float stepWidth = (BoardSize - 3 * Gap) / 4;
         view.stepButtons = new Button[4];
-        view.stepLabels = new Text[4];
+        view.stepLabels = new TextMeshProUGUI[4];
         for (int i = 0; i < 4; i++) {
             Button button = AddButton(root, udon, "Button " + StepEvents[i].Substring("Press".Length), StepTexts[i],
                 StepEvents[i], font, new Vector2(Margin + i * (stepWidth + Gap), stepTop),
                 new Vector2(stepWidth, StepHeight));
             view.stepButtons[i] = button;
-            view.stepLabels[i] = button.GetComponentInChildren<Text>();
+            view.stepLabels[i] = button.GetComponentInChildren<TextMeshProUGUI>();
         }
 
         BuildMoveList(root, view, udon, font);
@@ -367,7 +367,7 @@ public static class ChessBoard2DViewBuilder {
     // the view within a row's height as it scrolls), and its scrollbar, shown while the rows don't fit. Each cell is
     // a button with a ChessMoveListCell calling the view's PressMoveCell. Dragging or the wheel over a cell scrolls the
     // list (the cells' parents carry the scroll rect).
-    static void BuildMoveList(GameObject root, ChessBoard2DView view, UdonBehaviour udon, Font font) {
+    static void BuildMoveList(GameObject root, ChessBoard2DView view, UdonBehaviour udon, TMP_FontAsset font) {
         GameObject list = NewChild(root, "Move List", new Vector2(Margin + BoardSize + Gap, Margin),
             new Vector2(MoveListWidth, MoveListHeight));
         Image background = list.AddComponent<Image>();
@@ -386,15 +386,15 @@ public static class ChessBoard2DViewBuilder {
 
         int poolRows = Mathf.CeilToInt(MoveListHeight / MoveRowHeight) + 1;
         rows.GetComponent<RectTransform>().sizeDelta = new Vector2(viewportWidth, poolRows * MoveRowHeight);
-        view.moveNumbers = new Text[poolRows];
+        view.moveNumbers = new TextMeshProUGUI[poolRows];
         view.moveCells = new Button[2 * poolRows];
         view.moveCellImages = new Image[2 * poolRows];
-        view.moveCellLabels = new Text[2 * poolRows];
+        view.moveCellLabels = new TextMeshProUGUI[2 * poolRows];
         for (int r = 0; r < poolRows; r++) {
             GameObject row = NewChild(rows, "Row " + (r + 1), new Vector2(0, r * MoveRowHeight),
                 new Vector2(viewportWidth, MoveRowHeight));
-            Text number = NewText(row, "Number", font, 30, Vector2.zero, new Vector2(MoveNumberWidth, MoveRowHeight));
-            number.alignment = TextAnchor.MiddleRight;
+            TextMeshProUGUI number = NewText(row, "Number", font, 30, Vector2.zero, new Vector2(MoveNumberWidth, MoveRowHeight));
+            number.alignment = TextAlignmentOptions.Right;
             number.color = new Color(0.65f, 0.65f, 0.7f);
             number.text = "";
             view.moveNumbers[r] = number;
@@ -414,7 +414,7 @@ public static class ChessBoard2DViewBuilder {
                 UnityEventTools.AddStringPersistentListener(button.onClick,
                     new UnityAction<string>(UdonSharpEditorUtility.GetBackingUdonBehaviour(target).SendCustomEvent),
                     nameof(ChessMoveListCell.Press));
-                Text label = NewText(cellObject, "Label", font, 34, new Vector2(12, 0),
+                TextMeshProUGUI label = NewText(cellObject, "Label", font, 34, new Vector2(12, 0),
                     new Vector2(MoveCellWidth - 12, MoveRowHeight - 4));
                 label.color = view.moveTextColor;
                 label.text = "";
@@ -544,7 +544,7 @@ public static class ChessBoard2DViewBuilder {
 
     // A button calling eventName on the view, greyed while not interactable.
     static Button AddButton(GameObject parent, UdonBehaviour udon, string name, string label, string eventName,
-        Font font, Vector2 topLeft, Vector2 size) {
+        TMP_FontAsset font, Vector2 topLeft, Vector2 size) {
         GameObject buttonObject = NewChild(parent, name, topLeft, size);
         Image image = buttonObject.AddComponent<Image>();
         image.color = new Color(0.85f, 0.85f, 0.88f);
@@ -555,9 +555,9 @@ public static class ChessBoard2DViewBuilder {
         button.colors = colors;
         UnityEventTools.AddStringPersistentListener(button.onClick, new UnityAction<string>(udon.SendCustomEvent),
             eventName);
-        Text text = NewText(buttonObject, "Label", font, 56, Vector2.zero, size);
-        text.alignment = TextAnchor.MiddleCenter;
-        text.fontStyle = FontStyle.Bold;
+        TextMeshProUGUI text = NewText(buttonObject, "Label", font, 56, Vector2.zero, size);
+        text.alignment = TextAlignmentOptions.Center;
+        text.fontStyle = FontStyles.Bold;
         text.color = Color.black;
         text.text = label;
         return button;
@@ -616,17 +616,26 @@ public static class ChessBoard2DViewBuilder {
         return child;
     }
 
+    // TextMeshPro's default font (LiberationSans SDF, from TMP Essential Resources), by the GUID it always has
+    // (step 12.17), or TMP's own default when it isn't there.
+    static TMP_FontAsset DefaultFont() {
+        TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
+            AssetDatabase.GUIDToAssetPath("8f586378b4e144a9851e7b34d9b748ee"));
+        return font != null ? font : TMP_Settings.defaultFontAsset;
+    }
+
     // A text at a position from the parent's top left, in canvas pixels.
-    static Text NewText(GameObject parent, string name, Font font, int size, Vector2 topLeft, Vector2 extent) {
+    static TextMeshProUGUI NewText(GameObject parent, string name, TMP_FontAsset font, int size, Vector2 topLeft,
+        Vector2 extent) {
         GameObject child = NewChild(parent, name, topLeft, extent);
-        Text text = child.AddComponent<Text>();
+        TextMeshProUGUI text = child.AddComponent<TextMeshProUGUI>();
         text.font = font;
         text.fontSize = size;
-        text.alignment = TextAnchor.MiddleLeft;
+        text.alignment = TextAlignmentOptions.Left;
         text.color = Color.white;
         text.raycastTarget = false;
-        text.horizontalOverflow = HorizontalWrapMode.Wrap;
-        text.verticalOverflow = VerticalWrapMode.Truncate;
+        text.enableWordWrapping = true;
+        text.overflowMode = TextOverflowModes.Truncate;
         return text;
     }
 }

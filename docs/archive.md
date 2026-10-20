@@ -35,7 +35,7 @@
 
 `Assets/Siggi/ChessBoard/GameHistoryWall.cs`, a view of the archive (no sync, no state of its own). It lists every archived game, oldest first, one row each: `#<sequence>  <White> vs <Black>: <ending> (<result>), <N> moves`, with `, Chess960` for that mode and `?` for a missing name, e.g. `#12  Ana vs Bo: White wins by checkmate (1-0), 12 moves`. The ending's words come from `ChessGame.EndingDescription(ending, winner)` (`Unfinished` for an unterminated game, `Draw on time` for a drawn time forfeit), which `ChessBoardUI.EndingText` uses too. The title reads `Previous games` (`Previous games: none yet` when empty). It redraws when the archive's `changes` count moves on (polled in `Update` by `RefreshIfChanged`), so a game archived on this client and a holder update arriving (a late joiner receiving the holders) both show.
 
-- **Fields:** `archive`, `title`, `rows` (one `Text` per game the archive holds); `Refresh`, `RefreshIfChanged`, `TitleText`, `RowText(index)`, `drawnChanges`.
+- **Fields:** `archive`, `title`, `rows` (one TextMeshPro text, `TextMeshProUGUI`, per game the archive holds; a UI `Text` before 12.17); `Refresh`, `RefreshIfChanged`, `TitleText`, `RowText(index)`, `drawnChanges`.
 - **Scene:** **Tools > Chess Board > Create History Wall** (`Editor/GameHistoryWallBuilder.cs`) builds a world-space canvas for the scene's only archive, 3 m wide, with 50 rows in two columns of 25 (oldest first down the left column, then the right), 2.5 m to the left of the leftmost board (along -x), level with the boards along z and facing them, so it's ahead and to the left from the spawn. Running it again replaces the wall in place (parent, position, rotation, scale).
 
 ### Loading a game (step 10.2b)

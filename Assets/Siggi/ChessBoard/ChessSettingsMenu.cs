@@ -1,5 +1,6 @@
 using System;
 using UdonSharp;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using VRC.SDKBase;
@@ -54,18 +55,18 @@ namespace SiggiChessBoard {
         public const int ScopeAllBoards = -1;
 
         public ChessArbiter arbiter;
-        public Text title;
+        public TextMeshProUGUI title;
         // Which boards the menu shows ("All boards", "Board 2").
-        public Text scopeLabel;
+        public TextMeshProUGUI scopeLabel;
         // Shown to everyone but organizers: why the controls are missing (or, for everyone, that the arbiter's Simple
         // Auth field is empty).
-        public Text notice;
+        public TextMeshProUGUI notice;
         // Everything an organizer works with, hidden from everyone else.
         public GameObject controls;
         // Each item's current value, by item.
-        public Text[] values = new Text[0];
+        public TextMeshProUGUI[] values = new TextMeshProUGUI[0];
         // The last re-snapshot's outcome, beside its button.
-        public Text resnapshotLabel;
+        public TextMeshProUGUI resnapshotLabel;
         // Every board on this arbiter, for re-snapshots: all of them for All boards, those with the board number shown
         // otherwise.
         public ChessBoard[] boards = new ChessBoard[0];
@@ -479,7 +480,7 @@ namespace SiggiChessBoard {
             return Utilities.IsValid(local) ? local.displayName : "?";
         }
 
-        static void SetText(Text label, string text) {
+        static void SetText(TextMeshProUGUI label, string text) {
             if (Utilities.IsValid(label) && label.text != text) label.text = text;
         }
     }

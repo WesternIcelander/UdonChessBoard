@@ -1,5 +1,6 @@
 using SiggiChessBoard;
 using UdonSharp;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using VRC.SDKBase;
@@ -1758,6 +1759,11 @@ public class ViewTest : UdonSharpBehaviour {
             && ui.pgnImportButton.transform.IsChildOf(ui.pgnPastePart.transform)
             && ui.pgnCopyPart.transform.IsChildOf(box) && ui.pgnPastePart.transform.IsChildOf(box),
             s + ": each field in its part, both parts in the box", "they aren't");
+        // TextMeshPro fields (12.17): the copy field read-only, the paste field editable. Udon can't read their line
+        // type; LegacyTextCheck checks both are multi-line.
+        Check(ui.pgnField.readOnly && !ui.pgnPasteField.readOnly, s + ": only the copy field read-only",
+            "copy " + (ui.pgnField.readOnly ? "read-only" : "editable") + ", paste "
+            + (ui.pgnPasteField.readOnly ? "read-only" : "editable"));
         savedImporter = board.importer;
         board.importer = importer;
 
@@ -3008,7 +3014,7 @@ public class ViewTest : UdonSharpBehaviour {
         string statusAfter = ui.StatusTextAt(after);
         string errors = "";
         for (int i = 0; i < ui.statusLabels.Length; i++) {
-            Text label = ui.statusLabels[i];
+            TextMeshProUGUI label = ui.statusLabels[i];
             if (Utilities.IsValid(label) && label.text != statusBefore && label.text != statusAfter) {
                 errors += "status " + i + ": " + label.text + "; ";
             }
