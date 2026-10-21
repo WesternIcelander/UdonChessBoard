@@ -1,6 +1,6 @@
 # Organizers (`SimpleAuth`)
 
-Authorization comes from the `SimpleAuth` abstract class (`SiggiUSTools` namespace), placed in the Unity project:
+Authorization comes from the `SimpleAuth` abstract class (`SiggiUSTools` namespace) in the `io.siggi.ustools` package ("Siggi UdonSharp Tools", from the VPM listing `https://vpm.siggi.io/index.json`, added in the VRChat Creator Companion), a dependency of the chess system:
 
 ```csharp
 public abstract class SimpleAuth : UdonSharpBehaviour {
@@ -16,13 +16,13 @@ public abstract class SimpleAuth : UdonSharpBehaviour {
   - `ChessArbiter.OnOwnershipRequest` only allows a transfer to an authorized player, so a non-organizer can't take over the settings. Changes go through `BeginChange`/`EndChange` (see [Changing settings in-world](settings.md#changing-settings-in-world)), which refuse a non-organizer before asking for ownership.
 - If the organizer who owns the arbiter leaves, VRChat hands it to a random player without asking (as with boards). That player owns the synced settings but can't change them, because `BeginChange` refuses, and an organizer can still take the arbiter from them. Nothing on the arbiter needs its owner to act.
 - `IsAuthorized` should give the same answer for a given player on every client, since the ownership check runs on both the requesting client and the current owner.
-- **Built-in implementations** shipped with the chess system; the world creator assigns one, or their own:
+- **Built-in implementations** shipped with `io.siggi.ustools` alongside `SimpleAuth`; the world creator assigns one, or their own:
   - **`FirstJoinerAuth`:** the first player in the instance is the organizer. Rights don't pass on when they leave (that's what `InstanceMasterAuth` is for). Late joiners can't tell who joined first from who's present now, so the first joiner's identity is a synced field on this behaviour: the first player sets it to themselves when they arrive and find it empty. It stores the display name, so the organizer keeps their rights after a crash and rejoin, consistent with how players keep their seats.
   - **`InstanceMasterAuth`:** whoever is currently instance master. Rights move with the master role when the master leaves. Provided as an option because it's common in VRChat game worlds, but **not the default and not recommended**: when the master leaves, VRChat picks the new master, unpredictably, and nobody can choose who it will be. (Preferring the instance owner was considered and dropped: an absent owner can't be told apart from no owner, which made the rules muddier than they're worth.)
   - **`NoOneAuth`:** nobody is authorized; the editor defaults apply unchanged.
   - Any other rules (lists of names, group roles, etc.) are left to the world creator's own subclass.
 - **Default: `FirstJoinerAuth`.** The arbiter prefab includes a `FirstJoinerAuth` component and its `SimpleAuth` field points to it, since that's most likely what someone building their own tournament world wants.
-- **Implementation:** the three built-ins are in `Assets/Siggi/ChessBoard/Auth/` (namespace `SiggiChessBoard`); the arbiter's field is `ChessArbiter.simpleAuth`, and the arbiter prefab is `Assets/Siggi/ChessBoard/ChessArbiter.prefab`.
+- **Implementation:** `SimpleAuth` and the three built-ins are in the package (`Packages/io.siggi.ustools/SimpleAuth/`, namespace `SiggiUSTools`, assembly `SiggiUSTools`), which this project leaves unchanged and doesn't commit (VCC fetches it from `Packages/vpm-manifest.json`); their own tests belong to the package. The chess system's code has no assembly definition, so `Assembly-CSharp` references the package's assembly automatically. the arbiter's field is `ChessArbiter.simpleAuth`, and the arbiter prefab is `Assets/Siggi/ChessBoard/ChessArbiter.prefab`.
   - `FirstJoinerAuth` (manual sync, on the arbiter's object so it shares the arbiter's owner) keeps the name in the synced `firstJoiner` (`""` until set). In `OnPlayerJoined` for the local player, a client that owns the object and finds the name empty sets it to its own display name and serializes: the first player owns every object when they arrive, and a late joiner isn't the owner. A late joiner sees nobody authorized until the name arrives by serialization.
   - `InstanceMasterAuth` is `who.isMaster`; `NoOneAuth` is always `false`. All three refuse an invalid player.
 - **An empty `SimpleAuth` field is an error**, since it can only happen if someone clears it on purpose (choosing nobody should be done with `NoOneAuth`).

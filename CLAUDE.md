@@ -33,7 +33,7 @@ UdonSharp compiles only part of C#. Details and reasons: [docs/udon-constraints.
 - No `try`/`catch`/`finally`/`throw`: report errors with return codes or `bool` + `out` values.
 - Recursion requires `[RecursiveMethod]`.
 - No file or stream I/O: FEN and PGN are string in, string out.
-- Minimum VRChat SDK is 3.7.1 (needed for `System.Text.StringBuilder`).
+- Minimum VRChat SDK is 3.10.4 (needed by the `io.siggi.ustools` dependency; the code itself needs 3.7.1 for `System.Text.StringBuilder`).
 - Calls into another behaviour are expensive; keep hot paths on local arrays.
 - A synced `string[]` must never contain `null`: one `null` element makes the whole serialization fail. Initialise every element to `""`.
 
@@ -57,5 +57,6 @@ See [docs/architecture.md](docs/architecture.md).
 
 - Unity only imports `Assets/` and `Packages/`; `JavaChessBoard/` sits alongside without being imported. Java sources are under `JavaChessBoard/src/main/java/io/siggi/chessboard/`.
 - Development uses Unity with the VRChat Worlds SDK (which includes UdonSharp). There is no standalone .NET SDK.
+- `SimpleAuth` and its built-ins (`FirstJoinerAuth`, `InstanceMasterAuth`, `NoOneAuth`, namespace `SiggiUSTools`) come from the `io.siggi.ustools` package in `Packages/`, fetched by VCC from the VPM listing `https://vpm.siggi.io/index.json`. Don't change anything in it from this project, and it isn't committed here (see [docs/organizers.md](docs/organizers.md)).
 - Python is not installed. Don't try to use it for scripts; use PowerShell, Bash, or Java instead.
 - UdonSharp code only runs inside Unity, so tests can't run from the shell under a .NET test runner. Tests are test behaviours run in Unity Play Mode (ClientSim), and networking needs several real clients. See [docs/testing.md](docs/testing.md).
