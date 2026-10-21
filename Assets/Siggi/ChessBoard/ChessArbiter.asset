@@ -886,7 +886,7 @@ MonoBehaviour:
       Data: 45|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiUSTools.SimpleAuth, Assembly-CSharp
+      Data: SiggiUSTools.SimpleAuth, SiggiUSTools
     - Name: 
       Entry: 8
       Data: 
