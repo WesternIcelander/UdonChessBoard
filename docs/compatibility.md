@@ -2,14 +2,14 @@
 
 Once the package is released (step 16), worlds will already be using it. A world creator updating to a newer version should only have to import the new package: no re-wiring, no re-placing, no lost customizations. Where that can't be done (a new feature that only the world creator can decide on), the change must be as small as possible and say exactly what to do.
 
-These rules apply to every change made after the first release (version 1, step 16.1). Before then, nothing outside this project depends on the prefabs, so the builders may still rebuild them from scratch until they're deleted (step 14.12). From then on the prefabs are the source, changed in place in Unity.
+These rules apply to every change made after the first release (version 1, step 16.1). Before then, nothing outside this project depends on the prefabs, so the builders may still rebuild them from scratch until they're deleted (step 14.13). From then on the prefabs are the source, changed in place in Unity.
 
 ## What a world holds
 
 A world that uses the package has:
 
 - **Prefab instances** of our prefabs (step 14), with the world creator's **overrides**: changed field values, moved or scaled objects, a replaced board model, captured-piece places moved, their own piece sets assigned. Unity stores each override against the overridden object's internal ID (its file ID inside the prefab) and the field's serialized name.
-- **References between instances** in the scene (a board to its arbiter, a view to its board, …), set by the wiring script (14.10) or by hand.
+- **References between instances** in the scene (a board to its arbiter, a view to its board, …), set by the wiring script (14.11) or by hand.
 - **Its own scripts** calling our public API: `SetChessPieces`, `ChessBoardListener` subclasses, the board's input methods and getters (step 15's API documents), and perhaps `SendCustomEvent` with our method names.
 - **Asset references** to our scripts, UdonSharp program assets, meshes and materials, by the GUID in each asset's `.meta` file.
 - Possibly **unpacked** prefabs, or objects built without prefabs: no prefab link, so prefab changes don't reach them.
@@ -18,7 +18,7 @@ Anything that changes one of these identities, IDs, names or signatures without 
 
 ## Rules
 
-1. **Prefabs are edited in place, never rebuilt.** An object recreated in a prefab gets a new file ID, so every override on the old object is lost. A change to a prefab, in Unity's prefab editor or by an editor script, keeps every existing object (changing it where it is), adds only what is new, and saves. Removing an object deletes what worlds overrode on it: only when it's no longer used, and say so in the changelog. The builders that rebuilt the prefabs and views from scratch in steps 9 to 14 are deleted in 14.12, before the first release.
+1. **Prefabs are edited in place, never rebuilt.** An object recreated in a prefab gets a new file ID, so every override on the old object is lost. A change to a prefab, in Unity's prefab editor or by an editor script, keeps every existing object (changing it where it is), adds only what is new, and saves. Removing an object deletes what worlds overrode on it: only when it's no longer used, and say so in the changelog. The builders that rebuilt the prefabs and views from scratch in steps 9 to 14 are deleted in 14.13, before the first release.
 2. **Saved fields are never renamed, retyped or removed without migrating them.** A renamed field reads as empty in every world that set it (e.g. 12.10's `pieceSet` becoming `whitePieceSet` and `blackPieceSet`). Either:
    - keep the old field (hidden from the Inspector, `[HideInInspector]`) and have the migrator (rule 5) move its value to the new field and clear it; or
    - use `[FormerlySerializedAs("oldName")]`, but only once it's been checked in Unity that UdonSharp carries the value over on its behaviours (proxy and Udon data both).
