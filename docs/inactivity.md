@@ -11,7 +11,7 @@
 - **Touching anything on the board counts as activity**: picking up a piece (even dropping it back where it came from, or an illegal drop), stepping through a replay, pressing a board button. Each touch updates the synced timestamp: the player takes ownership and serializes, at most once every few seconds (throttled), since players fidget with pieces. During a game only the side to move's touches count, so the waiting player's can't overwrite the move being made (see [Implementation](#implementation)).
 - **Exception to the ownership rule:** pressing reset means a non-player takes ownership while both players may still be active. `OnOwnershipRequest` allows the transfer once the board has been idle for at least the reset-available time, measured against the synced timestamp.
 - **The automatic reset is done by the current owner only**, so it happens once. If the owner has left, VRChat has already passed ownership to someone else, who then does it.
-- Applies whenever the board isn't in its reset state: a game in progress, an ended game, or a replay. A reset board has nothing to reset.
+- Applies whenever the board isn't in its reset state: a game in progress, an ended game, or a replay. A reset board has nothing to reset. A loaded board locked to the player who loaded it (step 13.2) is no exception: once it's idle for the reset-available time anyone may reset it, so a loader who left doesn't keep it for ever.
 - A game ended by reset is logged as an unfinished game (PGN result `*`); see [Game endings](game-endings.md).
 
 ## Implementation

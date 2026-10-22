@@ -96,6 +96,7 @@ public class BoardTest : ChessTest {
         TestTakeback();
         TestLoadGame();
         TestContinueLoaded();
+        TestLoadedBy();
         TestReset();
         board.ClearState();
         SendCustomEventDelayedFrames(nameof(RunSyncChecks), 1);
@@ -3210,7 +3211,7 @@ public class BoardTest : ChessTest {
     void LoadText(string text, string name) {
         board.ClearState();
         CheckInt(ImportText(text), ChessPgn.ImportDone, name + ": imported");
-        CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, name + ": loaded");
+        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputAccepted, name + ": loaded");
     }
 
     // Whether the board's PGN has this tag line.
@@ -3241,7 +3242,7 @@ public class BoardTest : ChessTest {
         Check(board.CanLoadGame(), "load: a reset board can load", "refused");
         CheckInt(ImportText(nuka), ChessPgn.ImportDone, "load: Siggi-vs-Nuka imported");
         CheckInt(importer.MoveCount(), 54, "load: Siggi-vs-Nuka has 54 plies");
-        CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, "load: Siggi-vs-Nuka loaded");
+        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputAccepted, "load: Siggi-vs-Nuka loaded");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "load: loaded state");
         Check(board.replayMode, "load: in replay", "not in replay");
         CheckShows(54, BoardText(board.board), "load: shows the last position");
@@ -3318,58 +3319,58 @@ public class BoardTest : ChessTest {
         string loaded = GameText();
         Check(!board.CanLoadGame(), "load: a loaded board can't load", "allowed");
         CheckInt(ImportText(nuka), ChessPgn.ImportDone, "load: imported again");
-        CheckInt(board.LoadImport(importer), ChessBoard.InputRejected, "load: refused on a loaded board");
+        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused on a loaded board");
         CheckString(GameText(), loaded, "load: refused on a loaded board, nothing changed");
         LobbyWithTwoPlayers();
         string lobby = GameText();
-        CheckInt(board.LoadImport(importer), ChessBoard.InputRejected, "load: refused in the lobby");
+        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused in the lobby");
         CheckString(GameText(), lobby, "load: refused in the lobby, nothing changed");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "load: refused in the lobby, still the lobby");
         board.StartGameAs("Ana");
         board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4);
         string inGame = GameText();
-        CheckInt(board.LoadImport(importer), ChessBoard.InputRejected, "load: refused in game");
+        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused in game");
         CheckString(GameText(), inGame, "load: refused in game, nothing changed");
         board.ResignAs(ChessRules.Black, "Bob");
         string ended = GameText();
-        CheckInt(board.LoadImport(importer), ChessBoard.InputRejected, "load: refused once ended");
+        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused once ended");
         CheckString(GameText(), ended, "load: refused once ended, nothing changed");
         Check(!board.CanLoadGame(), "load: an ended board can't load", "allowed");
 
         // An import still under way or failed is refused, and so is no importer.
         board.ClearState();
         importer.StartImport(nuka, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
-        CheckInt(board.LoadImport(importer), ChessBoard.InputRejected, "load: refused while importing");
+        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused while importing");
         CheckStillReset("load: refused while importing");
         importer.Abandon();
         CheckInt(ImportText("1. e4 hello"), ChessPgn.ImportBadSyntax, "load: a failed import");
-        CheckInt(board.LoadImport(importer), ChessBoard.InputRejected, "load: refused after a failed import");
+        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused after a failed import");
         CheckStillReset("load: refused after a failed import");
-        CheckInt(board.LoadImport(null), ChessBoard.InputRejected, "load: refused with no importer");
+        CheckInt(board.LoadImportAs("", null), ChessBoard.InputRejected, "load: refused with no importer");
 
         // LoadGame refuses invalid data and leaves the board reset.
         int[] moves = new int[4];
         string[] sans = new string[] { "", "", "", "" };
         int[] noClocks = new int[] { -1, -1, -1, -1 };
-        CheckInt(board.LoadGame("not a fen", moves, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "",
+        CheckInt(board.LoadGameAs("", "not a fen", moves, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "",
             ChessArbiter.NoClock, 0), ChessBoard.InputRejected, "load: bad FEN refused");
         CheckStillReset("load: bad FEN refused");
-        CheckInt(board.LoadGame("", moves, sans, noClocks, 5, ChessGame.ModeStandard, "", "", "", "",
+        CheckInt(board.LoadGameAs("", "", moves, sans, noClocks, 5, ChessGame.ModeStandard, "", "", "", "",
             ChessArbiter.NoClock, 0), ChessBoard.InputRejected, "load: more moves than given refused");
-        CheckInt(board.LoadGame("", moves, sans, noClocks, -1, ChessGame.ModeStandard, "", "", "", "",
+        CheckInt(board.LoadGameAs("", "", moves, sans, noClocks, -1, ChessGame.ModeStandard, "", "", "", "",
             ChessArbiter.NoClock, 0), ChessBoard.InputRejected, "load: a negative count refused");
-        CheckInt(board.LoadGame("", null, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "",
+        CheckInt(board.LoadGameAs("", "", null, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "",
             ChessArbiter.NoClock, 0), ChessBoard.InputRejected, "load: no moves array refused");
-        CheckInt(board.LoadGame("", moves, sans, noClocks, 0, 7, "", "", "", "", ChessArbiter.NoClock, 0),
+        CheckInt(board.LoadGameAs("", "", moves, sans, noClocks, 0, 7, "", "", "", "", ChessArbiter.NoClock, 0),
             ChessBoard.InputRejected, "load: unknown mode refused");
-        CheckInt(board.LoadGame("", moves, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "", 0, 0),
+        CheckInt(board.LoadGameAs("", "", moves, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "", 0, 0),
             ChessBoard.InputRejected, "load: base time 0 refused");
-        CheckInt(board.LoadGame("", moves, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "", 60, -1),
+        CheckInt(board.LoadGameAs("", "", moves, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "", 60, -1),
             ChessBoard.InputRejected, "load: negative increment refused");
         CheckStillReset("load: invalid data refused");
 
         // LoadGame directly (as the archive will): no moves, null tags, the standard start.
-        CheckInt(board.LoadGame(null, moves, sans, noClocks, 0, ChessGame.ModeStandard, null, null, null, null,
+        CheckInt(board.LoadGameAs("", null, moves, sans, noClocks, 0, ChessGame.ModeStandard, null, null, null, null,
             ChessArbiter.NoClock, 0), ChessBoard.InputAccepted, "load: a game with no moves");
         CheckShows(0, BoardText(StartBoard()), "load: a game with no moves");
         CheckString(board.replaySourceWhite + board.replaySourceBlack + board.replaySourceResult + board.gameId, "",
@@ -3520,6 +3521,163 @@ public class BoardTest : ChessTest {
         }
         Check(errors == "", name + ": the moves before the ply kept without clocks, nothing after", errors);
         CheckShows(ply, BoardText(board.board), name + ": replay fields");
+    }
+
+    // ---- 13.2 the player who loads a game keeps the board ----
+
+    // Imports Siggi-vs-Nuka and loads it onto a reset board as loader.
+    void LoadNukaAs(string loader, string name) {
+        board.ClearState();
+        CheckInt(ImportText(siggiVsNuka.text), ChessPgn.ImportDone, name + ": imported");
+        CheckInt(board.LoadImportAs(loader, importer), ChessBoard.InputAccepted, name + ": loaded");
+    }
+
+    // The first square of the replay board with a piece on it (occupied) or without (not).
+    int ReplaySquare(bool occupied) {
+        for (int square = 0; square < 64; square++) {
+            if ((board.replayBoard[square] != ChessRules.Empty) == occupied) return square;
+        }
+        return ChessRules.NoSquare;
+    }
+
+    // Whether name (an organizer or not) may act on the loaded board, as expected: step, pick up a piece for a free
+    // move, touch the pieces, own the board (both players counted present, not idle) and, with withReset, reset it.
+    // Only the Can… checks: nothing changes.
+    void CheckMayAct(string name, bool organizer, bool expected, bool withReset, string label) {
+        string errors = "";
+        double now = board.lastActivity;
+        int to = board.replayIndex == 0 ? 1 : 0;
+        if (board.CanStepToAs(name, organizer, to) != expected) errors += "step; ";
+        if (board.CanPickUpAs(name, organizer, ReplaySquare(true)) != expected) errors += "free move; ";
+        if (board.MayTouchPiecesAs(name, organizer) != expected) errors += "touch; ";
+        if (board.MayOwnAs(name, organizer, true, now) != expected) errors += "own; ";
+        if (withReset && board.CanResetAs(name, organizer) != expected) errors += "reset; ";
+        Check(errors.Length == 0, label, (expected ? "refused: " : "allowed: ") + errors);
+    }
+
+    void TestLoadedBy() {
+        string s = "loaded by";
+        if (!Utilities.IsValid(importer) || siggiVsNuka == null) {
+            Check(false, s + ": importer and Siggi-vs-Nuka assigned", "assign them in the Inspector");
+            return;
+        }
+        NothingForced();
+        int resetTime = ChessArbiter.NumberResetAvailableTime;
+
+        // The local-player forms record the local player; "" records nobody and locks nothing.
+        board.ClearState();
+        CheckInt(ImportText(siggiVsNuka.text), ChessPgn.ImportDone, s + ": imported");
+        CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, s + ": LoadImport");
+        CheckString(board.loadedBy, ChessUtil.LocalName(""), s + ": LoadImport records the local player");
+        LoadNukaAs("", s + ": nobody");
+        CheckString(board.loadedBy, "", s + ": nobody recorded");
+        Check(!board.IsLockedToLoader(), s + ": nobody recorded, not locked", "locked");
+        CheckMayAct("Cleo", false, true, false, s + ": nobody recorded, anyone may act");
+        Check(!board.CanResetAs("Cleo", false), s + ": nobody recorded, a bystander may not reset (as before)",
+            "allowed");
+
+        // A load records its loader and locks the board to them.
+        LoadNukaAs("Lena", s);
+        CheckString(board.loadedBy, "Lena", s + ": Lena recorded");
+        Check(board.IsLockedToLoader(), s + ": locked to Lena", "not locked");
+        Check(board.IsLoader("Lena") && !board.IsLoader("Lena ") && !board.IsLoader("") && !board.IsLoader(null),
+            s + ": the loader's name compared exactly", "a lookalike or no name counts");
+        board.PackState();
+        CheckString(board.syncedLoadedBy, "Lena", s + ": sent");
+        board.loadedBy = "";
+        board.ReceiveState();
+        CheckString(board.loadedBy, "Lena", s + ": received");
+        Check(board.IsLockedToLoader(), s + ": received, locked", "not locked");
+
+        // While locked: Lena and organizers may act, nobody else may do anything.
+        board.gameNumbers[resetTime] = 120;
+        CheckMayAct("Lena", false, true, true, s + ": locked, Lena may act");
+        CheckMayAct("Olaf", true, true, true, s + ": locked, an organizer may act");
+        CheckMayAct("Cleo", false, false, true, s + ": locked, Cleo may not act");
+        Check(board.CanJoinAs(ChessRules.White, "Lena") && board.CanJoinAs(ChessRules.Black, "Lena"),
+            s + ": locked, Lena may join", "refused");
+        Check(!board.CanJoinAs(ChessRules.White, "Cleo") && !board.CanJoinAs(ChessRules.Black, "Cleo"),
+            s + ": locked, Cleo may not join", "allowed");
+        Check(!board.CanJoinAs(ChessRules.White, "Olaf"), s + ": locked, organizers don't join for the loader",
+            "allowed");
+        string locked = GameText();
+        CheckInt(board.StepToAs("Cleo", false, 0), ChessBoard.InputRejected, s + ": locked, Cleo's step refused");
+        CheckInt(board.ReplayPieceDroppedAs("Cleo", false, ReplaySquare(true), ReplaySquare(false)),
+            ChessBoard.InputRejected, s + ": locked, Cleo's free move refused");
+        CheckInt(board.JoinAs(ChessRules.White, "Cleo"), ChessBoard.InputRejected, s + ": locked, Cleo's join refused");
+        CheckInt(board.ResetBoardAs("Cleo", false), ChessBoard.InputRejected, s + ": locked, Cleo's reset refused");
+        Check(!board.TouchAsAt("Cleo", false, board.lastActivity + 100), s + ": locked, Cleo's touch doesn't count",
+            "counted");
+        CheckString(GameText(), locked, s + ": locked, Cleo's refused inputs change nothing");
+        CheckString(board.loadedBy, "Lena", s + ": locked, still Lena's");
+        CheckInt(board.StepToAs("Olaf", true, 10), ChessBoard.InputAccepted, s + ": locked, an organizer steps");
+        CheckInt(board.StepToAs("Lena", false, 20), ChessBoard.InputAccepted, s + ": locked, Lena steps");
+        CheckInt(board.ReplayPieceDroppedAs("Lena", false, ReplaySquare(true), ReplaySquare(false)),
+            ChessBoard.InputAccepted, s + ": locked, Lena's free move");
+        CheckInt(board.StepToAs("Lena", false, 20), ChessBoard.InputAccepted, s + ": locked, Lena steps back");
+
+        // Leaving the instance doesn't free a locked board: only the reset-available time does (or never).
+        double t = board.lastActivity;
+        Check(!board.MayOwnAs("Cleo", false, false, t), s + ": locked, Lena away, Cleo may not own it", "allowed");
+        Check(!board.MayOwnAs("Cleo", false, false, t + 119.9), s + ": locked, refused before the reset-available time",
+            "allowed");
+        Check(board.MayOwnAs("Cleo", false, false, t + 120), s + ": locked, anyone once idle for reset", "refused");
+        Check(board.MayOwnAs("Olaf", true, false, t), s + ": locked, an organizer may own it", "refused");
+        Check(board.MayOwnAs("Lena", false, false, t), s + ": locked, Lena may own it", "refused");
+        board.gameNumbers[resetTime] = ChessArbiter.Never;
+        Check(!board.MayOwnAs("Cleo", false, false, t + 10000000), s + ": locked, never: refused however long idle",
+            "allowed");
+        board.gameNumbers[resetTime] = 120;
+
+        // Lena joins: anyone may join the other seat, and the seated players act as on any loaded board.
+        CheckInt(board.JoinAs(ChessRules.White, "Lena"), ChessBoard.InputAccepted, s + ": Lena joins White");
+        Check(!board.IsLockedToLoader(), s + ": Lena seated, not locked", "locked");
+        CheckString(board.loadedBy, "Lena", s + ": Lena seated, still recorded");
+        CheckInt(board.JoinAs(ChessRules.Black, "Cleo"), ChessBoard.InputAccepted, s + ": Cleo joins Black");
+        CheckMayAct("Cleo", false, true, true, s + ": Cleo seated, may act");
+        Check(board.CanSetClockAs("Cleo"), s + ": Cleo seated, may choose the clock", "refused");
+        CheckMayAct("Dana", false, false, true, s + ": both seated, a bystander may not act");
+
+        // Lena leaves her seat: the lock is back, and Cleo, still seated, may only leave.
+        CheckInt(board.LeaveSeatAs(ChessRules.White, "Lena"), ChessBoard.InputAccepted, s + ": Lena leaves White");
+        Check(board.IsLockedToLoader(), s + ": Lena left, locked again", "not locked");
+        CheckString(board.loadedBy, "Lena", s + ": Lena left, still hers");
+        CheckMayAct("Cleo", false, false, true, s + ": locked again, seated Cleo may not act");
+        Check(!board.CanSetClockAs("Cleo"), s + ": locked again, Cleo may not choose the clock", "allowed");
+        Check(!board.CanJoinAs(ChessRules.White, "Cleo"), s + ": locked again, Cleo may not join White", "allowed");
+        Check(!board.CanContinueAs("Cleo"), s + ": locked again, Cleo may not continue", "allowed");
+        CheckMayAct("Lena", false, true, true, s + ": locked again, Lena may act");
+        Check(board.CanLeaveSeatAs(ChessRules.Black, "Cleo"), s + ": locked again, Cleo may leave", "refused");
+        CheckInt(board.LeaveSeatAs(ChessRules.Black, "Cleo"), ChessBoard.InputAccepted, s + ": Cleo leaves Black");
+
+        // Both seats empty: still loaded, still Lena's.
+        CheckSeats("", "", s + ": both seats emptied");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, s + ": both seats emptied, still loaded");
+        CheckString(board.loadedBy, "Lena", s + ": both seats emptied, still Lena's");
+        Check(board.IsLockedToLoader(), s + ": both seats emptied, locked", "not locked");
+
+        // Continue from here clears it: the game belongs to its players.
+        board.JoinAs(ChessRules.White, "Lena");
+        board.JoinAs(ChessRules.Black, "Cleo");
+        CheckInt(board.ContinueGameAs("Cleo"), ChessBoard.InputAccepted, s + ": continued");
+        CheckString(board.loadedBy, "", s + ": continued, cleared");
+        Check(!board.IsLockedToLoader(), s + ": continued, not locked", "locked");
+
+        // A reset clears it.
+        LoadNukaAs("Lena", s + ": reset");
+        CheckInt(board.ResetBoardAs("Lena", false), ChessBoard.InputAccepted, s + ": Lena resets");
+        CheckString(board.loadedBy, "", s + ": reset, cleared");
+
+        // Anyone may reset a locked board once it has been idle for the reset-available time.
+        LoadNukaAs("Lena", s + ": idle");
+        board.gameNumbers[resetTime] = 120;
+        Check(!board.CanResetAs("Cleo", false), s + ": not idle yet, Cleo may not reset", "allowed");
+        board.lastActivity = board.ServerTime() - 121;
+        Check(board.CanResetAs("Cleo", false), s + ": idle, Cleo may reset", "refused");
+        CheckInt(board.ResetBoardAs("Cleo", false), ChessBoard.InputAccepted, s + ": idle, Cleo resets");
+        CheckString(board.loadedBy, "", s + ": idle reset, cleared");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleReset, s + ": idle reset, reset");
+        board.ClearState();
     }
 
     void TestContinueLoaded() {
@@ -4349,13 +4507,13 @@ public class BoardTest : ChessTest {
             board.ClearState();
             CheckInt(ImportText(siggiVsNuka.text), ChessPgn.ImportDone, "listeners: imported");
             MarkNotifications();
-            board.LoadImport(importer);
+            board.LoadImportAs("", importer);
             CheckTold(ChessBoard.ChangeLoaded, "listeners: loaded");
             CheckShown("6k1/1b4pp/p3p3/2p1P1b1/NPPn4/7P/P5q1/RN2Kr2 w - - 0 28", "listeners: loaded");
             CheckLastMove(ChessRules.F8, ChessRules.F1, "listeners: loaded: the mating move");
             Check(board.IsInCheck(), "listeners: loaded: White in check", "not in check");
             CheckString(board.ResultText(), "0-1", "listeners: loaded: result");
-            board.LoadImport(importer);
+            board.LoadImportAs("", importer);
             CheckNotTold("listeners: refused load");
             board.JoinAs(ChessRules.White, "Ana");
             CheckTold(ChessBoard.ChangeJoined, "listeners: loaded: join");
@@ -4679,7 +4837,7 @@ public class BoardTest : ChessTest {
         CheckInt(ImportText(siggiVsNuka.text), ChessPgn.ImportDone, s + ": imported");
         CheckInt(board.gameSettings, 0, s + ": no snapshot before loading");
         MarkNotifications();
-        CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, s + ": loaded");
+        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputAccepted, s + ": loaded");
         CheckTold(ChessBoard.ChangeLoaded, s + ": loaded");
         CheckScenarioSnapshot(settings, ChessGame.ModeChess960, 300, 0, s + ": snapshot on loading");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, s + ": the loaded state");

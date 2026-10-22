@@ -147,6 +147,10 @@ namespace SiggiChessBoard {
         // The seated players' display names, "" for an empty seat (docs/board-lifecycle.md, Seats).
         [NonSerialized] public string whitePlayer = "";
         [NonSerialized] public string blackPlayer = "";
+        // The display name of the player who loaded the game on a loaded board (step 13.2), "" for none. While they
+        // hold no seat the board is theirs alone (IsLockedToLoader). It stays when they join or leave a seat, and is
+        // cleared when the game is continued or the board reset.
+        [NonSerialized] public string loadedBy = "";
 
         // Server time of the last activity (docs/inactivity.md): every change sent stamps it, and so does a touch that
         // changes nothing (TouchAsAt), throttled.
@@ -241,6 +245,7 @@ namespace SiggiChessBoard {
         [UdonSynced] [NonSerialized] public string syncedReplaySourceResult = "";
         [UdonSynced] [NonSerialized] public string syncedWhitePlayer = "";
         [UdonSynced] [NonSerialized] public string syncedBlackPlayer = "";
+        [UdonSynced] [NonSerialized] public string syncedLoadedBy = "";
 
         // ---- Local, not synced ----
 
@@ -374,8 +379,10 @@ namespace SiggiChessBoard {
 
         // Whether name may own the board at server time now: an organizer, a seated player, anyone while a seat is
         // empty or its player isn't in the instance (playersPresent false), and anyone once the board is idle enough
-        // to reset.
+        // to reset. While the board is locked to its loader (step 13.2) only the loader and organizers may, and anyone
+        // once it's idle enough to reset, whether or not the loader is still in the instance.
         public bool MayOwnAs(string name, bool organizer, bool playersPresent, double now) {
+            if (IsLockedToLoader()) return organizer || IsLoader(name) || IsIdleForResetAt(now);
             if (organizer || IsPlayer(name) || !playersPresent) return true;
             if (whitePlayer.Length == 0 || blackPlayer.Length == 0) return true;
             return IsIdleForResetAt(now);
@@ -511,6 +518,7 @@ namespace SiggiChessBoard {
             syncedReplaySourceResult = NotNull(replaySourceResult);
             syncedWhitePlayer = NotNull(whitePlayer);
             syncedBlackPlayer = NotNull(blackPlayer);
+            syncedLoadedBy = NotNull(loadedBy);
         }
 
         static string NotNull(string text) {
@@ -554,7 +562,8 @@ namespace SiggiChessBoard {
             if (syncedNotation == null || syncedNotation.Length != count) return false;
             return syncedStartFen != null && syncedGameId != null && syncedContinuedFrom != null
                 && syncedReplaySourceWhite != null && syncedReplaySourceBlack != null
-                && syncedReplaySourceResult != null && syncedWhitePlayer != null && syncedBlackPlayer != null;
+                && syncedReplaySourceResult != null && syncedWhitePlayer != null && syncedBlackPlayer != null
+                && syncedLoadedBy != null;
         }
 
         // Whether the update in the synced fields is this game played on untimed after its flag fell (step 12.9): its
@@ -638,6 +647,7 @@ namespace SiggiChessBoard {
             replaySourceResult = syncedReplaySourceResult;
             whitePlayer = syncedWhitePlayer;
             blackPlayer = syncedBlackPlayer;
+            loadedBy = syncedLoadedBy;
         }
 
         // ---- Getters for the view (docs/architecture.md) ----
@@ -767,6 +777,7 @@ namespace SiggiChessBoard {
             replaySourceIncrement = 0;
             whitePlayer = "";
             blackPlayer = "";
+            loadedBy = "";
             lastActivity = 0;
 
             ending = ChessGame.EndingNone;
@@ -837,10 +848,11 @@ namespace SiggiChessBoard {
         }
 
         // Whether the Join button of color applies to name: the seats are open (a reset board, the lobby or a loaded
-        // board) and that seat is empty. A seat already held, by name or anyone else, has nothing to join.
+        // board) and that seat is empty. A seat already held, by name or anyone else, has nothing to join. A board
+        // locked to its loader (step 13.2) is theirs to join first.
         public bool CanJoinAs(int color, string name) {
             if (color != ChessRules.White && color != ChessRules.Black) return false;
-            if (name == null || name.Length == 0 || !SeatsOpen()) return false;
+            if (name == null || name.Length == 0 || !SeatsOpen() || LockRefuses(name, false)) return false;
             return (color == ChessRules.White ? whitePlayer : blackPlayer).Length == 0;
         }
 
@@ -890,6 +902,28 @@ namespace SiggiChessBoard {
         // Whether this display name has either seat.
         public bool IsPlayer(string name) {
             return IsSeated(ChessRules.White, name) || IsSeated(ChessRules.Black, name);
+        }
+
+        // ---- The loader's lock (step 13.2, docs/ownership.md) ----
+        // The player who loads a game keeps the board: while loadedBy holds no seat, only they and organizers may act
+        // on it (step, free moves, touch the pieces, reset; join and choose the clock are the loader's alone, as
+        // organizers don't sit down for anyone), everyone else may at most leave a seat they hold, and only an idle
+        // board (the reset-available time) is open to everyone's reset. Once loadedBy joins a seat, the loaded board
+        // works as it did before: anyone may join the other seat.
+
+        // Whether the board is locked to the player who loaded it: a loaded board whose loadedBy holds no seat.
+        public bool IsLockedToLoader() {
+            return lifecycle == LifecycleLoaded && loadedBy.Length != 0 && !IsPlayer(loadedBy);
+        }
+
+        // Whether this display name loaded the game on the board (compared exactly, as seats are).
+        public bool IsLoader(string name) {
+            return name != null && name.Length != 0 && name == loadedBy;
+        }
+
+        // Whether the lock refuses name: locked, and name is neither the loader nor (counted as) an organizer.
+        bool LockRefuses(string name, bool organizer) {
+            return IsLockedToLoader() && !organizer && !IsLoader(name);
         }
 
         // ---- Settings snapshot (docs/settings.md, Snapshot) ----
@@ -996,9 +1030,10 @@ namespace SiggiChessBoard {
         }
 
         // Whether name may choose the clock: a seated player in the lobby or on a loaded board (which continues with
-        // fresh clocks), with the clock not forced.
+        // fresh clocks), with the clock not forced, and not refused by the loader's lock (step 13.2).
         public bool CanSetClockAs(string name) {
-            return (lifecycle == LifecycleLobby || lifecycle == LifecycleLoaded) && IsPlayer(name) && !IsClockForced();
+            return (lifecycle == LifecycleLobby || lifecycle == LifecycleLoaded) && IsPlayer(name) && !IsClockForced()
+                && !LockRefuses(name, false);
         }
 
         // Chooses the time control (seconds; base ChessArbiter.NoClock with increment 0 for no clock).
@@ -1811,8 +1846,10 @@ namespace SiggiChessBoard {
         }
 
         // Whether name may work the replay controls: an organizer, a seated player, or anyone on a board nobody has
-        // joined (a loaded game; docs/ownership.md limits only who isn't seated while someone is).
+        // joined (a loaded game; docs/ownership.md limits only who isn't seated while someone is). A board locked to
+        // its loader (step 13.2) is the loader's and organizers' only.
         bool MayControlReplay(string name, bool organizer) {
+            if (IsLockedToLoader()) return organizer || IsLoader(name);
             if (organizer || IsPlayer(name)) return true;
             return name != null && name.Length != 0 && whitePlayer.Length == 0 && blackPlayer.Length == 0;
         }
@@ -1931,10 +1968,12 @@ namespace SiggiChessBoard {
 
         // Whether name may reset the board (docs/board-lifecycle.md, Reset): a board that isn't reset already, by a
         // seated player or an organizer, or by anyone once it has been idle for the reset-available time
-        // (docs/inactivity.md).
+        // (docs/inactivity.md). While the board is locked to its loader (step 13.2), the loader takes the seated
+        // players' place.
         public bool CanResetAs(string name, bool organizer) {
             if (lifecycle == LifecycleReset) return false;
-            return organizer || IsPlayer(name) || IsIdleForResetAt(ServerTime());
+            if (organizer || IsIdleForResetAt(ServerTime())) return true;
+            return IsLockedToLoader() ? IsLoader(name) : IsPlayer(name);
         }
 
         public int ResetBoard() {
@@ -2237,8 +2276,13 @@ namespace SiggiChessBoard {
         // Loads a finished import from importer (ChessPgnImporter.result ImportDone): its starting position, moves,
         // SAN and clocks, the mode from Variant, the White, Black, Result and GameID tags, and the time control from
         // TimeControl ("-" no clock, a value it can't read unknown). Refused while it's still importing (its result
-        // is ImportMore) or after a failed import, and as LoadGame refuses.
+        // is ImportMore) or after a failed import, and as LoadGame refuses. Loaded by the local player (LoadImportAs).
         public int LoadImport(ChessPgnImporter importer) {
+            return LoadImportAs(ChessUtil.LocalName(""), importer);
+        }
+
+        // LoadImport, by the player with this display name, who keeps the board (LoadGameAs). Public for tests.
+        public int LoadImportAs(string name, ChessPgnImporter importer) {
             if (!Utilities.IsValid(importer) || importer.result != ChessPgn.ImportDone) return InputRejected;
             string[] tags = importer.tags;
             if (tags == null) return InputRejected;
@@ -2253,8 +2297,8 @@ namespace SiggiChessBoard {
             } else if (baseSeconds == 0) {
                 loadedBase = ChessArbiter.NoClock;
             }
-            return LoadGame(importer.StartFen(), importer.moves, importer.sans, importer.clocks, importer.MoveCount(),
-                ChessPgn.ModeFromVariant(tags[ChessPgn.TagVariant]), tags[ChessPgn.TagWhite], tags[ChessPgn.TagBlack],
+            return LoadGameAs(name, importer.StartFen(), importer.moves, importer.sans, importer.clocks,
+                importer.MoveCount(), ChessPgn.ModeFromVariant(tags[ChessPgn.TagVariant]), tags[ChessPgn.TagWhite], tags[ChessPgn.TagBlack],
                 tags[ChessPgn.TagResult], tags[ChessPgn.TagGameId], loadedBase, loadedIncrement);
         }
 
@@ -2268,9 +2312,20 @@ namespace SiggiChessBoard {
         // ChessGame.EndingUnknown with the Result tag's winner, or none for "*" or no tag. The clock for continuing
         // starts as the game's own time control when a player could choose it, no clock otherwise. Then the settings
         // snapshot is taken (which applies a forced clock). Refused for anything invalid, which leaves the board
-        // reset.
+        // reset. Loaded by the local player (LoadGameAs).
         public int LoadGame(string fen, int[] moves, string[] sans, int[] clocks, int count, int loadedMode,
             string white, string black, string result, string loadedGameId, int loadedBaseTime, int loadedIncrement) {
+            return LoadGameAs(ChessUtil.LocalName(""), fen, moves, sans, clocks, count, loadedMode, white, black,
+                result, loadedGameId, loadedBaseTime, loadedIncrement);
+        }
+
+        // LoadGame, by the player with this display name, who takes the board (it's sent from their client) and is
+        // recorded in loadedBy: the board is locked to them while they hold no seat (step 13.2). "" records nobody and
+        // leaves the board open to everyone, as a loaded board was before 13.2 (for tests whose loads aren't about
+        // the lock). Public for tests.
+        public int LoadGameAs(string name, string fen, int[] moves, string[] sans, int[] clocks, int count,
+            int loadedMode, string white, string black, string result, string loadedGameId, int loadedBaseTime,
+            int loadedIncrement) {
             if (!CanLoadGame()) return InputRejected;
             if (moves == null || sans == null || clocks == null || count < 0 || count > moves.Length
                 || count > sans.Length || count > clocks.Length) {
@@ -2313,6 +2368,7 @@ namespace SiggiChessBoard {
             replaySourceIncrement = loadedBaseTime < 1 ? 0 : loadedIncrement;
             gameId = loadedGameId == null ? "" : loadedGameId;
             continuedFrom = "";
+            loadedBy = name == null ? "" : name;
 
             int status = ChessMoves.PositionStatus(board, state,
                 ChessMoves.GenerateLegalMoves(board, state, legalMoves, true), true);
@@ -2354,7 +2410,13 @@ namespace SiggiChessBoard {
         // archive (LoadGame), its moves and clocks copied straight from it, its ending as its PGN result. The archive
         // keeps no notation: every entry starts empty and the fill-in works it out over the next frames, on this
         // client and on each one receiving the load. Refused unless CanLoadGame, and for a game not in the archive.
+        // Loaded by the local player (LoadArchivedGameAs).
         public int LoadArchivedGame(string archivedGameId) {
+            return LoadArchivedGameAs(ChessUtil.LocalName(""), archivedGameId);
+        }
+
+        // LoadArchivedGame, by the player with this display name, who keeps the board (LoadGameAs). Public for tests.
+        public int LoadArchivedGameAs(string name, string archivedGameId) {
             if (!CanLoadGame() || !Utilities.IsValid(archive)) return InputRejected;
             int index = archive.IndexOf(archivedGameId);
             if (index < 0) return InputRejected;
@@ -2365,7 +2427,7 @@ namespace SiggiChessBoard {
             for (int i = 0; i < count; i++) sans[i] = "";
             archive.CopyMovesAt(index, moves);
             archive.CopyClocksAt(index, clocks);
-            return LoadGame(archive.StartFenAt(index), moves, sans, clocks, count, archive.ModeAt(index),
+            return LoadGameAs(name, archive.StartFenAt(index), moves, sans, clocks, count, archive.ModeAt(index),
                 archive.WhiteAt(index), archive.BlackAt(index),
                 ChessPgn.ResultText(archive.EndingAt(index), archive.WinnerAt(index)), archive.GameIdAt(index),
                 archive.BaseTimeAt(index), archive.IncrementAt(index));
@@ -2383,7 +2445,7 @@ namespace SiggiChessBoard {
         // history before it is emptied, since the loaded game's clocks aren't this game's: a takeback to a ply before
         // it gives both sides the base time, as they had when continuing. Both clocks get the base time with the turn
         // starting now, and the game is in progress, out of replay, with no result and the loaded game's White,
-        // Black, Result and time control dropped.
+        // Black, Result and time control dropped. Whoever loaded it no longer holds the board (loadedBy cleared).
         public int ContinueGameAs(string name) {
             if (!CanContinueAs(name)) return InputRejected;
             int ply = replayIndex;
@@ -2401,6 +2463,7 @@ namespace SiggiChessBoard {
             replaySourceResult = "";
             replaySourceBaseTime = ChessArbiter.NoClock;
             replaySourceIncrement = 0;
+            loadedBy = "";
             drawOfferColor = ChessRules.NoColor;
             lifecycle = LifecycleInGame;
             ShowPly(moveCount);

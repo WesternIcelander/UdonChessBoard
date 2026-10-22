@@ -138,7 +138,10 @@ public class ChessDebugView : ChessBoardListener {
                 + board.turnStart.ToString("F3")
             : "";
         return LifecycleName(board.lifecycle) + ", White " + SeatText(board.whitePlayer) + ", Black "
-            + SeatText(board.blackPlayer) + ", " + board.moveCount + " moves" + last + ", "
+            + SeatText(board.blackPlayer)
+            + (board.loadedBy.Length > 0
+                ? ", loaded by " + board.loadedBy + (board.IsLockedToLoader() ? " (locked)" : "") : "")
+            + ", " + board.moveCount + " moves" + last + ", "
             + ChessFen.WriteFen(board.board, board.state, board.halfmoveClock, board.moveNumber) + result + clocks
             + ", game " + (board.gameId.Length > 0 ? board.gameId : "none")
             + ", owner " + ChessUtil.OwnerName(board.gameObject, "nobody");
@@ -1105,7 +1108,10 @@ public class ChessDebugView : ChessBoardListener {
             + board.serializations + "\n";
         text += "Pieces: " + PiecesText() + "\n";
         text += "White: " + SeatText(board.whitePlayer) + ClockSuffix(ChessRules.White) + "   Black: "
-            + SeatText(board.blackPlayer) + ClockSuffix(ChessRules.Black) + "\n";
+            + SeatText(board.blackPlayer) + ClockSuffix(ChessRules.Black)
+            + (board.loadedBy.Length > 0
+                ? "   loaded by: " + board.loadedBy + (board.IsLockedToLoader() ? " (locked to them)" : "") : "")
+            + "\n";
         text += "Mode: " + ModeName(board.mode) + "   clock: " + ClockName(board.baseTime, board.increment)
             + "   to move: " + ColorName(board.SideToMove()) + (board.IsInCheck() ? " (check)" : "") + "\n";
         text += "Result: " + board.ResultText();

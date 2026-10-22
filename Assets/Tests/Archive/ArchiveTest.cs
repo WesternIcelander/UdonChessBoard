@@ -582,6 +582,7 @@ public class ArchiveTest : ChessTest {
         CheckString(board.replaySourceResult, "0-1", "load: result 0-1");
         CheckInt(board.ending, ChessGame.EndingCheckmate, "load: ended by checkmate");
         CheckInt(board.winner, ChessRules.Black, "load: Black won");
+        CheckString(board.loadedBy, ChessUtil.LocalName(""), "load: the local player keeps the board (step 13.2)");
         if (hasUI) {
             Check(!wall.HasSelection(), "Load it here: the pick cleared once loaded", "still " + wall.selectedGameId);
             CheckLoadButton(false, "Load it here: hidden on the loaded board");
@@ -599,6 +600,10 @@ public class ArchiveTest : ChessTest {
         CheckInt(board.ending, ChessGame.EndingNone, "load: unfinished, no result");
         Check(board.FillNotationFor(float.MaxValue), "notation: unfinished, filled in", "gaps left");
         CheckString(NotationText(board, 2), "e4 c5", "notation: unfinished, the game's");
+        board.ClearState();
+        CheckInt(board.LoadArchivedGameAs("Lena", firstId), ChessBoard.InputAccepted, "load: as Lena");
+        CheckString(board.loadedBy, "Lena", "load: as Lena, Lena keeps the board");
+        Check(board.IsLockedToLoader(), "load: as Lena, locked to her", "not locked");
         board.ClearState();
         if (hasUI) ui.UpdateButtons();
     }
