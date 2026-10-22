@@ -1901,10 +1901,11 @@ namespace SiggiChessBoard {
         }
 
         // Whether name may ask, for color, to continue from the replay position (docs/replay.md): the snapshot allows
-        // takebacks, no request is pending, name has that seat, and the game can continue from there.
+        // takebacks, no request is pending, name has that seat but not both (one player in both seats continues with
+        // "Continue from here" instead, step 13.3), and the game can continue from there.
         public bool CanRequestTakebackAs(int color, string name) {
             return IsGameSettingOn(ChessArbiter.SettingTakebacks) && takebackColor == ChessRules.NoColor
-                && IsSeated(color, name) && CanContinueFromReplay();
+                && IsSeated(color, name) && !IsSeated(ChessRules.OtherColor(color), name) && CanContinueFromReplay();
         }
 
         public bool CanAcceptTakeback(int color) {
@@ -1924,22 +1925,29 @@ namespace SiggiChessBoard {
         }
 
         // Whether name may accept or decline a takeback request for color: the other side's request is pending for
-        // the position still shown, the snapshot still allows takebacks, name has that seat, and the game can
-        // continue from there.
+        // the position still shown, the snapshot still allows takebacks, name has that seat but not both, and the game
+        // can continue from there.
         bool CanAnswerTakebackAs(int color, string name) {
             if (color != ChessRules.White && color != ChessRules.Black) return false;
             return IsGameSettingOn(ChessArbiter.SettingTakebacks) && takebackColor == ChessRules.OtherColor(color)
-                && takebackPly == replayIndex && IsSeated(color, name) && CanContinueFromReplay();
+                && takebackPly == replayIndex && IsSeated(color, name)
+                && !IsSeated(ChessRules.OtherColor(color), name) && CanContinueFromReplay();
         }
 
         public bool CanContinue() {
             return CanContinueAs(ChessUtil.LocalName(""));
         }
 
-        // Whether name may press "Continue from here" on a loaded game (docs/replay.md): both seats filled, name
+        // Whether name may press "Continue from here" (docs/replay.md). On a loaded game: both seats filled, name
         // seated, and the replay showing a position of the game's history (not custom) that isn't over already. Unlike
-        // a takeback it can continue from the last position too, since nobody has played the loaded game on.
+        // a takeback it can continue from the last position too, since nobody has played the loaded game on. In a
+        // game in progress or ended (step 13.3): name holds both seats, the snapshot allows takebacks, and the game
+        // can continue from the replay position, as for the takeback it takes the place of.
         public bool CanContinueAs(string name) {
+            if (lifecycle == LifecycleInGame || lifecycle == LifecycleEnded) {
+                return IsGameSettingOn(ChessArbiter.SettingTakebacks) && IsSeated(ChessRules.White, name)
+                    && IsSeated(ChessRules.Black, name) && CanContinueFromReplay();
+            }
             if (lifecycle != LifecycleLoaded || !replayMode || replayCustom) return false;
             if (replayIndex < 0 || replayIndex > moveCount) return false;
             if (whitePlayer.Length == 0 || blackPlayer.Length == 0 || !IsPlayer(name)) return false;
@@ -2142,7 +2150,14 @@ namespace SiggiChessBoard {
         // with no result and nothing pending.
         public int AcceptTakebackAs(int color, string name) {
             if (!CanAcceptTakebackAs(color, name)) return InputRejected;
-            int ply = takebackPly;
+            ContinueFromTakeback(takebackPly);
+            return InputAccepted;
+        }
+
+        // An agreed takeback to ply (an accepted request, or one player in both seats continuing, step 13.3): the
+        // game in progress logged as unfinished, a new ID, the history cut, the clocks restored, and the game in
+        // progress out of replay with nothing pending.
+        void ContinueFromTakeback(int ply) {
             if (lifecycle == LifecycleInGame) LogGame(ChessGame.EndingUnterminated, ChessRules.NoColor);
             ContinueGameIdAt(ply, NetworkDateTime());
             TruncateHistory(ply);
@@ -2155,7 +2170,6 @@ namespace SiggiChessBoard {
             ShowPly(moveCount);
             replayMode = false;
             NotifyChanged(ChangeTakeback);
-            return InputAccepted;
         }
 
         // Cuts the game back to its first ply moves: undoes the moves after them on the game position (with the move
@@ -2446,9 +2460,15 @@ namespace SiggiChessBoard {
         // it gives both sides the base time, as they had when continuing. Both clocks get the base time with the turn
         // starting now, and the game is in progress, out of replay, with no result and the loaded game's White,
         // Black, Result and time control dropped. Whoever loaded it no longer holds the board (loadedBy cleared).
+        // In a game in progress or ended, for one player in both seats (step 13.3), it continues from the ply shown as
+        // an accepted takeback does (ContinueFromTakeback), and is told as one.
         public int ContinueGameAs(string name) {
             if (!CanContinueAs(name)) return InputRejected;
             int ply = replayIndex;
+            if (lifecycle != LifecycleLoaded) {
+                ContinueFromTakeback(ply);
+                return InputAccepted;
+            }
             ContinueGameIdAt(ply, NetworkDateTime());
             TruncateHistory(ply);
             for (int i = 0; i < ply; i++) clockHistory[i] = -1;

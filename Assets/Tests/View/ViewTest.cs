@@ -825,14 +825,15 @@ public class ViewTest : ChessTest {
 
     // The buttons a seated player in both seats sees during their game, outside replay with nothing pending.
     const string OwnGame = "ResignWhite ResignBlack OfferDrawWhite? OfferDrawBlack? Replay Reset";
-    // The same in replay, before the step buttons and takeback requests that apply.
+    // The same in replay, before the step buttons and Continue from here that apply.
     const string OwnReplay = "ResignWhite ResignBlack OfferDrawWhite? OfferDrawBlack? Leave Reset";
 
     // The ninth frame: on games of the local player against themselves, with takebacks, draws by agreement and
     // threefold claims on in the snapshot (SetRequestRules), resigning, draw offers (offered, declined, accepted), a
-    // threefold claim, replay with each step button, and takeback requests (requested, declined, accepted), each button
-    // shown exactly when it applies and pressing it doing what the board's method does, a hidden one refused; then the
-    // same offers, requests and claim with those rules off, hidden and refused; then someone else's game.
+    // threefold claim, replay with each step button and Continue from here (13.3), and, against Bob, takeback requests
+    // (requested, declined, accepted), each button shown exactly when it applies and pressing it doing what the board's
+    // method does, a hidden one refused; then the same offers, requests and claim with those rules off, hidden and
+    // refused; then someone else's game.
     public void RunGameButtonChecks() {
         // Resigning.
         board.ClearState();
@@ -891,12 +892,14 @@ public class ViewTest : ChessTest {
         CheckInt(board.replayIndex, 3, "< : ply 3");
         Redraw();
         CheckView("< : ply 3");
-        CheckButtons(OwnReplay + " First Back Forward Last TakebackWhite TakebackBlack", "replay at ply 3");
+        CheckButtons(OwnReplay + " First Back Forward Last Continue", "replay at ply 3");
+        CheckRefused(ChessBoardUI.ButtonRequestTakebackWhite, "both seats");
+        CheckRefused(ChessBoardUI.ButtonRequestTakebackBlack, "both seats");
         ui.PressStepFirst();
         CheckInt(board.replayIndex, 0, "<< : ply 0");
         Redraw();
         CheckView("<< : ply 0");
-        CheckButtons(OwnReplay + " Forward Last TakebackWhite TakebackBlack", "replay at ply 0");
+        CheckButtons(OwnReplay + " Forward Last Continue", "replay at ply 0");
         CheckRefused(ChessBoardUI.ButtonStepBack, "replay at ply 0");
         ui.PressStepForward();
         CheckInt(board.replayIndex, 1, "> : ply 1");
@@ -908,29 +911,15 @@ public class ViewTest : ChessTest {
         ui.PressStepBack();
         CheckInt(board.replayIndex, 2, "< twice: ply 2");
 
-        // Takeback requests, from ply 2.
-        CheckLabel(ChessBoardUI.ButtonRequestTakebackWhite, "Take back to here", "replay at ply 2");
-        ui.PressRequestTakebackWhite();
-        CheckInt(board.takebackColor, ChessRules.White, "Take back (White): requested");
-        CheckInt(board.takebackPly, 2, "Take back (White): for ply 2");
-        CheckButtons(OwnReplay + " First Back Forward Last AcceptTakebackBlack DeclineTakebackBlack",
-            "White's request");
-        CheckRefused(ChessBoardUI.ButtonRequestTakebackBlack, "White's request");
-        CheckRefused(ChessBoardUI.ButtonAcceptTakebackWhite, "White's request");
-        ui.PressDeclineTakebackBlack();
-        CheckInt(board.takebackColor, ChessRules.NoColor, "Decline takeback (Black): no request");
-        CheckInt(board.moveCount, 4, "Decline takeback (Black): the game unchanged");
-        CheckButtons(OwnReplay + " First Back Forward Last TakebackWhite TakebackBlack", "request declined");
-        ui.PressRequestTakebackBlack();
-        CheckButtons(OwnReplay + " First Back Forward Last AcceptTakebackWhite DeclineTakebackWhite",
-            "Black's request");
-        ui.PressAcceptTakebackWhite();
-        CheckInt(board.moveCount, 2, "Accept takeback (White): back to ply 2");
-        Check(!board.replayMode, "Accept takeback (White): out of replay", "in replay");
-        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Accept takeback (White): in game");
+        // Continue from here (13.3), from ply 2: the player in both seats needs no request.
+        CheckLabel(ChessBoardUI.ButtonContinue, "Continue from here", "replay at ply 2");
+        ui.PressContinue();
+        CheckInt(board.moveCount, 2, "Continue (both seats): back to ply 2");
+        Check(!board.replayMode, "Continue (both seats): out of replay", "in replay");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Continue (both seats): in game");
         Redraw();
-        CheckView("takeback accepted");
-        CheckButtons(OwnGame, "takeback accepted");
+        CheckView("continued from ply 2");
+        CheckButtons(OwnGame, "continued from ply 2");
         ui.PressEnterReplay();
         ui.PressStepFirst();
         ui.PressLeaveReplay();
@@ -939,6 +928,52 @@ public class ViewTest : ChessTest {
         Redraw();
         CheckView("back to game");
         CheckButtons(OwnGame, "back to game");
+
+        // Takeback requests between two players (the local player White, Bob Black), from ply 2 of the same game.
+        board.ClearState();
+        CheckInt(board.JoinAs(ChessRules.White, localName), ChessBoard.InputAccepted, "takeback buttons: joined White");
+        CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted,
+            "takeback buttons: Bob joined Black");
+        CheckInt(board.StartGameAs(localName), ChessBoard.InputAccepted, "takeback buttons: started");
+        SetRequestRules(true);
+        string[] twoPlayerMoves = { "e2e4", "e7e5", "g1f3", "b8c6" };
+        for (int i = 0; i < twoPlayerMoves.Length; i++) {
+            string move = twoPlayerMoves[i];
+            CheckInt(board.PieceDroppedAs(i % 2 == 0 ? localName : "Bob", Sq(move.Substring(0, 2)),
+                Sq(move.Substring(2, 2))), ChessBoard.InputAccepted, "takeback buttons: " + move + " played");
+        }
+        string twoReplay = "ResignWhite OfferDrawWhite? Leave First Back Forward Last Reset";
+        ui.PressEnterReplay();
+        ui.PressStepBack();
+        ui.PressStepBack();
+        CheckInt(board.replayIndex, 2, "takeback buttons: ply 2");
+        CheckButtons(twoReplay + " TakebackWhite", "two players at ply 2");
+        CheckRefused(ChessBoardUI.ButtonContinue, "two players");
+        CheckLabel(ChessBoardUI.ButtonRequestTakebackWhite, "Take back to here", "two players at ply 2");
+        ui.PressRequestTakebackWhite();
+        CheckInt(board.takebackColor, ChessRules.White, "Take back (White): requested");
+        CheckInt(board.takebackPly, 2, "Take back (White): for ply 2");
+        CheckButtons(twoReplay, "White's request");
+        CheckRefused(ChessBoardUI.ButtonAcceptTakebackWhite, "White's request");
+        CheckRefused(ChessBoardUI.ButtonAcceptTakebackBlack, "White's request, Bob's seat");
+        CheckInt(board.DeclineTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted,
+            "Decline takeback (Bob): declined");
+        CheckButtons(twoReplay + " TakebackWhite", "White's request declined");
+        CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted,
+            "Take back (Bob): requested");
+        CheckButtons(twoReplay + " AcceptTakebackWhite DeclineTakebackWhite", "Bob's request");
+        ui.PressDeclineTakebackWhite();
+        CheckInt(board.takebackColor, ChessRules.NoColor, "Decline takeback (White): no request");
+        CheckInt(board.moveCount, 4, "Decline takeback (White): the game unchanged");
+        CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted,
+            "Take back (Bob): requested again");
+        ui.PressAcceptTakebackWhite();
+        CheckInt(board.moveCount, 2, "Accept takeback (White): back to ply 2");
+        Check(!board.replayMode, "Accept takeback (White): out of replay", "in replay");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Accept takeback (White): in game");
+        Redraw();
+        CheckView("takeback accepted");
+        CheckButtons("ResignWhite OfferDrawWhite? Replay Reset", "takeback accepted");
 
         // A threefold repetition claim: the knights out and back twice.
         board.ClearState();
@@ -968,6 +1003,7 @@ public class ViewTest : ChessTest {
         ui.PressStepBack();
         CheckButtons("ResignWhite ResignBlack Leave First Back Forward Last Reset", "rules off: replay at ply 7");
         CheckRefused(ChessBoardUI.ButtonRequestTakebackWhite, "rules off");
+        CheckRefused(ChessBoardUI.ButtonContinue, "rules off");
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "rules off: still in game");
 
         // Someone else's game: none of the players' buttons.
@@ -2206,13 +2242,10 @@ public class ViewTest : ChessTest {
         CheckView(r + ": back to Rxa2");
         CheckPlaces("PP", "PQ", r + ": back to Rxa2");
 
-        // A takeback after a capture empties the last place.
+        // A takeback (Continue from here, in both seats) after a capture empties the last place.
         SetRequestRules(true);
         CheckInt(board.StepToAs(localName, true, 6), ChessBoard.InputAccepted, c + ": takeback: stepped to Qxa2");
-        CheckInt(board.RequestTakebackAs(ChessRules.White, localName), ChessBoard.InputAccepted,
-            c + ": takeback: asked");
-        CheckInt(board.AcceptTakebackAs(ChessRules.Black, localName), ChessBoard.InputAccepted,
-            c + ": takeback: accepted");
+        CheckInt(board.ContinueGameAs(localName), ChessBoard.InputAccepted, c + ": takeback: continued");
         Redraw();
         CheckView(c + ": takeback");
         CheckPlaces("PP", "P", c + ": takeback");
@@ -2393,9 +2426,7 @@ public class ViewTest : ChessTest {
 
         SetRequestRules(true);
         CheckInt(board.StepToAs(localName, false, 3), ChessBoard.InputAccepted, f + ": takeback: stepped to ply 3");
-        CheckInt(board.RequestTakebackAs(ChessRules.Black, localName), ChessBoard.InputAccepted, f + ": takeback: asked");
-        CheckInt(board.AcceptTakebackAs(ChessRules.White, localName), ChessBoard.InputAccepted,
-            f + ": takeback: accepted");
+        CheckInt(board.ContinueGameAs(localName), ChessBoard.InputAccepted, f + ": takeback: continued");
         Redraw();
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, f + ": takeback: the game goes on");
         CheckFalls(f + ": takeback");
@@ -2572,7 +2603,9 @@ public class ViewTest : ChessTest {
         PressStepSound(ChessBoardUI.ButtonStepLast, board.moveCount, view.checkSound, s + ": >> pressed (Nxe5+)");
         PressStepSound(ChessBoardUI.ButtonStepBack, board.moveCount - 1, view.moveSound, s + ": < pressed (Nd4)");
         StepSound(1, view.moveSound, s + ": stepped back to ply 1");
-        CheckInt(board.RequestTakebackAs(ChessRules.Black, localName), ChessBoard.InputAccepted,
+        // A takeback request needs two players (13.3): Bob takes Black for it.
+        board.blackPlayer = "Bob";
+        CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted,
             s + ": Black asks to take back");
         Redraw();
         CheckSounds(null, ui.notificationSound, s + ": takeback requested");
@@ -2580,6 +2613,7 @@ public class ViewTest : ChessTest {
             s + ": takeback declined");
         Redraw();
         CheckSounds(null, null, s + ": takeback declined");
+        board.blackPlayer = localName;
         // Free moves: a move, a capture, a check.
         FreeMoveSound("e4", "e5", view.moveSound, s + ": free move e4-e5");
         FreeMoveSound("d1", "d7", view.checkSound, s + ": free move Qxd7+");

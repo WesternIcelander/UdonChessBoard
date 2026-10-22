@@ -94,6 +94,7 @@ public class BoardTest : ChessTest {
         TestPgnLog();
         TestReplay();
         TestTakeback();
+        TestContinueAlone();
         TestLoadGame();
         TestContinueLoaded();
         TestLoadedBy();
@@ -2018,11 +2019,16 @@ public class BoardTest : ChessTest {
         Check(board.CanLeaveReplay(), "local buttons: leave replay", "refused");
         Check(board.CanStepTo(0), "local buttons: step", "refused");
         board.replayIndex = 0;
-        Check(board.CanRequestTakeback(ChessRules.White), "local buttons: request a takeback", "refused");
+        Check(!board.CanRequestTakeback(ChessRules.White), "local buttons: no takeback request in both seats",
+            "allowed");
+        Check(board.CanContinue(), "local buttons: continue from here in both seats", "refused");
         board.takebackColor = ChessRules.White;
         board.takebackPly = 0;
-        Check(board.CanAcceptTakeback(ChessRules.Black), "local buttons: accept a takeback", "refused");
-        Check(board.CanDeclineTakeback(ChessRules.Black), "local buttons: decline a takeback", "refused");
+        Check(!board.CanAcceptTakeback(ChessRules.Black), "local buttons: no accepting a takeback in both seats",
+            "allowed");
+        Check(!board.CanDeclineTakeback(ChessRules.Black), "local buttons: no declining a takeback in both seats",
+            "allowed");
+        board.takebackColor = ChessRules.NoColor;
         Check(board.CanReset(), "local buttons: reset", "refused");
         board.lifecycle = ChessBoard.LifecycleLoaded;
         Check(board.CanContinue(), "local buttons: continue a loaded game", "refused");
@@ -3176,7 +3182,7 @@ public class BoardTest : ChessTest {
         Drop("Ana", ChessRules.E5, ChessRules.D6, "takeback before en passant: en passant again");
         CheckString(Fen(), fens2[5], "takeback before en passant: the same position after it");
 
-        // The local player's methods, seated in both seats.
+        // The local player's methods, seated in both seats: Continue from here in place of a takeback (13.3).
         board.ClearState();
         board.JoinWhite();
         board.JoinBlack();
@@ -3186,13 +3192,119 @@ public class BoardTest : ChessTest {
         board.PieceDropped(ChessRules.E7, ChessRules.E5);
         board.EnterReplay();
         board.StepTo(1);
-        CheckInt(board.RequestTakeback(ChessRules.White), ChessBoard.InputAccepted, "local takeback: request");
-        CheckInt(board.DeclineTakeback(ChessRules.Black), ChessBoard.InputAccepted, "local takeback: decline");
-        CheckInt(board.RequestTakeback(ChessRules.Black), ChessBoard.InputAccepted, "local takeback: request again");
-        CheckInt(board.AcceptTakeback(ChessRules.Black), ChessBoard.InputRejected,
-            "local takeback: not for the requesting colour");
-        CheckInt(board.AcceptTakeback(ChessRules.White), ChessBoard.InputAccepted, "local takeback: accept");
-        CheckContinued(1, fens[1], "local takeback");
+        CheckInt(board.RequestTakeback(ChessRules.White), ChessBoard.InputRejected,
+            "local takeback: no request in both seats");
+        CheckInt(board.ContinueGame(), ChessBoard.InputAccepted, "local continue: accepted");
+        CheckContinued(1, fens[1], "local continue");
+
+        board.ClearState();
+    }
+
+    // ---- 13.3 continuing from here in both seats ----
+
+    // One player in both seats continues from a replay position at once, as an accepted takeback does.
+    void TestContinueAlone() {
+        NothingForced();
+        int takebacks = ChessArbiter.SettingTakebacks;
+
+        // The takeback test's 60+2 game, Ana in both seats: White 61, 62, 63 s, Black 60, 59, 57 s.
+        board.ClearState();
+        board.JoinAs(ChessRules.White, "Ana");
+        board.JoinAs(ChessRules.Black, "Ana");
+        board.SetClockAs("Ana", 60, 2);
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, "continue alone: started");
+        board.turnStart = 1000;
+        board.gameSettings = takebacks;
+        string[] fens = new string[7];
+        fens[0] = Fen();
+        int[] from = { ChessRules.E2, ChessRules.E7, ChessRules.G1, ChessRules.B8, ChessRules.F1, ChessRules.G8 };
+        int[] to = { ChessRules.E4, ChessRules.E5, ChessRules.F3, ChessRules.C6, ChessRules.C4, ChessRules.F6 };
+        double[] times = { 1001, 1003, 1004, 1007, 1008, 1012 };
+        for (int i = 0; i < 6; i++) {
+            Play(from[i], to[i], times[i], "continue alone game ply " + i);
+            fens[i + 1] = Fen();
+        }
+        board.turnStart = board.ServerTime();
+        string game = GameText();
+        string firstId = board.gameId;
+
+        // Refused out of replay, by someone else, from the last or a custom position, and with takebacks off; no
+        // takeback requests or answers for a player in both seats.
+        CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputRejected, "continue alone: not out of replay");
+        board.EnterReplayAs("Ana", false);
+        CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputRejected, "continue alone: not from the last position");
+        board.StepToAs("Ana", false, 3);
+        CheckInt(board.ContinueGameAs("Cleo"), ChessBoard.InputRejected, "continue alone: not by a non-player");
+        CheckInt(board.ContinueGameAs(""), ChessBoard.InputRejected, "continue alone: not by nobody");
+        Check(!board.CanRequestTakebackAs(ChessRules.White, "Ana"), "continue alone: no request for white",
+            "allowed");
+        Check(!board.CanRequestTakebackAs(ChessRules.Black, "Ana"), "continue alone: no request for black",
+            "allowed");
+        board.takebackColor = ChessRules.White;
+        board.takebackPly = 3;
+        Check(!board.CanAcceptTakebackAs(ChessRules.Black, "Ana"), "continue alone: no accepting", "allowed");
+        Check(!board.CanDeclineTakebackAs(ChessRules.Black, "Ana"), "continue alone: no declining", "allowed");
+        board.takebackColor = ChessRules.NoColor;
+        board.takebackPly = 0;
+        board.gameSettings = 0;
+        Check(!board.CanContinueAs("Ana"), "continue alone: not with takebacks off", "allowed");
+        CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputRejected, "continue alone: refused with takebacks off");
+        board.gameSettings = takebacks;
+        board.PieceDroppedAs("Ana", ChessRules.A7, ChessRules.A6);
+        CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputRejected, "continue alone: not from a custom position");
+        board.StepToAs("Ana", false, 3);
+        CheckString(GameText(), game, "continue alone: refused calls leave the game");
+
+        // From ply 3 of the game in progress: logged once as unfinished, cut there with the clocks there.
+        board.gameSettings = takebacks | ChessArbiter.SettingDrawAgreement;
+        board.OfferDrawAs(ChessRules.White, "Ana");
+        Check(board.CanContinueAs("Ana"), "continue alone: in game", "refused");
+        int before = board.loggedGames;
+        double timeBefore = board.ServerTime();
+        CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputAccepted, "continue alone to 3: accepted");
+        double timeAfter = board.ServerTime();
+        CheckInt(board.lastChange, ChessBoard.ChangeTakeback, "continue alone to 3: told as a takeback");
+        CheckLogged(before, 1, "continue alone to 3: the unfinished game logged once");
+        CheckLogHas("[Result \"*\"]\n", "continue alone to 3: logged as *");
+        CheckLogHas("[GameID \"" + firstId + "\"]\n", "continue alone to 3: logged with its own ID");
+        CheckLogHas("3. Bc4 { [%clk 0:01:03] } 3... Nf6", "continue alone to 3: logged with the whole history");
+        CheckContinued(3, fens[3], "continue alone to 3");
+        CheckInt(board.whiteTime, 62000, "continue alone to 3: white's clock after its second move");
+        CheckInt(board.blackTime, 60000, "continue alone to 3: black's clock after its first move");
+        Check(board.turnStart >= timeBefore && board.turnStart <= timeAfter, "continue alone to 3: the turn starts now",
+            "turn start " + board.turnStart + ", not between " + timeBefore + " and " + timeAfter);
+        CheckString(board.continuedFrom, firstId + "/3", "continue alone to 3: ContinuedFrom");
+        Check(board.gameId != firstId && board.gameId.Length == 21, "continue alone to 3: a new game ID",
+            "\"" + board.gameId + "\"");
+        CheckString(board.whitePlayer + "|" + board.blackPlayer, "Ana|Ana", "continue alone to 3: the seats kept");
+
+        // Once ended: nothing more logged, the result gone.
+        string secondId = board.gameId;
+        board.ResignAs(ChessRules.Black, "Ana");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "continue alone: resigned");
+        board.EnterReplayAs("Ana", false);
+        board.StepToAs("Ana", false, 1);
+        Check(board.CanContinueAs("Ana"), "continue alone: once ended", "refused");
+        before = board.loggedGames;
+        CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputAccepted, "continue alone once ended: accepted");
+        CheckLogged(before, 0, "continue alone once ended: nothing more logged");
+        CheckContinued(1, fens[1], "continue alone once ended");
+        CheckInt(board.whiteTime, 61000, "continue alone once ended: white's clock after its first move");
+        CheckInt(board.blackTime, 60000, "continue alone once ended: black's base time");
+        CheckString(board.continuedFrom, secondId + "/1", "continue alone once ended: ContinuedFrom the game before");
+
+        // Two different players: only takebacks.
+        StartedGame(60, 2, 1000);
+        board.gameSettings = takebacks;
+        Play(ChessRules.E2, ChessRules.E4, 1001, "continue, two players: 1. e4");
+        Play(ChessRules.E7, ChessRules.E5, 1002, "continue, two players: 1... e5");
+        board.EnterReplayAs("Ana", false);
+        board.StepToAs("Ana", false, 1);
+        Check(!board.CanContinueAs("Ana"), "continue, two players: not for white", "allowed");
+        Check(!board.CanContinueAs("Bob"), "continue, two players: not for black", "allowed");
+        CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputRejected, "continue, two players: refused");
+        Check(board.CanRequestTakebackAs(ChessRules.White, "Ana"), "continue, two players: a takeback instead",
+            "refused");
 
         board.ClearState();
     }
