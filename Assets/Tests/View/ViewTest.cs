@@ -578,7 +578,9 @@ public class ViewTest : ChessTest {
         // the other colour captured; leaving replay puts a selection back.
         CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, c + ": entered replay");
         Redraw();
-        CheckInt(ClickableCount(), OnBoardCount(), c + ": replay: every piece on the board clickable");
+        // The captured one too, to put it back (step 13.4).
+        CheckInt(ClickableCount(), ChessBoardView.PieceCount, c + ": replay: every piece on the board and the captured "
+            + "one clickable");
         ClickPiece("a1");
         CheckInt(view.selectedObject, view.squareObject[Sq("a1")], c + ": replay: a1 selected");
         Redraw();
@@ -2333,11 +2335,109 @@ public class ViewTest : ChessTest {
         CheckView(q + ": gxh6");
         CheckPlaces("Q", "", q + ": gxh6");
 
+        CheckPutBack(c + ": put back");
+
         board.ClearState();
         Redraw();
         CheckView(c + ": cleared");
         CheckPlaces("", "", c + ": cleared");
         SendCustomEventDelayedFrames(nameof(RunFallChecks), 1);
+    }
+
+    // Putting captured pieces back in replay (step 13.4): a captured piece is a pickup only in replay; dropped on a
+    // square (empty, or another piece's, which goes to its places) it stands there and leaves its place, dropped off
+    // the board it goes back; then with clicks, selected in its place, put back by a second click, and placed on a
+    // square.
+    void CheckPutBack(string b) {
+        int savedStyle = view.inputStyle;
+        view.SetInputStyle(ChessBoardView.InputPickups);
+        board.ClearState();
+        StartGame(ChessGame.ModeStandard, b);
+        PlayMoves("e2e4 d7d5 e4d5 d8d5", b);
+        CheckPlaces("P", "P", b + ": exd5 Qxd5");
+        CheckPickupable(30, b + ": in game, not the captured pieces");
+        CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, b + ": replay");
+        Redraw();
+        CheckPickupableOff(32, 2, b + ": replay, the captured pieces too");
+
+        // Dropped over an empty square.
+        int whitePawn = PlaceObject(ChessRules.White, 0);
+        view.OnPiecePickedUp(whitePawn);
+        CheckInt(view.heldObject, whitePawn, b + ": the white pawn picked up from its place");
+        view.pieces[whitePawn].localPosition = Over("e3") + view.PieceOffset(whitePawn);
+        view.OnPieceDropped(whitePawn);
+        CheckInt(board.lastChange, ChessBoard.ChangeFreeMove, b + ": dropped over e3: a free move");
+        CheckInt(board.replayBoard[Sq("e3")], ChessRules.WhitePawn, b + ": dropped over e3: a white pawn on e3");
+        Redraw();
+        CheckView(b + ": dropped over e3");
+        CheckInt(view.squareObject[Sq("e3")], whitePawn, b + ": dropped over e3: the dropped object stands there");
+        CheckPlaces("", "P", b + ": dropped over e3");
+        CheckPickupableOff(32, 1, b + ": dropped over e3: pickups");
+
+        // Dropped over the queen: she goes to Black's places.
+        int blackPawn = PlaceObject(ChessRules.Black, 0);
+        view.OnPiecePickedUp(blackPawn);
+        CheckInt(view.heldObject, blackPawn, b + ": the black pawn picked up from its place");
+        view.pieces[blackPawn].localPosition = Over("d5") + view.PieceOffset(blackPawn);
+        view.OnPieceDropped(blackPawn);
+        CheckInt(board.replayBoard[Sq("d5")], ChessRules.PieceOf(ChessRules.Black, ChessRules.Pawn),
+            b + ": dropped over d5: a black pawn on d5");
+        Redraw();
+        CheckView(b + ": dropped over d5");
+        CheckInt(view.squareObject[Sq("d5")], blackPawn, b + ": dropped over d5: the dropped object stands there");
+        CheckPlaces("", "Q", b + ": dropped over d5: the queen in Black's place");
+
+        // Dropped off the board: back in its place.
+        int blackQueen = PlaceObject(ChessRules.Black, 0);
+        view.OnPiecePickedUp(blackQueen);
+        CheckInt(view.heldObject, blackQueen, b + ": the queen picked up from her place");
+        view.pieces[blackQueen].localPosition = OffBoard();
+        view.OnPieceDropped(blackQueen);
+        CheckInt(board.lastChange, ChessBoard.ChangeRejected, b + ": dropped off the board: rejected");
+        Redraw();
+        CheckView(b + ": dropped off the board");
+        CheckInt(view.objectPlace[blackQueen], 0, b + ": dropped off the board: the queen in her place again");
+
+        // Clicks: selected in its place (lifted), put back by a second click, then placed on a square.
+        view.SetInputStyle(ChessBoardView.InputClicks);
+        Redraw();
+        CheckPickupable(0, b + ": clicks: no pickups");
+        Check(view.IsPieceClickable(blackQueen), b + ": clicks: the queen in her place clickable", "not clickable");
+        view.OnPieceClicked(blackQueen);
+        CheckInt(view.selectedObject, blackQueen, b + ": clicks: the queen selected");
+        Redraw();
+        Vector3 lifted = view.CapturedPlacePosition(ChessRules.Black, 0) + view.PieceOffset(blackQueen)
+            + new Vector3(0, ChessBoardView.SelectLift * view.squareSize, 0);
+        Check((view.pieces[blackQueen].localPosition - lifted).sqrMagnitude < 1e-8f, b + ": clicks: the queen lifted "
+            + "over her place", "at " + view.pieces[blackQueen].localPosition.ToString("F3"));
+        Check(view.IsSquareClickable(Sq("d8")) && view.IsSquareClickable(Sq("e3")) && view.IsPieceClickable(blackQueen),
+            b + ": clicks: the squares and the queen clickable", "not clickable");
+        view.OnPieceClicked(blackQueen);
+        CheckInt(view.selectedObject, ChessBoardView.NoObject, b + ": clicks: a second click puts her back");
+        Check(!view.IsSquareClickable(Sq("d8")), b + ": clicks: put back: no square clickable", "d8 clickable");
+        Redraw();
+        CheckView(b + ": clicks: put back");
+        view.OnPieceClicked(blackQueen);
+        CheckInt(view.selectedObject, blackQueen, b + ": clicks: the queen selected again");
+        view.OnSquareClicked(Sq("d8"));
+        CheckInt(view.selectedObject, ChessBoardView.NoObject, b + ": clicks: placed, unselected");
+        CheckInt(board.replayBoard[Sq("d8")], ChessRules.PieceOf(ChessRules.Black, ChessRules.Queen),
+            b + ": clicks: the queen on d8");
+        Redraw();
+        CheckView(b + ": clicks: placed on d8");
+        CheckInt(view.squareObject[Sq("d8")], blackQueen, b + ": clicks: the queen's object on d8");
+        CheckPlaces("", "", b + ": clicks: placed on d8");
+
+        // Out of replay, the captured pieces are no pickups or click targets again.
+        CheckInt(board.LeaveReplayAs(localName, true), ChessBoard.InputAccepted, b + ": left replay");
+        Redraw();
+        CheckPlaces("P", "P", b + ": left replay");
+        Check(!view.IsPieceClickable(PlaceObject(ChessRules.White, 0))
+            && !view.IsPieceClickable(PlaceObject(ChessRules.Black, 0)), b + ": left replay: captured pieces not "
+            + "clickable", "clickable");
+        view.SetInputStyle(ChessBoardView.InputPickups);
+        CheckPickupable(30, b + ": left replay: pickups");
+        view.SetInputStyle(savedStyle);
     }
 
     // ---- 12.8: the checkmated king falls over ----
@@ -3629,6 +3729,12 @@ public class ViewTest : ChessTest {
 
     // Whether exactly count of the pieces are pickups for the local player, all of them on the board.
     void CheckPickupable(int count, string name) {
+        CheckPickupableOff(count, 0, name);
+    }
+
+    // Whether exactly count of the pieces are pickups for the local player, off of them off the board (captured
+    // pieces in replay, step 13.4).
+    void CheckPickupableOff(int count, int off, string name) {
         int pickupable = 0;
         int offBoard = 0;
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
@@ -3636,8 +3742,17 @@ public class ViewTest : ChessTest {
             pickupable++;
             if (view.objectSquare[obj] == ChessRules.NoSquare) offBoard++;
         }
-        Check(pickupable == count && offBoard == 0, name + ": " + count + " pickupable",
+        Check(pickupable == count && offBoard == off, name + ": " + count + " pickupable, " + off + " off the board",
             pickupable + " pickupable, " + offBoard + " of them off the board");
+    }
+
+    // The object standing in color's captured place (NoObject for none).
+    int PlaceObject(int color, int place) {
+        int first = color == ChessRules.White ? 0 : ChessBoardView.PiecesPerColor;
+        for (int obj = first; obj < first + ChessBoardView.PiecesPerColor; obj++) {
+            if (view.objectSquare[obj] == ChessRules.NoSquare && view.objectPlace[obj] == place) return obj;
+        }
+        return ChessBoardView.NoObject;
     }
 
     // Whether a piece's OnOwnershipRequest gives the local player ownership exactly when the board lets them touch

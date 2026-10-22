@@ -182,10 +182,10 @@ namespace SiggiChessBoard {
         // the next placing, as after a set change).
         int[] objectMeshType = new int[PieceCount];
 
-        // The captured pieces of the position shown (CaptureOrder): each colour's piece types in place order
-        // (colour * MaxCaptured + place) and how many; the place each object off the board stands in (NoPlace for
-        // none: on the board, or hidden as not needed); and the places' targets that exist, in order, by colour.
-        public const int MaxCaptured = 64;
+        // The captured pieces of the position shown (ChessBoard.CapturedPieces): each colour's piece types in place
+        // order (colour * MaxCaptured + place) and how many; the place each object off the board stands in (NoPlace
+        // for none: on the board, or hidden as not needed); and the places' targets that exist, in order, by colour.
+        public const int MaxCaptured = ChessCaptures.MaxCaptured;
         public const int NoPlace = -1;
         [NonSerialized] public int[] capturedTypes = new int[2 * MaxCaptured];
         [NonSerialized] public int[] capturedCounts = new int[2];
@@ -248,8 +248,11 @@ namespace SiggiChessBoard {
         // The object the local player holds, picked up with the board's consent (NoObject for none), and the square it
         // was picked up from. It isn't placed while held; it's let go when the board stops showing it on that square or
         // the local player may no longer touch the pieces.
+        // A captured piece put back in replay (step 13.4) is picked up from its place: heldFrom is NoSquare and
+        // heldPlace its place (NoPlace for a piece from a square).
         [NonSerialized] public int heldObject = NoObject;
         [NonSerialized] public int heldFrom = ChessRules.NoSquare;
+        [NonSerialized] public int heldPlace = NoPlace;
         // A promotion waiting for its piece: the pawn's object, its from and to squares (NoObject when none). The pawn
         // stands on to meanwhile; ChoosePromotion plays it, and any change to the board (but activity) cancels it.
         [NonSerialized] public int promotionObject = NoObject;
@@ -257,9 +260,11 @@ namespace SiggiChessBoard {
         [NonSerialized] public int promotionTo = ChessRules.NoSquare;
         // Desktop mode: the object the local player has selected by clicking, with the board's consent (NoObject for
         // none), the square it was selected on and whether that was in replay. It stands lifted over its square until
-        // a click places it or puts it back, or the board changes so that it can no longer be picked up there.
+        // a click places it or puts it back, or the board changes so that it can no longer be picked up there. A
+        // captured piece (step 13.4) is selected in its place: selectedFrom NoSquare, selectedPlace its place.
         [NonSerialized] public int selectedObject = NoObject;
         [NonSerialized] public int selectedFrom = ChessRules.NoSquare;
+        [NonSerialized] public int selectedPlace = NoPlace;
         bool selectedInReplay;
         // The squares a click places the selected piece on: its legal moves' (a castle's rook square and, when the
         // king moves, its destination too), or in replay every other square.
@@ -560,21 +565,21 @@ namespace SiggiChessBoard {
             byte[] shown = replay ? board.replayBoard : board.board;
             // The captured pieces first, so the mapping takes pieces coming back to the board from the places that
             // empty.
-            CaptureOrder(board.board, board.SideToMove(), board.moveHistory, board.moveCount,
-                replay ? board.replayIndex : board.moveCount, replay && board.replayCustom ? board.replayBoard : null,
-                capturedTypes, capturedCounts);
+            board.CapturedPieces(capturedTypes, capturedCounts);
             CollectPlaceTargets();
             Reconcile(shown);
-            AssignPlaces();
             shownReplay = replay;
             shownPly = replay ? board.replayIndex : board.moveCount;
             shownCustom = replay && board.replayCustom;
             mappingStale = false;
-            // A held piece the board no longer shows where it was picked up is let go, and placed with the rest.
-            if (heldObject != NoObject && objectSquare[heldObject] != heldFrom) LetGo();
+            // A held piece the board no longer shows where it was picked up (its square, or for a captured piece its
+            // place, step 13.4) is let go, and placed with the rest. Before the places are handed out again, so a
+            // captured piece whose place has gone isn't given another meanwhile.
+            if (heldObject != NoObject && !StillOn(heldObject, heldFrom, heldPlace)) LetGo();
             // So does a selected piece that can no longer be picked up there; one that still can has its targets
             // worked out again, since the position may have changed (a takeback, another player's free move).
             CheckSelection();
+            AssignPlaces();
             if (selectedObject != NoObject) FindTargets(selectedFrom, selectedInReplay, selectedTargets, selectedMarks);
             bool animate = PlacingAnimates();
             UpdateFalls(animate);
@@ -646,23 +651,24 @@ namespace SiggiChessBoard {
         // ---- Input (docs/player-input.md) ----
 
         // A piece picked up by the local player (its ChessPiece's OnPickup): asks the board, and lets go of the piece
-        // when it says no; the board's rejection then puts it back. A promotion waiting for its piece is dropped.
+        // when it says no; the board's rejection then puts it back. A promotion waiting for its piece is dropped. A
+        // captured piece (a pickup only in replay, step 13.4) is asked about by its colour and type.
         public void OnPiecePickedUp(int obj) {
             if (obj < 0 || obj >= PieceCount) return;
             // The hand has it now, wherever it was going.
             StopAnimation(obj);
             ClearPromotion();
             heldObject = NoObject;
-            int square = objectSquare[obj];
-            if (Utilities.IsValid(board) && square != ChessRules.NoSquare
-                && board.PiecePickedUp(square) == ChessBoard.InputAccepted) {
+            if (Utilities.IsValid(board) && LiftAccepted(obj)) {
                 heldObject = obj;
-                heldFrom = square;
+                heldFrom = objectSquare[obj];
+                heldPlace = heldFrom == ChessRules.NoSquare ? objectPlace[obj] : NoPlace;
                 FindTargets(heldFrom, board.replayMode, heldTargets, heldMarks);
                 UpdateLiftedMarks();
                 return;
             }
-            // A piece off the board (never a pickup) is just put back; the board told its rejection itself.
+            // A piece the board refused (or hidden, never a pickup) is just put back; the board told its rejection
+            // itself.
             dirty = true;
             UpdateLiftedMarks();
             LetGoOf(obj);
@@ -671,7 +677,8 @@ namespace SiggiChessBoard {
         // A piece let go by the local player (its ChessPiece's OnDrop): forwards the drop on the square under its base
         // (off the board too, which the board rejects) if the board accepted its pickup; a king castles by being dropped
         // on its rook. A promotion waits for ChoosePromotion with the pawn standing on its square; anything else is placed
-        // from the board after its change, so a rejected drop goes back where it was.
+        // from the board after its change, so a rejected drop goes back where it was. A captured piece is put back on
+        // the square (PlaceCapturedObject), and goes back to its place dropped anywhere else.
         public void OnPieceDropped(int obj) {
             if (obj < 0 || obj >= PieceCount) return;
             dirty = true;
@@ -686,9 +693,45 @@ namespace SiggiChessBoard {
             UpdateLiftedMarks();
             int to = DropSquare(PieceBase(obj));
             int from = heldFrom;
-            if (board.PieceDropped(from, to) == ChessBoard.InputPromotionNeeded) {
+            if (from == ChessRules.NoSquare) {
+                PlaceCapturedObject(obj, to);
+            } else if (board.PieceDropped(from, to) == ChessBoard.InputPromotionNeeded) {
                 WaitForPromotion(obj, from, to);
             }
+        }
+
+        // Asks the board to let the local player lift obj: PiecePickedUp for a piece on a square, CapturedPickedUp
+        // for one in a captured place (step 13.4). Refused for a hidden object.
+        bool LiftAccepted(int obj) {
+            int square = objectSquare[obj];
+            if (square != ChessRules.NoSquare) return board.PiecePickedUp(square) == ChessBoard.InputAccepted;
+            if (!CapturedLiftable(obj)) return false;
+            return board.CapturedPickedUp(ObjectColor(obj), objectType[obj]) == ChessBoard.InputAccepted;
+        }
+
+        // Puts the captured piece obj back on square in replay (ChessBoard.PlaceCaptured; NoSquare, off the board, is
+        // refused and it goes back to its place). Accepted, obj is the object standing there from now on, rather than
+        // whichever free one the mapping would pick: the places are worked out from the position alone, so the place
+        // that empties is the last of its type, not necessarily obj's.
+        void PlaceCapturedObject(int obj, int square) {
+            if (board.PlaceCaptured(ObjectColor(obj), objectType[obj], square) != ChessBoard.InputAccepted) return;
+            Unmap(square);
+            Map(obj, square);
+        }
+
+        // Whether obj is a captured piece the local player could lift in replay (step 13.4), if they may touch the
+        // pieces: standing, shown, in a captured place it keeps, in the replay the mapping was last brought up to.
+        bool CapturedLiftable(int obj) {
+            return shownReplay && objectSquare[obj] == ChessRules.NoSquare && obj != promotionObject && KeepsPlace(obj)
+                && IsObjectShown(obj);
+        }
+
+        // Whether obj still stands where it was lifted from: on square from, or (from NoSquare) in the captured place
+        // place, which it still keeps, in replay.
+        bool StillOn(int obj, int from, int place) {
+            if (from != ChessRules.NoSquare) return objectSquare[obj] == from;
+            return Utilities.IsValid(board) && board.replayMode && objectSquare[obj] == ChessRules.NoSquare
+                && objectPlace[obj] == place && KeepsPlace(obj);
         }
 
         // A promotion ghost's answer (step 12.11): plays the waiting promotion with pieceType (ChessRules.Knight,
@@ -936,11 +979,16 @@ namespace SiggiChessBoard {
         // A click on a piece (its ChessPiece's Interact). With nothing selected it selects the piece; on the selected
         // piece it puts it back; on a square the selected piece can go to it places it there (a capture, or a castle on
         // its own rook; in replay, a free move onto the other colour); on another piece the board would let the player
-        // pick up it selects that one instead; anything else is a placing the board rejects, which puts it back.
+        // pick up it selects that one instead; anything else is a placing the board rejects, which puts it back. A
+        // captured piece in replay (step 13.4) is selected in its place, and put back there by a second click.
         public void OnPieceClicked(int obj) {
             if (obj < 0 || obj >= PieceCount || UsesPickups() || !Utilities.IsValid(board)) return;
             int square = objectSquare[obj];
-            if (square == ChessRules.NoSquare) return;
+            if (square == ChessRules.NoSquare) {
+                if (obj == selectedObject) Unselect();
+                else if (CapturedLiftable(obj)) Select(obj);
+                return;
+            }
             if (selectedObject == NoObject) {
                 Select(obj);
             } else if (obj == selectedObject) {
@@ -972,10 +1020,10 @@ namespace SiggiChessBoard {
         void Select(int obj) {
             ClearPromotion();
             ClearSelection();
-            int square = objectSquare[obj];
-            if (board.PiecePickedUp(square) == ChessBoard.InputAccepted) {
+            if (LiftAccepted(obj)) {
                 selectedObject = obj;
-                selectedFrom = square;
+                selectedFrom = objectSquare[obj];
+                selectedPlace = selectedFrom == ChessRules.NoSquare ? objectPlace[obj] : NoPlace;
                 selectedInReplay = board.replayMode;
                 FindTargets(selectedFrom, selectedInReplay, selectedTargets, selectedMarks);
                 dirty = true;
@@ -998,13 +1046,15 @@ namespace SiggiChessBoard {
 
         // Plays the selected piece's move to square: a promotion waits for ChoosePromotion as a dropped one does, with
         // the pawn standing on square; anything else is placed from the board after its change, so a rejected placing
-        // puts the piece back, unselected.
+        // puts the piece back, unselected. A captured piece is put back on square (PlaceCapturedObject).
         void Place(int square) {
             int obj = selectedObject;
             int from = selectedFrom;
             ClearSelection();
             UpdateLiftedMarks();
-            if (board.PieceDropped(from, square) == ChessBoard.InputPromotionNeeded) {
+            if (from == ChessRules.NoSquare) {
+                PlaceCapturedObject(obj, square);
+            } else if (board.PieceDropped(from, square) == ChessBoard.InputPromotionNeeded) {
                 WaitForPromotion(obj, from, square);
             }
             UpdateClickables();
@@ -1015,6 +1065,7 @@ namespace SiggiChessBoard {
             if (selectedObject == NoObject) return;
             selectedObject = NoObject;
             selectedFrom = ChessRules.NoSquare;
+            selectedPlace = NoPlace;
             for (int i = 0; i < 64; i++) {
                 selectedTargets[i] = false;
                 selectedMarks[i] = MarkNone;
@@ -1023,12 +1074,14 @@ namespace SiggiChessBoard {
         }
 
         // Puts a selected piece back down, unselected, once it can no longer be picked up where it was: the board
-        // changed (a reset, the game ending, replay entered or left, the piece's square taken, the turn passing), or
-        // the local player switched to pickups.
+        // changed (a reset, the game ending, replay entered or left, the piece's square taken, the turn passing; a
+        // captured piece's place gone, or touching the pieces no longer allowed), or the local player switched to
+        // pickups.
         void CheckSelection() {
             if (selectedObject == NoObject) return;
-            if (!UsesPickups() && Utilities.IsValid(board) && objectSquare[selectedObject] == selectedFrom
-                && board.replayMode == selectedInReplay && board.CanPickUp(selectedFrom)) {
+            if (!UsesPickups() && Utilities.IsValid(board) && board.replayMode == selectedInReplay
+                && StillOn(selectedObject, selectedFrom, selectedPlace)
+                && (selectedFrom != ChessRules.NoSquare ? board.CanPickUp(selectedFrom) : board.MayTouchPieces())) {
                 return;
             }
             ClearSelection();
@@ -1079,11 +1132,13 @@ namespace SiggiChessBoard {
         // Makes the pieces and squares click targets exactly where a click does something for the local player in
         // desktop mode, with interact text saying what: with nothing selected, the pieces the board would let them
         // pick up; with one selected, that piece and its square (put back), its targets (pieces to capture or castle
-        // with, squares to place on) and the other pieces they could select instead. Players using pickups get none, and
-        // nobody does while the promotion ghosts show.
+        // with, squares to place on) and the other pieces they could select instead. In replay, the captured pieces
+        // too (step 13.4: "Select", or "Put back" for the selected one). Players using pickups get none, and nobody
+        // does while the promotion ghosts show.
         // Called after every change, once a second and on every click.
         public void UpdateClickables() {
             bool clicks = !UsesPickups() && Utilities.IsValid(board) && promotionObject == NoObject;
+            bool capturedClicks = clicks && shownReplay && board.MayTouchPieces();
             for (int obj = 0; obj < PieceCount; obj++) {
                 ChessPiece behaviour = pieceBehaviours[obj];
                 if (!Utilities.IsValid(behaviour)) continue;
@@ -1097,6 +1152,8 @@ namespace SiggiChessBoard {
                     } else if (board.CanPickUp(square)) {
                         text = "Select";
                     }
+                } else if (capturedClicks && CapturedLiftable(obj)) {
+                    text = obj == selectedObject ? "Put back" : "Select";
                 }
                 bool clickable = text != null;
                 if (behaviour.DisableInteractive == clickable) behaviour.DisableInteractive = !clickable;
@@ -1155,8 +1212,9 @@ namespace SiggiChessBoard {
         }
 
         // Makes the pieces on the board pickups for the local player while they use pickups and may touch the pieces;
-        // pieces off the board never are, and none while the promotion ghosts show. Called after every change, once a
-        // second and when a promotion starts or stops waiting.
+        // pieces off the board only in replay, standing in their captured places (step 13.4: put back as free moves),
+        // and none while the promotion ghosts show. Called after every change, once a second and when a promotion
+        // starts or stops waiting.
         public void UpdatePickupable() {
             nextPickupCheck = Time.time + PickupCheckInterval;
             bool allowed = UsesPickups() && Utilities.IsValid(board) && board.MayTouchPieces()
@@ -1169,7 +1227,7 @@ namespace SiggiChessBoard {
             for (int obj = 0; obj < PieceCount; obj++) {
                 VRCPickup pickup = piecePickups[obj];
                 if (!Utilities.IsValid(pickup)) continue;
-                bool pickupable = allowed && objectSquare[obj] != ChessRules.NoSquare;
+                bool pickupable = allowed && (objectSquare[obj] != ChessRules.NoSquare || CapturedLiftable(obj));
                 if (pickup.pickupable != pickupable) pickup.pickupable = pickupable;
             }
             // Desktop mode's selection and click targets depend on the same things (and on whose turn it is).
@@ -1276,127 +1334,6 @@ namespace SiggiChessBoard {
         }
 
         // ---- Captured pieces (step 12.4, docs/physical-pieces.md) ----
-
-        // Fills captured (colour * MaxCaptured + place) with the piece types standing in each colour's captured-piece
-        // places, in place order, and counts with how many, for the position shown: the game's after ply of its
-        // moves, or custom (null for none), a replay position the free moves made from it. Everything comes from the
-        // game's board and history, which every client has, so every client, a late joiner too, shows the same
-        // places; no history is made up for a position without one. In order:
-        // - The pieces the starting position lacks (from a FEN), short of the standard set, in the fixed order
-        //   (PlaceOrderType); each piece beyond a type's standard count (a promotion the FEN doesn't record) counts
-        //   against the missing pawns. The starting counts are the game's board's with its moves undone.
-        // - The captures of the moves before ply. A promoted pawn is captured as a pawn; a piece whose promotion the
-        //   history can't show (an extra queen in the starting FEN) keeps its type.
-        // - For a custom position, the pieces of the ply's position missing from it (kings too), in the fixed order:
-        //   the free moves took them, whatever they were.
-        // gameBoard and sideToMove are the game's after its moveCount moves (whatever replay shows).
-        public static void CaptureOrder(byte[] gameBoard, int sideToMove, int[] moves, int moveCount, int ply,
-            byte[] custom, int[] captured, int[] counts) {
-            counts[ChessRules.White] = 0;
-            counts[ChessRules.Black] = 0;
-            if (gameBoard == null || moves == null) return;
-            if (moveCount > moves.Length) moveCount = moves.Length;
-            if (ply < 0) ply = 0;
-            if (ply > moveCount) ply = moveCount;
-            // Pieces per colour * 8 + type: the game's, then the starting position's (its moves undone).
-            int[] pieceCounts = new int[16];
-            for (int square = 0; square < 64; square++) {
-                int piece = gameBoard[square];
-                if (piece != ChessRules.Empty) pieceCounts[ChessRules.PieceColorOf(piece) * 8 + (piece & 7)]++;
-            }
-            for (int i = moveCount - 1; i >= 0; i--) {
-                int move = moves[i];
-                int mover = MoverAt(sideToMove, moveCount, i);
-                int capturedType = ChessRules.MoveIsCastle(move) ? ChessRules.NoPieceType : ChessRules.MoveCaptured(move);
-                if (capturedType != ChessRules.NoPieceType) pieceCounts[ChessRules.OtherColor(mover) * 8 + capturedType]++;
-                int promotion = ChessRules.MovePromotion(move);
-                if (promotion != ChessRules.NoPieceType) {
-                    pieceCounts[mover * 8 + promotion]--;
-                    pieceCounts[mover * 8 + ChessRules.Pawn]++;
-                }
-            }
-            for (int color = ChessRules.White; color <= ChessRules.Black; color++) {
-                int extra = 0;
-                for (int type = ChessRules.Knight; type <= ChessRules.Queen; type++) {
-                    int over = pieceCounts[color * 8 + type] - StandardCount(type);
-                    if (over > 0) extra += over;
-                }
-                for (int i = 0; i < 5; i++) {
-                    int type = PlaceOrderType(i);
-                    int missing = StandardCount(type) - pieceCounts[color * 8 + type];
-                    if (type == ChessRules.Pawn) missing -= extra;
-                    for (int n = 0; n < missing; n++) AddCaptured(captured, counts, color, type);
-                }
-            }
-            // The game's captures up to ply, following which pieces are promoted pawns, and the counts brought to ply.
-            bool[] promoted = new bool[64];
-            for (int i = 0; i < ply; i++) {
-                int move = moves[i];
-                int mover = MoverAt(sideToMove, moveCount, i);
-                int from = ChessRules.MoveFrom(move);
-                int to = ChessRules.MoveTo(move);
-                if (ChessRules.MoveIsCastle(move)) {
-                    promoted[from] = false;
-                    promoted[to] = false;
-                    continue;
-                }
-                int capturedType = ChessRules.MoveCaptured(move);
-                if (capturedType != ChessRules.NoPieceType) {
-                    int square = ChessRules.IsEnPassantCapture(move)
-                        ? ChessRules.SquareOf(ChessRules.FileOf(to), ChessRules.RankOf(from)) : to;
-                    int other = ChessRules.OtherColor(mover);
-                    AddCaptured(captured, counts, other, promoted[square] ? ChessRules.Pawn : capturedType);
-                    pieceCounts[other * 8 + capturedType]--;
-                    promoted[square] = false;
-                }
-                int promotion = ChessRules.MovePromotion(move);
-                if (promotion != ChessRules.NoPieceType) {
-                    pieceCounts[mover * 8 + ChessRules.Pawn]--;
-                    pieceCounts[mover * 8 + promotion]++;
-                }
-                promoted[to] = promoted[from] || promotion != ChessRules.NoPieceType;
-                promoted[from] = false;
-            }
-            if (custom == null) return;
-            // The free moves only move pieces and take them off, so each type has at most the ply's count.
-            int[] customCounts = new int[16];
-            for (int square = 0; square < 64; square++) {
-                int piece = custom[square];
-                if (piece != ChessRules.Empty) customCounts[ChessRules.PieceColorOf(piece) * 8 + (piece & 7)]++;
-            }
-            for (int color = ChessRules.White; color <= ChessRules.Black; color++) {
-                for (int i = 0; i < 6; i++) {
-                    int type = PlaceOrderType(i);
-                    int missing = pieceCounts[color * 8 + type] - customCounts[color * 8 + type];
-                    for (int n = 0; n < missing; n++) AddCaptured(captured, counts, color, type);
-                }
-            }
-        }
-
-        // The colour that played move i of a game of moveCount moves with sideToMove to move after them.
-        static int MoverAt(int sideToMove, int moveCount, int i) {
-            return ((moveCount - i) & 1) == 1 ? ChessRules.OtherColor(sideToMove) : sideToMove;
-        }
-
-        // The fixed order of pieces put in places without a capture to order them: queen, rook, bishop, knight, pawn,
-        // then king (only a free move takes one).
-        public static int PlaceOrderType(int i) {
-            if (i < 4) return ChessRules.Queen - i;
-            return i == 4 ? ChessRules.Pawn : ChessRules.King;
-        }
-
-        // How many of a piece type a side starts a standard game with.
-        public static int StandardCount(int type) {
-            if (type == ChessRules.Pawn) return 8;
-            if (type == ChessRules.Queen || type == ChessRules.King) return 1;
-            return 2;
-        }
-
-        static void AddCaptured(int[] captured, int[] counts, int color, int type) {
-            if (counts[color] >= MaxCaptured) return;
-            captured[color * MaxCaptured + counts[color]] = type;
-            counts[color]++;
-        }
 
         // The places' targets that exist (a world creator may delete some), in order, by colour.
         void CollectPlaceTargets() {

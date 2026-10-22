@@ -125,6 +125,9 @@ namespace SiggiChessBoard {
         [NonSerialized] public int replayIndex;
         [NonSerialized] public byte[] replayBoard = new byte[64];
         [NonSerialized] public bool replayCustom;
+        // Scratch for checking a captured piece put back (CanPlaceCapturedAs).
+        int[] capturedScratch = new int[2 * ChessCaptures.MaxCaptured];
+        int[] capturedCountScratch = new int[2];
 
         // Pending requests: a takeback (the requesting colour and the ply to continue from) and a draw offer (the
         // offering colour), ChessRules.NoColor for none.
@@ -2100,6 +2103,65 @@ namespace SiggiChessBoard {
             }
             replayBoard[to] = replayBoard[from];
             replayBoard[from] = ChessRules.Empty;
+            replayCustom = true;
+            takebackColor = ChessRules.NoColor;
+            takebackPly = 0;
+            NotifyChanged(ChangeFreeMove);
+            return InputAccepted;
+        }
+
+        // ---- Putting captured pieces back (step 13.4, docs/replay.md) ----
+        // In replay, a piece standing in a captured place beside the board can be put back on a square as a free
+        // move. The places are worked out from the position shown (CapturedPieces), so nothing about them is synced.
+
+        // Fills captured (colour * ChessCaptures.MaxCaptured + place) and counts with the piece types standing in each
+        // colour's captured places for the position shown (ChessCaptures.CaptureOrder): the game's, or in replay the
+        // ply shown, custom positions included.
+        public void CapturedPieces(int[] captured, int[] counts) {
+            ChessCaptures.CaptureOrder(board, state[ChessPosition.StateSideToMove], moveHistory, moveCount,
+                replayMode ? replayIndex : moveCount, replayMode && replayCustom ? replayBoard : null, captured, counts);
+        }
+
+        public bool CanPlaceCaptured(int color, int type) {
+            return CanPlaceCapturedAs(ChessUtil.LocalName(""), LocalIsOrganizer(), color, type);
+        }
+
+        // Whether name may pick up color's captured piece of type to put it back: in replay, name may touch the
+        // pieces (MayTouchPiecesAs, so whoever may make free moves), and the position shown has that type in that
+        // colour's captured places (a promoted pawn's place shows a pawn). Changes nothing and tells nobody.
+        public bool CanPlaceCapturedAs(string name, bool organizer, int color, int type) {
+            if (!replayMode || !MayTouchPiecesAs(name, organizer)) return false;
+            if (color != ChessRules.White && color != ChessRules.Black) return false;
+            CapturedPieces(capturedScratch, capturedCountScratch);
+            return ChessCaptures.HasCaptured(capturedScratch, capturedCountScratch, color, type);
+        }
+
+        public int CapturedPickedUp(int color, int type) {
+            return CapturedPickedUpAs(ChessUtil.LocalName(""), LocalIsOrganizer(), color, type);
+        }
+
+        // name picked up color's captured piece of type from its place: accepted when CanPlaceCapturedAs holds.
+        // Rejected, the view puts it back. A touch either way, like any piece input.
+        public int CapturedPickedUpAs(string name, bool organizer, int color, int type) {
+            TouchAs(name, organizer);
+            return NotifyIfRejected(CanPlaceCapturedAs(name, organizer, color, type) ? InputAccepted : InputRejected);
+        }
+
+        public int PlaceCaptured(int color, int type, int square) {
+            return PlaceCapturedAs(ChessUtil.LocalName(""), LocalIsOrganizer(), color, type, square);
+        }
+
+        // Puts color's captured piece of type on square of the replay board, replacing whatever stands there (it then
+        // goes to its own colour's places), as a free move: the position becomes custom, which cancels a pending
+        // takeback request, and the piece leaves its place (CaptureOrder takes it out of the last place of its type).
+        // Rejected unless CanPlaceCapturedAs holds, and for a square off the board (the view puts it back in its
+        // place).
+        public int PlaceCapturedAs(string name, bool organizer, int color, int type, int square) {
+            TouchAs(name, organizer);
+            if (square < 0 || square >= 64 || !CanPlaceCapturedAs(name, organizer, color, type)) {
+                return NotifyIfRejected(InputRejected);
+            }
+            replayBoard[square] = ChessRules.PieceOf(color, type);
             replayCustom = true;
             takebackColor = ChessRules.NoColor;
             takebackPly = 0;

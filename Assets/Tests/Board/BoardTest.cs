@@ -93,6 +93,7 @@ public class BoardTest : ChessTest {
         TestGameIds();
         TestPgnLog();
         TestReplay();
+        TestPlaceCaptured();
         TestTakeback();
         TestContinueAlone();
         TestLoadGame();
@@ -2957,6 +2958,177 @@ public class BoardTest : ChessTest {
         CheckString(GameText(), local, "local replay: the game as it was");
 
         board.ClearState();
+    }
+
+    // ---- 13.4 putting captured pieces back in replay ----
+
+    int[] capturedTypes = new int[2 * ChessCaptures.MaxCaptured];
+    int[] capturedCounts = new int[2];
+
+    void TestPlaceCaptured() {
+        NothingForced();
+        string c = "put back";
+        // 1. e4 d5 2. exd5 Qxd5 3. Nc3 Qxa2 4. Rxa2 b5 5. Nxb5: White has lost two pawns, Black a pawn, the queen
+        // and another pawn.
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        int[] gameFrom = { ChessRules.E2, ChessRules.D7, ChessRules.E4, ChessRules.D8, ChessRules.B1, ChessRules.D5,
+            ChessRules.A1, ChessRules.B7, ChessRules.C3 };
+        int[] gameTo = { ChessRules.E4, ChessRules.D5, ChessRules.D5, ChessRules.D5, ChessRules.C3, ChessRules.A2,
+            ChessRules.A2, ChessRules.B5, ChessRules.B5 };
+        for (int i = 0; i < gameFrom.Length; i++) {
+            Drop(i % 2 == 0 ? "Ana" : "Bob", gameFrom[i], gameTo[i], c + ": game");
+        }
+        string current = BoardText(board.board);
+        string game = GameText();
+        CheckCaptured("PP", "PQP", c + ": the game's places");
+
+        // Outside replay: refused.
+        Check(!board.CanPlaceCapturedAs("Ana", false, ChessRules.White, ChessRules.Pawn), c + ": not outside replay",
+            "allowed");
+        CheckInt(board.PlaceCapturedAs("Ana", false, ChessRules.White, ChessRules.Pawn, ChessRules.E2),
+            ChessBoard.InputRejected, c + ": no putting back outside replay");
+        CheckInt(board.CapturedPickedUpAs("Ana", false, ChessRules.White, ChessRules.Pawn), ChessBoard.InputRejected,
+            c + ": no pickup outside replay");
+        CheckString(BoardText(board.board), current, c + ": refused outside replay: the game untouched");
+
+        CheckInt(board.EnterReplayAs("Ana", false), ChessBoard.InputAccepted, c + ": replay entered");
+        CheckCaptured("PP", "PQP", c + ": replay, the last ply");
+        // Who may, and what: whoever may make free moves, for a type in that colour's places.
+        Check(board.CanPlaceCapturedAs("Ana", false, ChessRules.White, ChessRules.Pawn)
+            && board.CanPlaceCapturedAs("Bob", false, ChessRules.Black, ChessRules.Queen)
+            && board.CanPlaceCapturedAs("Ana", false, ChessRules.Black, ChessRules.Pawn), c + ": the players, either "
+            + "colour", "refused");
+        Check(board.CanPlaceCapturedAs("Cleo", true, ChessRules.White, ChessRules.Pawn), c + ": an organizer",
+            "refused");
+        Check(!board.CanPlaceCapturedAs("Cleo", false, ChessRules.White, ChessRules.Pawn), c + ": not a bystander",
+            "allowed");
+        Check(!board.CanPlaceCapturedAs("Ana", false, ChessRules.White, ChessRules.Queen)
+            && !board.CanPlaceCapturedAs("Ana", false, ChessRules.Black, ChessRules.Knight)
+            && !board.CanPlaceCapturedAs("Ana", false, ChessRules.NoColor, ChessRules.Pawn)
+            && !board.CanPlaceCapturedAs("Ana", false, 2, ChessRules.Pawn), c + ": not a type not captured, nor no colour",
+            "allowed");
+        CheckInt(board.CapturedPickedUpAs("Bob", false, ChessRules.Black, ChessRules.Queen), ChessBoard.InputAccepted,
+            c + ": the queen picked up");
+        CheckInt(board.CapturedPickedUpAs("Cleo", false, ChessRules.Black, ChessRules.Queen), ChessBoard.InputRejected,
+            c + ": no pickup by a bystander");
+        CheckInt(board.CapturedPickedUpAs("Bob", false, ChessRules.White, ChessRules.Rook), ChessBoard.InputRejected,
+            c + ": no pickup of a type not captured");
+        CheckInt(board.PlaceCapturedAs("Cleo", false, ChessRules.Black, ChessRules.Queen, ChessRules.D8),
+            ChessBoard.InputRejected, c + ": not by a bystander");
+        CheckInt(board.PlaceCapturedAs("Bob", false, ChessRules.White, ChessRules.Knight, ChessRules.B1),
+            ChessBoard.InputRejected, c + ": not a type not captured");
+        CheckInt(board.PlaceCapturedAs("Bob", false, ChessRules.Black, ChessRules.Queen, -1), ChessBoard.InputRejected,
+            c + ": not off the board");
+        CheckInt(board.PlaceCapturedAs("Bob", false, ChessRules.Black, ChessRules.Queen, 64), ChessBoard.InputRejected,
+            c + ": not past the board");
+        Check(!board.replayCustom, c + ": refused ones change nothing", "custom");
+        CheckShows(9, current, c + ": refused ones leave the replay board");
+
+        // Onto an empty square: the piece stands there, out of the last place of its type, and the position is custom.
+        CheckInt(board.PlaceCapturedAs("Bob", false, ChessRules.Black, ChessRules.Pawn, ChessRules.D7),
+            ChessBoard.InputAccepted, c + ": a pawn back on d7");
+        CheckInt(board.replayBoard[ChessRules.D7], ChessRules.PieceOf(ChessRules.Black, ChessRules.Pawn),
+            c + ": a pawn on d7");
+        Check(board.replayCustom, c + ": custom", "not custom");
+        CheckInt(board.replayIndex, 9, c + ": the replay index stays");
+        CheckInt(board.lastChange, ChessBoard.ChangeFreeMove, c + ": told as a free move");
+        CheckCaptured("PP", "PQ", c + ": the pawn out of the last pawn place");
+        CheckInt(board.PlaceCapturedAs("Bob", false, ChessRules.Black, ChessRules.Queen, ChessRules.D8),
+            ChessBoard.InputAccepted, c + ": the queen back on d8");
+        CheckInt(board.replayBoard[ChessRules.D8], ChessRules.PieceOf(ChessRules.Black, ChessRules.Queen),
+            c + ": the queen on d8");
+        CheckCaptured("PP", "P", c + ": the queen out of her place");
+        Check(!board.CanPlaceCapturedAs("Bob", false, ChessRules.Black, ChessRules.Queen), c + ": the queen can't be put "
+            + "back twice", "allowed");
+        CheckString(GameText(), game, c + ": the game untouched");
+
+        // Free moves take Black's pieces of every other type, which then go back, each onto an occupied square or an
+        // empty one; the king last in the places, though taken first.
+        Drop("Ana", ChessRules.D1, ChessRules.E8, c + ": Qd1 takes the king");
+        Drop("Ana", ChessRules.E8, ChessRules.C8, c + ": the queen takes the bishop");
+        Drop("Ana", ChessRules.C8, ChessRules.B8, c + ": the queen takes the knight");
+        Drop("Ana", ChessRules.B8, ChessRules.A8, c + ": the queen takes the rook");
+        Drop("Ana", ChessRules.A8, ChessRules.C7, c + ": the queen takes the c pawn");
+        CheckCaptured("PP", "PPRBNK", c + ": free moves");
+        CheckInt(board.PlaceCapturedAs("Ana", false, ChessRules.Black, ChessRules.King, ChessRules.C7),
+            ChessBoard.InputAccepted, c + ": the king back on c7, taking the white queen");
+        CheckInt(board.replayBoard[ChessRules.C7], ChessRules.BlackKing, c + ": the king on c7");
+        CheckCaptured("PPQ", "PPRBN", c + ": the white queen in White's places");
+        CheckInt(board.PlaceCapturedAs("Bob", false, ChessRules.Black, ChessRules.Rook, ChessRules.A8),
+            ChessBoard.InputAccepted, c + ": the rook back on a8");
+        CheckInt(board.PlaceCapturedAs("Bob", false, ChessRules.Black, ChessRules.Bishop, ChessRules.C8),
+            ChessBoard.InputAccepted, c + ": the bishop back on c8");
+        CheckInt(board.PlaceCapturedAs("Bob", false, ChessRules.Black, ChessRules.Knight, ChessRules.B8),
+            ChessBoard.InputAccepted, c + ": the knight back on b8");
+        CheckCaptured("PPQ", "PP", c + ": Black's pieces back");
+        CheckInt(board.PlaceCapturedAs("Ana", false, ChessRules.White, ChessRules.Queen, ChessRules.D1),
+            ChessBoard.InputAccepted, c + ": the white queen back on d1");
+        CheckInt(board.PlaceCapturedAs("Ana", false, ChessRules.White, ChessRules.Pawn, ChessRules.A2),
+            ChessBoard.InputAccepted, c + ": a white pawn back on a2, taking the rook");
+        CheckCaptured("PR", "PP", c + ": the rook in a place, a pawn out of one");
+        CheckInt(board.PlaceCapturedAs("Cleo", true, ChessRules.White, ChessRules.Rook, ChessRules.A1),
+            ChessBoard.InputAccepted, c + ": the rook back on a1, by an organizer");
+        CheckInt(board.PlaceCapturedAs("Ana", false, ChessRules.White, ChessRules.Pawn, ChessRules.E2),
+            ChessBoard.InputAccepted, c + ": the other white pawn back on e2");
+        CheckInt(board.PlaceCapturedAs("Bob", false, ChessRules.Black, ChessRules.Pawn, ChessRules.H6),
+            ChessBoard.InputAccepted, c + ": a black pawn back on h6");
+        CheckInt(board.PlaceCapturedAs("Bob", false, ChessRules.Black, ChessRules.Pawn, ChessRules.H5),
+            ChessBoard.InputAccepted, c + ": the last black pawn back, on h5");
+        CheckCaptured("", "", c + ": every place empty");
+        CheckInt(board.PlaceCapturedAs("Bob", false, ChessRules.Black, ChessRules.Pawn, ChessRules.H4),
+            ChessBoard.InputRejected, c + ": nothing left to put back");
+        CheckString(GameText(), game, c + ": the game still untouched");
+
+        // A takeback request is cancelled by putting a piece back, as by any free move.
+        board.gameSettings = ChessArbiter.SettingTakebacks;
+        CheckInt(board.StepToAs("Ana", false, 5), ChessBoard.InputAccepted, c + ": stepped to Nc3");
+        CheckInt(board.RequestTakebackAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, c + ": takeback asked");
+        CheckInt(board.PlaceCapturedAs("Bob", false, ChessRules.Black, ChessRules.Pawn, ChessRules.D7),
+            ChessBoard.InputAccepted, c + ": a pawn back on d7 at Nc3");
+        CheckInt(board.takebackColor, ChessRules.NoColor, c + ": the takeback request cancelled");
+        board.gameSettings = 0;
+
+        // Stepping to a game ply shows the game's position and places again.
+        CheckInt(board.StepToAs("Ana", false, 9), ChessBoard.InputAccepted, c + ": stepped to the last ply");
+        CheckShows(9, current, c + ": the game's position again");
+        CheckCaptured("PP", "PQP", c + ": the game's places again");
+
+        // A promoted pawn captured stands in its place as a pawn, and goes back as one.
+        board.ClearState();
+        StartedGame(ChessArbiter.NoClock, 0, 0);
+        int[] from = { ChessRules.A2, ChessRules.B7, ChessRules.A4, ChessRules.A7, ChessRules.B5, ChessRules.C8,
+            ChessRules.A6, ChessRules.B8 };
+        int[] to = { ChessRules.A4, ChessRules.B5, ChessRules.B5, ChessRules.A6, ChessRules.A6, ChessRules.B7,
+            ChessRules.B7, ChessRules.C6 };
+        for (int i = 0; i < from.Length; i++) Drop(i % 2 == 0 ? "Ana" : "Bob", from[i], to[i], c + ": promotion game");
+        CheckInt(board.PieceDroppedAs("Ana", ChessRules.B7, ChessRules.A8), ChessBoard.InputPromotionNeeded,
+            c + ": bxa8 asks for a piece");
+        CheckInt(board.PromotionChosenAs("Ana", ChessRules.B7, ChessRules.A8, ChessRules.Queen), ChessBoard.InputAccepted,
+            c + ": bxa8=Q");
+        Drop("Bob", ChessRules.D8, ChessRules.A8, c + ": Qxa8");
+        CheckCaptured("P", "PPBR", c + ": the promoted queen in its place as a pawn");
+        CheckInt(board.EnterReplayAs("Ana", false), ChessBoard.InputAccepted, c + ": promotion game: replay");
+        Check(!board.CanPlaceCapturedAs("Ana", false, ChessRules.White, ChessRules.Queen), c + ": not as a queen",
+            "allowed");
+        CheckInt(board.PlaceCapturedAs("Ana", false, ChessRules.White, ChessRules.Pawn, ChessRules.A2),
+            ChessBoard.InputAccepted, c + ": the promoted pawn back on a2");
+        CheckInt(board.replayBoard[ChessRules.A2], ChessRules.WhitePawn, c + ": a pawn on a2");
+        CheckCaptured("", "PPBR", c + ": the promoted pawn out of its place");
+
+        board.ClearState();
+    }
+
+    // Whether each colour's captured places in the position shown are expected (piece letters in place order).
+    void CheckCaptured(string white, string black, string name) {
+        board.CapturedPieces(capturedTypes, capturedCounts);
+        for (int color = ChessRules.White; color <= ChessRules.Black; color++) {
+            string text = "";
+            for (int place = 0; place < capturedCounts[color]; place++) {
+                text += ChessRules.PieceTypeLetter(capturedTypes[color * ChessCaptures.MaxCaptured + place]);
+            }
+            CheckString(text, color == ChessRules.White ? white : black,
+                name + ": " + (color == ChessRules.White ? "White's" : "Black's") + " places");
+        }
     }
 
     // ---- 7.8b takebacks ----
