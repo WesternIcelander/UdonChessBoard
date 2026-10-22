@@ -55,6 +55,9 @@ namespace SiggiChessBoard {
         // rejected), sent so every client sees the board isn't idle (docs/inactivity.md). Never told to the toucher's
         // own listeners.
         public const int ChangeActivity = 16;
+        // A seat left before a game started (step 13.1). A lobby whose last seat is left is reset with it, and that
+        // too is told as ChangeLeft, not ChangeReset.
+        public const int ChangeLeft = 17;
 
         // A touch that changes nothing is sent at most once in this many seconds (docs/inactivity.md), so players
         // fidgeting with pieces don't send the board's whole state every frame.
@@ -814,7 +817,7 @@ namespace SiggiChessBoard {
 
         // Seats the player with this display name as color. Allowed on a reset board, which then enters the lobby, in
         // the lobby, and on a loaded board, which stays loaded; not once a game has started. A seat taken by someone
-        // else can't be joined (there's no leaving a seat but a reset); names are compared exactly. Joining a seat
+        // else can't be joined (only its player can leave it, LeaveSeatAs); names are compared exactly. Joining a seat
         // you already have changes nothing. Public for tests and the debug view; the buttons use JoinWhite/JoinBlack.
         public int JoinAs(int color, string name) {
             if (!CanJoinAs(color, name)) return IsSeated(color, name) && SeatsOpen() ? InputAccepted : InputRejected;
@@ -844,6 +847,36 @@ namespace SiggiChessBoard {
         // Seats can be joined until a game starts: on a reset board, in the lobby and on a loaded board.
         bool SeatsOpen() {
             return lifecycle == LifecycleReset || lifecycle == LifecycleLobby || lifecycle == LifecycleLoaded;
+        }
+
+        // The Leave buttons (step 13.1), for the local player: one per seat, so a player in both seats leaves one at
+        // a time.
+        public int LeaveSeat(int color) {
+            return LeaveSeatAs(color, ChessUtil.LocalName(""));
+        }
+
+        // Empties the seat of color held by the player with this display name, before a game has started: in the
+        // lobby and on a loaded board. Nothing is logged, since no game was played. A lobby whose last seat is
+        // emptied goes back to reset (its snapshot dropped, as if nobody had joined); a loaded board stays loaded.
+        // Nobody can empty someone else's seat, organizers included: they reset the board instead.
+        public int LeaveSeatAs(int color, string name) {
+            if (!CanLeaveSeatAs(color, name)) return InputRejected;
+            if (color == ChessRules.White) whitePlayer = "";
+            else blackPlayer = "";
+            if (lifecycle == LifecycleLobby && whitePlayer.Length == 0 && blackPlayer.Length == 0) ClearState();
+            NotifyChanged(ChangeLeft);
+            return InputAccepted;
+        }
+
+        public bool CanLeaveSeat(int color) {
+            return CanLeaveSeatAs(color, ChessUtil.LocalName(""));
+        }
+
+        // Whether the Leave button of color applies to name: name holds that seat, and no game has started (the lobby
+        // or a loaded board). Once a game has started, a reset is the only way out.
+        public bool CanLeaveSeatAs(int color, string name) {
+            if (lifecycle != LifecycleLobby && lifecycle != LifecycleLoaded) return false;
+            return IsSeated(color, name);
         }
 
         // Whether this display name has the seat of color.

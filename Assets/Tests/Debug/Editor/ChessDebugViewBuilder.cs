@@ -24,8 +24,8 @@ public static class ChessDebugViewBuilder {
 
     // Button label and the ChessDebugView method it calls, in rows of ButtonColumns.
     static readonly string[,] Buttons = {
-        { "Join White", "JoinWhite" }, { "Join Black", "JoinBlack" }, { "Mode", "ToggleMode" },
-        { "Clock", "CycleClock" }, { "Start", "StartGame" }, { "Reset", "ResetBoard" },
+        { "Join White", "JoinWhite" }, { "Join Black", "JoinBlack" }, { "Leave White", "LeaveWhite" },
+        { "Leave Black", "LeaveBlack" }, { "Mode", "ToggleMode" }, { "Clock", "CycleClock" }, { "Start", "StartGame" }, { "Reset", "ResetBoard" },
         { "Fool's mate move", "PlayFoolsMate" }, { "Knight shuffle move", "PlayKnightShuffle" },
         { "Random move", "PlayRandom" }, { "Resign", "Resign" }, { "Offer draw", "OfferDraw" },
         { "Accept draw", "AcceptDraw" }, { "Decline draw", "DeclineDraw" }, { "Claim draw", "ClaimDraw" },

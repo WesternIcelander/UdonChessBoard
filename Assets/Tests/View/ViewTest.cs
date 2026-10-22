@@ -683,7 +683,7 @@ public class ViewTest : ChessTest {
         "OfferDrawWhite", "OfferDrawBlack", "AcceptDrawWhite", "AcceptDrawBlack", "DeclineDrawWhite", "DeclineDrawBlack",
         "ClaimDraw", "Replay", "Leave", "First", "Back", "Forward", "Last", "TakebackWhite", "TakebackBlack",
         "AcceptTakebackWhite", "AcceptTakebackBlack", "DeclineTakebackWhite", "DeclineTakebackBlack", "LoadHere",
-        "Pgn", "LoadPgn",
+        "Pgn", "LoadPgn", "LeaveWhite", "LeaveBlack",
     };
 
     // The eighth frame: every action has its buttons, each with a label; in each state (a reset board, the local
@@ -720,7 +720,7 @@ public class ViewTest : ChessTest {
         ui.PressJoinWhite();
         CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "Join White: in the lobby");
         CheckString(board.whitePlayer, localName, "Join White: seated as White");
-        CheckButtons("JoinBlack Mode Clock Reset", "lobby, White joined");
+        CheckButtons("JoinBlack LeaveWhite Mode Clock Reset", "lobby, White joined");
         CheckInt(ui.PressButton(ChessBoardUI.ButtonStart), ChessBoard.InputRejected,
             "lobby, White joined: Start refused");
         if (!board.IsModeForced()) {
@@ -742,7 +742,13 @@ public class ViewTest : ChessTest {
         }
         ui.PressJoinBlack();
         CheckString(board.blackPlayer, localName, "Join Black: seated as Black too");
-        CheckButtons("Mode Clock Start Reset", "lobby, both seats");
+        CheckButtons("LeaveWhite LeaveBlack Mode Clock Start Reset", "lobby, both seats");
+        CheckLeaveEnds();
+        CheckInt(ui.PressButton(ChessBoardUI.ButtonLeaveBlack), ChessBoard.InputAccepted, "Leave Black pressed");
+        CheckString(board.whitePlayer + "|" + board.blackPlayer, localName + "|", "Leave Black: White kept");
+        CheckButtons("JoinBlack LeaveWhite Mode Clock Reset", "lobby, Black left");
+        ui.PressJoinBlack();
+        CheckString(board.blackPlayer, localName, "Join Black again after leaving");
         int baseTime = board.baseTime;
         ui.PressStart();
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Start: in game");
@@ -750,6 +756,7 @@ public class ViewTest : ChessTest {
         CheckButtons(OwnGame, "own game");
         CheckInt(ui.PressButton(ChessBoardUI.ButtonJoinWhite), ChessBoard.InputRejected,
             "own game: Join White refused");
+        CheckRefused(ChessBoardUI.ButtonLeaveWhite, "own game");
         CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, "own game: resigned");
         CheckButtons("Replay Reset", "own game ended");
         ui.PressReset();
@@ -779,12 +786,18 @@ public class ViewTest : ChessTest {
             CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, "loaded game: loaded");
             CheckButtons("JoinWhite JoinBlack First Back Reset?", "loaded game");
             ui.PressJoinWhite();
-            CheckButtons("JoinBlack Clock First Back Reset", "loaded game, White joined");
+            CheckButtons("JoinBlack LeaveWhite Clock First Back Reset", "loaded game, White joined");
             CheckInt(ui.PressButton(ChessBoardUI.ButtonContinue), ChessBoard.InputRejected,
                 "loaded game, White joined: Continue refused");
             ui.PressJoinBlack();
             CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "loaded game, both seats: still loaded");
-            CheckButtons("Clock Continue First Back Reset", "loaded game, both seats");
+            CheckButtons("LeaveWhite LeaveBlack Clock Continue First Back Reset", "loaded game, both seats");
+            CheckInt(ui.PressButton(ChessBoardUI.ButtonLeaveWhite), ChessBoard.InputAccepted,
+                "loaded game: Leave White pressed");
+            CheckString(board.whitePlayer + "|" + board.blackPlayer, "|" + localName, "loaded game: White left");
+            CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "loaded game, White left: still loaded");
+            CheckButtons("JoinWhite LeaveBlack Clock First Back Reset", "loaded game, White left");
+            ui.PressJoinWhite();
             CheckInt(ui.PressButton(ChessBoardUI.ButtonMode), ChessBoard.InputRejected,
                 "loaded game: Mode refused");
             if (!board.IsClockForced()) {
@@ -794,7 +807,8 @@ public class ViewTest : ChessTest {
                     board.increment), "loaded game: Clock pressed");
             }
             CheckInt(board.StepToAs(localName, true, 3), ChessBoard.InputAccepted, "loaded game: stepped to ply 3");
-            CheckButtons("Clock Continue First Back Forward Last Reset", "loaded game at ply 3");
+            CheckButtons("LeaveWhite LeaveBlack Clock Continue First Back Forward Last Reset",
+                "loaded game at ply 3");
             ui.PressContinue();
             CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Continue: in game");
             CheckInt(board.moveCount, 3, "Continue: from ply 3");
@@ -3412,6 +3426,22 @@ public class ViewTest : ChessTest {
             }
         }
         Check(errors.Length == 0, name + ": buttons shown " + expected, errors);
+    }
+
+    // Each Leave button (13.1) stands at its own seat's end: White's at -z in the UI's local space, Black's at +z.
+    void CheckLeaveEnds() {
+        string errors = "";
+        int found = 0;
+        for (int i = 0; i < ui.buttons.Length && i < ui.buttonActions.Length; i++) {
+            int action = ui.buttonActions[i];
+            if (action != ChessBoardUI.ButtonLeaveWhite && action != ChessBoardUI.ButtonLeaveBlack) continue;
+            if (!Utilities.IsValid(ui.buttons[i])) continue;
+            found++;
+            float z = ui.transform.InverseTransformPoint(ui.buttons[i].transform.position).z;
+            bool white = action == ChessBoardUI.ButtonLeaveWhite;
+            if (white != (z < 0)) errors += buttonNames[action] + " at z " + z + "; ";
+        }
+        Check(found == 2 && errors.Length == 0, "Leave buttons: one at each seat's end", found + " found; " + errors);
     }
 
     // Every button for action is shown and labelled text.

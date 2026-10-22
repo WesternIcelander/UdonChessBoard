@@ -65,6 +65,7 @@ public class BoardTest : ChessTest {
         TestSeatTaken();
         TestJoinInvalid();
         TestJoinByLifecycle();
+        TestLeaveSeat();
         TestSetMode();
         TestSetClock();
         TestForcedSettings();
@@ -244,6 +245,89 @@ public class BoardTest : ChessTest {
         CheckInt(board.JoinAs(ChessRules.Black, "Ana"), ChessBoard.InputAccepted, "loaded: join black accepted");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "loaded: stays loaded");
         CheckSeats(localName, "Ana", "loaded");
+    }
+
+    // ---- 13.1 leaving a seat before the game starts ----
+
+    void TestLeaveSeat() {
+        // The lobby: leaving one seat keeps the other, and the emptied seat can be joined again.
+        LobbyWithTwoPlayers();
+        Check(board.CanLeaveSeatAs(ChessRules.White, "Ana"), "leave: Ana may leave White in the lobby", "can't");
+        Check(!board.CanLeaveSeatAs(ChessRules.Black, "Ana"), "leave: Ana may not leave Bob's seat", "can");
+        Check(!board.CanLeaveSeatAs(ChessRules.White, "Ana "), "leave: names compared exactly", "a lookalike can");
+        CheckInt(board.LeaveSeatAs(ChessRules.Black, "Ana"), ChessBoard.InputRejected,
+            "leave: someone else's seat refused");
+        CheckInt(board.LeaveSeatAs(ChessRules.NoColor, "Ana"), ChessBoard.InputRejected, "leave: no colour refused");
+        CheckSeats("Ana", "Bob", "leave: refused leaves change nothing");
+        CheckInt(board.LeaveSeatAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "leave: Ana leaves White");
+        CheckSeats("", "Bob", "leave: White emptied");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "leave: still the lobby with Bob seated");
+        CheckInt(board.lastChange, ChessBoard.ChangeLeft, "leave: told as ChangeLeft");
+        CheckInt(board.LeaveSeatAs(ChessRules.White, "Ana"), ChessBoard.InputRejected,
+            "leave: a seat nobody holds refused");
+        CheckInt(board.JoinAs(ChessRules.White, "Cleo"), ChessBoard.InputAccepted,
+            "leave: Cleo joins the emptied seat");
+        CheckSeats("Cleo", "Bob", "leave: White joined again");
+
+        // The same player in both seats leaves one at a time; the lobby's last seat emptied resets the board.
+        board.ClearState();
+        board.JoinAs(ChessRules.White, "Ana");
+        board.JoinAs(ChessRules.Black, "Ana");
+        CheckInt(board.LeaveSeatAs(ChessRules.Black, "Ana"), ChessBoard.InputAccepted, "leave: Ana leaves Black");
+        CheckSeats("Ana", "", "leave: Ana keeps White");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "leave: one seat left, still the lobby");
+        CheckInt(board.LeaveSeatAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "leave: Ana leaves White too");
+        CheckSeats("", "", "leave: lobby emptied");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleReset, "leave: an emptied lobby is reset");
+        CheckInt(board.lastChange, ChessBoard.ChangeLeft, "leave: the emptied lobby told as ChangeLeft");
+        string numbers = "";
+        for (int i = 0; i < board.gameNumbers.Length; i++) numbers += board.gameNumbers[i] != 0 ? i + " " : "";
+        Check(board.gameSettings == 0 && numbers.Length == 0, "leave: the emptied lobby's snapshot dropped",
+            "settings " + board.gameSettings + ", numbers set: " + numbers);
+        CheckInt(board.LeaveSeatAs(ChessRules.White, "Ana"), ChessBoard.InputRejected,
+            "leave: refused on a reset board");
+        Check(!board.CanLeaveSeatAs(ChessRules.White, "Ana") && !board.CanLeaveSeatAs(ChessRules.Black, "Ana"),
+            "leave: nothing to leave on a reset board", "can");
+
+        // In game and once ended: no leaving, a reset is the way out.
+        LobbyWithTwoPlayers();
+        CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, "leave: game started");
+        Check(!board.CanLeaveSeatAs(ChessRules.White, "Ana"), "leave: Ana can't leave in game", "can");
+        CheckInt(board.LeaveSeatAs(ChessRules.White, "Ana"), ChessBoard.InputRejected, "leave: refused in game");
+        CheckInt(board.LeaveSeatAs(ChessRules.Black, "Bob"), ChessBoard.InputRejected, "leave: Bob refused in game");
+        CheckSeats("Ana", "Bob", "leave: in game, seats kept");
+        CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "leave: Ana resigned");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "leave: the game ended");
+        Check(!board.CanLeaveSeatAs(ChessRules.Black, "Bob"), "leave: Bob can't leave once ended", "can");
+        CheckInt(board.LeaveSeatAs(ChessRules.Black, "Bob"), ChessBoard.InputRejected, "leave: refused once ended");
+        CheckSeats("Ana", "Bob", "leave: ended, seats kept");
+
+        // A loaded board: leaving keeps the game loaded, even with both seats emptied.
+        if (!Utilities.IsValid(importer) || siggiVsNuka == null) {
+            Check(false, "leave: importer and Siggi-vs-Nuka assigned", "assign them in the Inspector");
+            board.ClearState();
+            return;
+        }
+        LoadText(siggiVsNuka.text, "leave: loaded game");
+        CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "leave: Ana joins the loaded game");
+        CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "leave: Bob joins the loaded game");
+        Check(board.CanLeaveSeatAs(ChessRules.White, "Ana"), "leave: Ana may leave a loaded board", "can't");
+        CheckInt(board.LeaveSeatAs(ChessRules.Black, "Ana"), ChessBoard.InputRejected,
+            "leave: loaded, someone else's seat refused");
+        CheckInt(board.LeaveSeatAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "leave: Ana leaves, loaded");
+        CheckSeats("", "Bob", "leave: loaded, White emptied");
+        CheckInt(board.JoinAs(ChessRules.White, "Cleo"), ChessBoard.InputAccepted, "leave: loaded, Cleo joins White");
+        CheckInt(board.LeaveSeatAs(ChessRules.White, "Cleo"), ChessBoard.InputAccepted, "leave: Cleo leaves");
+        CheckInt(board.LeaveSeatAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "leave: Bob leaves");
+        CheckSeats("", "", "leave: loaded board emptied");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "leave: an emptied loaded board stays loaded");
+        Check(board.replayMode, "leave: emptied loaded board still in replay", "not in replay");
+        CheckInt(board.moveCount, 54, "leave: emptied loaded board keeps its game");
+        CheckString(board.gameId, "20250710001921", "leave: emptied loaded board keeps its game ID");
+        CheckInt(board.lastChange, ChessBoard.ChangeLeft, "leave: loaded, told as ChangeLeft");
+        CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted,
+            "leave: the emptied loaded board can be joined");
+        board.ClearState();
     }
 
     // ---- 7.1b ----

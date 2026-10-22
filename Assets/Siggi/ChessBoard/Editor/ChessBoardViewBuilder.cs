@@ -804,13 +804,15 @@ public static class ChessBoardViewBuilder {
         "PressLeaveReplay", "PressStepFirst", "PressStepBack", "PressStepForward", "PressStepLast",
         "PressRequestTakebackWhite", "PressRequestTakebackBlack", "PressAcceptTakebackWhite",
         "PressAcceptTakebackBlack", "PressDeclineTakebackWhite", "PressDeclineTakebackBlack", "PressLoadHere",
-        "PressPgn", "PressLoadPgn",
+        "PressPgn", "PressLoadPgn", "PressLeaveWhite", "PressLeaveBlack",
     };
     // The order of the buttons on a panel (the grid packs the shown ones in this order): the lobby's, replay's and
     // the game's, Reset last. Each panel leaves out the other colour's. Load it here (step 10.2b) and Load PGN (step
-    // 11.2b) show only on a reset board, with the Join buttons. PGN (step 11.2a) comes just before Reset.
+    // 11.2b) show only on a reset board, with the Join buttons. PGN (step 11.2a) comes just before Reset. Leave (step
+    // 13.1) follows Join, in the lobby and on a loaded board.
     static readonly int[] ButtonOrder = {
-        ChessBoardUI.ButtonJoinWhite, ChessBoardUI.ButtonJoinBlack, ChessBoardUI.ButtonLoadHere,
+        ChessBoardUI.ButtonJoinWhite, ChessBoardUI.ButtonJoinBlack, ChessBoardUI.ButtonLeaveWhite,
+        ChessBoardUI.ButtonLeaveBlack, ChessBoardUI.ButtonLoadHere,
         ChessBoardUI.ButtonLoadPgn,
         ChessBoardUI.ButtonMode, ChessBoardUI.ButtonClock, ChessBoardUI.ButtonStart, ChessBoardUI.ButtonContinue,
         ChessBoardUI.ButtonEnterReplay, ChessBoardUI.ButtonLeaveReplay, ChessBoardUI.ButtonStepFirst,

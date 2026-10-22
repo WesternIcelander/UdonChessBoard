@@ -57,7 +57,10 @@ namespace SiggiChessBoard {
         public const int ButtonPgn = 29;
         // Step 11.2b: opens the PGN box to paste a PGN into and import it, on a reset board.
         public const int ButtonLoadPgn = 30;
-        public const int ButtonCount = 31;
+        // Step 13.1: leaves the seat of its colour before a game has started.
+        public const int ButtonLeaveWhite = 31;
+        public const int ButtonLeaveBlack = 32;
+        public const int ButtonCount = 33;
         // The button objects in the world (any number: the builder puts a panel at each end of the table), with the
         // Button* action of each and its label at the same index. A button's UI Button calls the UI's Press...
         // event for its action.
@@ -451,6 +454,14 @@ namespace SiggiChessBoard {
             PressButton(ButtonLoadPgn);
         }
 
+        public void PressLeaveWhite() {
+            PressButton(ButtonLeaveWhite);
+        }
+
+        public void PressLeaveBlack() {
+            PressButton(ButtonLeaveBlack);
+        }
+
         // The PGN box's own buttons (step 11.2b).
         public void PressImport() {
             PlaySound(clickSound);
@@ -466,14 +477,14 @@ namespace SiggiChessBoard {
         // The colour the button for action acts for (ChessRules.White or Black), or ChessRules.NoColor for one that
         // acts for no colour (Claim draw is the side to move's).
         public static int ButtonColor(int action) {
-            if (action == ButtonJoinWhite || action == ButtonResignWhite || action == ButtonOfferDrawWhite
-                || action == ButtonAcceptDrawWhite || action == ButtonDeclineDrawWhite
+            if (action == ButtonJoinWhite || action == ButtonLeaveWhite || action == ButtonResignWhite
+                || action == ButtonOfferDrawWhite || action == ButtonAcceptDrawWhite || action == ButtonDeclineDrawWhite
                 || action == ButtonRequestTakebackWhite || action == ButtonAcceptTakebackWhite
                 || action == ButtonDeclineTakebackWhite) {
                 return ChessRules.White;
             }
-            if (action == ButtonJoinBlack || action == ButtonResignBlack || action == ButtonOfferDrawBlack
-                || action == ButtonAcceptDrawBlack || action == ButtonDeclineDrawBlack
+            if (action == ButtonJoinBlack || action == ButtonLeaveBlack || action == ButtonResignBlack
+                || action == ButtonOfferDrawBlack || action == ButtonAcceptDrawBlack || action == ButtonDeclineDrawBlack
                 || action == ButtonRequestTakebackBlack || action == ButtonAcceptTakebackBlack
                 || action == ButtonDeclineTakebackBlack) {
                 return ChessRules.Black;
@@ -534,6 +545,8 @@ namespace SiggiChessBoard {
                 result = board.JoinWhite();
             } else if (action == ButtonJoinBlack) {
                 result = board.JoinBlack();
+            } else if (action == ButtonLeaveWhite || action == ButtonLeaveBlack) {
+                result = board.LeaveSeat(color);
             } else if (action == ButtonMode) {
                 result = board.SetMode(board.mode == ChessGame.ModeChess960
                     ? ChessGame.ModeStandard : ChessGame.ModeChess960);
@@ -585,6 +598,9 @@ namespace SiggiChessBoard {
             if (!Utilities.IsValid(board)) return false;
             if (action == ButtonJoinWhite) return board.CanJoin(ChessRules.White);
             if (action == ButtonJoinBlack) return board.CanJoin(ChessRules.Black);
+            if (action == ButtonLeaveWhite || action == ButtonLeaveBlack) {
+                return board.CanLeaveSeat(ButtonColor(action));
+            }
             if (action == ButtonMode) return board.CanSetMode();
             if (action == ButtonClock) return board.CanSetClock();
             if (action == ButtonStart) return board.CanStartGame();
@@ -624,6 +640,7 @@ namespace SiggiChessBoard {
         public string ButtonText(int action) {
             if (action == ButtonJoinWhite) return "Join White";
             if (action == ButtonJoinBlack) return "Join Black";
+            if (action == ButtonLeaveWhite || action == ButtonLeaveBlack) return "Leave";
             if (action == ButtonMode) {
                 return "Mode: " + ModeText(Utilities.IsValid(board) ? board.mode : ChessGame.ModeStandard);
             }

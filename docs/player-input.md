@@ -55,6 +55,7 @@ Like the input methods, each check has a plain form for the local player and an 
 | Check | Applies when |
 |---|---|
 | `CanJoinAs(color, name)` | a reset, lobby or loaded board, and that seat is empty |
+| `CanLeaveSeatAs(color, name)` | the lobby or a loaded board, `name` seated as `color` (step 13.1) |
 | `CanSetModeAs(name)` | a seated player, in the lobby, the mode not forced |
 | `CanSetClockAs(name)` | a seated player, in the lobby or on a loaded board, the clock not forced |
 | `CanStartGameAs(name)` | a seated player, in the lobby, both seats filled |
@@ -95,6 +96,10 @@ The buttons below (their `Button*` actions, `Press…` events, `PressButton`, `B
 - **Labels:** Resign, Offer draw, Accept draw, Decline draw, `Claim draw (threefold)` or `Claim draw (50 moves)` (from `ClaimableDraw`), Replay, Back to game, `<<`, `<`, `>`, `>>`, Take back to here, Accept takeback, Decline takeback.
 - **Objects:** each end's panel has every action that isn't the other colour's (20 buttons), so a player answers and resigns for the side whose end they're at, and Claim draw and the replay controls are at both ends. The panel's grid is five columns by three rows, enough for the most one player sees at once (12: in replay of their own game against themselves, with an offer and a takeback request pending), in the order lobby, replay, takebacks, game, Reset last. The table is deeper again to keep the bigger panels clear of the castle drop spaces.
 - Decided in 9.4b: the colour of a button comes from its action, not its panel, so the view needs nothing per panel and any number of panels works; the step buttons include first and last as well as one back and one on, since stepping through a long loaded game one ply at a time is slow.
+
+### Leave (step 13.1)
+
+- `ButtonLeaveWhite` and `ButtonLeaveBlack` (label `Leave`, events `PressLeaveWhite` and `PressLeaveBlack`), each on its own colour's panel just after Join, as Join is: shown while `CanLeaveSeat(color)` holds (the local player holds that seat, in the lobby or on a loaded board), and pressing it calls `LeaveSeat(color)`. A player in both seats sees one at each end and leaves one seat at a time. See [Board lifecycle](board-lifecycle.md#seats). The most one player sees at once is unchanged: in the lobby it's Leave, Mode, Clock, Start and Reset, and on a loaded board Leave (or Join), Clock, Continue from here, the step buttons, PGN and Reset.
 
 ### Load it here (step 10.2b)
 

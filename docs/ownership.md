@@ -2,7 +2,7 @@
 
 - Only the owner of a behaviour can change its synced fields. The player making a move takes ownership (`Networking.SetOwner`), applies the move, updates the fields, then calls `RequestSerialization()`.
 - Receivers handle `OnDeserialization` by copying the fields into their local state and refreshing the board visuals. No move generation is needed to stay in sync.
-- The two players are recorded in synced fields (white and black).
+- The two players are recorded in synced fields (white and black). A seat can be left before a game starts (step 13.1, [Board lifecycle](board-lifecycle.md#seats)), so the seated players can change in the lobby and on a loaded board; once a game has started they stay until a reset.
 - **While both players are active, the board refuses to transfer ownership to anyone who isn't one of them**, except to organizers (below), or once the board has been idle long enough for reset (see [Inactivity](inactivity.md)). A player is active if they are in the instance. The check goes in `OnOwnershipRequest`, which returns `false` to deny a transfer.
 - **Either player may take ownership at any time**, not only the player to move, since either player can enter replay mode or touch pieces. Ownership flips between them as they act; whoever acts last owns the board and sends the update.
 - **When the owner leaves, VRChat gives ownership to a random remaining player without calling `OnOwnershipRequest`** (confirmed). This is consistent with the rule: if the owner was one of the two players, they are leaving, so both players are no longer active.

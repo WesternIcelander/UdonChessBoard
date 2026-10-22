@@ -164,6 +164,14 @@ public class ChessDebugView : ChessBoardListener {
         Report("Join Black", board.JoinBlack());
     }
 
+    public void LeaveWhite() {
+        Report("Leave White", board.LeaveSeat(ChessRules.White));
+    }
+
+    public void LeaveBlack() {
+        Report("Leave Black", board.LeaveSeat(ChessRules.Black));
+    }
+
     public void ToggleMode() {
         int newMode = board.mode == ChessGame.ModeStandard ? ChessGame.ModeChess960 : ChessGame.ModeStandard;
         Report("Mode " + ModeName(newMode), board.SetMode(newMode));
@@ -1160,6 +1168,8 @@ public class ChessDebugView : ChessBoardListener {
         string text = "";
         if (board.CanJoin(ChessRules.White)) text += " join-white";
         if (board.CanJoin(ChessRules.Black)) text += " join-black";
+        if (board.CanLeaveSeat(ChessRules.White)) text += " leave-white";
+        if (board.CanLeaveSeat(ChessRules.Black)) text += " leave-black";
         if (board.CanSetMode()) text += " mode";
         if (board.CanSetClock()) text += " clock";
         if (board.CanStartGame()) text += " start";
@@ -1276,6 +1286,7 @@ public class ChessDebugView : ChessBoardListener {
             case ChessBoard.ChangeLoaded: return "loaded";
             case ChessBoard.ChangeContinued: return "continued";
             case ChessBoard.ChangeActivity: return "activity";
+            case ChessBoard.ChangeLeft: return "left";
         }
         return "?" + change;
     }
