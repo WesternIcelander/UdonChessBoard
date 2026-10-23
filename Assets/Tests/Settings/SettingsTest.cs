@@ -488,6 +488,22 @@ public class SettingsTest : ChessTest {
         Check(MenuButton(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn) >= 0
                 && Utilities.IsValid(menu.resnapshotLabel),
             "menu: the re-snapshot button and its outcome text assigned", "");
+        // The labels the menu writes (none from the builder): the title, each row's and each button's.
+        menu.Refresh();
+        string wrong = "";
+        if (!Utilities.IsValid(menu.title) || menu.title.text.Length == 0) wrong += " title";
+        for (int item = 0; item < ChessSettingsMenu.ItemCount; item++) {
+            if (item >= menu.itemLabels.Length || !Utilities.IsValid(menu.itemLabels[item])
+                || menu.itemLabels[item].text.Length == 0 || menu.itemLabels[item].text != menu.ItemText(item)) {
+                wrong += " row " + item;
+            }
+        }
+        for (int i = 0; i < menu.buttonLabels.Length; i++) {
+            if (!Utilities.IsValid(menu.buttonLabels[i]) || menu.buttonLabels[i].text.Length == 0) {
+                wrong += " button " + i;
+            }
+        }
+        CheckString(wrong, "", "menu: the title, the rows' labels and the buttons' labels written");
         SimpleAuth auth = arbiter.simpleAuth;
         if (arbiter.simpleAuthMissing) {
             menu.UpdateVisibility();
