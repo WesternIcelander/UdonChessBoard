@@ -41,6 +41,7 @@
   "clock_minutes": "${minutes}+${increment}",
   "clock_seconds": "${seconds}s+${increment}",
 
+  "pgn_log_hint": "The PGN is also logged to the VRChat log file.",
   "pgn_copy_hint": "PGN of this game. To copy it on desktop: click the text, then Ctrl+A and Ctrl+C.",
   "pgn_paste_hint": "Paste a PGN here, then press Import. On desktop: click the box, then Ctrl+V.",
   "pgn_import": "Import",
