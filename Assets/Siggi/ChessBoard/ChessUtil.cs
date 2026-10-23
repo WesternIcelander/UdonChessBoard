@@ -1,3 +1,4 @@
+using SiggiUSTools;
 using TMPro;
 using UdonSharp;
 using UnityEngine;
@@ -34,6 +35,22 @@ namespace SiggiChessBoard {
         public static string OwnerName(GameObject target, string fallback) {
             VRCPlayerApi owner = Networking.GetOwner(target);
             return Utilities.IsValid(owner) ? owner.displayName : fallback;
+        }
+
+        // ---- Player text (PLAN.md 13.5) ----
+
+        // The string for key in i18n's language now; the key itself with no I18n (the field empty), as I18n shows a
+        // missing key. Each behaviour reads its strings with this once, into fields, and again on a language change.
+        public static string Text(I18n i18n, string key) {
+            return Utilities.IsValid(i18n) ? i18n._(key) : key;
+        }
+
+        // Logs that the I18n field of the behaviour named by who ("[ChessBoardUI] Board UI") is empty (the I18n sanity
+        // check fills it on build and before Play Mode). Whether i18n is there.
+        public static bool CheckI18n(I18n i18n, string who) {
+            if (Utilities.IsValid(i18n)) return true;
+            Debug.LogError(who + ": the I18n field is empty (add Chess Language beside the chess objects).");
+            return false;
         }
 
         // ---- Sound effects (step 12.12), for ChessBoardView and ChessBoardUI ----

@@ -197,8 +197,9 @@ public static class ChessBoardViewBuilder {
         uiObject.transform.rotation = place.rotation;
         uiObject.transform.localScale = place.localScale;
         if (oldUiBeside) Undo.DestroyObjectImmediate(oldUi.gameObject);
-        // The view's and the UI's text comes from the shared Chess Language (PLAN.md 13.5).
-        LinkChessLanguage(root.scene);
+        // The view's and the UI's text comes from the shared Chess Language (PLAN.md 13.5), made when the scene has
+        // none; the I18n fields are left empty, for the I18n sanity check to fill on build and before Play Mode.
+        EnsureChessLanguage(root.scene);
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[ChessBoardViewBuilder] " + (replacing ? "Replaced " : "Created ") + root.name + " for "

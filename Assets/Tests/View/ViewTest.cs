@@ -2840,7 +2840,8 @@ public class ViewTest : ChessTest {
 
     // ---- 13.5: the UI's text in a language file ----
 
-    // The code's keys (ChessText.Keys) and en.json agree, both ways; the view and the UI share one I18n, English
+    // The game texts' keys (ChessBoardUI.GameTextKeys, one per index before TextEndings, and every ending's
+    // ChessGame.EndingKey) are in en.json (any other key missing logs an I18n error as it's read); the view and the UI share one I18n, English
     // here; the fixed texts and the hover texts the view sets; and a test pack (View/test-language.json, its code
     // x-chess-test, added to the Chess Language by Tools > Chess Board > Create View Test) overriding a few keys
     // changes those texts on SetLanguage, leaving the rest English. English again afterwards. In one frame, so no
@@ -2861,24 +2862,19 @@ public class ViewTest : ChessTest {
         Check(read, s + ": en.json read", "not a JSON object");
         if (!read) return;
         DataDictionary pack = parsed.DataDictionary;
-        string[] keys = ChessText.Keys();
-        DataDictionary seen = new DataDictionary();
+        string[] keys = ChessBoardUI.GameTextKeys();
+        CheckInt(keys.Length, ChessBoardUI.TextEndings, s + ": a game text key for each index before the endings");
         string missing = "";
-        string twice = "";
         for (int i = 0; i < keys.Length; i++) {
             if (!pack.ContainsKey(keys[i])) missing += " " + keys[i];
-            if (seen.ContainsKey(keys[i])) twice += " " + keys[i];
-            seen.SetValue(keys[i], true);
         }
-        CheckString(missing, "", s + ": every key the code uses is in en.json");
-        CheckString(twice, "", s + ": no key listed twice in ChessText.Keys");
-        DataList packKeys = pack.GetKeys();
-        string unused = "";
-        for (int i = 0; i < packKeys.Count; i++) {
-            string key = packKeys[i].String;
-            if (key != "languageCode" && key != "languageName" && !seen.ContainsKey(key)) unused += " " + key;
+        for (int ending = 0; ending < ChessGame.EndingCount; ending++) {
+            for (int winner = ChessRules.NoColor; winner <= ChessRules.Black; winner++) {
+                string key = ChessGame.EndingKey(ending, winner);
+                if (!pack.ContainsKey(key) && missing.IndexOf(" " + key) < 0) missing += " " + key;
+            }
         }
-        CheckString(unused, "", s + ": no key in en.json unused");
+        CheckString(missing, "", s + ": every game text key is in en.json");
         CheckString(i18n.GetCurrentLanguage(), "en", s + ": English in use");
 
         CheckString(ui.pgnImportText.text + "|" + ui.pgnCloseText.text, "Import|Close", s + ": the PGN box's buttons");
@@ -2896,8 +2892,9 @@ public class ViewTest : ChessTest {
         Check(i18n.SetLanguage("x-chess-test"), s + ": the test pack chosen", "no pack x-chess-test");
         CheckString(ui.ButtonText(ChessBoardUI.ButtonStart), "Begin (test)", s + ": test pack: Start overridden");
         CheckString(ui.ButtonText(ChessBoardUI.ButtonReset), "Reset", s + ": test pack: Reset left English");
-        CheckString(ChessText.Get(ui.Texts(), "player_line", "color", ChessText.ColorText(ui.Texts(), ChessRules.White),
-            "name", "Ana"), "Light: Ana", s + ": test pack: White overridden in a line left English");
+        CheckString(I18n.Format(ui.GameTexts()[ChessBoardUI.TextPlayerLine], new string[] {
+            "color", ChessBoardUI.ColorText(ui.GameTexts(), ChessRules.White), "name", "Ana" }), "Light: Ana",
+            s + ": test pack: White overridden in a line left English");
         CheckString(PickupTexts(), "Shift (test)", s + ": test pack: the pieces' pickups");
         CheckString(ui.pgnImportText.text + "|" + ui.pgnCloseText.text, "Bring in (test)|Close",
             s + ": test pack: the PGN box's buttons");

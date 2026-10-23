@@ -3,7 +3,6 @@ using SiggiUSTools;
 using UdonSharp;
 using UnityEngine;
 using VRC.SDK3.Components;
-using VRC.SDK3.Data;
 using VRC.SDKBase;
 
 namespace SiggiChessBoard {
@@ -283,8 +282,8 @@ namespace SiggiChessBoard {
         int[] targetMoves = new int[ChessMoves.MaxMoves];
         // The hover texts, from the language pack (PLAN.md 13.5) through i18n, read again on a language change: the
         // pieces' pickups ("Move"), the click targets' and the promotion ghosts'.
-        [Tooltip("The chess system's shared I18n (the Chess Language object), for the hover texts. Filled in by the "
-            + "builders and the I18n sanity check.")]
+        [Tooltip("The chess system's shared I18n (the Chess Language object), for the hover texts. Left empty: the "
+            + "I18n sanity check fills it in on build and before Play Mode.")]
         public I18n i18n;
         string hoverSelect = "";
         string hoverPutBack = "";
@@ -1152,21 +1151,21 @@ namespace SiggiChessBoard {
         // Reads the hover texts in the language now and puts the fixed ones on: "Move" on every piece's pickup, and
         // each promotion ghost's "Promote to queen". The click targets' are put on as they become clickable.
         void SetHoverTexts() {
-            DataDictionary texts = ChessText.Load(i18n, this);
-            hoverSelect = ChessText.Get(texts, "hover_select");
-            hoverPutBack = ChessText.Get(texts, "hover_put_back");
-            hoverPlace = ChessText.Get(texts, "hover_place");
-            hoverCapture = ChessText.Get(texts, "hover_capture");
-            hoverCastle = ChessText.Get(texts, "hover_castle");
-            string move = ChessText.Get(texts, "hover_move");
+            ChessUtil.CheckI18n(i18n, "[ChessBoardView] " + gameObject.name);
+            hoverSelect = ChessUtil.Text(i18n, "hover_select");
+            hoverPutBack = ChessUtil.Text(i18n, "hover_put_back");
+            hoverPlace = ChessUtil.Text(i18n, "hover_place");
+            hoverCapture = ChessUtil.Text(i18n, "hover_capture");
+            hoverCastle = ChessUtil.Text(i18n, "hover_castle");
+            string move = ChessUtil.Text(i18n, "hover_move");
             for (int obj = 0; obj < piecePickups.Length; obj++) {
                 if (Utilities.IsValid(piecePickups[obj])) piecePickups[obj].InteractionText = move;
             }
             for (int ghost = 0; ghost < promotionGhosts.Length; ghost++) {
                 ChessPromotionGhost behaviour = promotionGhosts[ghost];
                 if (!Utilities.IsValid(behaviour)) continue;
-                behaviour.InteractionText = ChessText.Get(texts,
-                    "hover_promote_" + ChessPieceSet.TypeName(behaviour.pieceType));
+                string type = ChessPieceSet.TypeName(behaviour.pieceType);
+                behaviour.InteractionText = ChessUtil.Text(i18n, "hover_promote_" + type);
             }
         }
 

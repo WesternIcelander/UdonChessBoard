@@ -4,7 +4,6 @@ using TMPro;
 using UnityEngine;
 using SiggiUSTools;
 using UnityEngine.UI;
-using VRC.SDK3.Data;
 using VRC.SDKBase;
 
 namespace SiggiChessBoard {
@@ -21,11 +20,51 @@ namespace SiggiChessBoard {
     public class ChessBoardUI : ChessBoardListener {
         // The board shown and acted on; the UI adds itself as a listener on Start.
         public ChessBoard board;
-        [Tooltip("The chess system's shared I18n (the Chess Language object), for the UI's text. Filled in by the "
-            + "builders and the I18n sanity check.")]
+        [Tooltip("The chess system's shared I18n (the Chess Language object), for the UI's text. Left empty: the I18n "
+            + "sanity check fills it in on build and before Play Mode.")]
         public I18n i18n;
-        // Every string the UI shows, from i18n (ChessText.Load), loaded on first use and again on a language change.
-        DataDictionary texts;
+        // The strings the UI shows, from i18n (LoadTexts), read on first use and again on a language change: the game
+        // texts the status lines are written with (LoadGameTexts), and the UI's own.
+        string[] gameTexts;
+        string textJoinWhite = "";
+        string textJoinBlack = "";
+        string textLeave = "";
+        string textMode = "";
+        string textClockNone = "";
+        string textClock = "";
+        string textStart = "";
+        string textContinue = "";
+        string textReset = "";
+        string textResign = "";
+        string textOfferDraw = "";
+        string textAcceptDraw = "";
+        string textDeclineDraw = "";
+        string textClaimDraw = "";
+        string textClaimDrawThreefold = "";
+        string textClaimDrawFiftyMoves = "";
+        string textReplay = "";
+        string textBackToGame = "";
+        string textTakeBackToHere = "";
+        string textAcceptTakeback = "";
+        string textDeclineTakeback = "";
+        string textLoadHere = "";
+        string textPgn = "";
+        string textLoadPgn = "";
+        string textHidePgn = "";
+        string textPgnCopyHint = "";
+        string textPgnPasteHint = "";
+        string textPgnImport = "";
+        string textPgnClose = "";
+        string textImportPasteFirst = "";
+        string textImportRunning = "";
+        string textImportFailed = "";
+        string textImportFailedLoad = "";
+        string textImportAbandoned = "";
+        string textImportErrorSyntax = "";
+        string textImportErrorIllegalMove = "";
+        string textImportErrorAmbiguousMove = "";
+        string textImportErrorFen = "";
+        string textImportErrorTooLong = "";
         // The board's buttons (docs/player-input.md, Buttons; steps 9.4a and 9.4b), by what they do. Each is shown only
         // while the board's Can... check for it holds for the local player.
         public const int ButtonJoinWhite = 0;
@@ -115,10 +154,10 @@ namespace SiggiChessBoard {
         public TextMeshProUGUI pgnImportText;
         public TextMeshProUGUI pgnCloseText;
         [NonSerialized] public bool pgnPasting;
-        // Whether the board's import was started from this box (so its progress and outcome are shown here), and a
-        // note of the box's own (an empty paste), shown instead: its key in the language pack, "" for none.
+        // Whether the board's import was started from this box (so its progress and outcome are shown here), and whether
+        // the box says to paste first (an empty paste), shown instead.
         bool importWatched;
-        string importNote = "";
+        bool pasteFirstNoted;
         // The UI is brought up to date on the frame after a change, as the view is: a test making thousands of changes
         // in one frame would otherwise run past Udon's time limit.
         bool dirty;
@@ -257,15 +296,17 @@ namespace SiggiChessBoard {
 
         // ---- Text (PLAN.md 13.5) ----
 
-        // Every string the UI shows, in the language now (ChessText.Get looks them up). Public for tests.
-        public DataDictionary Texts() {
-            if (texts == null) texts = ChessText.Load(i18n, this);
-            return texts;
+        // The game texts the status lines are written with (LoadGameTexts), in the language now; read on first use.
+        // Public for tests.
+        public string[] GameTexts() {
+            if (gameTexts == null) LoadTexts();
+            return gameTexts;
         }
 
-        // The I18n's language changed (its AddLanguageChangeListener): every text is written again.
+        // The I18n's language changed (its AddLanguageChangeListener): every string is read again and every text
+        // written again.
         public void OnLanguageChange() {
-            texts = ChessText.Load(i18n, this);
+            LoadTexts();
             SetFixedTexts();
             if (!Utilities.IsValid(board)) return;
             UpdatePgnBox();
@@ -273,13 +314,161 @@ namespace SiggiChessBoard {
             UpdateStatus();
         }
 
+        // Reads every string the UI shows from i18n into its fields: one call into the I18n each, here only, so a
+        // redraw calls none.
+        void LoadTexts() {
+            ChessUtil.CheckI18n(i18n, "[ChessBoardUI] " + gameObject.name);
+            gameTexts = LoadGameTexts(i18n);
+            textJoinWhite = ChessUtil.Text(i18n, "button_join_white");
+            textJoinBlack = ChessUtil.Text(i18n, "button_join_black");
+            textLeave = ChessUtil.Text(i18n, "button_leave");
+            textMode = ChessUtil.Text(i18n, "button_mode");
+            textClockNone = ChessUtil.Text(i18n, "button_clock_none");
+            textClock = ChessUtil.Text(i18n, "button_clock");
+            textStart = ChessUtil.Text(i18n, "button_start");
+            textContinue = ChessUtil.Text(i18n, "button_continue");
+            textReset = ChessUtil.Text(i18n, "button_reset");
+            textResign = ChessUtil.Text(i18n, "button_resign");
+            textOfferDraw = ChessUtil.Text(i18n, "button_offer_draw");
+            textAcceptDraw = ChessUtil.Text(i18n, "button_accept_draw");
+            textDeclineDraw = ChessUtil.Text(i18n, "button_decline_draw");
+            textClaimDraw = ChessUtil.Text(i18n, "button_claim_draw");
+            textClaimDrawThreefold = ChessUtil.Text(i18n, "button_claim_draw_threefold");
+            textClaimDrawFiftyMoves = ChessUtil.Text(i18n, "button_claim_draw_fifty_moves");
+            textReplay = ChessUtil.Text(i18n, "button_replay");
+            textBackToGame = ChessUtil.Text(i18n, "button_back_to_game");
+            textTakeBackToHere = ChessUtil.Text(i18n, "button_take_back_to_here");
+            textAcceptTakeback = ChessUtil.Text(i18n, "button_accept_takeback");
+            textDeclineTakeback = ChessUtil.Text(i18n, "button_decline_takeback");
+            textLoadHere = ChessUtil.Text(i18n, "button_load_here");
+            textPgn = ChessUtil.Text(i18n, "button_pgn");
+            textLoadPgn = ChessUtil.Text(i18n, "button_load_pgn");
+            textHidePgn = ChessUtil.Text(i18n, "button_hide_pgn");
+            textPgnCopyHint = ChessUtil.Text(i18n, "pgn_copy_hint");
+            textPgnPasteHint = ChessUtil.Text(i18n, "pgn_paste_hint");
+            textPgnImport = ChessUtil.Text(i18n, "pgn_import");
+            textPgnClose = ChessUtil.Text(i18n, "pgn_close");
+            textImportPasteFirst = ChessUtil.Text(i18n, "import_paste_first");
+            textImportRunning = ChessUtil.Text(i18n, "import_running");
+            textImportFailed = ChessUtil.Text(i18n, "import_failed");
+            textImportFailedLoad = ChessUtil.Text(i18n, "import_failed_load");
+            textImportAbandoned = ChessUtil.Text(i18n, "import_abandoned");
+            textImportErrorSyntax = ChessUtil.Text(i18n, "import_error_syntax");
+            textImportErrorIllegalMove = ChessUtil.Text(i18n, "import_error_illegal_move");
+            textImportErrorAmbiguousMove = ChessUtil.Text(i18n, "import_error_ambiguous_move");
+            textImportErrorFen = ChessUtil.Text(i18n, "import_error_fen");
+            textImportErrorTooLong = ChessUtil.Text(i18n, "import_error_too_long");
+        }
+
         // The texts that change only with the language: the PGN box's hints and its buttons' labels.
         void SetFixedTexts() {
-            DataDictionary t = Texts();
-            ChessUtil.SetText(pgnCopyHint, ChessText.Get(t, "pgn_copy_hint"));
-            ChessUtil.SetText(pgnPasteHint, ChessText.Get(t, "pgn_paste_hint"));
-            ChessUtil.SetText(pgnImportText, ChessText.Get(t, "pgn_import"));
-            ChessUtil.SetText(pgnCloseText, ChessText.Get(t, "pgn_close"));
+            if (gameTexts == null) LoadTexts();
+            ChessUtil.SetText(pgnCopyHint, textPgnCopyHint);
+            ChessUtil.SetText(pgnPasteHint, textPgnPasteHint);
+            ChessUtil.SetText(pgnImportText, textPgnImport);
+            ChessUtil.SetText(pgnCloseText, textPgnClose);
+        }
+
+        // ---- Game texts ----
+
+        // The game texts (LoadGameTexts): the strings the status lines are written with, which the 2D view and the
+        // history wall write with too, each holding its own copy. By index; the endings follow TextEndings, three to
+        // an ending (White's win, Black's, no winner: EndingText).
+        public const int TextColorWhite = 0;
+        public const int TextColorBlack = 1;
+        public const int TextModeStandard = 2;
+        public const int TextModeChess960 = 3;
+        public const int TextUnknownName = 4;
+        public const int TextBoardNumber = 5;
+        public const int TextMovesOne = 6;
+        public const int TextMovesMany = 7;
+        public const int TextClockNone = 8;
+        public const int TextClockMinutes = 9;
+        public const int TextClockSeconds = 10;
+        public const int TextPlayerLine = 11;
+        public const int TextPlayerOpen = 12;
+        public const int TextPlayerFlagFallen = 13;
+        public const int TextStatusReset = 14;
+        public const int TextStatusLobby = 15;
+        public const int TextStatusLoaded = 16;
+        public const int TextStatusLoadedChess960 = 17;
+        public const int TextStatusTimeUp = 18;
+        public const int TextStatusToMove = 19;
+        public const int TextStatusToMoveInCheck = 20;
+        public const int TextStatusPlayingOn = 21;
+        public const int TextStatusDrawOffer = 22;
+        public const int TextStatusTakebackToHere = 23;
+        public const int TextStatusTakeback = 24;
+        public const int TextStatusEnding = 25;
+        public const int TextStatusUnfinishedGame = 26;
+        public const int TextStatusDrawTimeForfeit = 27;
+        public const int TextReplayCustom = 28;
+        public const int TextReplayStart = 29;
+        public const int TextReplayMove = 30;
+        public const int TextEndings = 31;
+        public const int GameTextCount = TextEndings + ChessGame.EndingCount * 3;
+
+        // The language pack's keys of the game texts before TextEndings, by index.
+        public static string[] GameTextKeys() {
+            return new string[] {
+                "color_white", "color_black", "mode_standard", "mode_chess960", "unknown_name", "board_number",
+                "moves_one", "moves_many", "clock_none", "clock_minutes", "clock_seconds", "player_line", "player_open",
+                "player_flag_fallen", "status_reset", "status_lobby", "status_loaded", "status_loaded_chess960",
+                "status_time_up", "status_to_move", "status_to_move_in_check", "status_playing_on", "status_draw_offer",
+                "status_takeback_to_here", "status_takeback", "status_ending", "status_unfinished_game",
+                "status_draw_time_forfeit", "replay_custom", "replay_start", "replay_move",
+            };
+        }
+
+        // The game texts in i18n's language now (each its key with no I18n), for a behaviour to keep in a field and
+        // read again on a language change. Each ending's text is ChessGame.EndingKey's, read once however many endings
+        // share it.
+        public static string[] LoadGameTexts(I18n i18n) {
+            string[] texts = new string[GameTextCount];
+            string[] keys = GameTextKeys();
+            for (int i = 0; i < keys.Length && i < TextEndings; i++) texts[i] = ChessUtil.Text(i18n, keys[i]);
+            string[] endingKeys = new string[ChessGame.EndingCount * 3];
+            for (int slot = 0; slot < endingKeys.Length; slot++) {
+                int side = slot % 3;
+                int winner = side == 0 ? ChessRules.White : side == 1 ? ChessRules.Black : ChessRules.NoColor;
+                string key = ChessGame.EndingKey(slot / 3, winner);
+                endingKeys[slot] = key;
+                int same = 0;
+                while (same < slot && endingKeys[same] != key) same++;
+                texts[TextEndings + slot] = same < slot ? texts[TextEndings + same] : ChessUtil.Text(i18n, key);
+            }
+            return texts;
+        }
+
+        public static string ColorText(string[] texts, int color) {
+            return texts[color == ChessRules.White ? TextColorWhite : TextColorBlack];
+        }
+
+        public static string ModeText(string[] texts, int mode) {
+            return texts[mode == ChessGame.ModeChess960 ? TextModeChess960 : TextModeStandard];
+        }
+
+        // "Board 2" for board number 1.
+        public static string BoardText(string[] texts, int boardNumber) {
+            return I18n.Format(texts[TextBoardNumber], new string[] { "number", (boardNumber + 1).ToString() });
+        }
+
+        // How a game ended (ChessGame.EndingKey): "White wins by checkmate", "Unfinished".
+        public static string EndingText(string[] texts, int ending, int winner) {
+            if (ending < 0 || ending >= ChessGame.EndingCount) ending = ChessGame.EndingUnknown;
+            int side = winner == ChessRules.White ? 0 : winner == ChessRules.Black ? 1 : 2;
+            return texts[TextEndings + ending * 3 + side];
+        }
+
+        // "1 move", "12 moves".
+        public static string MovesText(string[] texts, int moves) {
+            if (moves == 1) return texts[TextMovesOne];
+            return I18n.Format(texts[TextMovesMany], new string[] { "count", moves.ToString() });
+        }
+
+        // A player's name, or "?" when there's none.
+        public static string NameText(string[] texts, string name) {
+            return name != null && name.Length > 0 ? name : texts[TextUnknownName];
         }
 
         // ---- Sound effects (step 12.12) ----
@@ -680,74 +869,62 @@ namespace SiggiChessBoard {
         // The label of the button for action: Mode and Clock show the board's current choice, Claim draw the draw
         // claimed. The step buttons' arrows are signs, the same in every language.
         public string ButtonText(int action) {
-            DataDictionary t = Texts();
-            if (action == ButtonJoinWhite) return ChessText.Get(t, "button_join_white");
-            if (action == ButtonJoinBlack) return ChessText.Get(t, "button_join_black");
-            if (action == ButtonLeaveWhite || action == ButtonLeaveBlack) return ChessText.Get(t, "button_leave");
+            string[] texts = GameTexts();
+            if (action == ButtonJoinWhite) return textJoinWhite;
+            if (action == ButtonJoinBlack) return textJoinBlack;
+            if (action == ButtonLeaveWhite || action == ButtonLeaveBlack) return textLeave;
             if (action == ButtonMode) {
                 int mode = Utilities.IsValid(board) ? board.mode : ChessGame.ModeStandard;
-                return ChessText.Get(t, "button_mode", "mode", ChessText.ModeText(t, mode));
+                return I18n.Format(textMode, new string[] { "mode", ModeText(texts, mode) });
             }
             if (action == ButtonClock) {
-                if (!Utilities.IsValid(board)) return ChessText.Get(t, "button_clock_none");
-                return ChessText.Get(t, "button_clock", "clock", ClockTextFor(t, board.baseTime, board.increment));
+                if (!Utilities.IsValid(board)) return textClockNone;
+                return I18n.Format(textClock, new string[] {
+                    "clock", ClockTextFor(texts, board.baseTime, board.increment) });
             }
-            if (action == ButtonStart) return ChessText.Get(t, "button_start");
-            if (action == ButtonContinue) return ChessText.Get(t, "button_continue");
-            if (action == ButtonReset) return ChessText.Get(t, "button_reset");
-            if (action == ButtonResignWhite || action == ButtonResignBlack) return ChessText.Get(t, "button_resign");
-            if (action == ButtonOfferDrawWhite || action == ButtonOfferDrawBlack) {
-                return ChessText.Get(t, "button_offer_draw");
-            }
-            if (action == ButtonAcceptDrawWhite || action == ButtonAcceptDrawBlack) {
-                return ChessText.Get(t, "button_accept_draw");
-            }
-            if (action == ButtonDeclineDrawWhite || action == ButtonDeclineDrawBlack) {
-                return ChessText.Get(t, "button_decline_draw");
-            }
+            if (action == ButtonStart) return textStart;
+            if (action == ButtonContinue) return textContinue;
+            if (action == ButtonReset) return textReset;
+            if (action == ButtonResignWhite || action == ButtonResignBlack) return textResign;
+            if (action == ButtonOfferDrawWhite || action == ButtonOfferDrawBlack) return textOfferDraw;
+            if (action == ButtonAcceptDrawWhite || action == ButtonAcceptDrawBlack) return textAcceptDraw;
+            if (action == ButtonDeclineDrawWhite || action == ButtonDeclineDrawBlack) return textDeclineDraw;
             if (action == ButtonClaimDraw) {
                 int claim = Utilities.IsValid(board) ? board.ClaimableDraw() : ChessGame.EndingNone;
-                if (claim == ChessGame.EndingThreefoldRepetition) return ChessText.Get(t, "button_claim_draw_threefold");
-                if (claim == ChessGame.EndingFiftyMoveRule) return ChessText.Get(t, "button_claim_draw_fifty_moves");
-                return ChessText.Get(t, "button_claim_draw");
+                if (claim == ChessGame.EndingThreefoldRepetition) return textClaimDrawThreefold;
+                if (claim == ChessGame.EndingFiftyMoveRule) return textClaimDrawFiftyMoves;
+                return textClaimDraw;
             }
-            if (action == ButtonEnterReplay) return ChessText.Get(t, "button_replay");
-            if (action == ButtonLeaveReplay) return ChessText.Get(t, "button_back_to_game");
+            if (action == ButtonEnterReplay) return textReplay;
+            if (action == ButtonLeaveReplay) return textBackToGame;
             if (action == ButtonStepFirst) return "<<";
             if (action == ButtonStepBack) return "<";
             if (action == ButtonStepForward) return ">";
             if (action == ButtonStepLast) return ">>";
-            if (action == ButtonRequestTakebackWhite || action == ButtonRequestTakebackBlack) {
-                return ChessText.Get(t, "button_take_back_to_here");
-            }
-            if (action == ButtonAcceptTakebackWhite || action == ButtonAcceptTakebackBlack) {
-                return ChessText.Get(t, "button_accept_takeback");
-            }
-            if (action == ButtonDeclineTakebackWhite || action == ButtonDeclineTakebackBlack) {
-                return ChessText.Get(t, "button_decline_takeback");
-            }
-            if (action == ButtonLoadHere) return ChessText.Get(t, "button_load_here");
-            if (action == ButtonPgn) return ChessText.Get(t, pgnShown && !pgnPasting ? "button_hide_pgn" : "button_pgn");
-            if (action == ButtonLoadPgn) {
-                return ChessText.Get(t, pgnShown && pgnPasting ? "button_hide_pgn" : "button_load_pgn");
-            }
+            if (action == ButtonRequestTakebackWhite || action == ButtonRequestTakebackBlack) return textTakeBackToHere;
+            if (action == ButtonAcceptTakebackWhite || action == ButtonAcceptTakebackBlack) return textAcceptTakeback;
+            if (action == ButtonDeclineTakebackWhite || action == ButtonDeclineTakebackBlack) return textDeclineTakeback;
+            if (action == ButtonLoadHere) return textLoadHere;
+            if (action == ButtonPgn) return pgnShown && !pgnPasting ? textHidePgn : textPgn;
+            if (action == ButtonLoadPgn) return pgnShown && pgnPasting ? textHidePgn : textLoadPgn;
             return "";
         }
 
         // A time control as players say it: "No clock", "5+3" (minutes plus seconds), or "45s+0" for a base that
         // isn't whole minutes.
         public string ClockText(int baseSeconds, int incrementSeconds) {
-            return ClockTextFor(Texts(), baseSeconds, incrementSeconds);
+            return ClockTextFor(GameTexts(), baseSeconds, incrementSeconds);
         }
 
-        public static string ClockTextFor(DataDictionary texts, int baseSeconds, int incrementSeconds) {
-            if (baseSeconds == ChessArbiter.NoClock) return ChessText.Get(texts, "clock_none");
+        public static string ClockTextFor(string[] texts, int baseSeconds, int incrementSeconds) {
+            if (baseSeconds == ChessArbiter.NoClock) return texts[TextClockNone];
             string increment = incrementSeconds.ToString();
             if (baseSeconds % 60 == 0) {
-                return ChessText.Get(texts, "clock_minutes", "minutes", (baseSeconds / 60).ToString(), "increment",
-                    increment);
+                return I18n.Format(texts[TextClockMinutes], new string[] {
+                    "minutes", (baseSeconds / 60).ToString(), "increment", increment });
             }
-            return ChessText.Get(texts, "clock_seconds", "seconds", baseSeconds.ToString(), "increment", increment);
+            return I18n.Format(texts[TextClockSeconds], new string[] {
+                "seconds", baseSeconds.ToString(), "increment", increment });
         }
 
         // Shows each button whose action applies to the local player and hides the rest, with its label. Called on
@@ -810,7 +987,7 @@ namespace SiggiChessBoard {
             pgnPasting = open && paste;
             if (open) PlacePgnBox(LocalEnd());
             if (forget) {
-                importNote = "";
+                pasteFirstNoted = false;
                 if (!Utilities.IsValid(board) || board.importStatus != ChessBoard.ImportRunning) importWatched = false;
             }
             UpdatePgnBox();
@@ -826,9 +1003,9 @@ namespace SiggiChessBoard {
             string text = pgnPasteField.text;
             int result = ChessBoard.InputRejected;
             if (text == null || text.Trim().Length == 0) {
-                importNote = "import_paste_first";
+                pasteFirstNoted = true;
             } else {
-                importNote = "";
+                pasteFirstNoted = false;
                 // Set first: the board tells its listeners the import started before it returns.
                 importWatched = true;
                 result = board.StartImport(text);
@@ -843,30 +1020,30 @@ namespace SiggiChessBoard {
         // far, why it failed ("Import failed at move 2.: illegal move", from the board's codes) or that it was
         // abandoned; "" otherwise.
         public string ImportText() {
-            DataDictionary t = Texts();
-            if (importNote.Length > 0) return ChessText.Get(t, importNote);
+            string[] texts = GameTexts();
+            if (pasteFirstNoted) return textImportPasteFirst;
             if (!importWatched || !Utilities.IsValid(board)) return "";
             int status = board.importStatus;
             if (status == ChessBoard.ImportRunning) {
                 int read = Utilities.IsValid(board.importer) ? board.importer.MoveCount() : 0;
-                return ChessText.Get(t, "import_running", "moves", ChessText.MovesText(t, read));
+                return I18n.Format(textImportRunning, new string[] { "moves", MovesText(texts, read) });
             }
             if (status == ChessBoard.ImportFailed) {
-                if (board.importResult == ChessPgn.ImportDone) return ChessText.Get(t, "import_failed_load");
-                return ChessText.Get(t, "import_failed", "move", board.importFailedAt, "reason",
-                    ImportErrorText(t, board.importResult));
+                if (board.importResult == ChessPgn.ImportDone) return textImportFailedLoad;
+                return I18n.Format(textImportFailed, new string[] {
+                    "move", board.importFailedAt, "reason", ImportErrorText(board.importResult) });
             }
-            if (status == ChessBoard.ImportAbandoned) return ChessText.Get(t, "import_abandoned");
+            if (status == ChessBoard.ImportAbandoned) return textImportAbandoned;
             return "";
         }
 
         // Why an import failed (a ChessPgn.Import* result), for players: "illegal move".
-        static string ImportErrorText(DataDictionary texts, int result) {
-            if (result == ChessPgn.ImportBadSyntax) return ChessText.Get(texts, "import_error_syntax");
-            if (result == ChessPgn.ImportIllegalMove) return ChessText.Get(texts, "import_error_illegal_move");
-            if (result == ChessPgn.ImportAmbiguousMove) return ChessText.Get(texts, "import_error_ambiguous_move");
-            if (result == ChessPgn.ImportBadFen) return ChessText.Get(texts, "import_error_fen");
-            return ChessText.Get(texts, "import_error_too_long");
+        string ImportErrorText(int result) {
+            if (result == ChessPgn.ImportBadSyntax) return textImportErrorSyntax;
+            if (result == ChessPgn.ImportIllegalMove) return textImportErrorIllegalMove;
+            if (result == ChessPgn.ImportAmbiguousMove) return textImportErrorAmbiguousMove;
+            if (result == ChessPgn.ImportBadFen) return textImportErrorFen;
+            return textImportErrorTooLong;
         }
 
         // Stands the PGN box over the far edge of the board from color's end of the table, facing that end (unturned it
@@ -910,29 +1087,29 @@ namespace SiggiChessBoard {
         }
 
         // Both seats at server time now, White's line first (PlayerTextAt). The status texts are static, taking the
-        // board and the texts to write them with (Texts), so the 2D view (step 12.13) writes the same lines with its
-        // own; the instance forms read this UI's board and texts.
+        // board and the game texts to write them with (GameTexts), so the 2D view (step 12.13) writes the same lines
+        // with its own copy; the instance forms read this UI's board and texts.
         public string PlayersTextAt(double now) {
-            return PlayersTextFor(board, now, Texts());
+            return PlayersTextFor(board, now, GameTexts());
         }
 
         public string PlayerTextAt(int color, double now) {
-            return PlayerTextFor(board, color, now, Texts());
+            return PlayerTextFor(board, color, now, GameTexts());
         }
 
         public string StatusTextAt(double now) {
-            return StatusTextFor(board, now, Texts());
+            return StatusTextFor(board, now, GameTexts());
         }
 
         public string EndingText() {
-            return EndingTextFor(board, Texts());
+            return EndingTextFor(board, GameTexts());
         }
 
         public string ReplayText() {
-            return ReplayTextFor(board, Texts());
+            return ReplayTextFor(board, GameTexts());
         }
 
-        public static string PlayersTextFor(ChessBoard board, double now, DataDictionary texts) {
+        public static string PlayersTextFor(ChessBoard board, double now, string[] texts) {
             return PlayerTextFor(board, ChessRules.White, now, texts) + "\n"
                 + PlayerTextFor(board, ChessRules.Black, now, texts);
         }
@@ -940,16 +1117,17 @@ namespace SiggiChessBoard {
         // A seat's line: "White: Ana", "(open)" for an empty seat, with the side's remaining time at server time now
         // during and after a game with a clock ("White: Ana  4:58"). In a game played on untimed after a flag fall
         // (step 12.9) the times are the timed game's, and the side out of time shows GG instead of 0:00.
-        public static string PlayerTextFor(ChessBoard board, int color, double now, DataDictionary texts) {
+        public static string PlayerTextFor(ChessBoard board, int color, double now, string[] texts) {
             if (!Utilities.IsValid(board)) return "";
             string name = color == ChessRules.White ? board.whitePlayer : board.blackPlayer;
-            if (name == null || name.Length == 0) name = ChessText.Get(texts, "player_open");
-            string text = ChessText.Get(texts, "player_line", "color", ChessText.ColorText(texts, color), "name", name);
+            if (name == null || name.Length == 0) name = texts[TextPlayerOpen];
+            string text = I18n.Format(texts[TextPlayerLine], new string[] {
+                "color", ColorText(texts, color), "name", name });
             bool played = board.lifecycle == ChessBoard.LifecycleInGame || board.lifecycle == ChessBoard.LifecycleEnded;
             if (!played) return text;
             int left = board.RemainingTimeAt(color, now);
             if (board.ClocksFromPreviousGame()) {
-                text += "  " + (left == 0 ? ChessText.Get(texts, "player_flag_fallen") : ClockDisplay(left));
+                text += "  " + (left == 0 ? texts[TextPlayerFlagFallen] : ClockDisplay(left));
             } else if (board.HasClock()) {
                 text += "  " + ClockDisplay(left);
             }
@@ -964,17 +1142,21 @@ namespace SiggiChessBoard {
             return board.blackTime == 0 ? ChessRules.Black : ChessRules.NoColor;
         }
 
+        // A game text (by index) with ${color} filled in with a side's name: "White to move".
+        static string ColorLine(string[] texts, int index, int color) {
+            return I18n.Format(texts[index], new string[] { "color", ColorText(texts, color) });
+        }
+
         // The board's state at server time now, a line each: a reset board's invitation; the lobby's mode and clock; a
         // loaded game's names (and mode, for Chess960); in a game, whose turn it is and whether they're in check, or
         // that their time is up, and, playing on untimed after a flag fall, whose time ran out (12.9); the result of an
         // ended or loaded game (EndingText); a pending draw offer and takeback request; the replay position
         // (ReplayText).
-        public static string StatusTextFor(ChessBoard board, double now, DataDictionary texts) {
+        public static string StatusTextFor(ChessBoard board, double now, string[] texts) {
             string text = GameStatusTextFor(board, now, texts);
             if (!Utilities.IsValid(board)) return text;
             if (board.takebackColor != ChessRules.NoColor) {
-                text = ChessUtil.AddLine(text, ChessText.Get(texts, "status_takeback_to_here", "color",
-                    ChessText.ColorText(texts, board.takebackColor)));
+                text = ChessUtil.AddLine(text, ColorLine(texts, TextStatusTakebackToHere, board.takebackColor));
             }
             if (board.replayMode) text = ChessUtil.AddLine(text, ReplayTextFor(board, texts));
             return text;
@@ -982,84 +1164,83 @@ namespace SiggiChessBoard {
 
         // StatusTextFor without the lines about the board's replay position (the takeback request, which is for the
         // ply shown, and the replay line), for the 2D view (step 12.14), whose replay is its own.
-        public static string GameStatusTextFor(ChessBoard board, double now, DataDictionary texts) {
+        public static string GameStatusTextFor(ChessBoard board, double now, string[] texts) {
             if (!Utilities.IsValid(board)) return "";
             int lifecycle = board.lifecycle;
-            if (lifecycle == ChessBoard.LifecycleReset) return ChessText.Get(texts, "status_reset");
+            if (lifecycle == ChessBoard.LifecycleReset) return texts[TextStatusReset];
             string text = "";
             if (lifecycle == ChessBoard.LifecycleLobby) {
-                text = ChessText.Get(texts, "status_lobby", "mode", ChessText.ModeText(texts, board.mode), "clock",
-                    ClockTextFor(texts, board.baseTime, board.increment));
+                text = I18n.Format(texts[TextStatusLobby], new string[] {
+                    "mode", ModeText(texts, board.mode), "clock", ClockTextFor(texts, board.baseTime, board.increment) });
             } else if (lifecycle == ChessBoard.LifecycleLoaded) {
-                text = ChessText.Get(texts, board.mode == ChessGame.ModeChess960 ? "status_loaded_chess960"
-                    : "status_loaded", "white", ChessText.NameText(texts, board.replaySourceWhite), "black",
-                    ChessText.NameText(texts, board.replaySourceBlack));
+                int index = board.mode == ChessGame.ModeChess960 ? TextStatusLoadedChess960 : TextStatusLoaded;
+                text = I18n.Format(texts[index], new string[] {
+                    "white", NameText(texts, board.replaySourceWhite), "black", NameText(texts, board.replaySourceBlack) });
             } else if (lifecycle == ChessBoard.LifecycleInGame) {
                 int flagged = board.FlaggedColorAt(now);
                 if (flagged != ChessRules.NoColor) {
-                    text = ChessText.Get(texts, "status_time_up", "color", ChessText.ColorText(texts, flagged));
+                    text = ColorLine(texts, TextStatusTimeUp, flagged);
                 } else {
-                    text = ChessText.Get(texts, board.IsInCheck() ? "status_to_move_in_check" : "status_to_move",
-                        "color", ChessText.ColorText(texts, board.SideToMove()));
+                    text = ColorLine(texts, board.IsInCheck() ? TextStatusToMoveInCheck : TextStatusToMove,
+                        board.SideToMove());
                 }
                 int playOnFlagged = PlayOnFlaggedColor(board);
                 if (playOnFlagged != ChessRules.NoColor) {
-                    text = ChessUtil.AddLine(text, ChessText.Get(texts, "status_playing_on", "color",
-                        ChessText.ColorText(texts, playOnFlagged)));
+                    text = ChessUtil.AddLine(text, ColorLine(texts, TextStatusPlayingOn, playOnFlagged));
                 }
             }
             text = ChessUtil.AddLine(text, EndingTextFor(board, texts));
             if (board.drawOfferColor != ChessRules.NoColor) {
-                text = ChessUtil.AddLine(text, ChessText.Get(texts, "status_draw_offer", "color",
-                    ChessText.ColorText(texts, board.drawOfferColor)));
+                text = ChessUtil.AddLine(text, ColorLine(texts, TextStatusDrawOffer, board.drawOfferColor));
             }
             return text;
         }
 
         // How an ended or loaded game ended, with its PGN result: "White wins by checkmate (1-0)", "Draw by agreement
         // (1/2-1/2)"; "Unfinished game (*)" for a loaded game without a result; "" otherwise.
-        public static string EndingTextFor(ChessBoard board, DataDictionary texts) {
+        public static string EndingTextFor(ChessBoard board, string[] texts) {
             if (!Utilities.IsValid(board)) return "";
             int lifecycle = board.lifecycle;
             if (lifecycle != ChessBoard.LifecycleEnded && lifecycle != ChessBoard.LifecycleLoaded) return "";
             int ending = board.ending;
             int winner = board.winner;
             if (ending == ChessGame.EndingNone || ending == ChessGame.EndingUnterminated) {
-                return lifecycle == ChessBoard.LifecycleLoaded ? ChessText.Get(texts, "status_unfinished_game") : "";
+                return lifecycle == ChessBoard.LifecycleLoaded ? texts[TextStatusUnfinishedGame] : "";
             }
             string result = board.ResultText();
             if (ending == ChessGame.EndingTimeForfeit && winner == ChessRules.NoColor) {
                 // A time forfeit drawn: the side out of time is the one that was to move, and its opponent couldn't
                 // mate.
                 int flagged = board.SideToMove();
-                return ChessText.Get(texts, "status_draw_time_forfeit", "flagged", ChessText.ColorText(texts, flagged),
-                    "other", ChessText.ColorText(texts, ChessRules.OtherColor(flagged)), "result", result);
+                return I18n.Format(texts[TextStatusDrawTimeForfeit], new string[] {
+                    "flagged", ColorText(texts, flagged), "other", ColorText(texts, ChessRules.OtherColor(flagged)),
+                    "result", result });
             }
-            return ChessText.Get(texts, "status_ending", "ending", ChessText.EndingText(texts, ending, winner), "result",
-                result);
+            return I18n.Format(texts[TextStatusEnding], new string[] {
+                "ending", EndingText(texts, ending, winner), "result", result });
         }
 
         // The replay position: "Replay: 2. Nf3 (3 of 4)" (the move that led to it, numbered as PGN numbers it, "?"
         // while its notation is missing), "Replay: start (0 of 4)", or "Replay: custom position" after free moves.
-        public static string ReplayTextFor(ChessBoard board, DataDictionary texts) {
-            if (board.replayCustom) return ChessText.Get(texts, "replay_custom");
+        public static string ReplayTextFor(ChessBoard board, string[] texts) {
+            if (board.replayCustom) return texts[TextReplayCustom];
             return PlyTextFor(board, board.replayIndex, texts);
         }
 
         // The game's position before move ply as the replay line names it: "Replay: 2. Nf3 (3 of 4)", "Replay: start
         // (0 of 4)". For the board's replay (ReplayTextFor) and the 2D view's own (step 12.14).
-        public static string PlyTextFor(ChessBoard board, int ply, DataDictionary texts) {
+        public static string PlyTextFor(ChessBoard board, int ply, string[] texts) {
             string plyText = ply.ToString();
             string count = board.moveCount.ToString();
             if (ply <= 0 || ply > board.moveCount) {
-                return ChessText.Get(texts, "replay_start", "ply", plyText, "count", count);
+                return I18n.Format(texts[TextReplayStart], new string[] { "ply", plyText, "count", count });
             }
             // The side that made the first move: the side to move now, or the other after an odd number of moves.
             int firstSide = board.SideToMove();
             if (board.moveCount % 2 == 1) firstSide = ChessRules.OtherColor(firstSide);
             string san = board.notation[ply - 1];
-            if (san == null || san.Length == 0) san = ChessText.Get(texts, "unknown_name");
-            return ChessText.GetWith(texts, "replay_move", new string[] {
+            if (san == null || san.Length == 0) san = texts[TextUnknownName];
+            return I18n.Format(texts[TextReplayMove], new string[] {
                 "move", ChessPgn.MoveLabel(board.startMoveNumber, firstSide, ply - 1), "san", san, "ply", plyText,
                 "count", count });
         }

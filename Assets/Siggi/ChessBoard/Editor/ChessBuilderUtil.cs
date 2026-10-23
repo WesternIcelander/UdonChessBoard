@@ -143,8 +143,9 @@ public static class ChessBuilderUtil {
 
     // The chess system's shared I18n in scene: the I18n with the package's language pack, or, when there's none, a new
     // one on its own object (Chess Language) at the scene's root, where the I18n sanity check (I18nSanityChecks)
-    // finds it as the closest I18n of every object in the scene that has none nearer. Not main: a world's own main
-    // I18n switches it with SetLanguageGlobally.
+    // finds it as the closest I18n of every object in the scene that has none nearer, and fills their empty I18n
+    // fields with it on build and before Play Mode (the builders leave them empty). Not main: a world's own main I18n
+    // switches it with SetLanguageGlobally.
     public static I18n EnsureChessLanguage(Scene scene) {
         TextAsset pack = AssetDatabase.LoadAssetAtPath<TextAsset>(LanguagePackPath);
         foreach (I18n i18n in Object.FindObjectsOfType<I18n>(true)) {
@@ -167,31 +168,5 @@ public static class ChessBuilderUtil {
         Debug.Log("[ChessBuilderUtil] Created " + ChessLanguageName + " (the chess system's I18n, with " + LanguagePackPath
             + ") at the scene's root.");
         return created;
-    }
-
-    // Ensures the scene's Chess Language (EnsureChessLanguage) and points every empty I18n field of the scene's
-    // behaviours at it, as the I18n sanity check would (without its dialog, which would stop an unattended Play
-    // Mode run). Called by each builder once it has built. Returns the Chess Language.
-    public static I18n LinkChessLanguage(Scene scene) {
-        I18n language = EnsureChessLanguage(scene);
-        foreach (UdonSharpBehaviour behaviour in Object.FindObjectsOfType<UdonSharpBehaviour>(true)) {
-            if (behaviour is I18n || behaviour.gameObject.scene != scene) continue;
-            SerializedObject serialized = new SerializedObject(behaviour);
-            SerializedProperty property = serialized.GetIterator();
-            bool changed = false;
-            while (property.Next(true)) {
-                if (property.propertyType != SerializedPropertyType.ObjectReference) continue;
-                if (property.type != "PPtr<$" + nameof(I18n) + ">") continue;
-                if (property.propertyPath.Contains(".Array.data[")) continue;
-                if (property.objectReferenceValue != null) continue;
-                property.objectReferenceValue = language;
-                changed = true;
-            }
-            if (!changed) continue;
-            serialized.ApplyModifiedProperties();
-            UdonSharpEditorUtility.CopyProxyToUdon(behaviour);
-            EditorUtility.SetDirty(behaviour);
-        }
-        return language;
     }
 }

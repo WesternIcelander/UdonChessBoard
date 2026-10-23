@@ -149,8 +149,9 @@ public static class ChessSettingsMenuBuilder {
             Undo.DestroyObjectImmediate(olds[i].gameObject);
         }
         int filled = FillEmptyFields(menu);
-        // The menu's text comes from the shared Chess Language (PLAN.md 13.5).
-        LinkChessLanguage(root.scene);
+        // The menu's text comes from the shared Chess Language (PLAN.md 13.5), made when the scene has
+        // none; the I18n fields are left empty, for the I18n sanity check to fill on build and before Play Mode.
+        EnsureChessLanguage(root.scene);
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[ChessSettingsMenuBuilder] " + (olds.Length > 0 ? "Replaced" : "Created") + " the settings menu for "

@@ -316,7 +316,7 @@ public class Board2DTest : ChessTest {
         view.PressLast();
         CheckViewAt(FenAfterNc6, 4, s + ": >> to the latest");
         Check(view.IsOnLatest(), s + ": >> on the latest", "not on the latest");
-        CheckString(view.statusLabel.text, ChessBoardUI.StatusTextFor(first, first.ServerTime(), view.Texts()),
+        CheckString(view.statusLabel.text, ChessBoardUI.StatusTextFor(first, first.ServerTime(), view.GameTexts()),
             s + ": >> the board's status, no replay line");
         CheckSteps(true, true, false, false, s + ": >> the latest");
         view.PressForward();
@@ -1070,8 +1070,9 @@ public class Board2DTest : ChessTest {
     void CheckTexts(string name) {
         ChessBoard board = view.ShownBoard();
         double now = board.ServerTime();
-        CheckString(view.playersLabel.text, ChessBoardUI.PlayersTextFor(board, now, view.Texts()), name + ": players");
-        CheckString(view.statusLabel.text, ChessBoard2DView.StatusTextFor(board, now, view.ViewPly(), view.Texts()),
+        string[] texts = view.GameTexts();
+        CheckString(view.playersLabel.text, ChessBoardUI.PlayersTextFor(board, now, texts), name + ": players");
+        CheckString(view.statusLabel.text, ChessBoard2DView.StatusTextFor(board, now, view.ViewPly(), texts),
             name + ": status");
         CheckString(view.boardLabel.text, "Board " + (board.boardNumber + 1), name + ": board label");
     }
@@ -1098,9 +1099,10 @@ public class Board2DTest : ChessTest {
         }
         Check(ok, name + ": pieces", details);
         double now = board.ServerTime();
-        CheckString(view.playersLabel.text, ChessBoardUI.PlayersTextFor(board, now, view.Texts()), name + ": players");
+        string[] texts = view.GameTexts();
+        CheckString(view.playersLabel.text, ChessBoardUI.PlayersTextFor(board, now, texts), name + ": players");
         // No takeback request is pending where this is called, so the view's lines are the UI's game lines.
-        CheckString(view.statusLabel.text, ChessBoardUI.GameStatusTextFor(board, now, view.Texts()), name + ": status");
+        CheckString(view.statusLabel.text, ChessBoardUI.GameStatusTextFor(board, now, texts), name + ": status");
         CheckString(view.boardLabel.text, "Board " + (board.boardNumber + 1), name + ": board label");
     }
 

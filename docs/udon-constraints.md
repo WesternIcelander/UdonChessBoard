@@ -12,7 +12,7 @@ UdonSharp compiles only part of C#. The ones that matter here:
 - `Regex` is exposed. It is .NET's regex engine, not Java's (see Consequences below).
 - `System.Text.StringBuilder` is available from VRChat SDK 3.7.1, so text building (PGN and FEN output, move notation) can follow the Java. The code therefore needs SDK 3.7.1; the project's minimum is 3.10.4, which the `io.siggi.ustools` dependency (`SimpleAuth`, see [organizers](organizers.md)) requires.
 - TextMeshPro (`TextMeshProUGUI`, `TMP_InputField`) is exposed for what the views use: `text`, `color`, `readOnly`. Not exposed: `TMP_Text.rectTransform` (use `GetComponent<RectTransform>()`), `TMP_InputField.lineType` and `multiLine` (checked by an editor script instead, see [Testing](testing.md#view-test)).
-- The Udon VM is far slower than normal C#, and calls into *another* behaviour (field reads, method calls) are much more expensive than local array access. So each behaviour showing text loads its strings from the shared `I18n` once into a `DataDictionary` of its own and reads them there (step 13.5, [Architecture](architecture.md#player-text-step-135)).
+- The Udon VM is far slower than normal C#, and calls into *another* behaviour (field reads, method calls) are much more expensive than local array access. So each behaviour showing text reads the strings it shows from the shared `I18n` once into fields of its own, and fills in their `${name}` parts with the static `I18n.Format`, which is compiled into the caller (step 13.5, [Architecture](architecture.md#player-text-step-135)).
 
 ## Consequences
 

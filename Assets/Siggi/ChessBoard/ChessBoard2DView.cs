@@ -4,7 +4,6 @@ using SiggiUSTools;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
-using VRC.SDK3.Data;
 using VRC.SDKBase;
 
 namespace SiggiChessBoard {
@@ -44,8 +43,8 @@ namespace SiggiChessBoard {
         [Tooltip("On: everyone sees the board and position last chosen by anyone, late joiners included. Off: each "
             + "player chooses for themselves.")]
         public bool synced;
-        [Tooltip("The chess system's shared I18n (the Chess Language object), for the view's text. Filled in by the "
-            + "builders and the I18n sanity check.")]
+        [Tooltip("The chess system's shared I18n (the Chess Language object), for the view's text. Left empty: the "
+            + "I18n sanity check fills it in on build and before Play Mode.")]
         public I18n i18n;
         // The squares, a1 = 0 to h8 = 63 (a1 bottom left): each square's background and the piece standing on it.
         public Image[] squareImages = new Image[64];
@@ -117,8 +116,9 @@ namespace SiggiChessBoard {
         int listFirstRow;
         ChessBoard listBoard;
         int listPly = -1;
-        // Every string the view shows, from i18n (ChessText.Load), loaded on first use and again on a language change.
-        DataDictionary texts;
+        // The game texts the view writes its status lines with (ChessBoardUI.LoadGameTexts), from i18n: read on first
+        // use and again on a language change.
+        string[] gameTexts;
 
         void Start() {
             if (Utilities.IsValid(i18n)) i18n.AddLanguageChangeListener(this);
@@ -152,15 +152,20 @@ namespace SiggiChessBoard {
             UpdateStatus();
         }
 
-        // Every string the view shows, in the language now. Public for tests.
-        public DataDictionary Texts() {
-            if (texts == null) texts = ChessText.Load(i18n, this);
-            return texts;
+        // The game texts in the language now. Public for tests.
+        public string[] GameTexts() {
+            if (gameTexts == null) LoadTexts();
+            return gameTexts;
+        }
+
+        void LoadTexts() {
+            ChessUtil.CheckI18n(i18n, "[ChessBoard2DView] " + gameObject.name);
+            gameTexts = ChessBoardUI.LoadGameTexts(i18n);
         }
 
         // The I18n's language changed (its AddLanguageChangeListener): every text is written again.
         public void OnLanguageChange() {
-            texts = ChessText.Load(i18n, this);
+            LoadTexts();
             Refresh();
         }
 
@@ -622,7 +627,7 @@ namespace SiggiChessBoard {
                 onLatest = true;
                 for (int square = 0; square < 64; square++) position[square] = ChessRules.Empty;
             }
-            ChessUtil.SetText(boardLabel, valid ? ChessText.BoardText(Texts(), board.boardNumber) : "");
+            ChessUtil.SetText(boardLabel, valid ? ChessBoardUI.BoardText(GameTexts(), board.boardNumber) : "");
             DrawSquares(valid && viewPly > 0 ? board.moveHistory[viewPly - 1] : 0);
             UpdateStepButtons(valid, count);
             UpdateMoveList(board, valid);
@@ -710,8 +715,8 @@ namespace SiggiChessBoard {
             bool valid = Utilities.IsValid(board);
             nextStatusUpdate = Time.time + (valid && board.IsClockRunning() ? ChessBoardUI.StatusInterval : 1);
             double now = valid ? board.ServerTime() : 0;
-            string players = valid ? ChessBoardUI.PlayersTextFor(board, now, Texts()) : "";
-            string status = valid ? StatusTextFor(board, now, viewPly, Texts()) : "";
+            string players = valid ? ChessBoardUI.PlayersTextFor(board, now, GameTexts()) : "";
+            string status = valid ? StatusTextFor(board, now, viewPly, GameTexts()) : "";
             if (Utilities.IsValid(playersLabel) && playersLabel.text != players) playersLabel.text = players;
             if (Utilities.IsValid(statusLabel) && statusLabel.text != status) statusLabel.text = status;
         }
@@ -720,12 +725,12 @@ namespace SiggiChessBoard {
         // GameStatusTextFor, without the lines about the board's replay position, since the view's replay is its own),
         // a pending takeback request ("White asks for a takeback": "to here" would be the board's replay position), then
         // the position shown when it isn't the latest ("Replay: 2. Nf3 (3 of 4)", ChessBoardUI.PlyTextFor).
-        public static string StatusTextFor(ChessBoard board, double now, int ply, DataDictionary texts) {
+        public static string StatusTextFor(ChessBoard board, double now, int ply, string[] texts) {
             if (!Utilities.IsValid(board)) return "";
             string text = ChessBoardUI.GameStatusTextFor(board, now, texts);
             if (board.takebackColor != ChessRules.NoColor) {
-                text = ChessUtil.AddLine(text, ChessText.Get(texts, "status_takeback", "color",
-                    ChessText.ColorText(texts, board.takebackColor)));
+                text = ChessUtil.AddLine(text, I18n.Format(texts[ChessBoardUI.TextStatusTakeback],
+                    new string[] { "color", ChessBoardUI.ColorText(texts, board.takebackColor) }));
             }
             if (ply >= 0 && ply < board.moveCount) {
                 text = ChessUtil.AddLine(text, ChessBoardUI.PlyTextFor(board, ply, texts));

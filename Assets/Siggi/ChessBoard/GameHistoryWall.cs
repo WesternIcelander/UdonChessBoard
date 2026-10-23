@@ -3,7 +3,6 @@ using UdonSharp;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
-using VRC.SDK3.Data;
 using VRC.SDKBase;
 
 namespace SiggiChessBoard {
@@ -15,8 +14,8 @@ namespace SiggiChessBoard {
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class GameHistoryWall : UdonSharpBehaviour {
         public GameArchive archive;
-        [Tooltip("The chess system's shared I18n (the Chess Language object), for the wall's text. Filled in by the "
-            + "builders and the I18n sanity check.")]
+        [Tooltip("The chess system's shared I18n (the Chess Language object), for the wall's text. Left empty: the "
+            + "I18n sanity check fills it in on build and before Play Mode.")]
         public I18n i18n;
         // The heading ("Previous games").
         public TextMeshProUGUI title;
@@ -34,8 +33,13 @@ namespace SiggiChessBoard {
         [System.NonSerialized] public string selectedGameId = "";
         // Counts every change to the selection, for the board views.
         [System.NonSerialized] public int selectionChanges;
-        // Every string the wall shows, from i18n (ChessText.Load), loaded on first use and again on a language change.
-        DataDictionary texts;
+        // The strings the wall shows, from i18n (LoadTexts), read on first use and again on a language change: the game
+        // texts for the names, endings and move counts (ChessBoardUI.LoadGameTexts), and the wall's own.
+        string[] gameTexts;
+        string textTitle = "";
+        string textTitleEmpty = "";
+        string textRow = "";
+        string textRowChess960 = "";
 
         void Start() {
             if (Utilities.IsValid(i18n)) i18n.AddLanguageChangeListener(this);
@@ -45,15 +49,24 @@ namespace SiggiChessBoard {
             RefreshIfChanged();
         }
 
-        // Every string the wall shows, in the language now. Public for tests.
-        public DataDictionary Texts() {
-            if (texts == null) texts = ChessText.Load(i18n, this);
-            return texts;
+        // The game texts in the language now. Public for tests.
+        public string[] GameTexts() {
+            if (gameTexts == null) LoadTexts();
+            return gameTexts;
+        }
+
+        void LoadTexts() {
+            ChessUtil.CheckI18n(i18n, "[GameHistoryWall] " + gameObject.name);
+            gameTexts = ChessBoardUI.LoadGameTexts(i18n);
+            textTitle = ChessUtil.Text(i18n, "wall_title");
+            textTitleEmpty = ChessUtil.Text(i18n, "wall_title_empty");
+            textRow = ChessUtil.Text(i18n, "wall_row");
+            textRowChess960 = ChessUtil.Text(i18n, "wall_row_chess960");
         }
 
         // The I18n's language changed (its AddLanguageChangeListener): every row is written again.
         public void OnLanguageChange() {
-            texts = ChessText.Load(i18n, this);
+            LoadTexts();
             Refresh();
         }
 
@@ -125,24 +138,25 @@ namespace SiggiChessBoard {
         public string TitleText() {
             if (!Utilities.IsValid(archive)) return "";
             int count = archive.GameCount();
-            return ChessText.Get(Texts(), count == 0 ? "wall_title_empty" : "wall_title");
+            if (gameTexts == null) LoadTexts();
+            return count == 0 ? textTitleEmpty : textTitle;
         }
 
         // The index-th archived game, oldest first: "#12  Ana vs Bo: White wins by checkmate (1-0), 12 moves", with
         // ", Chess960" for that mode. A name missing is "?".
         public string RowText(int index) {
-            DataDictionary t = Texts();
+            string[] texts = GameTexts();
             int moves = (archive.MoveCountAt(index) + 1) / 2;
             int ending = archive.EndingAt(index);
             int winner = archive.WinnerAt(index);
-            string key = archive.ModeAt(index) == ChessGame.ModeChess960 ? "wall_row_chess960" : "wall_row";
-            return ChessText.GetWith(t, key, new string[] {
+            string row = archive.ModeAt(index) == ChessGame.ModeChess960 ? textRowChess960 : textRow;
+            return I18n.Format(row, new string[] {
                 "number", archive.SequenceAt(index).ToString(),
-                "white", ChessText.NameText(t, archive.WhiteAt(index)),
-                "black", ChessText.NameText(t, archive.BlackAt(index)),
-                "ending", ChessText.EndingText(t, ending, winner),
+                "white", ChessBoardUI.NameText(texts, archive.WhiteAt(index)),
+                "black", ChessBoardUI.NameText(texts, archive.BlackAt(index)),
+                "ending", ChessBoardUI.EndingText(texts, ending, winner),
                 "result", ChessPgn.ResultText(ending, winner),
-                "moves", ChessText.MovesText(t, moves) });
+                "moves", ChessBoardUI.MovesText(texts, moves) });
         }
     }
 }

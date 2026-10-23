@@ -47,7 +47,7 @@ namespace SiggiChessBoard {
             + "reach.")]
         public float vrReach = 0.05f;
         [Tooltip("The chess system's shared I18n (the Chess Language object), for the bar's and the corner's hover "
-            + "texts. Filled in by the builders and the I18n sanity check.")]
+            + "texts. Left empty: the I18n sanity check fills it in on build and before Play Mode.")]
         public I18n i18n;
 
         [UdonSynced] float syncedSize = 1;
@@ -110,9 +110,9 @@ namespace SiggiChessBoard {
                 gripPickup.proximity = vrReach;
                 cornerPickup.proximity = vrReach;
             }
-            if (Utilities.IsValid(i18n)) i18n.AddLanguageChangeListener(this);
-            else Debug.LogError("[ChessBoard2DViewHolder] " + gameObject.name
-                + ": the I18n field is empty (add Chess Language).");
+            if (ChessUtil.CheckI18n(i18n, "[ChessBoard2DViewHolder] " + gameObject.name)) {
+                i18n.AddLanguageChangeListener(this);
+            }
             SetHoverTexts();
             started = true;
             if (view.synced) {
@@ -138,7 +138,7 @@ namespace SiggiChessBoard {
 
         void SetHoverText(VRCPickup pickup, string key) {
             if (!Utilities.IsValid(pickup)) return;
-            string text = Utilities.IsValid(i18n) ? i18n._(key) : key;
+            string text = ChessUtil.Text(i18n, key);
             pickup.InteractionText = text;
             pickup.UseText = text;
         }

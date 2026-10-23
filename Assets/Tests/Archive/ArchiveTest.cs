@@ -417,13 +417,13 @@ public class ArchiveTest : ChessTest {
         Check(assigned, "wall: title and rows assigned", "a text is missing");
         CheckString(ChessGame.EndingKey(ChessGame.EndingUnterminated, ChessRules.NoColor), "ending_unfinished",
             "wall: ending key, unfinished");
-        CheckString(ChessText.EndingText(wall.Texts(), ChessGame.EndingUnterminated, ChessRules.NoColor), "Unfinished",
+        CheckString(WallEndingText(ChessGame.EndingUnterminated, ChessRules.NoColor), "Unfinished",
             "wall: ending text, unfinished");
-        CheckString(ChessText.EndingText(wall.Texts(), ChessGame.EndingResignation, ChessRules.White),
+        CheckString(WallEndingText(ChessGame.EndingResignation, ChessRules.White),
             "White wins by resignation", "wall: ending text, resignation");
-        CheckString(ChessText.EndingText(wall.Texts(), ChessGame.EndingTimeForfeit, ChessRules.NoColor), "Draw on time",
+        CheckString(WallEndingText(ChessGame.EndingTimeForfeit, ChessRules.NoColor), "Draw on time",
             "wall: ending text, time forfeit drawn");
-        CheckString(ChessText.EndingText(wall.Texts(), ChessGame.EndingUnknown, ChessRules.Black), "Black wins",
+        CheckString(WallEndingText(ChessGame.EndingUnknown, ChessRules.Black), "Black wins",
             "wall: ending text, a loaded game's result");
     }
 
@@ -473,12 +473,17 @@ public class ArchiveTest : ChessTest {
         Check(differs == "", name + ": rows", differs);
     }
 
+    // How a game ended, as the wall writes it (its game texts).
+    string WallEndingText(int ending, int winner) {
+        return ChessBoardUI.EndingText(wall.GameTexts(), ending, winner);
+    }
+
     // Test game n's row (AddTestGame): its sequence is n, as each was archived in turn.
     string ExpectedRow(int n) {
         int ending = n % 11;
         int winner = n % 3 - 1 < 0 ? ChessRules.NoColor : n % 2;
         int moves = (n % 7 + 2) / 2;
-        return "#" + n + "  White " + n + " vs Black " + n + ": " + ChessText.EndingText(wall.Texts(), ending, winner)
+        return "#" + n + "  White " + n + " vs Black " + n + ": " + WallEndingText(ending, winner)
             + " (" + ChessPgn.ResultText(ending, winner) + "), " + moves + (moves == 1 ? " move" : " moves")
             + (n % 2 == ChessGame.ModeChess960 ? ", Chess960" : "");
     }

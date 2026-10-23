@@ -54,7 +54,7 @@ public static class ViewTestBuilder {
         test.testPieceSet = BuildTestPieceSet(root.transform);
         test.languagePack = AssetDatabase.LoadAssetAtPath<TextAsset>(LanguagePackPath);
         test.testLanguagePack = AssetDatabase.LoadAssetAtPath<TextAsset>(TestLanguagePath);
-        AddTestLanguagePack(LinkChessLanguage(root.scene), test.testLanguagePack);
+        AddTestLanguagePack(EnsureChessLanguage(root.scene), test.testLanguagePack);
         UdonSharpEditorUtility.CopyProxyToUdon(test);
 
         for (int i = 0; i < olds.Length; i++) {

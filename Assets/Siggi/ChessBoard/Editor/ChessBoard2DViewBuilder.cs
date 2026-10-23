@@ -207,8 +207,9 @@ public static class ChessBoard2DViewBuilder {
             repointed = ChessBoardViewBuilder.RepointReferences(old, view);
             Undo.DestroyObjectImmediate(old.gameObject);
         }
-        // The view's text comes from the shared Chess Language (PLAN.md 13.5).
-        LinkChessLanguage(root.scene);
+        // The view's text comes from the shared Chess Language (PLAN.md 13.5), made when the scene has
+        // none; the I18n fields are left empty, for the I18n sanity check to fill on build and before Play Mode.
+        EnsureChessLanguage(root.scene);
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[ChessBoard2DViewBuilder] " + (replaced ? "Replaced" : "Created") + " the 2D board view ("
@@ -309,8 +310,9 @@ public static class ChessBoard2DViewBuilder {
         holder.handleRenderers = new[] { gripRenderer, cornerRenderer };
         MatchObjectSync(holder);
         UdonSharpEditorUtility.CopyProxyToUdon(holder);
-        // The handles' hover texts come from the shared Chess Language (PLAN.md 13.5).
-        LinkChessLanguage(holder.gameObject.scene);
+        // The handles' hover texts come from the shared Chess Language (PLAN.md 13.5), made when the scene has
+        // none; the I18n fields are left empty, for the I18n sanity check to fill on build and before Play Mode.
+        EnsureChessLanguage(holder.gameObject.scene);
 
         EditorSceneManager.MarkSceneDirty(holder.gameObject.scene);
         Selection.activeGameObject = holder.gameObject;
