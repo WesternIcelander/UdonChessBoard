@@ -296,8 +296,9 @@ MonoBehaviour:
       Data: 19|UnityEngine.TooltipAttribute, UnityEngine.CoreModule
     - Name: tooltip
       Entry: 1
-      Data: The chess system's shared I18n (the Chess Language object), for the view's
-        text. Filled in by the builders and the I18n sanity check.
+      Data: 'The chess system''s shared I18n (the Chess Language object), for the
+        view''s text. Left empty: the I18n sanity check fills it in on build and
+        before Play Mode.'
     - Name: 
       Entry: 8
       Data: 
@@ -2746,19 +2747,19 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: texts
+      Data: gameTexts
     - Name: $v
       Entry: 7
       Data: 133|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: texts
+      Data: gameTexts
     - Name: <UserType>k__BackingField
       Entry: 7
       Data: 134|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: VRC.SDK3.Data.DataDictionary, VRCSDK3
+      Data: System.String[], mscorlib
     - Name: 
       Entry: 8
       Data: 
