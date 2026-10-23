@@ -1,8 +1,11 @@
 using SiggiChessBoard;
+using SiggiUSTools;
 using UdonSharp;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using VRC.SDK3.Components;
+using VRC.SDK3.Data;
 using VRC.SDKBase;
 
 // Step 9 test behaviour (PLAN.md section 9): the physical board (ChessBoardView) checked against the logical one it
@@ -28,6 +31,10 @@ public class ViewTest : ChessTest {
     public TextAsset promotionsPgn;
     // A second chess piece set (step 12.3): models turned 90°, twice the size, origin off centre, two material slots.
     public ChessPieceSet testPieceSet;
+    // The package's language pack (Languages/en.json) and a test pack overriding a few of its keys
+    // (View/test-language.json), which Tools > Chess Board > Create View Test adds to the Chess Language (step 13.5).
+    public TextAsset languagePack;
+    public TextAsset testLanguagePack;
 
     const string Files = "abcdefgh";
     const string Ranks = "12345678";
@@ -66,6 +73,7 @@ public class ViewTest : ChessTest {
             LogSummary();
             return;
         }
+        UseEnglish(ui.i18n);
         Check(view.board == board && ui.board == board, "the view and the UI on the board", "they aren't");
         CheckString(view.LocalSpaceProblem(), "", "the view's objects in its local space (step 12.2)");
         localName = Networking.LocalPlayer.displayName;
@@ -709,9 +717,9 @@ public class ViewTest : ChessTest {
             if (!found) missing += buttonNames[action] + " ";
         }
         Check(missing.Length == 0, "buttons: every action has a button", "none for " + missing);
-        CheckString(ChessBoardUI.ClockText(ChessArbiter.NoClock, 0), "No clock", "clock text: none");
-        CheckString(ChessBoardUI.ClockText(300, 3), "5+3", "clock text: 5+3");
-        CheckString(ChessBoardUI.ClockText(45, 0), "45s+0", "clock text: 45 s");
+        CheckString(ui.ClockText(ChessArbiter.NoClock, 0), "No clock", "clock text: none");
+        CheckString(ui.ClockText(300, 3), "5+3", "clock text: 5+3");
+        CheckString(ui.ClockText(45, 0), "45s+0", "clock text: 45 s");
 
         board.ClearState();
         CheckButtons("JoinWhite JoinBlack", "reset board");
@@ -805,7 +813,7 @@ public class ViewTest : ChessTest {
             if (!board.IsClockForced()) {
                 CheckInt(ui.PressButton(ChessBoardUI.ButtonClock), ChessBoard.InputAccepted,
                     "loaded game: Clock pressed");
-                CheckLabel(ChessBoardUI.ButtonClock, "Clock: " + ChessBoardUI.ClockText(board.baseTime,
+                CheckLabel(ChessBoardUI.ButtonClock, "Clock: " + ui.ClockText(board.baseTime,
                     board.increment), "loaded game: Clock pressed");
             }
             CheckInt(board.StepToAs(localName, true, 3), ChessBoard.InputAccepted, "loaded game: stepped to ply 3");
@@ -2826,7 +2834,93 @@ public class ViewTest : ChessTest {
         view.animateMoves = savedAnimate;
         view.muted = false;
         ui.muted = false;
+        TestLanguage();
         LogSummary();
+    }
+
+    // ---- 13.5: the UI's text in a language file ----
+
+    // The code's keys (ChessText.Keys) and en.json agree, both ways; the view and the UI share one I18n, English
+    // here; the fixed texts and the hover texts the view sets; and a test pack (View/test-language.json, its code
+    // x-chess-test, added to the Chess Language by Tools > Chess Board > Create View Test) overriding a few keys
+    // changes those texts on SetLanguage, leaving the rest English. English again afterwards. In one frame, so no
+    // other test sees the test pack.
+    void TestLanguage() {
+        string s = "language";
+        I18n i18n = ui.i18n;
+        Check(Utilities.IsValid(i18n) && view.i18n == i18n, s + ": the view and the UI share one I18n",
+            "the UI's " + (Utilities.IsValid(i18n) ? i18n.gameObject.name : "is empty") + ", the view's "
+            + (Utilities.IsValid(view.i18n) ? view.i18n.gameObject.name : "is empty"));
+        if (!Utilities.IsValid(i18n) || !Utilities.IsValid(languagePack) || !Utilities.IsValid(testLanguagePack)) {
+            Check(false, s, "the I18n or a language pack isn't assigned (Tools > Chess Board > Create View Test)");
+            return;
+        }
+        DataToken parsed;
+        bool read = VRCJson.TryDeserializeFromJson(languagePack.text, out parsed)
+            && parsed.TokenType == TokenType.DataDictionary;
+        Check(read, s + ": en.json read", "not a JSON object");
+        if (!read) return;
+        DataDictionary pack = parsed.DataDictionary;
+        string[] keys = ChessText.Keys();
+        DataDictionary seen = new DataDictionary();
+        string missing = "";
+        string twice = "";
+        for (int i = 0; i < keys.Length; i++) {
+            if (!pack.ContainsKey(keys[i])) missing += " " + keys[i];
+            if (seen.ContainsKey(keys[i])) twice += " " + keys[i];
+            seen.SetValue(keys[i], true);
+        }
+        CheckString(missing, "", s + ": every key the code uses is in en.json");
+        CheckString(twice, "", s + ": no key listed twice in ChessText.Keys");
+        DataList packKeys = pack.GetKeys();
+        string unused = "";
+        for (int i = 0; i < packKeys.Count; i++) {
+            string key = packKeys[i].String;
+            if (key != "languageCode" && key != "languageName" && !seen.ContainsKey(key)) unused += " " + key;
+        }
+        CheckString(unused, "", s + ": no key in en.json unused");
+        CheckString(i18n.GetCurrentLanguage(), "en", s + ": English in use");
+
+        CheckString(ui.pgnImportText.text + "|" + ui.pgnCloseText.text, "Import|Close", s + ": the PGN box's buttons");
+        Check(ui.pgnCopyHint.text.StartsWith("PGN of this game") && ui.pgnPasteHint.text.StartsWith("Paste a PGN"),
+            s + ": the PGN box's hints", "\"" + ui.pgnCopyHint.text + "\", \"" + ui.pgnPasteHint.text + "\"");
+        CheckString(PickupTexts(), "Move", s + ": every piece's pickup");
+        string ghosts = "";
+        for (int ghost = 0; ghost < view.promotionGhosts.Length; ghost++) {
+            ChessPromotionGhost behaviour = view.promotionGhosts[ghost];
+            ghosts += (ghost > 0 ? "|" : "") + (Utilities.IsValid(behaviour) ? behaviour.InteractionText : "(none)");
+        }
+        CheckString(ghosts, "Promote to knight|Promote to bishop|Promote to rook|Promote to queen",
+            s + ": the promotion ghosts");
+
+        Check(i18n.SetLanguage("x-chess-test"), s + ": the test pack chosen", "no pack x-chess-test");
+        CheckString(ui.ButtonText(ChessBoardUI.ButtonStart), "Begin (test)", s + ": test pack: Start overridden");
+        CheckString(ui.ButtonText(ChessBoardUI.ButtonReset), "Reset", s + ": test pack: Reset left English");
+        CheckString(ChessText.Get(ui.Texts(), "player_line", "color", ChessText.ColorText(ui.Texts(), ChessRules.White),
+            "name", "Ana"), "Light: Ana", s + ": test pack: White overridden in a line left English");
+        CheckString(PickupTexts(), "Shift (test)", s + ": test pack: the pieces' pickups");
+        CheckString(ui.pgnImportText.text + "|" + ui.pgnCloseText.text, "Bring in (test)|Close",
+            s + ": test pack: the PGN box's buttons");
+        i18n.SetLanguage("en");
+        CheckString(i18n.GetCurrentLanguage(), "en", s + ": English again");
+        CheckString(ui.ButtonText(ChessBoardUI.ButtonStart), "Start", s + ": English again: Start");
+        CheckString(PickupTexts(), "Move", s + ": English again: the pieces' pickups");
+        CheckString(ui.pgnImportText.text, "Import", s + ": English again: the PGN box's Import");
+    }
+
+    // The pieces' pickups' hover text, when every one has the same; otherwise each, separated by |.
+    string PickupTexts() {
+        string first = null;
+        string all = "";
+        bool same = true;
+        for (int obj = 0; obj < view.piecePickups.Length; obj++) {
+            VRCPickup pickup = view.piecePickups[obj];
+            string text = Utilities.IsValid(pickup) ? pickup.InteractionText : "(none)";
+            if (first == null) first = text;
+            else if (text != first) same = false;
+            all += (obj > 0 ? "|" : "") + text;
+        }
+        return same && first != null ? first : all;
     }
 
     void CheckSource(AudioSource source, string name) {

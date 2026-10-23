@@ -197,6 +197,8 @@ public static class ChessBoardViewBuilder {
         uiObject.transform.rotation = place.rotation;
         uiObject.transform.localScale = place.localScale;
         if (oldUiBeside) Undo.DestroyObjectImmediate(oldUi.gameObject);
+        // The view's and the UI's text comes from the shared Chess Language (PLAN.md 13.5).
+        LinkChessLanguage(root.scene);
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[ChessBoardViewBuilder] " + (replacing ? "Replaced " : "Created ") + root.name + " for "
@@ -397,7 +399,8 @@ public static class ChessBoardViewBuilder {
         VRCPickup pickup = piece.AddComponent<VRCPickup>();
         pickup.pickupable = false;
         pickup.DisallowTheft = true;
-        pickup.InteractionText = "Move";
+        // The view gives it its hover text from the language pack (PLAN.md 13.5).
+        pickup.InteractionText = "";
         ChessPiece behaviour = UdonSharpUndo.AddComponent<ChessPiece>(piece);
         behaviour.view = view;
         behaviour.index = obj;
@@ -713,11 +716,11 @@ public static class ChessBoardViewBuilder {
         canvasObject.AddComponent<Image>().color = new Color(0.12f, 0.12f, 0.14f, 0.95f);
 
         GameObject copy = AddStretched(canvasObject, "Copy", Vector2.zero, Vector2.zero);
-        AddPgnHint(copy, font, "PGN of this game. To copy it on desktop: click the text, then Ctrl+A and Ctrl+C.");
+        ui.pgnCopyHint = AddPgnHint(copy, font);
         TMP_InputField field = AddPgnField(copy, font, 8, true);
 
         GameObject paste = AddStretched(canvasObject, "Paste", Vector2.zero, Vector2.zero);
-        AddPgnHint(paste, font, "Paste a PGN here, then press Import. On desktop: click the box, then Ctrl+V.");
+        ui.pgnPasteHint = AddPgnHint(paste, font);
         TMP_InputField pasteField = AddPgnField(paste, font, 8 + PgnBarHeight, false);
         GameObject bar = AddAnchored(paste, "Bar", Vector2.zero, new Vector2(1, 0), new Vector2(8, 4),
             new Vector2(-8, PgnBarHeight));
@@ -726,8 +729,8 @@ public static class ChessBoardViewBuilder {
         TextMeshProUGUI status = AddText(statusObject, font, 12, TextAlignmentOptions.Left, PaleText);
         status.richText = false;
         status.text = "";
-        GameObject importButton = AddBarButton(bar, font, udon, "Import", "PressImport", 1);
-        AddBarButton(bar, font, udon, "Close", "PressPgnClose", 0);
+        GameObject importButton = AddBarButton(bar, font, udon, "Import", "PressImport", 1, out ui.pgnImportText);
+        AddBarButton(bar, font, udon, "Close", "PressPgnClose", 0, out ui.pgnCloseText);
         paste.SetActive(false);
 
         canvasObject.SetActive(false);
@@ -740,11 +743,13 @@ public static class ChessBoardViewBuilder {
         ui.pgnImportButton = importButton;
     }
 
-    // The PGN box's hint line, along the top of part.
-    static void AddPgnHint(GameObject part, TMP_FontAsset font, string text) {
+    // The PGN box's hint line, along the top of part, empty: the UI writes it from the language pack.
+    static TextMeshProUGUI AddPgnHint(GameObject part, TMP_FontAsset font) {
         GameObject hintObject = AddAnchored(part, "Hint", new Vector2(0, 1), Vector2.one,
             new Vector2(10, -PgnHintHeight), new Vector2(-10, 0));
-        AddText(hintObject, font, 12, TextAlignmentOptions.Left, PaleText).text = text;
+        TextMeshProUGUI hint = AddText(hintObject, font, 12, TextAlignmentOptions.Left, PaleText);
+        hint.text = "";
+        return hint;
     }
 
     // The PGN box's multi-line text field, filling part under the hint line down to bottom: read-only for copying,
@@ -777,12 +782,12 @@ public static class ChessBoardViewBuilder {
         return field;
     }
 
-    // A button at the right end of the PGN box's bar, slot places from the right (0 the rightmost), calling the UI's
-    // eventName.
-    static GameObject AddBarButton(GameObject bar, TMP_FontAsset font, UdonBehaviour udon, string label, string eventName,
-        int slot) {
+    // A button named name at the right end of the PGN box's bar, slot places from the right (0 the rightmost), calling
+    // the UI's eventName, with its label (empty: the UI writes it from the language pack).
+    static GameObject AddBarButton(GameObject bar, TMP_FontAsset font, UdonBehaviour udon, string name, string eventName,
+        int slot, out TextMeshProUGUI label) {
         float right = -slot * (PgnBarButtonWidth + 6);
-        GameObject buttonObject = AddAnchored(bar, label, new Vector2(1, 0), Vector2.one,
+        GameObject buttonObject = AddAnchored(bar, name, new Vector2(1, 0), Vector2.one,
             new Vector2(right - PgnBarButtonWidth, 4), new Vector2(right, -4));
         Image image = buttonObject.AddComponent<Image>();
         image.color = new Color(0.85f, 0.85f, 0.88f);
@@ -792,7 +797,8 @@ public static class ChessBoardViewBuilder {
         UnityEventTools.AddStringPersistentListener(button.onClick,
             new UnityAction<string>(udon.SendCustomEvent), eventName);
         GameObject labelObject = AddStretched(buttonObject, "Label", Vector2.zero, Vector2.zero);
-        AddText(labelObject, font, 14, TextAlignmentOptions.Center, Color.black).text = label;
+        label = AddText(labelObject, font, 14, TextAlignmentOptions.Center, Color.black);
+        label.text = "";
         return buttonObject;
     }
 
@@ -890,7 +896,8 @@ public static class ChessBoardViewBuilder {
                     new UnityAction<string>(udon.SendCustomEvent), ButtonEvents[action]);
                 GameObject labelObject = AddStretched(buttonObject, "Label", new Vector2(3, 2), new Vector2(-3, -2));
                 TextMeshProUGUI label = AddText(labelObject, font, 16, TextAlignmentOptions.Center, Color.black);
-                label.text = ui.ButtonText(action);
+                // The UI writes every label from the language pack (PLAN.md 13.5).
+                label.text = "";
                 ui.buttons[index] = buttonObject;
                 ui.buttonActions[index] = action;
                 ui.buttonLabels[index] = label;
@@ -933,23 +940,22 @@ public static class ChessBoardViewBuilder {
             Image background = canvasObject.AddComponent<Image>();
             background.color = new Color(0.12f, 0.12f, 0.14f, 0.9f);
             background.raycastTarget = false;
-            ui.statusPlayerLabels[panel] = StatusText(canvasObject, "Players", font, 0, PlayersWidth, 17,
-                ui.PlayersTextAt(0));
-            ui.statusLabels[panel] = StatusText(canvasObject, "Status", font, PlayersWidth, 1, 14,
-                ui.StatusTextAt(0));
+            ui.statusPlayerLabels[panel] = StatusText(canvasObject, "Players", font, 0, PlayersWidth, 17);
+            ui.statusLabels[panel] = StatusText(canvasObject, "Status", font, PlayersWidth, 1, 14);
         }
     }
 
-    // A column of a status panel, from xMin to xMax of its width, left-aligned and shrinking its text to fit.
+    // A column of a status panel, from xMin to xMax of its width, left-aligned and shrinking its text to fit. Empty:
+    // the UI writes it.
     static TextMeshProUGUI StatusText(GameObject canvasObject, string name, TMP_FontAsset font, float xMin,
-        float xMax, int size, string text) {
+        float xMax, int size) {
         GameObject labelObject = AddAnchored(canvasObject, name, new Vector2(xMin, 0), new Vector2(xMax, 1),
             new Vector2(10, 6), new Vector2(-10, -6));
         TextMeshProUGUI label = AddText(labelObject, font, size, TextAlignmentOptions.Left, PaleText);
         label.enableAutoSizing = true;
         label.fontSizeMin = 8;
         label.fontSizeMax = size;
-        label.text = text;
+        label.text = "";
         return label;
     }
 

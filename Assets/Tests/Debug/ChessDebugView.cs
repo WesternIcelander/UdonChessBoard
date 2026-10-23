@@ -725,7 +725,12 @@ public class ChessDebugView : ChessBoardListener {
 
     string ImportText() {
         string text = ImportStatusName(board.importStatus);
-        if (board.importMessage.Length > 0) text += " (" + board.importMessage + ")";
+        if (board.importStatus == ChessBoard.ImportFailed) {
+            text += board.importResult == ChessPgn.ImportDone ? " (the game couldn't be loaded)"
+                : " (at move " + board.importFailedAt + ": " + ChessPgn.ImportErrorText(board.importResult) + ")";
+        } else if (board.importStatus == ChessBoard.ImportAbandoned) {
+            text += " (the board changed before the import finished)";
+        }
         if (board.importStatus == ChessBoard.ImportRunning && Utilities.IsValid(board.importer)
             && board.importer.paused) {
             text += ", paused";

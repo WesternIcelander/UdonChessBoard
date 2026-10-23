@@ -89,11 +89,12 @@ public static class ChessSettingsMenuBuilder {
         menu.title = NewText(root, "Title", font, TitleFontSize, new Vector2(Margin, Margin),
             new Vector2(CanvasWidth - 2 * Margin, TitleHeight));
         menu.title.fontStyle = FontStyles.Bold;
-        menu.title.text = "Chess settings";
+        // The menu writes every text from the language pack (PLAN.md 13.5).
+        menu.title.text = "";
         menu.notice = NewText(root, "Notice", font, TextFontSize, new Vector2(Margin, Margin + TitleHeight),
             new Vector2(CanvasWidth - 2 * Margin, NoticeHeight));
         menu.notice.color = new Color(1f, 0.75f, 0.45f);
-        menu.notice.text = "Only organizers can change these settings.";
+        menu.notice.text = "";
 
         GameObject controls = new GameObject("Controls", typeof(RectTransform));
         controls.layer = root.layer;
@@ -111,20 +112,23 @@ public static class ChessSettingsMenuBuilder {
         menu.buttonImages = new Image[buttonCount];
         menu.buttonItems = new int[buttonCount];
         menu.buttonActions = new int[buttonCount];
+        menu.buttonLabels = new TextMeshProUGUI[buttonCount];
         menu.values = new TextMeshProUGUI[ChessSettingsMenu.ItemCount];
+        menu.itemLabels = new TextMeshProUGUI[ChessSettingsMenu.ItemCount];
         int next = 0;
         float scopeTop = Margin + TitleHeight + NoticeHeight;
-        menu.scopeLabel = AddRow(controls, menu, ChessSettingsMenu.ItemScope, "Settings for", font,
-            scopeTop + (ScopeHeight - RowHeight) / 2, ref next);
+        TextMeshProUGUI scopeTitle;
+        menu.scopeLabel = AddRow(controls, menu, ChessSettingsMenu.ItemScope, font,
+            scopeTop + (ScopeHeight - RowHeight) / 2, ref next, out scopeTitle);
+        menu.scopeTitle = scopeTitle;
         menu.scopeLabel.fontStyle = FontStyles.Bold;
         for (int item = 0; item < ChessSettingsMenu.ItemCount; item++) {
-            menu.values[item] = AddRow(controls, menu, item, ChessSettingsMenu.ItemText(item), font,
-                itemsTop + item * RowHeight, ref next);
+            menu.values[item] = AddRow(controls, menu, item, font, itemsTop + item * RowHeight, ref next,
+                out menu.itemLabels[item]);
         }
         // The re-snapshot row: its label and Apply now, and the outcome across the line below.
-        NewText(controls, "Label resnapshot", font, TextFontSize, new Vector2(Margin, resnapshotTop),
-            new Vector2(LabelWidth + ValueWidth, RowHeight)).text =
-            ChessSettingsMenu.ItemText(ChessSettingsMenu.ItemResnapshot);
+        menu.resnapshotTitle = NewText(controls, "Label resnapshot", font, TextFontSize,
+            new Vector2(Margin, resnapshotTop), new Vector2(LabelWidth + ValueWidth, RowHeight));
         AddButton(controls, menu, ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn, font,
             new Vector2(Margin + LabelWidth + ValueWidth, resnapshotTop + (RowHeight - ButtonHeight) / 2), next++);
         menu.resnapshotLabel = NewText(controls, "Value resnapshot", font, TextFontSize,
@@ -145,6 +149,8 @@ public static class ChessSettingsMenuBuilder {
             Undo.DestroyObjectImmediate(olds[i].gameObject);
         }
         int filled = FillEmptyFields(menu);
+        // The menu's text comes from the shared Chess Language (PLAN.md 13.5).
+        LinkChessLanguage(root.scene);
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[ChessSettingsMenuBuilder] " + (olds.Length > 0 ? "Replaced" : "Created") + " the settings menu for "
@@ -162,12 +168,12 @@ public static class ChessSettingsMenuBuilder {
         return list.ToArray();
     }
 
-    // A row: its label, its value text (returned), and its three buttons, each a ChessSettingsButton calling Press.
-    static TextMeshProUGUI AddRow(GameObject parent, ChessSettingsMenu menu, int item, string label, TMP_FontAsset font, float top,
-            ref int next) {
-        NewText(parent, "Label " + item, font, TextFontSize, new Vector2(Margin, top),
-                new Vector2(LabelWidth, RowHeight))
-            .text = label;
+    // A row: its label (label, empty: the menu writes it), its value text (returned), and its three buttons, each a
+    // ChessSettingsButton calling Press.
+    static TextMeshProUGUI AddRow(GameObject parent, ChessSettingsMenu menu, int item, TMP_FontAsset font, float top,
+            ref int next, out TextMeshProUGUI label) {
+        label = NewText(parent, "Label " + item, font, TextFontSize, new Vector2(Margin, top),
+            new Vector2(LabelWidth, RowHeight));
         TextMeshProUGUI value = NewText(parent, "Value " + item, font, TextFontSize, new Vector2(Margin + LabelWidth, top),
             new Vector2(ValueWidth, RowHeight));
         bool setting = ChessSettingsMenu.IsSettingItem(item);
@@ -183,10 +189,13 @@ public static class ChessSettingsMenuBuilder {
         return value;
     }
 
+    // Each ChessSettingsMenu.Action* by index, for the buttons' object names.
+    static readonly string[] ActionNames = { "On", "Off", "Default", "Previous", "Next" };
+
     static void AddButton(GameObject parent, ChessSettingsMenu menu, int item, int action, TMP_FontAsset font, Vector2 topLeft,
             int index) {
-        string text = ChessSettingsMenu.ActionText(item, action);
-        GameObject buttonObject = new GameObject("Button " + item + " " + text, typeof(RectTransform));
+        GameObject buttonObject = new GameObject("Button " + item + " " + ActionNames[action],
+            typeof(RectTransform));
         buttonObject.layer = parent.layer;
         RectTransform rect = buttonObject.GetComponent<RectTransform>();
         rect.SetParent(parent.transform, false);
@@ -214,8 +223,9 @@ public static class ChessSettingsMenuBuilder {
             new Vector2(ButtonWidth, ButtonHeight));
         label.alignment = TextAlignmentOptions.Center;
         label.color = Color.black;
-        label.text = text;
+        label.text = "";
         menu.buttons[index] = buttonObject;
+        menu.buttonLabels[index] = label;
         menu.buttonImages[index] = image;
         menu.buttonItems[index] = item;
         menu.buttonActions[index] = action;

@@ -2281,7 +2281,8 @@ namespace SiggiChessBoard {
         // get stuck if the importing player left. Only the importing client knows of the import; its listeners hear
         // of it through OnImportChanged.
 
-        // importStatus: no import yet, under way, loaded, failed (importMessage says why), abandoned.
+        // importStatus: no import yet, under way, loaded, failed (importResult and importFailedAt say why), abandoned (by
+        // a change to the board).
         public const int ImportNone = 0;
         public const int ImportRunning = 1;
         public const int ImportLoaded = 2;
@@ -2291,9 +2292,13 @@ namespace SiggiChessBoard {
         // Room for this many plies in an imported game; a longer one fails as "game too long".
         public const int ImportCapacity = 1024;
 
-        // The last import's status on this client, and why it failed or was abandoned ("" otherwise).
+        // The last import's status on this client and, once it has failed, why, as codes: the board keeps no player
+        // text (PLAN.md 13.5; ChessBoardUI writes the message). importResult is the importer's ChessPgn.Import* result
+        // (ImportDone for a game read whole that couldn't be loaded; ImportMore while none has failed) and
+        // importFailedAt the move it failed at ("2...", ChessPgn.ImportFailedAt; "" otherwise).
         [NonSerialized] public int importStatus = ImportNone;
-        [NonSerialized] public string importMessage = "";
+        [NonSerialized] public int importResult = ChessPgn.ImportMore;
+        [NonSerialized] public string importFailedAt = "";
         // The import's time per frame in milliseconds (at least one step per frame).
         [NonSerialized] public float importBudgetMs = ChessPgnImporter.DefaultBudgetMs;
 
@@ -2307,7 +2312,7 @@ namespace SiggiChessBoard {
         public int StartImport(string text) {
             if (!CanImport()) return InputRejected;
             importer.StartImport(text, ImportCapacity, importBudgetMs, this, nameof(_ImportFinished));
-            SetImportStatus(ImportRunning, "");
+            SetImportStatus(ImportRunning, ChessPgn.ImportMore, "");
             return InputAccepted;
         }
 
@@ -2319,26 +2324,26 @@ namespace SiggiChessBoard {
             int result = importer.result;
             if (result == ChessPgn.ImportMore) return;
             if (result != ChessPgn.ImportDone) {
-                SetImportStatus(ImportFailed, "failed at move " + importer.FailedAt() + ": "
-                    + ChessPgn.ImportErrorText(result));
+                SetImportStatus(ImportFailed, result, importer.FailedAt());
                 return;
             }
             // Not running any more, so the load's own change doesn't abandon it.
             importStatus = ImportLoaded;
-            if (LoadImport(importer) == InputAccepted) SetImportStatus(ImportLoaded, "");
-            else SetImportStatus(ImportFailed, "the game couldn't be loaded");
+            if (LoadImport(importer) == InputAccepted) SetImportStatus(ImportLoaded, ChessPgn.ImportDone, "");
+            else SetImportStatus(ImportFailed, ChessPgn.ImportDone, "");
         }
 
         // Stops an import under way because the board changed, and tells the listeners.
         void AbandonImport() {
             if (importStatus != ImportRunning) return;
             if (Utilities.IsValid(importer)) importer.Abandon();
-            SetImportStatus(ImportAbandoned, "the board changed before the import finished");
+            SetImportStatus(ImportAbandoned, ChessPgn.ImportMore, "");
         }
 
-        void SetImportStatus(int status, string message) {
+        void SetImportStatus(int status, int result, string failedAt) {
             importStatus = status;
-            importMessage = message;
+            importResult = result;
+            importFailedAt = failedAt;
             if (listeners == null) return;
             for (int i = 0; i < listeners.Length; i++) {
                 if (Utilities.IsValid(listeners[i])) listeners[i].OnImportChanged();

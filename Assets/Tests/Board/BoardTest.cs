@@ -6352,7 +6352,8 @@ public class BoardTest : ChessTest {
         CheckInt(board.lastSentChange, sentChange, s + ": while importing: nothing sent");
         board._ImportFinished();
         CheckInt(board.importStatus, ChessBoard.ImportLoaded, s + ": loaded");
-        CheckString(board.importMessage, "", s + ": loaded: no message");
+        CheckInt(board.importResult, ChessPgn.ImportDone, s + ": loaded: read whole");
+        CheckString(board.importFailedAt, "", s + ": loaded: failed at no move");
         CheckInt(importTold - told, 2, s + ": loaded: told");
         CheckTold(ChessBoard.ChangeLoaded, s + ": loaded");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, s + ": the board loaded");
@@ -6380,7 +6381,8 @@ public class BoardTest : ChessTest {
         importer.ImportFor(float.MaxValue);
         board._ImportFinished();
         CheckInt(board.importStatus, ChessBoard.ImportFailed, f + ": failed");
-        CheckString(board.importMessage, "failed at move 2.: illegal move", f + ": the reason");
+        CheckInt(board.importResult, ChessPgn.ImportIllegalMove, f + ": the reason: an illegal move");
+        CheckString(board.importFailedAt, "2.", f + ": the move it failed at");
         CheckInt(importTold - told, 2, f + ": told when started and when failed");
         CheckNotTold(f + ": OnBoardChanged");
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, f + ": the board still reset");
@@ -6394,7 +6396,7 @@ public class BoardTest : ChessTest {
         importer.ImportFor(0f);
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, a + ": Ana joins");
         CheckInt(board.importStatus, ChessBoard.ImportAbandoned, a + ": abandoned");
-        Check(board.importMessage.Length > 0, a + ": the reason", "no message");
+        CheckInt(board.importResult, ChessPgn.ImportMore, a + ": no failure recorded");
         CheckInt(importTold - told, 2, a + ": told when started and when abandoned");
         Check(!importer.importing, a + ": the importer stopped", "still importing");
         importer.ImportFor(float.MaxValue);

@@ -16,8 +16,8 @@ namespace SiggiChessBoard {
         }
 
         // Called on the importing client when a PGN import (ChessBoard.StartImport) starts, is loaded, fails or is
-        // abandoned (ChessBoard.importStatus and importMessage). A loaded import is also an OnBoardChanged
-        // (ChangeLoaded), told first.
+        // abandoned (ChessBoard.importStatus, and why it failed as codes: importResult and importFailedAt). A loaded
+        // import is also an OnBoardChanged (ChangeLoaded), told first.
         public virtual void OnImportChanged() {
         }
     }

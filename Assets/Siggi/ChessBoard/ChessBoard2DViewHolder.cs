@@ -1,3 +1,4 @@
+using SiggiUSTools;
 using UdonSharp;
 using UnityEngine;
 using VRC.SDK3.Components;
@@ -45,6 +46,9 @@ namespace SiggiChessBoard {
         [Tooltip("How near (m) a VR hand must be to grab the bar or the corner. Desktop players keep the pickups' own "
             + "reach.")]
         public float vrReach = 0.05f;
+        [Tooltip("The chess system's shared I18n (the Chess Language object), for the bar's and the corner's hover "
+            + "texts. Filled in by the builders and the I18n sanity check.")]
+        public I18n i18n;
 
         [UdonSynced] float syncedSize = 1;
         [UdonSynced] bool syncedUpright;
@@ -106,6 +110,10 @@ namespace SiggiChessBoard {
                 gripPickup.proximity = vrReach;
                 cornerPickup.proximity = vrReach;
             }
+            if (Utilities.IsValid(i18n)) i18n.AddLanguageChangeListener(this);
+            else Debug.LogError("[ChessBoard2DViewHolder] " + gameObject.name
+                + ": the I18n field is empty (add Chess Language).");
+            SetHoverTexts();
             started = true;
             if (view.synced) {
                 size = Mathf.Clamp(syncedSize, minSize, maxSize);
@@ -114,6 +122,25 @@ namespace SiggiChessBoard {
             }
             ApplyMovable();
             Follow();
+        }
+
+        // The I18n's language changed (its AddLanguageChangeListener).
+        public void OnLanguageChange() {
+            SetHoverTexts();
+        }
+
+        // The bar's and the corner's hover texts ("Move", "Resize"), from the language pack (PLAN.md 13.5). Two strings
+        // only, so they're read straight from the I18n.
+        void SetHoverTexts() {
+            SetHoverText(gripPickup, "hover_move");
+            SetHoverText(cornerPickup, "hover_resize");
+        }
+
+        void SetHoverText(VRCPickup pickup, string key) {
+            if (!Utilities.IsValid(pickup)) return;
+            string text = Utilities.IsValid(i18n) ? i18n._(key) : key;
+            pickup.InteractionText = text;
+            pickup.UseText = text;
         }
 
         public override void PostLateUpdate() {

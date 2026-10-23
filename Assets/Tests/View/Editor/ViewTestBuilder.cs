@@ -1,4 +1,5 @@
 using SiggiChessBoard;
+using SiggiUSTools;
 using UdonSharp;
 using UdonSharpEditor;
 using UnityEditor;
@@ -8,13 +9,15 @@ using static ChessBuilderUtil;
 
 // Adds ViewTest (PLAN.md section 9) to the open scene for the scene's board view: the board, the view, the board's UI
 // (step 12.1), the scene's BoardTest to wait for, an importer of its own (a child), the two PGNs and a second piece
-// set (steps 12.3 and 12.10, a child: BuildTestPieceSet). An existing ViewTest is replaced.
+// set (steps 12.3 and 12.10, a child: BuildTestPieceSet), and the language packs (step 13.5): the test pack is added
+// to the Chess Language after the package's own, so English stays the fallback. An existing ViewTest is replaced.
 // Menu: Tools > Chess Board > Create View Test. Plain editor C#, not Udon.
 public static class ViewTestBuilder {
     const string TestScriptPath = "Assets/Tests/View/ViewTest.cs";
     const string TestProgramPath = "Assets/Tests/View/ViewTest.asset";
     const string Chess960Path = "Assets/Tests/PGN/chess960.pgn.txt";
     const string PromotionsPath = "Assets/Tests/PGN/promotions.pgn.txt";
+    const string TestLanguagePath = "Assets/Tests/View/test-language.json";
 
     [MenuItem("Tools/Chess Board/Create View Test")]
     static void Create() {
@@ -49,6 +52,9 @@ public static class ViewTestBuilder {
         test.chess960Pgn = AssetDatabase.LoadAssetAtPath<TextAsset>(Chess960Path);
         test.promotionsPgn = AssetDatabase.LoadAssetAtPath<TextAsset>(PromotionsPath);
         test.testPieceSet = BuildTestPieceSet(root.transform);
+        test.languagePack = AssetDatabase.LoadAssetAtPath<TextAsset>(LanguagePackPath);
+        test.testLanguagePack = AssetDatabase.LoadAssetAtPath<TextAsset>(TestLanguagePath);
+        AddTestLanguagePack(LinkChessLanguage(root.scene), test.testLanguagePack);
         UdonSharpEditorUtility.CopyProxyToUdon(test);
 
         for (int i = 0; i < olds.Length; i++) {
@@ -65,6 +71,20 @@ public static class ViewTestBuilder {
         Debug.Log("[ViewTestBuilder] " + (olds.Length > 0 ? "Replaced" : "Created") + " ViewTest for "
             + view.gameObject.name + (test.boardTest != null ? ", waiting for " + test.boardTest.gameObject.name
                 : ", with no BoardTest to wait for") + ". Save the scene.");
+    }
+
+    // Adds the test language pack to the Chess Language's packs, after the others, unless it's there.
+    static void AddTestLanguagePack(I18n language, TextAsset pack) {
+        SerializedObject serialized = new SerializedObject(language);
+        SerializedProperty packs = serialized.FindProperty("languagePacks");
+        for (int i = 0; i < packs.arraySize; i++) {
+            if (packs.GetArrayElementAtIndex(i).objectReferenceValue == pack) return;
+        }
+        packs.arraySize++;
+        packs.GetArrayElementAtIndex(packs.arraySize - 1).objectReferenceValue = pack;
+        serialized.ApplyModifiedProperties();
+        UdonSharpEditorUtility.CopyProxyToUdon(language);
+        EditorUtility.SetDirty(language);
     }
 
     // The view to test: the scene's only one; with several, the one an existing ViewTest has, or else the selected

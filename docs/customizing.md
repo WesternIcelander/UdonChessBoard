@@ -78,6 +78,15 @@ A 2D board view ([2D board view](board-2d.md)) stays where it's placed unless it
 - **Laying it out:** move the holder to place it all; or move the **Grip** and **Corner** relative to the view in the editor (the view keeps the place it has from the grip, and the corner sizes it from where it is), without scaling them. Scale the view itself, not the holder, to change its starting size.
 - **Putting it back:** call the holder's `PutBack()` from a button of your own (as `SendCustomEvent("PutBack")`) to bring it back where you placed it, at its size there.
 
+## Languages (step 13.5)
+
+The chess objects' text comes from **Chess Language**, an `I18n` at the scene's root with the package's `Languages/en.json` (see [Architecture](architecture.md#player-text-step-135)). Each player sees the language of their VRChat client when a pack has it, English otherwise; a world whose own main `I18n` switches language (`SetLanguageGlobally`) switches the chess text too.
+
+- **Adding a language:** write a pack with your language's `languageCode` (`de`, `ja`, …) and `languageName`, and the keys of `en.json` translated, keeping each `${name}` placeholder (they may move within the sentence), and add it to Chess Language's **Language Packs**. A key the pack leaves out shows in English. No code changes.
+- **Changing some English texts:** add a pack with `languageCode` `en` and only the keys to change, after the package's: a pack with a code already loaded overrides only the strings it has.
+- **Keep `en.json` first:** the first pack is the fallback for missing keys.
+- Text that goes into a PGN export (tags, results, SAN) stays English, as PGN requires.
+
 ## Text and font (step 12.17)
 
 Every text on the boards' UIs, the 2D views, the settings menu and the history wall is TextMeshPro (`TextMeshProUGUI`, and `TMP_InputField` for the PGN box's fields), so it stays sharp up close.

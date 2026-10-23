@@ -1,8 +1,10 @@
 using System;
+using SiggiUSTools;
 using UdonSharp;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using VRC.SDK3.Data;
 using VRC.SDKBase;
 
 namespace SiggiChessBoard {
@@ -55,7 +57,16 @@ namespace SiggiChessBoard {
         public const int ScopeAllBoards = -1;
 
         public ChessArbiter arbiter;
+        [Tooltip("The chess system's shared I18n (the Chess Language object), for the menu's text. Filled in by the "
+            + "builders and the I18n sanity check.")]
+        public I18n i18n;
         public TextMeshProUGUI title;
+        // The labels that change only with the language (PLAN.md 13.5): each item's row label (by item), the scope
+        // row's ("Settings for") and the re-snapshot row's, and each button's label (the same index as buttons).
+        public TextMeshProUGUI[] itemLabels = new TextMeshProUGUI[0];
+        public TextMeshProUGUI scopeTitle;
+        public TextMeshProUGUI resnapshotTitle;
+        public TextMeshProUGUI[] buttonLabels = new TextMeshProUGUI[0];
         // Which boards the menu shows ("All boards", "Board 2").
         public TextMeshProUGUI scopeLabel;
         // Shown to everyone but organizers: why the controls are missing (or, for everyone, that the arbiter's Simple
@@ -88,13 +99,37 @@ namespace SiggiChessBoard {
         [NonSerialized] public int drawnChanges = -1;
         // Whether the controls are shown to the local player (an organizer).
         [NonSerialized] public bool controlsShown;
-        // The last re-snapshot's outcome ("" before any, and again once the scope or the settings change).
+        // The last re-snapshot's outcome ("" before any, and again once the scope or the settings change), and its
+        // counts (updated, not in use, refused), to write it again in another language.
         [NonSerialized] public string resnapshotText = "";
+        int[] resnapshotCounts = new int[3];
+        // Every string the menu shows, from i18n (ChessText.Load), loaded on first use and again on a language change.
+        DataDictionary texts;
 
         // How often being an organizer is checked again (FirstJoinerAuth's name arrives, the master changes).
         const float OrganizerCheckInterval = 1f;
         float nextOrganizerCheck;
         bool everChecked;
+
+        void Start() {
+            if (Utilities.IsValid(i18n)) i18n.AddLanguageChangeListener(this);
+        }
+
+        // Every string the menu shows, in the language now. Public for tests.
+        public DataDictionary Texts() {
+            if (texts == null) texts = ChessText.Load(i18n, this);
+            return texts;
+        }
+
+        // The I18n's language changed (its AddLanguageChangeListener): every text is written again.
+        public void OnLanguageChange() {
+            texts = ChessText.Load(i18n, this);
+            if (resnapshotText.Length > 0) {
+                resnapshotText = ResnapshotText(resnapshotCounts[0], resnapshotCounts[1], resnapshotCounts[2]);
+            }
+            Refresh();
+            UpdateVisibility();
+        }
 
         void Update() {
             if (!everChecked || Time.time >= nextOrganizerCheck) {
@@ -125,7 +160,7 @@ namespace SiggiChessBoard {
             if (!Utilities.IsValid(arbiter)) return;
             drawnChanges = arbiter.changes;
             FixScope();
-            ChessUtil.SetText(title, "Chess settings");
+            SetFixedTexts();
             ChessUtil.SetText(scopeLabel, ScopeText());
             for (int item = 0; item < ItemCount && item < values.Length; item++) {
                 ChessUtil.SetText(values[item], ValueText(item));
@@ -168,7 +203,7 @@ namespace SiggiChessBoard {
             bool done = Apply(item, action);
             arbiter.EndChange();
             resnapshotText = "";
-            Debug.Log("[ChessSettingsMenu] " + ChessUtil.LocalName("?") + ": " + ScopeText()
+            Debug.Log("[ChessSettingsMenu] " + ChessUtil.LocalName("?") + ": " + ScopeLogText()
                 + ", " + ChangeText(item, action)
                 + (done ? "" : " (not changed)"));
             Refresh();
@@ -218,20 +253,25 @@ namespace SiggiChessBoard {
                     refused++;
                 }
             }
+            resnapshotCounts[0] = updated;
+            resnapshotCounts[1] = unused;
+            resnapshotCounts[2] = refused;
             resnapshotText = ResnapshotText(updated, unused, refused);
             ChessUtil.SetText(resnapshotLabel, resnapshotText);
-            Debug.Log("[ChessSettingsMenu] " + ChessUtil.LocalName("?") + ": " + ScopeText()
-                + ", re-snapshot: " + resnapshotText);
+            Debug.Log("[ChessSettingsMenu] " + ChessUtil.LocalName("?") + ": " + ScopeLogText() + ", re-snapshot: "
+                + updated + " updated, " + unused + " not in use, " + refused + " refused");
             return updated > 0;
         }
 
         // "2 boards updated, 1 not in use", "No board in use: each takes the settings when next used", "No such board".
-        public static string ResnapshotText(int updated, int unused, int refused) {
-            if (updated + unused + refused == 0) return "No such board";
-            if (updated == 0 && refused == 0) return "No board in use: each takes the settings when next used";
-            string text = updated + (updated == 1 ? " board updated" : " boards updated");
-            if (unused > 0) text += ", " + unused + " not in use";
-            if (refused > 0) text += ", " + refused + " refused";
+        public string ResnapshotText(int updated, int unused, int refused) {
+            DataDictionary t = Texts();
+            if (updated + unused + refused == 0) return ChessText.Get(t, "resnapshot_no_such_board");
+            if (updated == 0 && refused == 0) return ChessText.Get(t, "resnapshot_none_in_use");
+            string text = updated == 1 ? ChessText.Get(t, "resnapshot_updated_one")
+                : ChessText.Get(t, "resnapshot_updated_many", "count", updated.ToString());
+            if (unused > 0) text = ChessText.Get(t, "resnapshot_not_in_use", "text", text, "count", unused.ToString());
+            if (refused > 0) text = ChessText.Get(t, "resnapshot_refused", "text", text, "count", refused.ToString());
             return text;
         }
 
@@ -301,40 +341,53 @@ namespace SiggiChessBoard {
             return ItemSetting(item) != 0;
         }
 
-        // An item's row label.
-        public static string ItemText(int item) {
+        // An item's row label's key in the language pack.
+        public static string ItemKey(int item) {
             switch (item) {
-                case ItemTakebacks: return "Takebacks";
-                case ItemDrawRules: return "All draw rules";
-                case ItemDrawAgreement: return "  Draw by agreement";
-                case ItemThreefoldRepetition: return "  Threefold repetition (claim)";
-                case ItemFiftyMoveRule: return "  Fifty-move rule (claim)";
-                case ItemFivefoldRepetition: return "  Fivefold repetition";
-                case ItemSeventyFiveMoveRule: return "  Seventy-five-move rule";
-                case ItemDeadPosition: return "  Dead position";
-                case ItemModeForced: return "Force the mode";
-                case ItemForcedMode: return "  Forced mode";
-                case ItemClockForced: return "Force the time control";
-                case ItemForcedBaseTime: return "  Forced base time";
-                case ItemForcedIncrement: return "  Forced increment";
-                case ItemPlayOnAfterFlagFall: return "Play on untimed after a flag fall";
-                case ItemResetAvailableTime: return "Anyone can reset after idle";
-                case ItemAutoResetTime: return "Board resets itself after idle";
-                case ItemResnapshot: return "Apply to boards in use";
+                case ItemTakebacks: return "settings_item_takebacks";
+                case ItemDrawRules: return "settings_item_draw_rules";
+                case ItemDrawAgreement: return "settings_item_draw_agreement";
+                case ItemThreefoldRepetition: return "settings_item_threefold_repetition";
+                case ItemFiftyMoveRule: return "settings_item_fifty_move_rule";
+                case ItemFivefoldRepetition: return "settings_item_fivefold_repetition";
+                case ItemSeventyFiveMoveRule: return "settings_item_seventy_five_move_rule";
+                case ItemDeadPosition: return "settings_item_dead_position";
+                case ItemModeForced: return "settings_item_mode_forced";
+                case ItemForcedMode: return "settings_item_forced_mode";
+                case ItemClockForced: return "settings_item_clock_forced";
+                case ItemForcedBaseTime: return "settings_item_forced_base_time";
+                case ItemForcedIncrement: return "settings_item_forced_increment";
+                case ItemPlayOnAfterFlagFall: return "settings_item_play_on_after_flag_fall";
+                case ItemResetAvailableTime: return "settings_item_reset_available_time";
+                case ItemAutoResetTime: return "settings_item_auto_reset_time";
+                case ItemResnapshot: return "settings_item_resnapshot";
+                case ItemScope: return "settings_scope";
             }
             return "";
         }
 
-        // A button's label.
-        public static string ActionText(int item, int action) {
+        // A button's label's key in the language pack; "" for Previous and Next, whose labels are the signs < and >.
+        public static string ActionKey(int item, int action) {
             switch (action) {
-                case ActionOn: return item == ItemResnapshot ? "Apply now" : "On";
-                case ActionOff: return item == ItemDrawRules ? "No draws" : "Off";
-                case ActionDefault: return item == ItemScope ? "All default" : "Default";
-                case ActionPrevious: return "<";
-                case ActionNext: return ">";
+                case ActionOn: return item == ItemResnapshot ? "settings_apply_now" : "settings_on";
+                case ActionOff: return item == ItemDrawRules ? "settings_no_draws" : "settings_off";
+                case ActionDefault: return item == ItemScope ? "settings_all_default" : "settings_default";
             }
             return "";
+        }
+
+        // An item's row label ("Takebacks").
+        public string ItemText(int item) {
+            string key = ItemKey(item);
+            return key.Length > 0 ? ChessText.Get(Texts(), key) : "";
+        }
+
+        // A button's label ("On", "No draws", "<").
+        public string ActionText(int item, int action) {
+            if (action == ActionPrevious) return "<";
+            if (action == ActionNext) return ">";
+            string key = ActionKey(item, action);
+            return key.Length > 0 ? ChessText.Get(Texts(), key) : "";
         }
 
         // Whether a button is shown: Default only for a single board, and each item's own buttons (setting items On and
@@ -417,65 +470,97 @@ namespace SiggiChessBoard {
 
         // ---- Texts ----
 
+        // The labels that change only with the language: the title, the rows' labels and the buttons'.
+        void SetFixedTexts() {
+            DataDictionary t = Texts();
+            ChessUtil.SetText(title, ChessText.Get(t, "settings_title"));
+            ChessUtil.SetText(scopeTitle, ItemText(ItemScope));
+            ChessUtil.SetText(resnapshotTitle, ItemText(ItemResnapshot));
+            for (int item = 0; item < ItemCount && item < itemLabels.Length; item++) {
+                ChessUtil.SetText(itemLabels[item], ItemText(item));
+            }
+            for (int i = 0; i < buttonLabels.Length && i < buttonItems.Length && i < buttonActions.Length; i++) {
+                ChessUtil.SetText(buttonLabels[i], ActionText(buttonItems[i], buttonActions[i]));
+            }
+        }
+
         // "All boards", or "Board 2" for board number 1.
         public string ScopeText() {
-            return scope == ScopeAllBoards ? "All boards" : "Board " + (scope + 1);
+            DataDictionary t = Texts();
+            return scope == ScopeAllBoards ? ChessText.Get(t, "settings_all_boards") : ChessText.BoardText(t, scope);
+        }
+
+        // The scope for the log, in English whatever the language.
+        string ScopeLogText() {
+            return scope == ScopeAllBoards ? "all boards" : "board " + (scope + 1);
         }
 
         // An item's value as shown: "On", "Off (No draws)", "Mixed", "2 min", "Never", "Chess960", "No clock"; for a
         // board, " (default)" after a value it takes from the instance defaults.
         public string ValueText(int item) {
             if (!Utilities.IsValid(arbiter)) return "";
+            DataDictionary t = Texts();
             bool all = scope == ScopeAllBoards;
             int setting = ItemSetting(item);
+            string value;
+            bool fromDefault;
             if (setting != 0) {
                 int bits = (all ? arbiter.defaultSettings : arbiter.EffectiveSettings(scope)) & setting;
-                string text = bits == setting ? "On" : bits == 0 ? (item == ItemDrawRules ? "Off (No draws)" : "Off")
-                    : "Mixed";
-                if (!all && (arbiter.overrideMask[scope] & setting) == 0) text += " (default)";
-                return text;
+                string key = bits == setting ? "settings_on"
+                    : bits == 0 ? (item == ItemDrawRules ? "settings_value_off_no_draws" : "settings_off")
+                    : "settings_value_mixed";
+                value = ChessText.Get(t, key);
+                fromDefault = !all && (arbiter.overrideMask[scope] & setting) == 0;
+            } else {
+                value = NumberText(item, CurrentNumber(item));
+                fromDefault = !all && !arbiter.IsNumberOverridden(scope, ItemNumber(item));
             }
-            string value = NumberText(item, CurrentNumber(item));
-            if (!all && !arbiter.IsNumberOverridden(scope, ItemNumber(item))) value += " (default)";
-            return value;
+            return fromDefault ? ChessText.Get(t, "settings_value_default", "value", value) : value;
         }
 
         // A number item's value: "Standard", "No clock", "Never", "5 min", "0 s".
-        public static string NumberText(int item, int value) {
-            if (item == ItemForcedMode) return ChessBoardUI.ModeText(value);
-            if (item == ItemForcedBaseTime && value == ChessArbiter.NoClock) return "No clock";
+        public string NumberText(int item, int value) {
+            DataDictionary t = Texts();
+            if (item == ItemForcedMode) return ChessText.ModeText(t, value);
+            if (item == ItemForcedBaseTime && value == ChessArbiter.NoClock) return ChessText.Get(t, "clock_none");
             if ((item == ItemResetAvailableTime || item == ItemAutoResetTime) && value == ChessArbiter.Never) {
-                return "Never";
+                return ChessText.Get(t, "settings_never");
             }
             return DurationText(value);
         }
 
         // Seconds as "45 s", "2 min", "1 h", or "1 min 30 s".
-        public static string DurationText(int seconds) {
-            if (seconds < 60) return seconds + " s";
-            if (seconds % 3600 == 0) return (seconds / 3600) + " h";
-            if (seconds % 60 == 0) return (seconds / 60) + " min";
-            return (seconds / 60) + " min " + (seconds % 60) + " s";
+        public string DurationText(int seconds) {
+            DataDictionary t = Texts();
+            if (seconds < 60) return ChessText.Get(t, "duration_seconds", "seconds", seconds.ToString());
+            if (seconds % 3600 == 0) return ChessText.Get(t, "duration_hours", "hours", (seconds / 3600).ToString());
+            string minutes = (seconds / 60).ToString();
+            if (seconds % 60 == 0) return ChessText.Get(t, "duration_minutes", "minutes", minutes);
+            return ChessText.Get(t, "duration_minutes_seconds", "minutes", minutes, "seconds", (seconds % 60).ToString());
         }
 
         // The notice while the arbiter's Simple Auth field is empty (docs/organizers.md, In-game fallback): nobody is
         // an organizer then, so nobody sees the controls.
-        public const string SimpleAuthMissingText = "Settings can't be changed: the Chess Arbiter's Simple Auth field "
-            + "is empty, so nobody is an organizer. Set it in the editor (NoOneAuth if nobody should change settings).";
+        public string SimpleAuthMissingText() {
+            return ChessText.Get(Texts(), "settings_notice_simple_auth_missing");
+        }
 
         // Why the controls are hidden (the empty Simple Auth field first); "" when they're shown.
         public string NoticeText() {
-            if (!Utilities.IsValid(arbiter)) return "No arbiter assigned.";
-            if (arbiter.simpleAuthMissing) return SimpleAuthMissingText;
-            if (!controlsShown) return "Only organizers can change these settings.";
+            if (!Utilities.IsValid(arbiter)) return ChessText.Get(Texts(), "settings_notice_no_arbiter");
+            if (arbiter.simpleAuthMissing) return SimpleAuthMissingText();
+            if (!controlsShown) return ChessText.Get(Texts(), "settings_notice_organizers_only");
             return "";
         }
 
-        // A change for the log: "Takebacks: Off", "Forced base time: >", "All default".
+        // A change for the log, by the language pack's keys: "settings_item_takebacks: settings_off",
+        // "settings_item_forced_base_time: > (now 300)", "settings_all_default".
         string ChangeText(int item, int action) {
-            if (item == ItemScope) return ActionText(item, action);
-            string text = ItemText(item).Trim() + ": " + ActionText(item, action);
-            if (!IsSettingItem(item) && action != ActionDefault) text += " (now " + ValueText(item) + ")";
+            string actionText = ActionKey(item, action);
+            if (actionText.Length == 0) actionText = action == ActionNext ? ">" : "<";
+            if (item == ItemScope) return actionText;
+            string text = ItemKey(item) + ": " + actionText;
+            if (!IsSettingItem(item) && action != ActionDefault) text += " (now " + CurrentNumber(item) + ")";
             return text;
         }
     }

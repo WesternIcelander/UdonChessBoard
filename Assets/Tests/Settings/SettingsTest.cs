@@ -43,6 +43,7 @@ public class SettingsTest : ChessTest {
     public void RunChecks() {
         if (ran || !started || !joined) return;
         ran = true;
+        if (Utilities.IsValid(menu)) UseEnglish(menu.i18n);
         TestSettingBits();
         TestFixNumbers();
         TestEditorDefaults();
@@ -490,7 +491,7 @@ public class SettingsTest : ChessTest {
         SimpleAuth auth = arbiter.simpleAuth;
         if (arbiter.simpleAuthMissing) {
             menu.UpdateVisibility();
-            CheckString(menu.notice.text, ChessSettingsMenu.SimpleAuthMissingText,
+            CheckString(menu.notice.text, menu.SimpleAuthMissingText(),
                 "menu: the empty Simple Auth field shown in the notice");
         }
         if (!Utilities.IsValid(auth) || !arbiter.IsOrganizer(local)) {
@@ -548,7 +549,7 @@ public class SettingsTest : ChessTest {
             arbiter.simpleAuthMissing = false;
             menu.UpdateVisibility();
             Check(hiddenMissing, "menu: controls hidden while the Simple Auth field is empty", "");
-            CheckString(noticeMissing, ChessSettingsMenu.SimpleAuthMissingText,
+            CheckString(noticeMissing, menu.SimpleAuthMissingText(),
                 "menu: the empty Simple Auth field shown in the notice");
             CheckString(menu.notice.text, "", "menu: no notice once the field is set again");
         } else {
@@ -613,7 +614,7 @@ public class SettingsTest : ChessTest {
 
         // All boards: playing on untimed after a flag fall (12.9), off in the known defaults.
         int p = ChessSettingsMenu.ItemPlayOnAfterFlagFall;
-        CheckString(ChessSettingsMenu.ItemText(p), "Play on untimed after a flag fall", "menu: play-on row's label");
+        CheckString(menu.ItemText(p), "Play on untimed after a flag fall", "menu: play-on row's label");
         CheckString(menu.values[p].text, "Off", "menu: all boards: play-on shown off");
         Check(menu.Press(p, ChessSettingsMenu.ActionOn) && arbiter.IsDefaultOn(ChessArbiter.SettingPlayOnAfterFlagFall),
             "menu: all boards: play-on on", ChessArbiter.SettingsToString(arbiter.defaultSettings));
@@ -773,8 +774,8 @@ public class SettingsTest : ChessTest {
         CheckInt(menu.scope, ChessSettingsMenu.ScopeAllBoards, "menu: a board without overrides shows all boards");
 
         // Texts.
-        CheckString(ChessSettingsMenu.DurationText(45) + "|" + ChessSettingsMenu.DurationText(5400) + "|"
-                + ChessSettingsMenu.DurationText(7200) + "|" + ChessSettingsMenu.DurationText(0),
+        CheckString(menu.DurationText(45) + "|" + menu.DurationText(5400) + "|"
+                + menu.DurationText(7200) + "|" + menu.DurationText(0),
             "45 s|90 min|2 h|0 s", "menu: durations");
 
         arbiter.defaultSettings = savedSettings;
@@ -796,11 +797,11 @@ public class SettingsTest : ChessTest {
     // this runs only with nobody else in the instance; it needs both boards reset to start with, and resets them at
     // the end (no moves, so nothing is logged). Settings are put back and sent.
     void TestMenuResnapshot() {
-        CheckString(ChessSettingsMenu.ResnapshotText(0, 0, 0) + "|" + ChessSettingsMenu.ResnapshotText(1, 2, 0) + "|"
-                + ChessSettingsMenu.ResnapshotText(2, 0, 1) + "|" + ChessSettingsMenu.ResnapshotText(0, 3, 0),
+        if (!Utilities.IsValid(menu) || !Utilities.IsValid(arbiter)) return;
+        CheckString(menu.ResnapshotText(0, 0, 0) + "|" + menu.ResnapshotText(1, 2, 0) + "|"
+                + menu.ResnapshotText(2, 0, 1) + "|" + menu.ResnapshotText(0, 3, 0),
             "No such board|1 board updated, 2 not in use|2 boards updated, 1 refused|No board in use: each takes the "
                 + "settings when next used", "re-snapshot: outcome texts");
-        if (!Utilities.IsValid(menu) || !Utilities.IsValid(arbiter)) return;
         VRCPlayerApi local = Networking.LocalPlayer;
         if (!arbiter.IsOrganizer(local)) {
             Check(false, "re-snapshot", "the local player isn't an organizer");
@@ -855,7 +856,7 @@ public class SettingsTest : ChessTest {
 
         Check(!menu.Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn),
             "re-snapshot: nothing taken with every board reset", "");
-        CheckString(menu.resnapshotText, ChessSettingsMenu.ResnapshotText(0, others + 2, 0),
+        CheckString(menu.resnapshotText, menu.ResnapshotText(0, others + 2, 0),
             "re-snapshot: reset boards reported not in use");
         CheckString(menu.resnapshotLabel.text, menu.resnapshotText, "re-snapshot: the outcome shown");
         Check(first.lifecycle == ChessBoard.LifecycleReset && first.gameSettings == 0,
@@ -883,7 +884,7 @@ public class SettingsTest : ChessTest {
         menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionPrevious);
         Check(menu.Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn),
             "re-snapshot: all boards pressed", "");
-        CheckString(menu.resnapshotText, ChessSettingsMenu.ResnapshotText(2, others, 0),
+        CheckString(menu.resnapshotText, menu.ResnapshotText(2, others, 0),
             "re-snapshot: all boards' outcome");
         Check(!second.IsGameSettingOn(t), "re-snapshot: board 2 took the new default", "");
         Check(second.IsModeForced() && second.mode == ChessGame.ModeChess960,

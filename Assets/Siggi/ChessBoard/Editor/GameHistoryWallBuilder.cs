@@ -81,7 +81,8 @@ public static class GameHistoryWallBuilder {
         wall.title = NewText(root, "Title", font, TitleFontSize, new Vector2(Margin, Margin),
             new Vector2(CanvasWidth - 2 * Margin, TitleHeight));
         wall.title.fontStyle = FontStyles.Bold;
-        wall.title.text = "Previous games";
+        // The wall writes every text from the language pack (PLAN.md 13.5).
+        wall.title.text = "";
         float columnWidth = (CanvasWidth - 2 * Margin - (Columns - 1) * ColumnGap) / Columns;
         float rowsTop = Margin + TitleHeight + Margin / 2;
         wall.rows = new TextMeshProUGUI[rowCount];
@@ -107,6 +108,8 @@ public static class GameHistoryWallBuilder {
             Undo.DestroyObjectImmediate(olds[i].gameObject);
         }
         int uis = WireUIs(wall);
+        // The wall's text comes from the shared Chess Language (PLAN.md 13.5).
+        LinkChessLanguage(root.scene);
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[GameHistoryWallBuilder] " + (olds.Length > 0 ? "Replaced" : "Created") + " the history wall with "

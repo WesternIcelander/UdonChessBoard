@@ -207,6 +207,8 @@ public static class ChessBoard2DViewBuilder {
             repointed = ChessBoardViewBuilder.RepointReferences(old, view);
             Undo.DestroyObjectImmediate(old.gameObject);
         }
+        // The view's text comes from the shared Chess Language (PLAN.md 13.5).
+        LinkChessLanguage(root.scene);
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[ChessBoard2DViewBuilder] " + (replaced ? "Replaced" : "Created") + " the 2D board view ("
@@ -294,19 +296,21 @@ public static class ChessBoard2DViewBuilder {
         Vector3 gripSize = GripSize;
         gripSize.x = Mathf.Max(0.1f, Mathf.Min(GripSize.x, 2 * (half.x * holder.minSize - GripClearance)));
         Renderer gripRenderer;
-        holder.gripPickup = AddHandle(holder.transform, "Grip", gripSize, "Move",
+        holder.gripPickup = AddHandle(holder.transform, "Grip", gripSize,
             bottomCentre - heading * new Vector3(0, GripGap + gripSize.y * 0.5f, 0), heading, material,
             out gripRenderer);
         holder.grip = holder.gripPickup.transform;
         holder.gripModel = gripRenderer.transform;
         Renderer cornerRenderer;
         Vector3 cornerOut = new Vector3(CornerSize * 0.5f, -CornerSize * 0.5f, 0);
-        holder.cornerPickup = AddHandle(holder.transform, "Corner", Vector3.one * CornerSize, "Resize",
+        holder.cornerPickup = AddHandle(holder.transform, "Corner", Vector3.one * CornerSize,
             bottomRight + heading * cornerOut, heading, material, out cornerRenderer);
         holder.corner = holder.cornerPickup.transform;
         holder.handleRenderers = new[] { gripRenderer, cornerRenderer };
         MatchObjectSync(holder);
         UdonSharpEditorUtility.CopyProxyToUdon(holder);
+        // The handles' hover texts come from the shared Chess Language (PLAN.md 13.5).
+        LinkChessLanguage(holder.gameObject.scene);
 
         EditorSceneManager.MarkSceneDirty(holder.gameObject.scene);
         Selection.activeGameObject = holder.gameObject;
@@ -317,8 +321,9 @@ public static class ChessBoard2DViewBuilder {
     }
 
     // A handle to pick up: an object with a trigger box collider of size, a kinematic rigidbody without gravity (it
-    // stays where it's let go) and a VRCPickup, on the Pickup layer, with a cube of that size as its visible part.
-    static VRCPickup AddHandle(Transform parent, string name, Vector3 size, string text, Vector3 position,
+    // stays where it's let go) and a VRCPickup (its hover text left empty: the holder sets it from the language
+    // pack), on the Pickup layer, with a cube of that size as its visible part.
+    static VRCPickup AddHandle(Transform parent, string name, Vector3 size, Vector3 position,
             Quaternion rotation, Material material, out Renderer renderer) {
         GameObject handle = new GameObject(name);
         Undo.RegisterCreatedObjectUndo(handle, "Create Movable 2D Board View");
@@ -333,8 +338,8 @@ public static class ChessBoard2DViewBuilder {
         body.isKinematic = true;
         body.useGravity = false;
         VRCPickup pickup = handle.AddComponent<VRCPickup>();
-        pickup.InteractionText = text;
-        pickup.UseText = text;
+        pickup.InteractionText = "";
+        pickup.UseText = "";
 
         GameObject visible = GameObject.CreatePrimitive(PrimitiveType.Cube);
         visible.name = "Model";

@@ -1,4 +1,5 @@
 using SiggiChessBoard;
+using SiggiUSTools;
 using UnityEngine;
 using VRC.SDKBase;
 
@@ -54,6 +55,13 @@ public abstract class ChessTest : ChessBoardListener {
         waitedFrames++;
         if (waitedFrames % 3000 == 0) Debug.Log("[" + TestName() + "] still waiting for " + waitingFor);
         return false;
+    }
+
+    // The text checks expect the English pack's strings (Languages/en.json; PLAN.md 13.5), so a test sets the chess
+    // system's I18n (i18n, the Chess Language its behaviours use) to English first, whatever the player's VRChat
+    // language.
+    protected void UseEnglish(I18n i18n) {
+        if (Utilities.IsValid(i18n)) i18n.SetLanguage("en");
     }
 
     // board's first count notation entries, separated by spaces.

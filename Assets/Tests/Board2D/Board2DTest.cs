@@ -57,6 +57,7 @@ public class Board2DTest : ChessTest {
             Debug.Log("[Board2DTest] skipped: other players are in the instance");
             return;
         }
+        if (Utilities.IsValid(view)) UseEnglish(view.i18n);
         RunStepTargetChecks();
         if (!Utilities.IsValid(view)) {
             Check(false, "view assigned", "assign Board2DTest's View (Tools > Chess Board > Create 2D View Test)");
@@ -315,7 +316,7 @@ public class Board2DTest : ChessTest {
         view.PressLast();
         CheckViewAt(FenAfterNc6, 4, s + ": >> to the latest");
         Check(view.IsOnLatest(), s + ": >> on the latest", "not on the latest");
-        CheckString(view.statusLabel.text, ChessBoardUI.StatusTextFor(first, first.ServerTime()),
+        CheckString(view.statusLabel.text, ChessBoardUI.StatusTextFor(first, first.ServerTime(), view.Texts()),
             s + ": >> the board's status, no replay line");
         CheckSteps(true, true, false, false, s + ": >> the latest");
         view.PressForward();
@@ -838,6 +839,12 @@ public class Board2DTest : ChessTest {
         Check(holder.handleRenderers != null && holder.handleRenderers.Length == 2, s + ": two handle renderers",
             "wrong count");
         CheckNear(holder.minSize, ChessBoard2DViewHolder.DefaultMinSize, s + ": smallest size 0.25");
+        // From the language pack (step 13.5), set by the holder at run time.
+        CheckString(holder.gripPickup.InteractionText + "|" + holder.gripPickup.UseText + "|"
+            + holder.cornerPickup.InteractionText + "|" + holder.cornerPickup.UseText, "Move|Move|Resize|Resize",
+            s + ": the grip's and the corner's hover texts");
+        Check(holder.i18n == view.i18n && Utilities.IsValid(view.i18n), s + ": the holder and the view share one I18n",
+            "they don't");
         bool gripSync = holder.grip.GetComponent<VRCObjectSync>() != null;
         Check(gripSync == savedSynced, s + ": the grip has a VRCObjectSync exactly when the view is synced",
             "VRCObjectSync " + (gripSync ? "there" : "missing") + ", Synced " + (savedSynced ? "on" : "off"));
@@ -1063,8 +1070,8 @@ public class Board2DTest : ChessTest {
     void CheckTexts(string name) {
         ChessBoard board = view.ShownBoard();
         double now = board.ServerTime();
-        CheckString(view.playersLabel.text, ChessBoardUI.PlayersTextFor(board, now), name + ": players");
-        CheckString(view.statusLabel.text, ChessBoard2DView.StatusTextFor(board, now, view.ViewPly()),
+        CheckString(view.playersLabel.text, ChessBoardUI.PlayersTextFor(board, now, view.Texts()), name + ": players");
+        CheckString(view.statusLabel.text, ChessBoard2DView.StatusTextFor(board, now, view.ViewPly(), view.Texts()),
             name + ": status");
         CheckString(view.boardLabel.text, "Board " + (board.boardNumber + 1), name + ": board label");
     }
@@ -1091,9 +1098,9 @@ public class Board2DTest : ChessTest {
         }
         Check(ok, name + ": pieces", details);
         double now = board.ServerTime();
-        CheckString(view.playersLabel.text, ChessBoardUI.PlayersTextFor(board, now), name + ": players");
+        CheckString(view.playersLabel.text, ChessBoardUI.PlayersTextFor(board, now, view.Texts()), name + ": players");
         // No takeback request is pending where this is called, so the view's lines are the UI's game lines.
-        CheckString(view.statusLabel.text, ChessBoardUI.GameStatusTextFor(board, now), name + ": status");
+        CheckString(view.statusLabel.text, ChessBoardUI.GameStatusTextFor(board, now, view.Texts()), name + ": status");
         CheckString(view.boardLabel.text, "Board " + (board.boardNumber + 1), name + ": board label");
     }
 

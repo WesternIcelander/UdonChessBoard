@@ -68,6 +68,7 @@ public class ArchiveTest : ChessTest {
             finished = true;
             return;
         }
+        if (Utilities.IsValid(wall)) UseEnglish(wall.i18n);
         if (!Utilities.IsValid(archive)) {
             Check(false, "archive assigned", "assign ArchiveTest's Archive in the Inspector");
             LogSummary();
@@ -414,13 +415,15 @@ public class ArchiveTest : ChessTest {
             if (!Utilities.IsValid(wall.rows[i])) assigned = false;
         }
         Check(assigned, "wall: title and rows assigned", "a text is missing");
-        CheckString(ChessGame.EndingDescription(ChessGame.EndingUnterminated, ChessRules.NoColor), "Unfinished",
+        CheckString(ChessGame.EndingKey(ChessGame.EndingUnterminated, ChessRules.NoColor), "ending_unfinished",
+            "wall: ending key, unfinished");
+        CheckString(ChessText.EndingText(wall.Texts(), ChessGame.EndingUnterminated, ChessRules.NoColor), "Unfinished",
             "wall: ending text, unfinished");
-        CheckString(ChessGame.EndingDescription(ChessGame.EndingResignation, ChessRules.White),
+        CheckString(ChessText.EndingText(wall.Texts(), ChessGame.EndingResignation, ChessRules.White),
             "White wins by resignation", "wall: ending text, resignation");
-        CheckString(ChessGame.EndingDescription(ChessGame.EndingTimeForfeit, ChessRules.NoColor), "Draw on time",
+        CheckString(ChessText.EndingText(wall.Texts(), ChessGame.EndingTimeForfeit, ChessRules.NoColor), "Draw on time",
             "wall: ending text, time forfeit drawn");
-        CheckString(ChessGame.EndingDescription(ChessGame.EndingUnknown, ChessRules.Black), "Black wins",
+        CheckString(ChessText.EndingText(wall.Texts(), ChessGame.EndingUnknown, ChessRules.Black), "Black wins",
             "wall: ending text, a loaded game's result");
     }
 
@@ -475,7 +478,7 @@ public class ArchiveTest : ChessTest {
         int ending = n % 11;
         int winner = n % 3 - 1 < 0 ? ChessRules.NoColor : n % 2;
         int moves = (n % 7 + 2) / 2;
-        return "#" + n + "  White " + n + " vs Black " + n + ": " + ChessGame.EndingDescription(ending, winner)
+        return "#" + n + "  White " + n + " vs Black " + n + ": " + ChessText.EndingText(wall.Texts(), ending, winner)
             + " (" + ChessPgn.ResultText(ending, winner) + "), " + moves + (moves == 1 ? " move" : " moves")
             + (n % 2 == ChessGame.ModeChess960 ? ", Chess960" : "");
     }

@@ -138,27 +138,31 @@ namespace SiggiChessBoard {
             return gameId + "/" + ply.ToString();
         }
 
-        // How a game ended, for players: "White wins by checkmate", "Draw by agreement", "Black wins" (a loaded game's
-        // result tag, EndingUnknown); "Unfinished" for a game without a result (in progress or unterminated). A time
-        // forfeit drawn is "Draw on time": the board's view says who ran out, knowing the side to move.
-        public static string EndingDescription(int ending, int winner) {
-            if (ending == EndingNone || ending == EndingUnterminated) return "Unfinished";
-            string wins = winner == ChessRules.NoColor ? "Draw"
-                : (winner == ChessRules.White ? "White" : "Black") + " wins";
+        // The language-pack key (Languages/en.json) saying how a game ended, for players: "ending_checkmate_white"
+        // ("White wins by checkmate"), "ending_draw_agreement", "ending_black_wins" (a loaded game's result tag,
+        // EndingUnknown); "ending_unfinished" for a game without a result (in progress or unterminated). A time
+        // forfeit drawn is "ending_time_forfeit_draw" ("Draw on time"): the board's UI says who ran out, knowing the
+        // side to move. The rules keep no player text (PLAN.md 13.5).
+        public static string EndingKey(int ending, int winner) {
+            if (ending == EndingNone || ending == EndingUnterminated) return "ending_unfinished";
+            string side = winner == ChessRules.NoColor ? "draw" : (winner == ChessRules.White ? "white" : "black");
+            // A win without a winner (not made by the board) reads as a draw.
+            bool decisive = ending == EndingCheckmate || ending == EndingResignation || ending == EndingKingCaptured;
+            if (decisive && winner == ChessRules.NoColor) return "ending_draw";
             switch (ending) {
-                case EndingCheckmate: return wins + " by checkmate";
-                case EndingResignation: return wins + " by resignation";
-                case EndingKingCaptured: return wins + " by capturing the king";
-                case EndingTimeForfeit: return winner == ChessRules.NoColor ? "Draw on time" : wins + " on time";
-                case EndingStalemate: return "Draw by stalemate";
-                case EndingDrawAgreement: return "Draw by agreement";
-                case EndingThreefoldRepetition: return "Draw by threefold repetition";
-                case EndingFivefoldRepetition: return "Draw by fivefold repetition";
-                case EndingFiftyMoveRule: return "Draw by the fifty-move rule";
-                case EndingSeventyFiveMoveRule: return "Draw by the seventy-five-move rule";
-                case EndingInsufficientMaterial: return "Draw: insufficient material";
+                case EndingCheckmate: return "ending_checkmate_" + side;
+                case EndingResignation: return "ending_resignation_" + side;
+                case EndingKingCaptured: return "ending_king_captured_" + side;
+                case EndingTimeForfeit: return "ending_time_forfeit_" + side;
+                case EndingStalemate: return "ending_stalemate";
+                case EndingDrawAgreement: return "ending_draw_agreement";
+                case EndingThreefoldRepetition: return "ending_threefold_repetition";
+                case EndingFivefoldRepetition: return "ending_fivefold_repetition";
+                case EndingFiftyMoveRule: return "ending_fifty_move_rule";
+                case EndingSeventyFiveMoveRule: return "ending_seventy_five_move_rule";
+                case EndingInsufficientMaterial: return "ending_insufficient_material";
             }
-            return wins;
+            return winner == ChessRules.NoColor ? "ending_draw" : "ending_" + side + "_wins";
         }
 
         // value (not negative) in decimal, zero-padded to at least count digits.

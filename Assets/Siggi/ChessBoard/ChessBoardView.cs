@@ -1,7 +1,9 @@
 using System;
+using SiggiUSTools;
 using UdonSharp;
 using UnityEngine;
 using VRC.SDK3.Components;
+using VRC.SDK3.Data;
 using VRC.SDKBase;
 
 namespace SiggiChessBoard {
@@ -279,6 +281,16 @@ namespace SiggiChessBoard {
         [NonSerialized] public int[] checkers = new int[CheckLineCount];
         [NonSerialized] public int[] checkedKings = new int[CheckLineCount];
         int[] targetMoves = new int[ChessMoves.MaxMoves];
+        // The hover texts, from the language pack (PLAN.md 13.5) through i18n, read again on a language change: the
+        // pieces' pickups ("Move"), the click targets' and the promotion ghosts'.
+        [Tooltip("The chess system's shared I18n (the Chess Language object), for the hover texts. Filled in by the "
+            + "builders and the I18n sanity check.")]
+        public I18n i18n;
+        string hoverSelect = "";
+        string hoverPutBack = "";
+        string hoverPlace = "";
+        string hoverCapture = "";
+        string hoverCastle = "";
 
         void Start() {
             for (int i = 0; i < 64; i++) squareObject[i] = NoObject;
@@ -290,6 +302,8 @@ namespace SiggiChessBoard {
                 objectPlace[i] = NoPlace;
                 placedSquare[i] = NeverPlaced;
             }
+            if (Utilities.IsValid(i18n)) i18n.AddLanguageChangeListener(this);
+            SetHoverTexts();
             soundsFrom = Time.time + StartupSilence;
             if (!Utilities.IsValid(board)) {
                 Debug.LogError("[ChessBoardView] " + gameObject.name + ": the Board field is empty.");
@@ -1129,6 +1143,33 @@ namespace SiggiChessBoard {
             }
         }
 
+        // The I18n's language changed (its AddLanguageChangeListener): the hover texts are set again.
+        public void OnLanguageChange() {
+            SetHoverTexts();
+            UpdateClickables();
+        }
+
+        // Reads the hover texts in the language now and puts the fixed ones on: "Move" on every piece's pickup, and
+        // each promotion ghost's "Promote to queen". The click targets' are put on as they become clickable.
+        void SetHoverTexts() {
+            DataDictionary texts = ChessText.Load(i18n, this);
+            hoverSelect = ChessText.Get(texts, "hover_select");
+            hoverPutBack = ChessText.Get(texts, "hover_put_back");
+            hoverPlace = ChessText.Get(texts, "hover_place");
+            hoverCapture = ChessText.Get(texts, "hover_capture");
+            hoverCastle = ChessText.Get(texts, "hover_castle");
+            string move = ChessText.Get(texts, "hover_move");
+            for (int obj = 0; obj < piecePickups.Length; obj++) {
+                if (Utilities.IsValid(piecePickups[obj])) piecePickups[obj].InteractionText = move;
+            }
+            for (int ghost = 0; ghost < promotionGhosts.Length; ghost++) {
+                ChessPromotionGhost behaviour = promotionGhosts[ghost];
+                if (!Utilities.IsValid(behaviour)) continue;
+                behaviour.InteractionText = ChessText.Get(texts,
+                    "hover_promote_" + ChessPieceSet.TypeName(behaviour.pieceType));
+            }
+        }
+
         // Makes the pieces and squares click targets exactly where a click does something for the local player in
         // desktop mode, with interact text saying what: with nothing selected, the pieces the board would let them
         // pick up; with one selected, that piece and its square (put back), its targets (pieces to capture or castle
@@ -1146,14 +1187,14 @@ namespace SiggiChessBoard {
                 string text = null;
                 if (clicks && square != ChessRules.NoSquare) {
                     if (obj == selectedObject) {
-                        text = "Put back";
+                        text = hoverPutBack;
                     } else if (PlacesOn(obj)) {
-                        text = ObjectColor(obj) == ObjectColor(selectedObject) ? "Castle" : "Capture";
+                        text = ObjectColor(obj) == ObjectColor(selectedObject) ? hoverCastle : hoverCapture;
                     } else if (board.CanPickUp(square)) {
-                        text = "Select";
+                        text = hoverSelect;
                     }
                 } else if (capturedClicks && CapturedLiftable(obj)) {
-                    text = obj == selectedObject ? "Put back" : "Select";
+                    text = obj == selectedObject ? hoverPutBack : hoverSelect;
                 }
                 bool clickable = text != null;
                 if (behaviour.DisableInteractive == clickable) behaviour.DisableInteractive = !clickable;
@@ -1166,7 +1207,7 @@ namespace SiggiChessBoard {
                 bool clickable = selected && (square == selectedFrom || selectedTargets[square]);
                 GameObject targetObject = target.gameObject;
                 if (targetObject.activeSelf != clickable) targetObject.SetActive(clickable);
-                if (clickable) target.InteractionText = square == selectedFrom ? "Put back" : "Place";
+                if (clickable) target.InteractionText = square == selectedFrom ? hoverPutBack : hoverPlace;
             }
         }
 
