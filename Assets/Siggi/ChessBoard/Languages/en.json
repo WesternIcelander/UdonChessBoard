@@ -21,18 +21,22 @@
   "button_continue": "Continue from here",
   "button_reset": "Reset",
   "button_resign": "Resign",
+
+  "draw_offered": "${name} offers a draw",
   "button_offer_draw": "Offer draw",
   "button_accept_draw": "Accept draw",
   "button_decline_draw": "Decline draw",
   "button_claim_draw": "Claim draw",
   "button_claim_draw_threefold": "Claim draw (threefold)",
   "button_claim_draw_fifty_moves": "Claim draw (50 moves)",
+
   "button_replay": "Replay",
   "button_back_to_game": "Back to game",
   "button_take_back_to_here": "Take back to here",
   "button_accept_takeback": "Accept takeback",
   "button_decline_takeback": "Decline takeback",
   "button_load_here": "Load replay here",
+
   "button_pgn": "Export PGN",
   "button_load_pgn": "Load PGN",
   "button_hide_pgn": "Hide PGN",
