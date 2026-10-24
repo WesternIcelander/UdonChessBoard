@@ -551,7 +551,7 @@ public class ArchiveTest : ChessTest {
             + "then Create Archive Test again)");
         if (hasUI) {
             CheckLoadButton(true, "Load it here: shown on a reset board with a game picked");
-            CheckString(ui.ButtonText(ChessBoardUI.ButtonLoadHere), "Load it here", "Load it here: label");
+            CheckString(ui.ButtonText(ChessBoardUI.ButtonLoadHere), "Load replay here", "Load it here: label");
             board.JoinAs(ChessRules.White, white);
             CheckLoadButton(false, "Load it here: hidden in the lobby");
             CheckInt(ui.PressButton(ChessBoardUI.ButtonLoadHere), ChessBoard.InputRejected,

@@ -1710,7 +1710,7 @@ public class ViewTest : ChessTest {
         PlayOnBoard("e2", "e4", s);
         PlayOnBoard("e7", "e5", s);
         CheckButtons(OwnGame + " Pgn", s + ": 1. e4 e5");
-        CheckLabel(ChessBoardUI.ButtonPgn, "PGN", s + ": closed");
+        CheckLabel(ChessBoardUI.ButtonPgn, "Export PGN", s + ": closed");
         ui.PressPgn();
         CheckPgnBox(true, s + ": opened");
         CheckLabel(ChessBoardUI.ButtonPgn, "Hide PGN", s + ": opened");
@@ -1759,7 +1759,7 @@ public class ViewTest : ChessTest {
         // Closed and opened again; a reset closes it, and the next game doesn't open it.
         ui.PressPgn();
         CheckPgnBox(false, s + ": closed");
-        CheckLabel(ChessBoardUI.ButtonPgn, "PGN", s + ": closed again");
+        CheckLabel(ChessBoardUI.ButtonPgn, "Export PGN", s + ": closed again");
         ui.PressPgn();
         CheckPgnBox(true, s + ": opened again");
         ui.PressReset();
