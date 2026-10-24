@@ -7,16 +7,16 @@ using VRC.SDKBase.Editor.BuildPipeline;
 
 // Step 6.3's check of the build check (ChessArbiterBuildCheck), without building: run it from Tools > Chess Board >
 // Test Build Check with the test scene open (it needs at least one ChessArbiter). It empties the arbiters' Simple Auth
-// fields (6.3) and Default White and Black Piece Set fields (12.3, 12.10) for a moment, in memory only, and puts them
-// back. It runs the check without its error log, selection and dialog, which would otherwise claim that the scene's
-// fields are empty.
+// fields (6.3), and empties their Piece Sets or adds an empty entry to them (12.3, 13.6), for a moment, in memory only,
+// and puts them back. It runs the check without its error log, selection and dialog, which would otherwise claim that
+// the scene's fields are empty.
 // Logs "[BuildCheckTest] PASS: <check>" or "[BuildCheckTest] FAIL: <check>: <details>" per check, then a summary line.
 public static class ChessArbiterBuildCheckTest {
     static int passed;
     static int failed;
 
     // The fields emptied, in turn.
-    static readonly string[] FieldNames = { "Simple Auth", "Default White Piece Set", "Default Black Piece Set" };
+    static readonly string[] FieldNames = { "Simple Auth", "Piece Sets (empty list)", "Piece Sets (an empty entry)" };
 
     [MenuItem("Tools/Chess Board/Test Build Check")]
     public static void Run() {
@@ -29,38 +29,40 @@ public static class ChessArbiterBuildCheckTest {
             return;
         }
         SimpleAuth[] savedAuth = new SimpleAuth[arbiters.Count];
-        ChessPieceSet[] savedWhite = new ChessPieceSet[arbiters.Count];
-        ChessPieceSet[] savedBlack = new ChessPieceSet[arbiters.Count];
+        ChessPieceSet[][] savedSets = new ChessPieceSet[arbiters.Count][];
+        bool[] savedBlocking = new bool[arbiters.Count];
         for (int i = 0; i < arbiters.Count; i++) {
             savedAuth[i] = arbiters[i].simpleAuth;
-            savedWhite[i] = arbiters[i].defaultWhitePieceSet;
-            savedBlack[i] = arbiters[i].defaultBlackPieceSet;
+            savedSets[i] = arbiters[i].pieceSets;
+            string setProblem = ChessArbiterBuildCheck.PieceSetProblem(arbiters[i]);
+            savedBlocking[i] = savedAuth[i] == null || setProblem.Length > 0;
             Check(savedAuth[i] != null, "Simple Auth set on " + arbiters[i].name, "it's empty in the scene; the "
                 + "checks below treat it as empty");
-            Check(savedWhite[i] != null, "Default White Piece Set set on " + arbiters[i].name, "it's empty in the "
-                + "scene; the checks below treat it as empty");
-            Check(savedBlack[i] != null, "Default Black Piece Set set on " + arbiters[i].name, "it's empty in the "
-                + "scene; the checks below treat it as empty");
+            Check(setProblem.Length == 0, "Piece Sets set on " + arbiters[i].name, setProblem + " in the scene; the "
+                + "checks below treat it so");
         }
         SimpleAuth anyAuth = null;
         ChessPieceSet anySet = null;
         for (int i = 0; i < arbiters.Count; i++) {
             if (anyAuth == null) anyAuth = savedAuth[i];
-            if (anySet == null) anySet = savedWhite[i] != null ? savedWhite[i] : savedBlack[i];
+            for (int j = 0; savedSets[i] != null && j < savedSets[i].Length && anySet == null; j++) {
+                anySet = savedSets[i][j];
+            }
         }
 
         bool checkRan = false;
         bool worldAllowed = true;
         bool avatarAllowed = false;
-        bool whiteWorldAllowed = true;
-        bool blackWorldAllowed = true;
+        bool emptyWorldAllowed = true;
+        bool entryWorldAllowed = true;
         try {
             // With every field set, nothing blocks and the check lets the build through.
             if (anyAuth != null && anySet != null) {
                 for (int i = 0; i < arbiters.Count; i++) {
                     if (arbiters[i].simpleAuth == null) arbiters[i].simpleAuth = anyAuth;
-                    if (arbiters[i].defaultWhitePieceSet == null) arbiters[i].defaultWhitePieceSet = anySet;
-                    if (arbiters[i].defaultBlackPieceSet == null) arbiters[i].defaultBlackPieceSet = anySet;
+                    if (ChessArbiterBuildCheck.PieceSetProblem(arbiters[i]).Length > 0) {
+                        arbiters[i].pieceSets = new[] { anySet };
+                    }
                 }
                 CheckBlocking(VRCSDKRequestedBuildType.Scene, arbiters, new bool[arbiters.Count],
                     "all set: a world build isn't blocked");
@@ -72,72 +74,73 @@ public static class ChessArbiterBuildCheckTest {
             // blocked.
             for (int field = 0; field < FieldNames.Length; field++) {
                 for (int i = 0; i < arbiters.Count; i++) {
-                    Restore(arbiters, savedAuth, savedWhite, savedBlack);
+                    Restore(arbiters, savedAuth, savedSets);
                     Empty(arbiters[i], field);
                     bool[] expected = new bool[arbiters.Count];
-                    for (int j = 0; j < arbiters.Count; j++) {
-                        expected[j] = j == i || savedAuth[j] == null || savedWhite[j] == null || savedBlack[j] == null;
-                    }
+                    for (int j = 0; j < arbiters.Count; j++) expected[j] = j == i || savedBlocking[j];
                     CheckBlocking(VRCSDKRequestedBuildType.Scene, arbiters, expected,
-                        arbiters[i].name + " " + FieldNames[field] + " emptied: a world build is blocked by it");
+                        arbiters[i].name + " " + FieldNames[field] + ": a world build is blocked by it");
                     CheckBlocking(VRCSDKRequestedBuildType.Avatar, arbiters, new bool[arbiters.Count],
-                        arbiters[i].name + " " + FieldNames[field] + " emptied: an avatar build isn't blocked");
+                        arbiters[i].name + " " + FieldNames[field] + ": an avatar build isn't blocked");
                 }
             }
 
             // Every field emptied: all of them are named.
             bool[] allEmpty = new bool[arbiters.Count];
             for (int i = 0; i < arbiters.Count; i++) {
-                for (int field = 0; field < FieldNames.Length; field++) Empty(arbiters[i], field);
+                Empty(arbiters[i], 0);
+                Empty(arbiters[i], 1);
                 allEmpty[i] = true;
             }
             CheckBlocking(VRCSDKRequestedBuildType.Scene, arbiters, allEmpty, "all emptied: every arbiter blocks");
 
             // The check cancels a world build with the first one's field emptied, and allows an avatar build.
-            Restore(arbiters, savedAuth, savedWhite, savedBlack);
+            Restore(arbiters, savedAuth, savedSets);
             Empty(arbiters[0], 0);
             worldAllowed = ChessArbiterBuildCheck.Run(VRCSDKRequestedBuildType.Scene, false);
             avatarAllowed = ChessArbiterBuildCheck.Run(VRCSDKRequestedBuildType.Avatar, false);
-            Restore(arbiters, savedAuth, savedWhite, savedBlack);
+            Restore(arbiters, savedAuth, savedSets);
             Empty(arbiters[0], 1);
-            whiteWorldAllowed = ChessArbiterBuildCheck.Run(VRCSDKRequestedBuildType.Scene, false);
-            Restore(arbiters, savedAuth, savedWhite, savedBlack);
+            emptyWorldAllowed = ChessArbiterBuildCheck.Run(VRCSDKRequestedBuildType.Scene, false);
+            Restore(arbiters, savedAuth, savedSets);
             Empty(arbiters[0], 2);
-            blackWorldAllowed = ChessArbiterBuildCheck.Run(VRCSDKRequestedBuildType.Scene, false);
+            entryWorldAllowed = ChessArbiterBuildCheck.Run(VRCSDKRequestedBuildType.Scene, false);
             checkRan = true;
         } finally {
-            Restore(arbiters, savedAuth, savedWhite, savedBlack);
+            Restore(arbiters, savedAuth, savedSets);
         }
         Check(checkRan && !worldAllowed, "Simple Auth emptied: the check cancels a world build", "it allowed it");
         Check(checkRan && avatarAllowed, "Simple Auth emptied: the check allows an avatar build", "it cancelled it");
-        Check(checkRan && !whiteWorldAllowed, "Default White Piece Set emptied: the check cancels a world build",
-            "it allowed it");
-        Check(checkRan && !blackWorldAllowed, "Default Black Piece Set emptied: the check cancels a world build",
+        Check(checkRan && !emptyWorldAllowed, "Piece Sets emptied: the check cancels a world build", "it allowed it");
+        Check(checkRan && !entryWorldAllowed, "an empty Piece Sets entry: the check cancels a world build",
             "it allowed it");
         bool restored = true;
         for (int i = 0; i < arbiters.Count; i++) {
-            if (arbiters[i].simpleAuth != savedAuth[i] || arbiters[i].defaultWhitePieceSet != savedWhite[i]
-                    || arbiters[i].defaultBlackPieceSet != savedBlack[i]) {
-                restored = false;
-            }
+            if (arbiters[i].simpleAuth != savedAuth[i] || arbiters[i].pieceSets != savedSets[i]) restored = false;
         }
         Check(restored, "fields restored", "");
         Summary();
     }
 
-    // Empties one of the fields (FieldNames) on arbiter.
+    // Empties one of the fields (FieldNames) on arbiter: Simple Auth, the whole Piece Sets list, or adds an empty
+    // entry to a copy of the list.
     static void Empty(ChessArbiter arbiter, int field) {
-        if (field == 0) arbiter.simpleAuth = null;
-        else if (field == 1) arbiter.defaultWhitePieceSet = null;
-        else arbiter.defaultBlackPieceSet = null;
+        if (field == 0) {
+            arbiter.simpleAuth = null;
+        } else if (field == 1) {
+            arbiter.pieceSets = new ChessPieceSet[0];
+        } else {
+            ChessPieceSet[] sets = arbiter.pieceSets ?? new ChessPieceSet[0];
+            ChessPieceSet[] grown = new ChessPieceSet[sets.Length + 1];
+            System.Array.Copy(sets, grown, sets.Length);
+            arbiter.pieceSets = grown;
+        }
     }
 
-    static void Restore(List<ChessArbiter> arbiters, SimpleAuth[] auths, ChessPieceSet[] whites,
-            ChessPieceSet[] blacks) {
+    static void Restore(List<ChessArbiter> arbiters, SimpleAuth[] auths, ChessPieceSet[][] sets) {
         for (int i = 0; i < arbiters.Count; i++) {
             arbiters[i].simpleAuth = auths[i];
-            arbiters[i].defaultWhitePieceSet = whites[i];
-            arbiters[i].defaultBlackPieceSet = blacks[i];
+            arbiters[i].pieceSets = sets[i];
         }
     }
 

@@ -44,6 +44,7 @@ No FEN or PGN goes over the network, so no client parses anything to stay in syn
 | replay source time control | `int` ×2 | the loaded game's own base and increment (base `-1` no clock, `-2` unknown), for its export; the clock for continuing is the time control field |
 | white / black player | `string` ×2 | display names, so a rejoining player keeps their seat; see [Ownership](ownership.md) |
 | loaded by | `string` | display name of the player who loaded the game on a loaded board, `""` for none (step 13.2); see [Ownership](ownership.md) |
+| piece sets | `int` ×2 | which of the arbiter's `pieceSets` White and Black wear, `0` (its first) after a reset (step 13.6); a client whose list lacks one shows the first. See [Physical pieces](physical-pieces.md#piece-sets-steps-123-1210-1211-and-136) |
 | last activity | `double` | server time of the last piece touch, see [Inactivity](inactivity.md) |
 | result | `byte` ×2 | ending (in progress, or how it ended) and winner; see [Game endings](game-endings.md) |
 | lifecycle state | `byte` | reset, loaded, lobby, in game, ended; see [Board lifecycle](board-lifecycle.md) |
@@ -52,7 +53,7 @@ No FEN or PGN goes over the network, so no client parses anything to stay in syn
 | clocks | `int` ×2 + `double` | each side's remaining ms, and server time the current turn began |
 | clock history | `int[]` | mover's remaining ms after each move |
 | play-on after a flag fall | `bool` + `int` | whether the game is untimed because a flag fell (the clocks are the timed game's), and the flag fall's ply while it's that flag fall's own continuation (−1 otherwise); step 12.9, see [Clocks](clocks.md#implementation) |
-| last change | `byte` | what the last change was (`ChessBoard.Change*`), so listeners on every client can animate a move; `ChangeRejected` is local and never sent; `ChangeActivity` is a touch that changed nothing but the last activity. See [Architecture](architecture.md#implementation) |
+| last change | `byte` | what the last change was (`ChessBoard.Change*`), so listeners on every client can animate a move; `ChangeRejected` is local and never sent; `ChangeActivity` is a touch that changed nothing but the last activity; `ChangePieceSet` a change of a side's piece set alone. See [Architecture](architecture.md#implementation) |
 | game settings | `int` + `int` ×5 | settings snapshot (setting bits, plus the five numeric settings: two inactivity times, forced mode, forced base time and increment) taken when the board left the reset state; see [Per-board overrides](settings.md#per-board-overrides) |
 
 - The move history is the full packed ints, not a 2-byte compact form. A long game is a couple of KB, well within manual sync limits, and receivers get the undo info with no reconstruction. This replaces the earlier 2-byte format, which was designed for receivers rebuilding moves themselves.

@@ -6,7 +6,8 @@ namespace SiggiChessBoard {
     // listener reads what changed from the board (ChessBoard.lastChange) and the rest of its state through its public
     // fields and getters.
     public abstract class ChessBoardListener : UdonSharpBehaviour {
-        // Called once per change to a board this listens to, after the change.
+        // Called once per change to a board this listens to, after the change. A change of a side's piece set alone
+        // (ChessBoard.ChangePieceSet, step 13.6) leaves the position as it was: only views showing the pieces care.
         public virtual void OnBoardChanged() {
         }
 

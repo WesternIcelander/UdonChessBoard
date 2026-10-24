@@ -58,6 +58,9 @@ namespace SiggiChessBoard {
         // A seat left before a game started (step 13.1). A lobby whose last seat is left is reset with it, and that
         // too is told as ChangeLeft, not ChangeReset.
         public const int ChangeLeft = 17;
+        // A side's piece set changed (step 13.6, SetPieceSetAs), nothing else: the position shown is the same. A join
+        // that puts the joiner's preferred set on the board is told as ChangeJoined. Abandons no import.
+        public const int ChangePieceSet = 18;
 
         // A touch that changes nothing is sent at most once in this many seconds (docs/inactivity.md), so players
         // fidgeting with pieces don't send the board's whole state every frame.
@@ -155,6 +158,12 @@ namespace SiggiChessBoard {
         // cleared when the game is continued or the board reset.
         [NonSerialized] public string loadedBy = "";
 
+        // The piece set each side wears (step 13.6), an index into the arbiter's pieceSets, 0 (its default) after a
+        // reset. Set by SetPieceSetAs and by a join with a preferred set (JoinAs). A view shows the arbiter's override
+        // for a colour instead while it has one, and set 0 for an index its arbiter's list doesn't have.
+        [NonSerialized] public int whitePieceSet;
+        [NonSerialized] public int blackPieceSet;
+
         // Server time of the last activity (docs/inactivity.md): every change sent stamps it, and so does a touch that
         // changes nothing (TouchAsAt), throttled.
         [NonSerialized] public double lastActivity;
@@ -225,8 +234,10 @@ namespace SiggiChessBoard {
         public const int SyncChange = 21;
         public const int SyncUntimedAfterFlagFall = 22;
         public const int SyncFlagFallPly = 23;
+        public const int SyncWhitePieceSet = 24;
+        public const int SyncBlackPieceSet = 25;
         // gameNumbers, then the state array.
-        public const int SyncGameNumbers = 24;
+        public const int SyncGameNumbers = 26;
         public const int SyncState = SyncGameNumbers + ChessArbiter.NumberCount;
         public const int SyncLength = SyncState + ChessPosition.StateLength;
 
@@ -312,7 +323,7 @@ namespace SiggiChessBoard {
 
         // A change made on this client: sends it (unless it's a rejection, which changes nothing), stamped as the
         // board's last activity, and tells every listener.
-        // A change also abandons an import under way here (docs/pgn.md).
+        // A change also abandons an import under way here (docs/pgn.md), unless it only changed a piece set.
         void NotifyChanged(int change) {
             if (change != ChangeRejected) {
                 lastSentChange = change;
@@ -320,7 +331,7 @@ namespace SiggiChessBoard {
                 SendState();
             }
             TellListeners(change, false);
-            if (change != ChangeRejected) AbandonImport();
+            if (change != ChangeRejected && change != ChangePieceSet) AbandonImport();
         }
 
         // Records the change and tells every listener (empty Inspector entries are skipped).
@@ -497,6 +508,8 @@ namespace SiggiChessBoard {
             ints[SyncChange] = lastSentChange;
             ints[SyncUntimedAfterFlagFall] = untimedAfterFlagFall ? 1 : 0;
             ints[SyncFlagFallPly] = flagFallPly;
+            ints[SyncWhitePieceSet] = whitePieceSet;
+            ints[SyncBlackPieceSet] = blackPieceSet;
             Array.Copy(gameNumbers, 0, ints, SyncGameNumbers, ChessArbiter.NumberCount);
             Array.Copy(state, 0, ints, SyncState, ChessPosition.StateLength);
             syncedInts = ints;
@@ -532,7 +545,8 @@ namespace SiggiChessBoard {
         // the change it carries (lastChangeReceived). An update that isn't valid is ignored. A game this client saw in
         // progress is logged on its transition, once (docs/game-endings.md): when the update ends it, or when it's
         // gone (a reset, or a takeback continuing it as a new game) without this client having seen it end. A late
-        // joiner's first update logs nothing. Any update but a touch (ChangeActivity) abandons an import under way here.
+        // joiner's first update logs nothing. Any update but a touch (ChangeActivity) or a piece set change
+        // (ChangePieceSet) abandons an import under way here.
         // Public for tests.
         public void ReceiveState() {
             if (!IsSyncedStateValid()) return;
@@ -549,7 +563,7 @@ namespace SiggiChessBoard {
             if (wasInGame && sameGame && lifecycle == LifecycleEnded) LogGame(ending, winner);
             lastSentChange = syncedInts[SyncChange];
             TellListeners(lastSentChange, true);
-            if (lastSentChange != ChangeActivity) AbandonImport();
+            if (lastSentChange != ChangeActivity && lastSentChange != ChangePieceSet) AbandonImport();
         }
 
         // Whether the synced fields hold a state PackState could have written: the arrays there and of the right
@@ -638,6 +652,8 @@ namespace SiggiChessBoard {
             blackTime = ints[SyncBlackTime];
             untimedAfterFlagFall = ints[SyncUntimedAfterFlagFall] != 0;
             flagFallPly = ints[SyncFlagFallPly];
+            whitePieceSet = ints[SyncWhitePieceSet];
+            blackPieceSet = ints[SyncBlackPieceSet];
             gameSettings = ints[SyncGameSettings];
 
             turnStart = syncedTurnStart;
@@ -781,6 +797,8 @@ namespace SiggiChessBoard {
             whitePlayer = "";
             blackPlayer = "";
             loadedBy = "";
+            whitePieceSet = 0;
+            blackPieceSet = 0;
             lastActivity = 0;
 
             ending = ChessGame.EndingNone;
@@ -825,17 +843,32 @@ namespace SiggiChessBoard {
             return Join(ChessRules.Black);
         }
 
+        // Joins as the local player, with the arbiter's preferredPieceSet (step 13.6), which lives on this client.
         public int Join(int color) {
-            return JoinAs(color, ChessUtil.LocalName(""));
+            int preferred = Utilities.IsValid(arbiter) ? arbiter.preferredPieceSet : -1;
+            return JoinAs(color, ChessUtil.LocalName(""), preferred);
+        }
+
+        // JoinAs with no preferred piece set.
+        public int JoinAs(int color, string name) {
+            return JoinAs(color, name, -1);
         }
 
         // Seats the player with this display name as color. Allowed on a reset board, which then enters the lobby, in
         // the lobby, and on a loaded board, which stays loaded; not once a game has started. A seat taken by someone
         // else can't be joined (only its player can leave it, LeaveSeatAs); names are compared exactly. Joining a seat
         // you already have changes nothing. Public for tests and the debug view; the buttons use JoinWhite/JoinBlack.
-        public int JoinAs(int color, string name) {
+        // The joiner's preferred piece set (step 13.6, an index into the arbiter's pieceSets; -1 for none, and so is
+        // one outside the list) is put on both sides when the other seat is empty, otherwise on the joined colour
+        // alone (also when the joiner holds the other seat), in the same change, whoever may change sets otherwise.
+        public int JoinAs(int color, string name, int preferredSet) {
             if (!CanJoinAs(color, name)) return IsSeated(color, name) && SeatsOpen() ? InputAccepted : InputRejected;
 
+            if (Utilities.IsValid(arbiter) && arbiter.IsPieceSetIndex(preferredSet)) {
+                bool otherEmpty = (color == ChessRules.White ? blackPlayer : whitePlayer).Length == 0;
+                if (otherEmpty || color == ChessRules.White) whitePieceSet = preferredSet;
+                if (otherEmpty || color == ChessRules.Black) blackPieceSet = preferredSet;
+            }
             if (color == ChessRules.White) whitePlayer = name;
             else blackPlayer = name;
             if (lifecycle == LifecycleReset) {
@@ -905,6 +938,46 @@ namespace SiggiChessBoard {
         // Whether this display name has either seat.
         public bool IsPlayer(string name) {
             return IsSeated(ChessRules.White, name) || IsSeated(ChessRules.Black, name);
+        }
+
+        // ---- Piece sets (step 13.6, docs/physical-pieces.md) ----
+        // Which of the arbiter's piece sets each side wears is synced here; the views show it. No UI of ours changes it:
+        // a world's own does, through SetPieceSet or the arbiter's preferredPieceSet (applied by a join).
+
+        // Changes a side's set as the local player (SetPieceSetAs).
+        public int SetPieceSet(int color, int index) {
+            return SetPieceSetAs(ChessUtil.LocalName(""), LocalIsOrganizer(), color, index);
+        }
+
+        // Makes the set at index in the arbiter's pieceSets the one color wears on this board, by name, told as
+        // ChangePieceSet. Setting the set a side already wears changes nothing (accepted, nobody told).
+        public int SetPieceSetAs(string name, bool organizer, int color, int index) {
+            if (!CanSetPieceSetAs(name, organizer, color, index)) return InputRejected;
+            if (PieceSetIndex(color) == index) return InputAccepted;
+            if (color == ChessRules.White) whitePieceSet = index;
+            else blackPieceSet = index;
+            NotifyChanged(ChangePieceSet);
+            return InputAccepted;
+        }
+
+        public bool CanSetPieceSet(int color, int index) {
+            return CanSetPieceSetAs(ChessUtil.LocalName(""), LocalIsOrganizer(), color, index);
+        }
+
+        // Whether name may make color wear the set at index: White or Black, an index in the arbiter's list, and name
+        // may own the board (MayOwnAs, so the loader's lock and organizers apply as they do there).
+        public bool CanSetPieceSetAs(string name, bool organizer, int color, int index) {
+            if (color != ChessRules.White && color != ChessRules.Black) return false;
+            if (!Utilities.IsValid(arbiter) || !arbiter.IsPieceSetIndex(index)) return false;
+            if (name == null || name.Length == 0) return false;
+            return MayOwnAs(name, organizer, BothPlayersPresent(), ServerTime());
+        }
+
+        // The index of the set a ChessRules colour wears on this board as synced (-1 for an unknown colour).
+        public int PieceSetIndex(int color) {
+            if (color == ChessRules.White) return whitePieceSet;
+            if (color == ChessRules.Black) return blackPieceSet;
+            return -1;
         }
 
         // ---- The loader's lock (step 13.2, docs/ownership.md) ----

@@ -9,7 +9,8 @@ using static ChessBuilderUtil;
 
 // Adds ViewTest (PLAN.md section 9) to the open scene for the scene's board view: the board, the view, the board's UI
 // (step 12.1), the scene's BoardTest to wait for, an importer of its own (a child), the two PGNs and a second piece
-// set (steps 12.3 and 12.10, a child: BuildTestPieceSet), and the language packs (step 13.5): the test pack is added
+// set (steps 12.3 and 13.6, a child: BuildTestPieceSet) and a third (Test Colours), both listed on the board's arbiter
+// after its own (ListTestSets), and the language packs (step 13.5): the test pack is added
 // to the Chess Language after the package's own, so English stays the fallback. An existing ViewTest is replaced.
 // Menu: Tools > Chess Board > Create View Test. Plain editor C#, not Udon.
 public static class ViewTestBuilder {
@@ -52,6 +53,7 @@ public static class ViewTestBuilder {
         test.chess960Pgn = AssetDatabase.LoadAssetAtPath<TextAsset>(Chess960Path);
         test.promotionsPgn = AssetDatabase.LoadAssetAtPath<TextAsset>(PromotionsPath);
         test.testPieceSet = BuildTestPieceSet(root.transform);
+        ChessPieceSet colourSet = BuildColourPieceSet(root.transform);
         test.languagePack = AssetDatabase.LoadAssetAtPath<TextAsset>(LanguagePackPath);
         test.testLanguagePack = AssetDatabase.LoadAssetAtPath<TextAsset>(TestLanguagePath);
         AddTestLanguagePack(EnsureChessLanguage(root.scene), test.testLanguagePack);
@@ -66,11 +68,12 @@ public static class ViewTestBuilder {
             ChessBoardViewBuilder.RepointReferences(olds[i], test);
             Undo.DestroyObjectImmediate(olds[i].gameObject);
         }
+        string setNote = ListTestSets(view.board.arbiter, new[] { test.testPieceSet, colourSet });
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[ViewTestBuilder] " + (olds.Length > 0 ? "Replaced" : "Created") + " ViewTest for "
             + view.gameObject.name + (test.boardTest != null ? ", waiting for " + test.boardTest.gameObject.name
-                : ", with no BoardTest to wait for") + ". Save the scene.");
+                : ", with no BoardTest to wait for") + setNote + ". Save the scene.");
     }
 
     // Adds the test language pack to the Chess Language's packs, after the others, unless it's there.
@@ -121,23 +124,65 @@ public static class ViewTestBuilder {
 
     // "Test Chess Pieces" under parent: the generated pieces made awkward (TestMesh: turned 90° onto their backs,
     // twice the size, the origin off their base, two material slots), with templates turned, scaled and moved back
-    // so the pieces stand as the default ones do. One set (step 12.10), set up as White's; the view test puts it on
-    // either side or both, and back.
+    // so the pieces stand as the default ones do. Black has templates of its own (step 13.6): the same meshes with
+    // materials of their own, set up facing White (White's turned half round). Its promotion pieces are White's only,
+    // so Black's fall back on them.
     static ChessPieceSet BuildTestPieceSet(Transform parent) {
         Mesh[] meshes = ChessBoardViewBuilder.PieceMeshes();
         Mesh[] testMeshes = new Mesh[meshes.Length];
         for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) testMeshes[type] = TestMesh(meshes[type]);
         Material[] white = { TestMaterial("Test White Body", new Color(0.95f, 0.9f, 0.75f)),
             TestMaterial("Test White Top", new Color(0.9f, 0.6f, 0.2f)) };
+        Material[] black = { TestMaterial("Test Black Body", new Color(0.15f, 0.12f, 0.1f)),
+            TestMaterial("Test Black Top", new Color(0.55f, 0.2f, 0.7f)) };
         // Undoes TestMesh: turned back up, halved, and moved so the base centre is on the square's centre.
         Quaternion rotation = Quaternion.Euler(-90, 0, 0);
         Vector3 offset = -(rotation * (TestOrigin * 0.5f));
         // Its promotion templates (step 12.11) take the test pieces' transforms and a material of their own.
         Material ghost = TestMaterial("Test Promotion Ghost", new Color(0.3f, 0.4f, 0.95f));
         ChessPieceSet set = ChessBoardViewBuilder.BuildPieceSet("Test Chess Pieces", parent, testMeshes, white, offset,
-            rotation, Vector3.one * 0.5f, ghost);
+            rotation, Vector3.one * 0.5f, ghost, testMeshes, black);
         set.transform.localPosition = new Vector3(0, 0, 0.3f);
         return set;
+    }
+
+    // "Test Colours" under parent: the generated pieces in colours of their own, Black's only materials (step 13.6),
+    // so the several-client checks can tell it from the others at a glance.
+    static ChessPieceSet BuildColourPieceSet(Transform parent) {
+        Material[] white = { TestMaterial("Test Red", new Color(0.85f, 0.2f, 0.15f)) };
+        Material[] black = { TestMaterial("Test Blue", new Color(0.15f, 0.3f, 0.85f)) };
+        Material ghost = TestMaterial("Test Promotion Ghost", new Color(0.3f, 0.4f, 0.95f));
+        ChessPieceSet set = ChessBoardViewBuilder.BuildPieceSet("Test Colours", parent,
+            ChessBoardViewBuilder.PieceMeshes(), white, Vector3.zero, Quaternion.identity, Vector3.one, ghost, null,
+            black);
+        set.transform.localPosition = new Vector3(0, 0, 0.6f);
+        return set;
+    }
+
+    // Lists the test's sets on the arbiter after its own (step 13.6: indexes 1 and 2 for the several-client checks),
+    // dropping empty entries (an earlier test's sets, destroyed with it). Nothing when the list is empty: the board's
+    // own set comes first, from Create Board View.
+    static string ListTestSets(ChessArbiter arbiter, ChessPieceSet[] testSets) {
+        if (arbiter == null) return ", no arbiter to list the test sets on";
+        var sets = new System.Collections.Generic.List<ChessPieceSet>();
+        if (arbiter.pieceSets != null) {
+            foreach (ChessPieceSet set in arbiter.pieceSets) {
+                if (set != null) sets.Add(set);
+            }
+        }
+        if (sets.Count == 0) {
+            Debug.LogWarning("[ViewTestBuilder] " + arbiter.gameObject.name + " has no piece sets: run Create Board View, "
+                + "then Create View Test again.");
+            return ", the test sets not listed (the arbiter has none)";
+        }
+        foreach (ChessPieceSet set in testSets) {
+            if (!sets.Contains(set)) sets.Add(set);
+        }
+        Undo.RecordObject(arbiter, "Create View Test");
+        arbiter.pieceSets = sets.ToArray();
+        UdonSharpEditorUtility.CopyProxyToUdon(arbiter);
+        EditorUtility.SetDirty(arbiter);
+        return ", the test sets listed on " + arbiter.gameObject.name + " (" + sets.Count + " sets)";
     }
 
     // The mesh asset "Test <name>" made from a generated piece, if missing: each vertex doubled, turned 90° about x

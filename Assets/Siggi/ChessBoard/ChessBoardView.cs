@@ -36,13 +36,9 @@ namespace SiggiChessBoard {
         public Transform[] pieces = new Transform[PieceCount];
         public MeshFilter[] pieceFilters = new MeshFilter[PieceCount];
         public MeshRenderer[] pieceRenderers = new MeshRenderer[PieceCount];
-        // The piece models (steps 12.3 and 12.10, docs/customizing.md), a set per side: this view's own, or when empty
-        // the arbiter's default for that side. Each piece object takes its side's template's mesh, materials, offset,
-        // rotation and size, Black's turned half round. Changed at run time with SetChessPieces, on this client only.
-        [Tooltip("The chess piece set White wears on this board. Empty: the Chess Arbiter's Default White Piece Set.")]
-        public ChessPieceSet whitePieceSet;
-        [Tooltip("The chess piece set Black wears on this board. Empty: the Chess Arbiter's Default Black Piece Set.")]
-        public ChessPieceSet blackPieceSet;
+        // Each piece object takes its side's piece set's template (steps 12.3, 12.10 and 13.6, docs/customizing.md):
+        // mesh, materials, offset, rotation and size, the set chosen by the board's synced index into the arbiter's
+        // list or the arbiter's local override (CurrentPieceSet).
         // Each piece object's pickup and collider (the same index). The collider is fitted to the piece's mesh.
         public VRCPickup[] piecePickups = new VRCPickup[PieceCount];
         public BoxCollider[] pieceColliders = new BoxCollider[PieceCount];
@@ -63,7 +59,7 @@ namespace SiggiChessBoard {
         // The promotion ghosts (step 12.11): see-through pieces, a knight, bishop, rook and queen (GhostType), children of
         // this view, shown only to the local player while their pawn waits on the last rank, floating in a row above
         // it; clicking one (Interact) promotes to its piece. Each wears the promoting side's promotion template
-        // (ChessPieceSet.PromotionTemplate), Black's turned half round as its pieces are.
+        // (ChessPieceSet.PromotionTemplate), Black's falling back on White's as its pieces do.
         public ChessPromotionGhost[] promotionGhosts = new ChessPromotionGhost[GhostCount];
         public const int GhostCount = 4;
         // Where the row floats, in squares: its ghosts' bases GhostHeight above the playing surface over the promotion
@@ -194,9 +190,9 @@ namespace SiggiChessBoard {
         Transform[] placeTargets = new Transform[2 * MaxCaptured];
         int[] placeTargetCounts = new int[2];
 
-        // The piece set applied to each side (null for none) and the arbiter whose defaults a side follows while its
-        // own set is empty, and the sets' templates copied by TemplateIndex (colour * 6 + type - 1): mesh, materials,
-        // offset from the square's centre, rotation, scale (Black's offset and rotation turned half round), and the
+        // The piece set applied to each side (null for none) and the arbiter whose list and overrides choose it, and
+        // the sets' templates copied by TemplateIndex (colour * 6 + type - 1): mesh, materials, offset from the
+        // square's centre, rotation, scale (a Black template falling back on White's turned half round), and the
         // point under the square's centre in the piece's own space (where a drop is read from).
         public const int TemplateCount = 12;
         ChessPieceSet appliedWhiteSet;
@@ -204,6 +200,8 @@ namespace SiggiChessBoard {
         bool[] hasSet = new bool[2];
         ChessArbiter arbiter;
         bool[] warnedNoSet = new bool[2];
+        // Whether a synced index the arbiter's list doesn't have has been logged, per colour.
+        bool[] warnedBadIndex = new bool[2];
         Mesh[] setMeshes = new Mesh[TemplateCount];
         Material[][] setMaterials = new Material[TemplateCount][];
         Vector3[] setOffsets = new Vector3[TemplateCount];
@@ -310,7 +308,7 @@ namespace SiggiChessBoard {
             }
             string problem = LocalSpaceProblem();
             if (problem.Length > 0) Debug.LogWarning("[ChessBoardView] " + gameObject.name + ": " + problem);
-            // Told when the arbiter's default piece set changes (OnDefaultPieceSetChanged).
+            // Told when the arbiter's piece set override changes (OnPieceSetOverrideChanged).
             arbiter = board.arbiter;
             if (Utilities.IsValid(arbiter)) arbiter.AddPieceSetListener(this);
             ApplyPieceSet(ChessRules.White);
@@ -371,26 +369,28 @@ namespace SiggiChessBoard {
             return "";
         }
 
-        // ---- Piece sets (steps 12.3 and 12.10, docs/customizing.md) ----
+        // ---- Piece sets (steps 12.3, 12.10 and 13.6, docs/customizing.md) ----
 
-        // Uses set for a ChessRules colour's pieces on this board from now on, on this client; null goes back to the
-        // arbiter's default set for that side. Applied at once to that side alone, every piece staying on its square.
-        public void SetChessPieces(int color, ChessPieceSet set) {
-            if (color == ChessRules.White) whitePieceSet = set;
-            else if (color == ChessRules.Black) blackPieceSet = set;
-            else return;
-            ApplyPieceSet(color);
-        }
-
-        // The set a ChessRules colour's pieces should wear: this view's own for that side, otherwise the arbiter's
-        // default for it (null for neither).
+        // The set a ChessRules colour's pieces should wear: the arbiter's override for that colour if it has one,
+        // otherwise the set at the board's synced index for it in the arbiter's list, or the first set for an index
+        // the list doesn't have (logged once per colour). Null for none (no arbiter, or no set there).
         public ChessPieceSet CurrentPieceSet(int color) {
-            ChessPieceSet own = color == ChessRules.White ? whitePieceSet
-                : color == ChessRules.Black ? blackPieceSet : null;
-            if (Utilities.IsValid(own)) return own;
+            if (color != ChessRules.White && color != ChessRules.Black) return null;
             if (!Utilities.IsValid(arbiter)) return null;
-            ChessPieceSet fallback = arbiter.DefaultPieceSet(color);
-            return Utilities.IsValid(fallback) ? fallback : null;
+            int index = arbiter.PieceSetOverride(color);
+            if (index < 0) {
+                index = board.PieceSetIndex(color);
+                if (!arbiter.IsPieceSetIndex(index)) {
+                    if (!warnedBadIndex[color]) {
+                        Debug.LogWarning("[ChessBoardView] " + gameObject.name + ": the board's piece set "
+                            + index + " for " + (color == ChessRules.White ? "White" : "Black") + " isn't in the "
+                            + "Chess Arbiter's Piece Sets (" + arbiter.PieceSetCount() + "); showing the first.");
+                        warnedBadIndex[color] = true;
+                    }
+                    index = 0;
+                }
+            }
+            return arbiter.PieceSet(index);
         }
 
         // The set applied to a ChessRules colour's pieces now, for tests.
@@ -400,16 +400,20 @@ namespace SiggiChessBoard {
             return null;
         }
 
-        // The arbiter's default set for a side changed (ChessArbiter.SetDefaultChessPieces tells its piece set
-        // listeners): worn at once unless this view has a set of its own for that side.
-        public void OnDefaultPieceSetChanged(int color) {
-            ChessPieceSet own = color == ChessRules.White ? whitePieceSet : blackPieceSet;
-            if (!Utilities.IsValid(own)) ApplyPieceSet(color);
+        // The arbiter's override for a side changed (ChessArbiter.SetPieceSetOverride tells its piece set listeners):
+        // the side's set worn at once if it's another.
+        public void OnPieceSetOverrideChanged(int color) {
+            if (color == ChessRules.White || color == ChessRules.Black) ApplyChangedPieceSet(color);
         }
 
-        // Copies a colour's current set's templates (Black's turned half round, so a set made as White's faces White)
-        // and puts them on that side's piece objects at once, each staying where the mapping has it (a travelling one
-        // lands at once, a held one stays in the hand).
+        // Applies a colour's current set at once if it isn't the one applied (the board's change, an override).
+        void ApplyChangedPieceSet(int color) {
+            if (CurrentPieceSet(color) != AppliedPieceSet(color)) ApplyPieceSet(color);
+        }
+
+        // Copies a colour's current set's templates (a Black one without a mesh falling back on White's,
+        // CopyTemplate) and puts them on that side's piece objects at once, each staying where the mapping has it (a
+        // travelling one lands at once, a held one stays in the hand).
         void ApplyPieceSet(int color) {
             ChessPieceSet set = CurrentPieceSet(color);
             bool white = color == ChessRules.White;
@@ -419,8 +423,8 @@ namespace SiggiChessBoard {
             if (!hasSet[color]) {
                 if (!warnedNoSet[color]) {
                     string side = white ? "White" : "Black";
-                    Debug.LogError("[ChessBoardView] " + gameObject.name + ": no chess piece set for " + side + ": set "
-                        + "the Chess Arbiter's Default " + side + " Piece Set (or this view's " + side + " Piece Set). "
+                    Debug.LogError("[ChessBoardView] " + gameObject.name + ": no chess piece set for " + side + ": add "
+                        + "one to the Chess Arbiter's Piece Sets (Tools > Chess Board > Create Board View makes one). "
                         + side + "'s pieces keep the models they have.");
                     warnedNoSet[color] = true;
                 }
@@ -431,50 +435,20 @@ namespace SiggiChessBoard {
                 Debug.LogError("[ChessBoardView] " + gameObject.name + ": chess piece set " + set.gameObject.name + ": "
                     + problem + ".");
             }
-            Quaternion turn = white ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
             for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) {
                 int index = TemplateIndex(color, type);
-                Transform template = set.Template(type);
-                if (!Utilities.IsValid(template)) {
-                    setMeshes[index] = null;
-                    setMaterials[index] = null;
-                    setOffsets[index] = Vector3.zero;
-                    setRotations[index] = turn;
-                    setScales[index] = Vector3.one;
-                    setBases[index] = Vector3.zero;
-                    continue;
-                }
-                MeshFilter filter = template.GetComponent<MeshFilter>();
-                MeshRenderer renderer = template.GetComponent<MeshRenderer>();
-                setMeshes[index] = Utilities.IsValid(filter) ? filter.sharedMesh : null;
-                setMaterials[index] = Utilities.IsValid(renderer) ? renderer.sharedMaterials : null;
-                Vector3 offset = turn * template.localPosition;
-                Quaternion rotation = turn * template.localRotation;
-                Vector3 scale = template.localScale;
-                setOffsets[index] = offset;
-                setRotations[index] = rotation;
-                setScales[index] = scale;
+                CopyTemplate(set.Template(color, type), set.Template(ChessRules.White, type), !white, index,
+                    setMeshes, setMaterials, setOffsets, setRotations, setScales);
                 // The square's centre, -offset from the piece's origin, in the piece's own (turned, scaled) space.
-                Vector3 local = Quaternion.Inverse(rotation) * -offset;
+                Vector3 scale = setScales[index];
+                Vector3 local = Quaternion.Inverse(setRotations[index]) * -setOffsets[index];
                 setBases[index] = new Vector3(SafeDivide(local.x, scale.x), SafeDivide(local.y, scale.y),
                     SafeDivide(local.z, scale.z));
             }
             for (int ghost = 0; ghost < GhostCount; ghost++) {
-                int index = GhostIndex(color, ghost);
-                Transform template = set.PromotionTemplate(GhostType(ghost));
-                ghostMeshes[index] = null;
-                ghostMaterials[index] = null;
-                ghostOffsets[index] = Vector3.zero;
-                ghostRotations[index] = turn;
-                ghostScales[index] = Vector3.one;
-                if (!Utilities.IsValid(template)) continue;
-                MeshFilter filter = template.GetComponent<MeshFilter>();
-                MeshRenderer renderer = template.GetComponent<MeshRenderer>();
-                ghostMeshes[index] = Utilities.IsValid(filter) ? filter.sharedMesh : null;
-                ghostMaterials[index] = Utilities.IsValid(renderer) ? renderer.sharedMaterials : null;
-                ghostOffsets[index] = turn * template.localPosition;
-                ghostRotations[index] = turn * template.localRotation;
-                ghostScales[index] = template.localScale;
+                int type = GhostType(ghost);
+                CopyTemplate(set.PromotionTemplate(color, type), set.PromotionTemplate(ChessRules.White, type), !white,
+                    GhostIndex(color, ghost), ghostMeshes, ghostMaterials, ghostOffsets, ghostRotations, ghostScales);
             }
             // Ghosts showing for this side change at once.
             if (ghostsDressed == color) ghostsDressed = -1;
@@ -488,6 +462,51 @@ namespace SiggiChessBoard {
                 StopAnimation(obj);
                 pieces[obj].localPosition = target;
             }
+        }
+
+        // Copies a template into the arrays at index: own, as set up; or for Black (black) when own has no mesh, White's
+        // template for the same piece (white) turned half round about the vertical through the square's centre (as if
+        // set up facing White, so the base point stays the same), with own's materials when it has a renderer with
+        // any, otherwise White's. A missing template copies no mesh, no materials and no offset.
+        static void CopyTemplate(Transform own, Transform white, bool black, int index, Mesh[] meshes,
+            Material[][] materials, Vector3[] offsets, Quaternion[] rotations, Vector3[] scales) {
+            Transform source = own;
+            Quaternion turn = Quaternion.identity;
+            Material[] ownMaterials = null;
+            if (black && !ChessPieceSet.HasMesh(own)) {
+                ownMaterials = MaterialsOf(own);
+                source = white;
+                turn = Quaternion.Euler(0, 180, 0);
+            }
+            if (!Utilities.IsValid(source)) {
+                meshes[index] = null;
+                materials[index] = null;
+                offsets[index] = Vector3.zero;
+                rotations[index] = turn;
+                scales[index] = Vector3.one;
+                return;
+            }
+            MeshFilter filter = source.GetComponent<MeshFilter>();
+            MeshRenderer renderer = source.GetComponent<MeshRenderer>();
+            meshes[index] = Utilities.IsValid(filter) ? filter.sharedMesh : null;
+            materials[index] = ownMaterials != null ? ownMaterials
+                : Utilities.IsValid(renderer) ? renderer.sharedMaterials : null;
+            offsets[index] = turn * source.localPosition;
+            rotations[index] = turn * source.localRotation;
+            scales[index] = source.localScale;
+        }
+
+        // A template's renderer's materials, null for none (no template or renderer, or only empty slots).
+        static Material[] MaterialsOf(Transform template) {
+            if (!Utilities.IsValid(template)) return null;
+            MeshRenderer renderer = template.GetComponent<MeshRenderer>();
+            if (!Utilities.IsValid(renderer)) return null;
+            Material[] list = renderer.sharedMaterials;
+            if (list == null) return null;
+            for (int i = 0; i < list.Length; i++) {
+                if (Utilities.IsValid(list[i])) return list;
+            }
+            return null;
         }
 
         static float SafeDivide(float a, float b) {
@@ -543,8 +562,13 @@ namespace SiggiChessBoard {
             if (!ChangeAnimates(change)) changesAnimate = false;
             ChessUtil.NoteSound(change, MakesSound(change), board, soundsFrom, ref caughtUp, ref soundChanges,
                 ref soundChange);
-            // The position the promotion was asked in may be gone; a touch from another client changed nothing.
-            if (change != ChessBoard.ChangeActivity) ClearPromotion();
+            // A side whose synced set changed (step 13.6: ChangePieceSet, a join with a preferred set, a reset, an
+            // update from another client) wears it at once.
+            ApplyChangedPieceSet(ChessRules.White);
+            ApplyChangedPieceSet(ChessRules.Black);
+            // The position the promotion was asked in may be gone; a touch from another client or a set change changed
+            // nothing.
+            if (change != ChessBoard.ChangeActivity && change != ChessBoard.ChangePieceSet) ClearPromotion();
             if (mappingStale) return;
             bool replay = board.replayMode;
             bool oneOn;
@@ -574,6 +598,9 @@ namespace SiggiChessBoard {
             soundChange = ChessBoard.ChangeNone;
             soundChanges = 0;
             if (!Utilities.IsValid(board)) return;
+            // Each side's set as the board has it now, also after a change no listener was told of.
+            ApplyChangedPieceSet(ChessRules.White);
+            ApplyChangedPieceSet(ChessRules.Black);
             bool replay = board.replayMode;
             byte[] shown = replay ? board.replayBoard : board.board;
             // The captured pieces first, so the mapping takes pieces coming back to the board from the places that

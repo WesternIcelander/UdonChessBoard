@@ -6,9 +6,9 @@ using VRC.SDKBase.Editor.BuildPipeline;
 
 namespace SiggiChessBoard {
     // Cancels a VRChat build or upload while any ChessArbiter in the open scenes has an empty SimpleAuth field
-    // (docs/organizers.md) or an empty Default White Piece Set or Default Black Piece Set (steps 12.3 and 12.10,
-    // docs/customizing.md). Choosing nobody is done with NoOneAuth, and every board view needs a piece set per side to
-    // fall back on, so an empty field is always a mistake.
+    // (docs/organizers.md), or no Piece Sets or an empty entry in them (steps 12.3 and 13.6, docs/customizing.md).
+    // Choosing nobody is done with NoOneAuth, and every board needs the first set to fall back on and a set at every
+    // index it can sync, so either is always a mistake.
     public class ChessArbiterBuildCheck : IVRCSDKBuildRequestedCallback {
         public int callbackOrder => 0;
 
@@ -36,12 +36,11 @@ namespace SiggiChessBoard {
                         arbiter);
                     authPaths += "\n  • " + path;
                 }
-                for (int white = 1; white >= 0; white--) {
-                    if ((white == 1 ? arbiter.defaultWhitePieceSet : arbiter.defaultBlackPieceSet) != null) continue;
-                    string field = "Default " + (white == 1 ? "White" : "Black") + " Piece Set";
-                    Debug.LogError("[ChessArbiter] " + path + ": the " + field + " field is empty. Set it to a "
-                        + "ChessPieceSet (Tools > Chess Board > Create Board View makes one). Build cancelled.", arbiter);
-                    setPaths += "\n  • " + path + " (" + field + ")";
+                string setProblem = PieceSetProblem(arbiter);
+                if (setProblem.Length > 0) {
+                    Debug.LogError("[ChessArbiter] " + path + ": " + setProblem + ". Fill it with ChessPieceSets "
+                        + "(Tools > Chess Board > Create Board View makes one). Build cancelled.", arbiter);
+                    setPaths += "\n  • " + path + " (" + setProblem + ")";
                 }
             }
             Selection.activeObject = blocking[0].gameObject;
@@ -57,11 +56,11 @@ namespace SiggiChessBoard {
                     + "  • NoOneAuth: nobody; the settings stay as you set them in the editor\n\n";
             }
             if (setPaths.Length > 0) {
-                message += "A piece set field is empty on:\n" + setPaths + "\n\n"
-                    + "These fields hold the chess piece models the boards use, a set for each side. To fix it, select "
-                    + "the arbiter, and in the Inspector drag a Chess Piece Set into the empty field under \"Pieces\" "
-                    + "(Tools > Chess Board > Create Board View puts the default White Pieces and Black Pieces on the "
-                    + "arbiter).\n\n";
+                message += "The \"Piece Sets\" list is empty or has an empty entry on:\n" + setPaths + "\n\n"
+                    + "This list holds the chess piece models the boards can use; the first is the default. To fix it, "
+                    + "select the arbiter, and in the Inspector under \"Pieces\" drag a Chess Piece Set into each empty "
+                    + "entry of \"Piece Sets\", or remove the entry (Tools > Chess Board > Create Board View puts the "
+                    + "default Chess Pieces on an arbiter whose list is empty).\n\n";
             }
             EditorUtility.DisplayDialog("Chess: build cancelled", message
                 + "The first arbiter is selected now. Then build again.", "OK");
@@ -74,12 +73,18 @@ namespace SiggiChessBoard {
             if (requestedBuildType != VRCSDKRequestedBuildType.Scene) return new List<ChessArbiter>();
             List<ChessArbiter> blocking = new List<ChessArbiter>();
             foreach (ChessArbiter arbiter in FindAll()) {
-                if (arbiter.simpleAuth == null || arbiter.defaultWhitePieceSet == null
-                        || arbiter.defaultBlackPieceSet == null) {
-                    blocking.Add(arbiter);
-                }
+                if (arbiter.simpleAuth == null || PieceSetProblem(arbiter).Length > 0) blocking.Add(arbiter);
             }
             return blocking;
+        }
+
+        // What's wrong with an arbiter's Piece Sets, "" when it has at least one and no empty entry.
+        public static string PieceSetProblem(ChessArbiter arbiter) {
+            if (arbiter.pieceSets == null || arbiter.pieceSets.Length == 0) return "the Piece Sets list is empty";
+            for (int i = 0; i < arbiter.pieceSets.Length; i++) {
+                if (arbiter.pieceSets[i] == null) return "Piece Sets element " + i + " is empty";
+            }
+            return "";
         }
 
         // Every arbiter (inactive ones included) in the loaded scenes.

@@ -820,6 +820,38 @@ public class ChessDebugView : ChessBoardListener {
         Report(label, done ? ChessBoard.InputAccepted : ChessBoard.InputRejected);
     }
 
+    // ---- Piece sets (13.6), test-only: no UI of ours changes them for players ----
+
+    // Cycles the local player's preferred set (the arbiter's preferredPieceSet) through none and each listed set; the
+    // next join puts it on the board.
+    public void CyclePreferredSet() {
+        ChessArbiter arbiter = board.arbiter;
+        if (!Utilities.IsValid(arbiter)) return;
+        int next = arbiter.PreferredPieceSet() + 1;
+        if (next >= arbiter.PieceSetCount()) next = -1;
+        ReportDone("Preferred set " + next, arbiter.SetPreferredPieceSet(next));
+    }
+
+    // Cycles this client's override for both colours through none and each listed set.
+    public void CycleSetOverride() {
+        ChessArbiter arbiter = board.arbiter;
+        if (!Utilities.IsValid(arbiter)) return;
+        int next = arbiter.PieceSetOverride(ChessRules.White) + 1;
+        if (next >= arbiter.PieceSetCount()) next = -1;
+        bool done = arbiter.SetPieceSetOverride(ChessRules.White, next)
+            && arbiter.SetPieceSetOverride(ChessRules.Black, next);
+        ReportDone("Override sets " + next, done);
+    }
+
+    string PieceSetText() {
+        ChessArbiter arbiter = board.arbiter;
+        string text = "Piece sets: White " + board.whitePieceSet + ", Black " + board.blackPieceSet;
+        if (!Utilities.IsValid(arbiter)) return text + " (no arbiter)";
+        return text + " (of " + arbiter.PieceSetCount() + ")   your preference: " + arbiter.PreferredPieceSet()
+            + "   your override: White " + arbiter.PieceSetOverride(ChessRules.White) + ", Black "
+            + arbiter.PieceSetOverride(ChessRules.Black);
+    }
+
     // ---- Pieces (9.2) ----
 
     // The pieces' state as last logged, so each change of the local player's pickups is logged once.
@@ -1117,6 +1149,7 @@ public class ChessDebugView : ChessBoardListener {
             + (board.loadedBy.Length > 0
                 ? "   loaded by: " + board.loadedBy + (board.IsLockedToLoader() ? " (locked to them)" : "") : "")
             + "\n";
+        text += PieceSetText() + "\n";
         text += "Mode: " + ModeName(board.mode) + "   clock: " + ClockName(board.baseTime, board.increment)
             + "   to move: " + ColorName(board.SideToMove()) + (board.IsInCheck() ? " (check)" : "") + "\n";
         text += "Result: " + board.ResultText();
@@ -1298,6 +1331,7 @@ public class ChessDebugView : ChessBoardListener {
             case ChessBoard.ChangeContinued: return "continued";
             case ChessBoard.ChangeActivity: return "activity";
             case ChessBoard.ChangeLeft: return "left";
+            case ChessBoard.ChangePieceSet: return "piece set";
         }
         return "?" + change;
     }

@@ -24,8 +24,8 @@ using static ChessBuilderUtil;
 // view for the same board is replaced, keeping its place, and so is its UI; a world creator's own model in it, and
 // the model parts they deleted, are kept (step 12.2, KeepCustomModel). The piece meshes, the highlight meshes
 // and the materials are generated placeholders in Assets/Siggi/ChessBoard/Models/, made only when missing, so they
-// can be replaced there. The piece models come from a ChessPieceSet per side (steps 12.3, 12.10): a board's arbiter
-// without its Default White / Black Piece Set gets one made from the generated meshes, as a child
+// can be replaced there. The piece models come from the ChessPieceSets on the board's arbiter (steps 12.3, 12.10 and
+// 13.6): an arbiter with no Piece Sets gets one, Chess Pieces, made from the generated meshes as a child
 // (EnsureDefaultPieceSet). Menu: Tools > Chess Board > Create Board View. Plain editor C#, not Udon.
 public static class ChessBoardViewBuilder {
     const string ViewScriptPath = "Assets/Siggi/ChessBoard/ChessBoardView.cs";
@@ -411,108 +411,123 @@ public static class ChessBoardViewBuilder {
         view.pieceBehaviours[obj] = behaviour;
     }
 
-    // ---- Piece sets (steps 12.3, 12.10 and 12.11, docs/customizing.md) ----
+    // ---- Piece sets (steps 12.3, 12.10, 12.11 and 13.6, docs/customizing.md) ----
 
     // How far apart the builder lays out a set's slots, in squares.
     const float SlotSpacing = 1.5f;
+    // The default set's name, under the arbiter.
+    const string DefaultSetName = "Chess Pieces";
 
-    // The board's arbiter's default piece sets (step 12.10), one per side: each kept when the arbiter has it;
-    // otherwise "White Pieces" or "Black Pieces", made from the generated meshes and that side's material as a child of
-    // the arbiter, and put in its Default White / Black Piece Set. A kept set without promotion slots (from before step
-    // 12.11) gets them (AddPromotionSlots), the ghost material on each. The combined "Chess Pieces" of step 12.3 (both
-    // colours in one set) is removed when found. Returns a note for the log ("" when nothing changed).
+    // The board's arbiter's piece sets (step 13.6): kept when its Piece Sets list has any; otherwise "Chess Pieces",
+    // made from the generated meshes as a child of the arbiter and put at index 0 (BuildPieceSet: White's templates
+    // with the White Pieces material, Black's only a renderer with the Black Pieces material, so Black falls back on
+    // White's meshes). Step 12.10's White Pieces and Black Pieces (a set per side) are removed when found under the
+    // arbiter, and so is an earlier Chess Pieces when the list is empty. A listed set without White promotion slots
+    // (from before step 12.11) gets them (AddPromotionSlots), the ghost material on each. Returns a note for the log
+    // ("" when nothing changed).
     static string EnsureDefaultPieceSet(ChessBoard board, Mesh[] meshes, Material white, Material black,
             Material ghost) {
         ChessArbiter arbiter = board.arbiter;
         if (arbiter == null) {
             Debug.LogWarning("[ChessBoardViewBuilder] " + board.gameObject.name + " has no arbiter, so its view has "
-                + "no default piece sets: set the board's Arbiter, then run Create Board View again.");
+                + "no piece sets: set the board's Arbiter, then run Create Board View again.");
             return ", no piece sets (the board has no arbiter)";
         }
         string note = "";
-        Transform combined = arbiter.transform.Find("Chess Pieces");
-        if (combined != null && combined.GetComponent<ChessPieceSet>() != null) {
-            Undo.DestroyObjectImmediate(combined.gameObject);
-            note += ", removing the combined Chess Pieces";
+        foreach (string oldName in new[] { "White Pieces", "Black Pieces" }) {
+            Transform old = arbiter.transform.Find(oldName);
+            if (old != null && old.GetComponent<ChessPieceSet>() != null) {
+                Undo.DestroyObjectImmediate(old.gameObject);
+                note += ", removing the old " + oldName;
+            }
         }
-        if (arbiter.defaultWhitePieceSet == null || arbiter.defaultBlackPieceSet == null) {
+        if (arbiter.pieceSets == null || arbiter.pieceSets.Length == 0) {
+            Transform earlier = arbiter.transform.Find(DefaultSetName);
+            if (earlier != null && earlier.GetComponent<ChessPieceSet>() != null) {
+                Undo.DestroyObjectImmediate(earlier.gameObject);
+            }
+            ChessPieceSet set = BuildPieceSet(DefaultSetName, arbiter.transform, meshes, new[] { white },
+                Vector3.zero, Quaternion.identity, Vector3.one, ghost, null, new[] { black });
             Undo.RecordObject(arbiter, "Create Board View");
-            if (arbiter.defaultWhitePieceSet == null) {
-                arbiter.defaultWhitePieceSet = BuildPieceSet("White Pieces", arbiter.transform, meshes,
-                    new[] { white }, Vector3.zero, Quaternion.identity, Vector3.one, ghost);
-                note += ", the default White Pieces";
-            }
-            if (arbiter.defaultBlackPieceSet == null) {
-                ChessPieceSet set = BuildPieceSet("Black Pieces", arbiter.transform, meshes, new[] { black },
-                    Vector3.zero, Quaternion.identity, Vector3.one, ghost);
-                // Behind White's two rows (its pieces and its promotion pieces).
-                set.transform.localPosition += new Vector3(0, 0, 2 * SlotSpacing * SquareSize);
-                arbiter.defaultBlackPieceSet = set;
-                note += ", the default Black Pieces";
-            }
+            arbiter.pieceSets = new[] { set };
             UdonSharpEditorUtility.CopyProxyToUdon(arbiter);
             EditorUtility.SetDirty(arbiter);
+            note += ", the default " + DefaultSetName;
         }
-        ChessPieceSet whiteSet = arbiter.defaultWhitePieceSet;
-        ChessPieceSet blackSet = arbiter.defaultBlackPieceSet;
-        if (AddPromotionSlots(whiteSet, meshes, ghost) > 0) note += ", promotion slots in " + whiteSet.gameObject.name;
-        if (blackSet != whiteSet && AddPromotionSlots(blackSet, meshes, ghost) > 0) {
-            note += ", promotion slots in " + blackSet.gameObject.name;
-            // The built Black Pieces stood a row behind White Pieces, where White's promotion row is now: moved back.
-            Vector3 oldPlace = whiteSet.transform.localPosition + new Vector3(0, 0, SlotSpacing * SquareSize);
-            if (whiteSet.transform.parent == arbiter.transform && blackSet.transform.parent == arbiter.transform
-                && (blackSet.transform.localPosition - oldPlace).sqrMagnitude < 1e-8f) {
-                Undo.RecordObject(blackSet.transform, "Create Board View");
-                blackSet.transform.localPosition = oldPlace + new Vector3(0, 0, SlotSpacing * SquareSize);
+        foreach (ChessPieceSet set in arbiter.pieceSets) {
+            if (set != null && AddPromotionSlots(set, meshes, ghost) > 0) {
+                note += ", promotion slots in " + set.gameObject.name;
             }
         }
         return note.Length > 0 ? note + " on " + arbiter.gameObject.name : "";
     }
 
-    // A ChessPieceSet named name under parent, one side's pieces (step 12.10): for each piece type, a slot (laid out in
-    // a row, SlotSpacing squares apart) holding a one-square guide on the playing surface and the template, its mesh
-    // meshes[type] with materials, standing at offset, turned by rotation and scaled by scale; and the promotion slots
-    // behind them (AddPromotionSlots), with promotionMaterial. Set up as White's pieces (knights facing +z); a view
-    // turns Black's half round. Public for the view test's set.
+    // A ChessPieceSet named name under parent (step 13.6), in rows SlotSpacing squares apart: White's, a slot per
+    // piece type holding a one-square guide on the playing surface and the template, its mesh meshes[type] with
+    // materials, standing at offset, turned by rotation and scaled by scale (facing +z); White's promotion slots
+    // behind it (AddPromotionSlots), with promotionMaterial; and Black's behind those. With blackMeshes, each Black
+    // template has its type's mesh and blackMaterials, at White's offset and rotation turned half round about the
+    // square's centre (facing -z); without, only a renderer with blackMaterials and no mesh, so Black wears White's
+    // mesh turned (the view's fallback); with neither, the Black row is left out. Public for the view test's sets.
     public static ChessPieceSet BuildPieceSet(string name, Transform parent, Mesh[] meshes, Material[] materials,
-            Vector3 offset, Quaternion rotation, Vector3 scale, Material promotionMaterial) {
+            Vector3 offset, Quaternion rotation, Vector3 scale, Material promotionMaterial, Mesh[] blackMeshes,
+            Material[] blackMaterials) {
         GameObject root = new GameObject(name);
         Undo.RegisterCreatedObjectUndo(root, "Create Piece Set");
         root.transform.SetParent(parent, false);
         root.transform.localPosition = new Vector3(0, 0, -2 * SquareSize * SlotSpacing);
         ChessPieceSet set = UdonSharpUndo.AddComponent<ChessPieceSet>(root);
         Transform[] templates = new Transform[7];
+        Transform[] blackTemplates = new Transform[7];
+        Quaternion turn = Quaternion.Euler(0, 180, 0);
         for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) {
-            Transform model = AddSlot(root.transform, TypeNames[type],
+            Transform model = AddSlot(root.transform, "White " + TypeNames[type],
                 new Vector3((type - 1) * SlotSpacing * SquareSize, 0, 0), meshes[type], materials);
             model.localPosition = offset;
             model.localRotation = rotation;
             model.localScale = scale;
             templates[type] = model;
+            if (blackMeshes == null && blackMaterials == null) continue;
+            Transform black = AddSlot(root.transform, "Black " + TypeNames[type],
+                new Vector3((type - 1) * SlotSpacing * SquareSize, 0, 2 * SlotSpacing * SquareSize),
+                blackMeshes != null ? blackMeshes[type] : null, blackMaterials);
+            if (blackMeshes != null) {
+                black.localPosition = turn * offset;
+                black.localRotation = turn * rotation;
+                black.localScale = scale;
+            }
+            blackTemplates[type] = black;
         }
-        set.pawn = templates[ChessRules.Pawn];
-        set.knight = templates[ChessRules.Knight];
-        set.bishop = templates[ChessRules.Bishop];
-        set.rook = templates[ChessRules.Rook];
-        set.queen = templates[ChessRules.Queen];
-        set.king = templates[ChessRules.King];
+        set.whitePawn = templates[ChessRules.Pawn];
+        set.whiteKnight = templates[ChessRules.Knight];
+        set.whiteBishop = templates[ChessRules.Bishop];
+        set.whiteRook = templates[ChessRules.Rook];
+        set.whiteQueen = templates[ChessRules.Queen];
+        set.whiteKing = templates[ChessRules.King];
+        set.blackPawn = blackTemplates[ChessRules.Pawn];
+        set.blackKnight = blackTemplates[ChessRules.Knight];
+        set.blackBishop = blackTemplates[ChessRules.Bishop];
+        set.blackRook = blackTemplates[ChessRules.Rook];
+        set.blackQueen = blackTemplates[ChessRules.Queen];
+        set.blackKing = blackTemplates[ChessRules.King];
         UdonSharpEditorUtility.CopyProxyToUdon(set);
         AddPromotionSlots(set, meshes, promotionMaterial);
         return set;
     }
 
-    // Adds to set the promotion slots (step 12.11) it lacks, in a second row behind its pieces (+z, SlotSpacing
+    // Adds to set the White promotion slots (step 12.11) it lacks, in a row behind White's pieces (+z, SlotSpacing
     // squares), each behind its piece's slot: a guide and a template with the mesh and local transform of the set's
-    // own template of that type (meshes[type], unturned, when it has none), and material on every slot of the mesh.
-    // The set's other templates are kept. Returns how many it added.
+    // own White template of that type (meshes[type], unturned, when it has none), and material on every slot of the
+    // mesh. The set's other templates are kept, and Black's promotion pieces fall back on these. Returns how many it
+    // added.
     public static int AddPromotionSlots(ChessPieceSet set, Mesh[] meshes, Material material) {
         if (set == null) return 0;
         Transform[] templates = new Transform[7];
         int added = 0;
         for (int type = ChessRules.Knight; type <= ChessRules.Queen; type++) {
-            templates[type] = set.PromotionTemplate(type);
+            templates[type] = set.PromotionTemplate(ChessRules.White, type);
             if (templates[type] != null) continue;
-            Transform piece = set.Template(type);
+            Transform piece = set.Template(ChessRules.White, type);
             Vector3 place = new Vector3((type - 1) * SlotSpacing * SquareSize, 0, 0);
             if (piece != null && piece.parent != null && piece.parent.parent == set.transform) {
                 place = piece.parent.localPosition;
@@ -522,7 +537,7 @@ public static class ChessBoardViewBuilder {
             Mesh mesh = filter != null && filter.sharedMesh != null ? filter.sharedMesh : meshes[type];
             Material[] materials = new Material[Mathf.Max(1, mesh.subMeshCount)];
             for (int i = 0; i < materials.Length; i++) materials[i] = material;
-            Transform model = AddSlot(set.transform, "Promotion " + TypeNames[type], place, mesh, materials);
+            Transform model = AddSlot(set.transform, "White Promotion " + TypeNames[type], place, mesh, materials);
             if (piece != null) {
                 model.localPosition = piece.localPosition;
                 model.localRotation = piece.localRotation;
@@ -533,17 +548,17 @@ public static class ChessBoardViewBuilder {
         }
         if (added == 0) return 0;
         Undo.RecordObject(set, "Add Promotion Slots");
-        set.promotionKnight = templates[ChessRules.Knight];
-        set.promotionBishop = templates[ChessRules.Bishop];
-        set.promotionRook = templates[ChessRules.Rook];
-        set.promotionQueen = templates[ChessRules.Queen];
+        set.whitePromotionKnight = templates[ChessRules.Knight];
+        set.whitePromotionBishop = templates[ChessRules.Bishop];
+        set.whitePromotionRook = templates[ChessRules.Rook];
+        set.whitePromotionQueen = templates[ChessRules.Queen];
         UdonSharpEditorUtility.CopyProxyToUdon(set);
         EditorUtility.SetDirty(set);
         return added;
     }
 
-    // A slot named name under setRoot at place: a one-square guide on the playing surface and a "Model" with mesh and
-    // materials, unmoved. Returns the model.
+    // A slot named name under setRoot at place: a one-square guide on the playing surface and a "Model" with mesh (no
+    // MeshFilter for none) and materials (no MeshRenderer for none), unmoved. Returns the model.
     static Transform AddSlot(Transform setRoot, string name, Vector3 place, Mesh mesh, Material[] materials) {
         Mesh guideMesh = FlatMesh("Piece Set Guide", 0.0005f, SquareSize * 0.06f);
         Material guideMaterial = MaterialAsset("Piece Set Guide", new Color(0.3f, 0.75f, 0.4f), 0.2f);
@@ -559,8 +574,8 @@ public static class ChessBoardViewBuilder {
         guideRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         GameObject model = new GameObject("Model");
         model.transform.SetParent(slot.transform, false);
-        model.AddComponent<MeshFilter>().sharedMesh = mesh;
-        model.AddComponent<MeshRenderer>().sharedMaterials = materials;
+        if (mesh != null) model.AddComponent<MeshFilter>().sharedMesh = mesh;
+        if (materials != null) model.AddComponent<MeshRenderer>().sharedMaterials = materials;
         return model.transform;
     }
 

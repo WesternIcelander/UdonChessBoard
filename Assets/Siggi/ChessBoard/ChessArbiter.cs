@@ -85,13 +85,17 @@ namespace SiggiChessBoard {
         public SimpleAuth simpleAuth;
 
         [Header("Pieces")]
-        [Tooltip("The chess piece set White wears on every board view without its own (docs/customizing.md). Must not "
-            + "be empty.")]
-        public ChessPieceSet defaultWhitePieceSet;
-        [Tooltip("The chess piece set Black wears on every board view without its own (docs/customizing.md). Must not "
-            + "be empty.")]
-        public ChessPieceSet defaultBlackPieceSet;
-        // The board views told when a default set changes (SetDefaultChessPieces); each adds itself on Start.
+        [Tooltip("Every chess piece set the world offers (docs/customizing.md); boards sync which one each side wears, "
+            + "by its place here. The first is the default. Must not be empty or have empty entries.")]
+        public ChessPieceSet[] pieceSets = new ChessPieceSet[0];
+        // The local player's preferred set (step 13.6), an index into pieceSets, -1 for none: put on a board's sides
+        // when they join it (ChessBoard.Join). Not synced; a world's own UI sets it (SetPreferredPieceSet or directly).
+        [NonSerialized] public int preferredPieceSet = -1;
+        // The sets this client shows for each colour on every board whatever the board has synced (step 13.6), -1 for
+        // none. Not synced (SetPieceSetOverride).
+        [NonSerialized] public int overrideWhitePieceSet = -1;
+        [NonSerialized] public int overrideBlackPieceSet = -1;
+        // The board views told when an override changes (SetPieceSetOverride); each adds itself on Start.
         [NonSerialized] public ChessBoardView[] pieceSetListeners = new ChessBoardView[0];
 
         [Header("Boards")]
@@ -153,30 +157,60 @@ namespace SiggiChessBoard {
             changes++;
         }
 
-        // Makes set the default chess piece set for a ChessRules colour (steps 12.3 and 12.10), on this client only,
-        // and tells each piece set listener (the board views, OnDefaultPieceSetChanged), so a view without a set of its
-        // own for that side wears it at once. The arbiter only holds the set. Refuses null and an unknown colour
-        // (false): a view needs a set to fall back on. Setting the same set again tells nobody.
-        public bool SetDefaultChessPieces(int color, ChessPieceSet set) {
-            if (!Utilities.IsValid(set) || (color != ChessRules.White && color != ChessRules.Black)) return false;
-            if (set == DefaultPieceSet(color)) return true;
-            if (color == ChessRules.White) defaultWhitePieceSet = set;
-            else defaultBlackPieceSet = set;
+        // ---- Piece sets (step 13.6, docs/customizing.md) ----
+
+        // The piece set at index in pieceSets, null outside it (or for an empty entry).
+        public ChessPieceSet PieceSet(int index) {
+            if (pieceSets == null || index < 0 || index >= pieceSets.Length) return null;
+            ChessPieceSet set = pieceSets[index];
+            return Utilities.IsValid(set) ? set : null;
+        }
+
+        public int PieceSetCount() {
+            return pieceSets == null ? 0 : pieceSets.Length;
+        }
+
+        // Whether index is a place in pieceSets.
+        public bool IsPieceSetIndex(int index) {
+            return index >= 0 && index < PieceSetCount();
+        }
+
+        // Makes index (in pieceSets, or -1 for none) the local player's preferred set, which their joins put on the
+        // board (ChessBoard.Join). Refuses any other index (false).
+        public bool SetPreferredPieceSet(int index) {
+            if (index != -1 && !IsPieceSetIndex(index)) return false;
+            preferredPieceSet = index;
+            return true;
+        }
+
+        public int PreferredPieceSet() {
+            return preferredPieceSet;
+        }
+
+        // Makes this client show the set at index (in pieceSets, or -1 for none) for a ChessRules colour on every
+        // board, whatever the board has synced, and tells each piece set listener (the board views,
+        // OnPieceSetOverrideChanged) when it changes. Refuses another index or an unknown colour (false).
+        public bool SetPieceSetOverride(int color, int index) {
+            if (color != ChessRules.White && color != ChessRules.Black) return false;
+            if (index != -1 && !IsPieceSetIndex(index)) return false;
+            if (index == PieceSetOverride(color)) return true;
+            if (color == ChessRules.White) overrideWhitePieceSet = index;
+            else overrideBlackPieceSet = index;
             for (int i = 0; i < pieceSetListeners.Length; i++) {
-                if (Utilities.IsValid(pieceSetListeners[i])) pieceSetListeners[i].OnDefaultPieceSetChanged(color);
+                if (Utilities.IsValid(pieceSetListeners[i])) pieceSetListeners[i].OnPieceSetOverrideChanged(color);
             }
             return true;
         }
 
-        // The default chess piece set for a ChessRules colour (null when empty or for an unknown colour).
-        public ChessPieceSet DefaultPieceSet(int color) {
-            if (color == ChessRules.White) return defaultWhitePieceSet;
-            if (color == ChessRules.Black) return defaultBlackPieceSet;
-            return null;
+        // The override for a ChessRules colour, -1 for none (and for an unknown colour).
+        public int PieceSetOverride(int color) {
+            if (color == ChessRules.White) return overrideWhitePieceSet;
+            if (color == ChessRules.Black) return overrideBlackPieceSet;
+            return -1;
         }
 
-        // Tells view of every change to a default piece set from now on (each board view adds itself on Start); adding
-        // one twice changes nothing.
+        // Tells view of every change to an override from now on (each board view adds itself on Start); adding one
+        // twice changes nothing.
         public void AddPieceSetListener(ChessBoardView view) {
             if (!Utilities.IsValid(view)) return;
             int count = pieceSetListeners.Length;
@@ -189,7 +223,7 @@ namespace SiggiChessBoard {
             pieceSetListeners = grown;
         }
 
-        // Stops telling view of changes to the default piece sets.
+        // Stops telling view of changes to the overrides.
         public void RemovePieceSetListener(ChessBoardView view) {
             int count = pieceSetListeners.Length;
             int index = -1;

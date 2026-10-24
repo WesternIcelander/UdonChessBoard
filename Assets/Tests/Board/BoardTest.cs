@@ -105,7 +105,8 @@ public class BoardTest : ChessTest {
     }
 
     // The second frame: snapshots, listeners and scenarios (7.9 to 7.12), sync, ownership and inactivity (8.3 to 8.5),
-    // playing on untimed after a flag fall (12.9), who may touch the pieces (9.2) and pick them up (9.3c).
+    // playing on untimed after a flag fall (12.9), the synced piece sets (13.6), who may touch the pieces (9.2) and
+    // pick them up (9.3c).
     public void RunSyncChecks() {
         TestSnapshot();
         TestListeners();
@@ -113,6 +114,7 @@ public class BoardTest : ChessTest {
         TestSync();
         TestPlayOn();
         TestOwnership();
+        TestPieceSets();
         TestInactivity();
         TestTouchPieces();
         TestCanPickUp();
@@ -4373,6 +4375,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.mode, ChessGame.ModeStandard, name + ": Standard mode");
         CheckInt(board.baseTime * 1000 + board.increment, ChessArbiter.NoClock * 1000, name + ": no clock");
         CheckInt(board.gameSettings, 0, name + ": no snapshot");
+        CheckInt(board.whitePieceSet * 10 + board.blackPieceSet, 0, name + ": both piece sets 0");
         Check(board.CanLoadGame(), name + ": a game can be loaded", "refused");
     }
 
@@ -5313,7 +5316,8 @@ public class BoardTest : ChessTest {
             + "; result " + board.ending + " " + board.winner + "; lifecycle " + board.lifecycle
             + "; mode " + board.mode + "; clock " + board.baseTime + "+" + board.increment + " " + board.whiteTime
             + " " + board.blackTime + " " + board.turnStart + (board.untimedAfterFlagFall ? " untimed" : "") + " "
-            + board.flagFallPly + "; settings " + board.gameSettings;
+            + board.flagFallPly + "; settings " + board.gameSettings + "; piece sets " + board.whitePieceSet + "|"
+            + board.blackPieceSet;
         for (int i = 0; i < ChessArbiter.NumberCount; i++) text += " " + board.gameNumbers[i];
         return text;
     }
@@ -5716,6 +5720,134 @@ public class BoardTest : ChessTest {
         int logged = board.loggedGames;
         CheckInt(board.AcceptTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, name + ": accepted");
         return logged;
+    }
+
+    // ---- 13.6 piece sets ----
+
+    // The synced piece set indexes: 0 on a reset board, set (ChangePieceSet), sent and received, refused out of range,
+    // for no colour and from someone MayOwnAs refuses, back to 0 on a reset; a join's preferred set put on both sides
+    // of an empty board (a loaded one too), on the joined colour alone with the other seat held (also when the joiner
+    // holds it), none for -1 or out of range; the local Join reading the arbiter's preferredPieceSet. With the arbiter's
+    // list made three entries (copies of its first), put back afterwards.
+    void TestPieceSets() {
+        string s = "piece sets";
+        ChessArbiter arbiter = board.arbiter;
+        if (!Utilities.IsValid(arbiter)) {
+            Check(false, s + ": the board's arbiter assigned", "the board has no arbiter");
+            return;
+        }
+        NothingForced();
+        int white = ChessRules.White;
+        int black = ChessRules.Black;
+        ChessPieceSet[] savedSets = arbiter.pieceSets;
+        int savedPreferred = arbiter.preferredPieceSet;
+        ChessPieceSet first = arbiter.PieceSet(0);
+        arbiter.pieceSets = new ChessPieceSet[] { first, first, first };
+        arbiter.preferredPieceSet = -1;
+
+        board.ClearState();
+        CheckSets(0, 0, s + ": a reset board");
+        CheckInt(board.SetPieceSetAs("Ana", false, white, 2), ChessBoard.InputAccepted, s + ": White set 2");
+        CheckInt(board.lastChange, ChessBoard.ChangePieceSet, s + ": told as ChangePieceSet");
+        CheckSets(2, 0, s + ": White 2");
+        CheckInt(board.SetPieceSetAs("Ana", false, black, 1), ChessBoard.InputAccepted, s + ": Black set 1");
+        CheckSets(2, 1, s + ": Black 1");
+        CheckInt(board.PieceSetIndex(ChessRules.NoColor), -1, s + ": no colour's index -1");
+
+        // Sent and received.
+        board.PackState();
+        CheckInt(board.syncedInts[ChessBoard.SyncWhitePieceSet] * 10 + board.syncedInts[ChessBoard.SyncBlackPieceSet],
+            21, s + ": packed (White * 10 + Black)");
+        board.whitePieceSet = 0;
+        board.blackPieceSet = 0;
+        board.ReceiveState();
+        CheckSets(2, 1, s + ": unpacked");
+
+        // Refused: out of range, no colour; nothing changes.
+        CheckInt(board.SetPieceSetAs("Ana", false, white, 3), ChessBoard.InputRejected, s + ": index 3 refused");
+        CheckInt(board.SetPieceSetAs("Ana", false, black, -1), ChessBoard.InputRejected, s + ": index -1 refused");
+        CheckInt(board.SetPieceSetAs("Ana", false, ChessRules.NoColor, 0), ChessBoard.InputRejected,
+            s + ": no colour refused");
+        Check(!board.CanSetPieceSetAs("Ana", false, 2, 0) && !board.CanSetPieceSetAs("", false, white, 0),
+            s + ": colour 2 and no name refused", "allowed");
+        CheckSets(2, 1, s + ": refused: unchanged");
+
+        // A reset puts both back to 0.
+        CheckInt(board.JoinAs(white, "Ana"), ChessBoard.InputAccepted, s + ": Ana joins");
+        CheckSets(2, 1, s + ": a join without a preference keeps the sets");
+        CheckInt(board.ResetBoardAs("Ana", false), ChessBoard.InputAccepted, s + ": reset");
+        CheckSets(0, 0, s + ": reset");
+
+        // Who may: as MayOwnAs, so a board locked to its loader refuses a bystander and allows the loader and
+        // organizers.
+        if (Utilities.IsValid(importer) && siggiVsNuka != null) {
+            LoadNukaAs("Lena", s + ": locked");
+            board.gameNumbers[ChessArbiter.NumberResetAvailableTime] = 120;
+            Check(!board.CanSetPieceSetAs("Cleo", false, white, 1), s + ": locked: Cleo may not", "she may");
+            CheckInt(board.SetPieceSetAs("Cleo", false, white, 1), ChessBoard.InputRejected, s + ": locked: Cleo refused");
+            CheckSets(0, 0, s + ": locked: Cleo's refused");
+            CheckInt(board.SetPieceSetAs("Lena", false, white, 1), ChessBoard.InputAccepted, s + ": locked: Lena may");
+            CheckInt(board.SetPieceSetAs("Olaf", true, black, 2), ChessBoard.InputAccepted,
+                s + ": locked: an organizer may");
+            CheckSets(1, 2, s + ": locked: Lena's and the organizer's");
+        } else {
+            Check(false, s + ": importer and Siggi-vs-Nuka assigned", "assign them in the Inspector");
+        }
+
+        // A join's preferred set: on both sides of an empty board, in the same change.
+        string j = s + ": preferred";
+        board.ClearState();
+        CheckInt(board.JoinAs(white, "Ana", 1), ChessBoard.InputAccepted, j + ": Ana joins an empty board with 1");
+        CheckInt(board.lastChange, ChessBoard.ChangeJoined, j + ": told as the join");
+        CheckSets(1, 1, j + ": an empty board: both sides");
+        // The other seat held: the joined colour alone.
+        CheckInt(board.JoinAs(black, "Bob", 2), ChessBoard.InputAccepted, j + ": Bob joins Black with 2");
+        CheckSets(1, 2, j + ": the other seat held: Black alone");
+        // A refused join, or a seat already held by the joiner, changes nothing.
+        CheckInt(board.JoinAs(black, "Cleo", 0), ChessBoard.InputRejected, j + ": Cleo refused");
+        CheckInt(board.JoinAs(white, "Ana", 0), ChessBoard.InputAccepted, j + ": Ana's own seat again");
+        CheckSets(1, 2, j + ": refused and repeated joins: unchanged");
+        // The second seat of a player already seated: that colour alone.
+        board.ClearState();
+        board.JoinAs(white, "Ana", 1);
+        CheckInt(board.JoinAs(black, "Ana", 2), ChessBoard.InputAccepted, j + ": Ana takes Black too, with 2");
+        CheckSets(1, 2, j + ": the joiner's second seat: Black alone");
+        // -1 and out of range: nothing.
+        board.ClearState();
+        board.SetPieceSetAs("Ana", false, white, 2);
+        CheckInt(board.JoinAs(white, "Ana", -1), ChessBoard.InputAccepted, j + ": Ana joins with -1");
+        CheckSets(2, 0, j + ": -1 changes nothing");
+        CheckInt(board.JoinAs(black, "Bob", 3), ChessBoard.InputAccepted, j + ": Bob joins with 3");
+        CheckSets(2, 0, j + ": out of range changes nothing");
+        // An empty loaded board: both sides.
+        if (Utilities.IsValid(importer) && siggiVsNuka != null) {
+            LoadNukaAs("", j + ": loaded");
+            CheckInt(board.JoinAs(black, "Ana", 2), ChessBoard.InputAccepted, j + ": Ana joins the loaded board, 2");
+            CheckSets(2, 2, j + ": an empty loaded board: both sides");
+        }
+
+        // The local Join reads the arbiter's preferredPieceSet.
+        string l = s + ": local";
+        Check(!arbiter.SetPreferredPieceSet(3) && !arbiter.SetPreferredPieceSet(-2), l + ": preference 3 and -2 refused",
+            "accepted");
+        CheckInt(arbiter.PreferredPieceSet(), -1, l + ": refused: still none");
+        Check(arbiter.SetPreferredPieceSet(2), l + ": preference 2 accepted", "refused");
+        CheckInt(arbiter.PreferredPieceSet(), 2, l + ": preference 2");
+        board.ClearState();
+        CheckInt(board.JoinWhite(), ChessBoard.InputAccepted, l + ": the local player joins White");
+        CheckSets(2, 2, l + ": the preference on both sides");
+        Check(arbiter.SetPreferredPieceSet(-1), l + ": preference -1 accepted", "refused");
+        CheckInt(board.JoinBlack(), ChessBoard.InputAccepted, l + ": the local player joins Black with none");
+        CheckSets(2, 2, l + ": no preference: unchanged");
+
+        arbiter.pieceSets = savedSets;
+        arbiter.preferredPieceSet = savedPreferred;
+        board.ClearState();
+    }
+
+    void CheckSets(int whiteSet, int blackSet, string name) {
+        CheckString(board.whitePieceSet + "|" + board.blackPieceSet, whiteSet + "|" + blackSet,
+            name + ": White|Black piece sets");
     }
 
     // ---- 8.4 ownership ----
