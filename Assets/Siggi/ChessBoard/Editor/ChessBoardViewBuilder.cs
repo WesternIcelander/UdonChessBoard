@@ -25,8 +25,10 @@ using static ChessBuilderUtil;
 // the model parts they deleted, are kept (step 12.2, KeepCustomModel). The piece meshes, the highlight meshes
 // and the materials are generated placeholders in Assets/Siggi/ChessBoard/Models/, made only when missing, so they
 // can be replaced there. The piece models come from the ChessPieceSets on the board's arbiter (steps 12.3, 12.10 and
-// 13.6): an arbiter with no Piece Sets gets one, Chess Pieces, made from the generated meshes as a child
-// (EnsureDefaultPieceSet). Menu: Tools > Chess Board > Create Board View. Plain editor C#, not Udon.
+// 13.6): the default, Chess Pieces, is a prefab made from the generated meshes and nested in the Chess Arbiter prefab
+// (step 14.1, EnsureArbiterPrefabs, also on its own menu item Tools > Chess Board > Update Arbiter Prefabs), and the
+// scene's arbiter is moved onto it (EnsureDefaultPieceSet). Menu: Tools > Chess Board > Create Board View. Plain
+// editor C#, not Udon.
 public static class ChessBoardViewBuilder {
     const string ViewScriptPath = "Assets/Siggi/ChessBoard/ChessBoardView.cs";
     const string ViewProgramPath = "Assets/Siggi/ChessBoard/ChessBoardView.asset";
@@ -418,41 +420,72 @@ public static class ChessBoardViewBuilder {
     // The default set's name, under the arbiter.
     const string DefaultSetName = "Chess Pieces";
 
-    // The board's arbiter's piece sets (step 13.6): kept when its Piece Sets list has any; otherwise "Chess Pieces",
-    // made from the generated meshes as a child of the arbiter and put at index 0 (BuildPieceSet: White's templates
-    // with the White Pieces material, Black's only a renderer with the Black Pieces material, so Black falls back on
-    // White's meshes). Step 12.10's White Pieces and Black Pieces (a set per side) are removed when found under the
-    // arbiter, and so is an earlier Chess Pieces when the list is empty. A listed set without White promotion slots
-    // (from before step 12.11) gets them (AddPromotionSlots), the ghost material on each. Returns a note for the log
-    // ("" when nothing changed).
+    // The board's arbiter's piece sets (steps 13.6 and 14.1). The Chess Pieces and Chess Arbiter prefabs are made or
+    // updated first (EnsureArbiterPrefabs), so an arbiter placed from the prefab has the default set nested in it. On
+    // the scene's arbiter, a Chess Pieces built under it before 14.1 (an object the prefab doesn't have) is replaced
+    // by the nested one, in its place in Piece Sets, and so are step 12.10's White Pieces and Black Pieces (a set per
+    // side). An arbiter that isn't from the prefab and has an empty list gets an instance of Chess Pieces as a child,
+    // listed at index 0. A listed set without White promotion slots (from before step 12.11) gets them
+    // (AddPromotionSlots), the ghost material on each. Returns a note for the log ("" when nothing changed).
     static string EnsureDefaultPieceSet(ChessBoard board, Mesh[] meshes, Material white, Material black,
             Material ghost) {
+        string note = EnsureArbiterPrefabs(meshes, white, black, ghost);
         ChessArbiter arbiter = board.arbiter;
         if (arbiter == null) {
             Debug.LogWarning("[ChessBoardViewBuilder] " + board.gameObject.name + " has no arbiter, so its view has "
                 + "no piece sets: set the board's Arbiter, then run Create Board View again.");
-            return ", no piece sets (the board has no arbiter)";
+            return note + ", no piece sets (the board has no arbiter)";
         }
+        return note + MoveOntoDefaultSet(arbiter, meshes, ghost);
+    }
+
+    // EnsureDefaultPieceSet's part on the arbiter itself, once the prefabs are there.
+    static string MoveOntoDefaultSet(ChessArbiter arbiter, Mesh[] meshes, Material ghost) {
         string note = "";
-        foreach (string oldName in new[] { "White Pieces", "Black Pieces" }) {
-            Transform old = arbiter.transform.Find(oldName);
-            if (old != null && old.GetComponent<ChessPieceSet>() != null) {
-                Undo.DestroyObjectImmediate(old.gameObject);
-                note += ", removing the old " + oldName;
+        ChessPieceSet nested = NestedDefaultSet(arbiter.transform);
+        List<ChessPieceSet> sets = new List<ChessPieceSet>();
+        if (arbiter.pieceSets != null) sets.AddRange(arbiter.pieceSets);
+        bool listChanged = false;
+        string[] oldNames = { DefaultSetName, "White Pieces", "Black Pieces" };
+        for (int i = arbiter.transform.childCount - 1; i >= 0; i--) {
+            Transform old = arbiter.transform.GetChild(i);
+            ChessPieceSet oldSet = old.GetComponent<ChessPieceSet>();
+            if (oldSet == null || oldSet == nested || System.Array.IndexOf(oldNames, old.name) < 0) continue;
+            if (PrefabUtility.IsPartOfPrefabInstance(old.gameObject)) continue;
+            // Without a nested set to take its place, the arbiter's own Chess Pieces stays.
+            if (old.name == DefaultSetName && nested == null) continue;
+            int index = sets.IndexOf(oldSet);
+            if (index >= 0) {
+                if (nested != null && !sets.Contains(nested)) sets[index] = nested;
+                else sets.RemoveAt(index);
+                listChanged = true;
             }
+            note += ", removing the old " + old.name;
+            Undo.DestroyObjectImmediate(old.gameObject);
         }
-        if (arbiter.pieceSets == null || arbiter.pieceSets.Length == 0) {
-            Transform earlier = arbiter.transform.Find(DefaultSetName);
-            if (earlier != null && earlier.GetComponent<ChessPieceSet>() != null) {
-                Undo.DestroyObjectImmediate(earlier.gameObject);
+        sets.RemoveAll(set => set == null);
+        if (sets.Count == 0) {
+            if (nested == null) {
+                GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PieceSetPrefabPath);
+                GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, arbiter.transform);
+                Undo.RegisterCreatedObjectUndo(instance, "Create Board View");
+                nested = instance.GetComponent<ChessPieceSet>();
+                note += ", the default " + DefaultSetName;
             }
-            ChessPieceSet set = BuildPieceSet(DefaultSetName, arbiter.transform, meshes, new[] { white },
-                Vector3.zero, Quaternion.identity, Vector3.one, ghost, null, new[] { black });
+            sets.Add(nested);
+            listChanged = true;
+        }
+        if (listChanged) {
             Undo.RecordObject(arbiter, "Create Board View");
-            arbiter.pieceSets = new[] { set };
+            arbiter.pieceSets = sets.ToArray();
             UdonSharpEditorUtility.CopyProxyToUdon(arbiter);
+            if (PrefabUtility.IsPartOfPrefabInstance(arbiter)) {
+                PrefabUtility.RecordPrefabInstancePropertyModifications(arbiter);
+                PrefabUtility.RecordPrefabInstancePropertyModifications(
+                    UdonSharpEditorUtility.GetBackingUdonBehaviour(arbiter));
+            }
             EditorUtility.SetDirty(arbiter);
-            note += ", the default " + DefaultSetName;
+            note += ", Piece Sets relisted";
         }
         foreach (ChessPieceSet set in arbiter.pieceSets) {
             if (set != null && AddPromotionSlots(set, meshes, ghost) > 0) {
@@ -460,6 +493,116 @@ public static class ChessBoardViewBuilder {
             }
         }
         return note.Length > 0 ? note + " on " + arbiter.gameObject.name : "";
+    }
+
+    // ---- The Chess Pieces and Chess Arbiter prefabs (step 14.1, docs/prefabs.md) ----
+
+    const string PrefabsFolder = "Assets/Siggi/ChessBoard/Prefabs";
+    const string PieceSetPrefabPath = PrefabsFolder + "/Chess Pieces.prefab";
+    const string ArbiterPrefabPath = PrefabsFolder + "/Chess Arbiter.prefab";
+    // Where the arbiter prefab was before 14.1; moved (keeping its GUID) when found.
+    const string OldArbiterPrefabPath = "Assets/Siggi/ChessBoard/ChessArbiter.prefab";
+    const string ArbiterScriptPath = "Assets/Siggi/ChessBoard/ChessArbiter.cs";
+    const string ArbiterProgramPath = "Assets/Siggi/ChessBoard/ChessArbiter.asset";
+
+    [MenuItem("Tools/Chess Board/Update Arbiter Prefabs")]
+    static void UpdateArbiterPrefabs() {
+        if (!EnsureProgramAssets("Update Arbiter Prefabs", PieceSetScriptPath, PieceSetProgramPath, ArbiterScriptPath,
+            ArbiterProgramPath)) return;
+        Mesh[] meshes = PieceMeshes();
+        Material ghost = GhostMaterialAsset();
+        string note = EnsureArbiterPrefabs(meshes,
+            MaterialAsset("White Pieces", new Color(0.92f, 0.89f, 0.82f), 0.55f),
+            MaterialAsset("Black Pieces", new Color(0.13f, 0.12f, 0.12f), 0.6f), ghost);
+        foreach (ChessArbiter arbiter in ChessArbiterBuildCheck.FindAll()) {
+            note += MoveOntoDefaultSet(arbiter, meshes, ghost);
+        }
+        Debug.Log("[ChessBoardViewBuilder] Arbiter prefabs: " + (note.Length > 0 ? note.Substring(2) : "unchanged"));
+    }
+
+    // Makes the Chess Pieces prefab when it's missing (BuildPieceSet: White's templates with the White Pieces
+    // material, Black's only a renderer with the Black Pieces material, so Black falls back on White's meshes), and
+    // otherwise adds the promotion slots it lacks, in place. Then the Chess Arbiter prefab: moved from where it was
+    // before 14.1, or made (a ChessArbiter with a FirstJoinerAuth) when there's none, and given a nested instance of
+    // Chess Pieces listed alone in Piece Sets, its Simple Auth pointing at its own FirstJoinerAuth when empty.
+    // Everything already there is kept (rule 1 of docs/compatibility.md). Returns a note for the log ("" when nothing
+    // changed).
+    static string EnsureArbiterPrefabs(Mesh[] meshes, Material white, Material black, Material ghost) {
+        string note = "";
+        if (!AssetDatabase.IsValidFolder(PrefabsFolder)) AssetDatabase.CreateFolder("Assets/Siggi/ChessBoard", "Prefabs");
+
+        if (AssetDatabase.LoadAssetAtPath<GameObject>(PieceSetPrefabPath) == null) {
+            ChessPieceSet built = BuildPieceSet(DefaultSetName, null, meshes, new[] { white }, Vector3.zero,
+                Quaternion.identity, Vector3.one, ghost, null, new[] { black });
+            PrefabUtility.SaveAsPrefabAsset(built.gameObject, PieceSetPrefabPath);
+            Object.DestroyImmediate(built.gameObject);
+            note += ", made " + PieceSetPrefabPath;
+        } else {
+            GameObject contents = PrefabUtility.LoadPrefabContents(PieceSetPrefabPath);
+            if (AddPromotionSlots(contents.GetComponent<ChessPieceSet>(), meshes, ghost) > 0) {
+                PrefabUtility.SaveAsPrefabAsset(contents, PieceSetPrefabPath);
+                note += ", promotion slots in " + PieceSetPrefabPath;
+            }
+            PrefabUtility.UnloadPrefabContents(contents);
+        }
+        GameObject setPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PieceSetPrefabPath);
+
+        if (AssetDatabase.LoadAssetAtPath<GameObject>(ArbiterPrefabPath) == null) {
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(OldArbiterPrefabPath) != null) {
+                string error = AssetDatabase.MoveAsset(OldArbiterPrefabPath, ArbiterPrefabPath);
+                if (error.Length > 0) {
+                    Debug.LogError("[ChessBoardViewBuilder] Couldn't move " + OldArbiterPrefabPath + " to "
+                        + ArbiterPrefabPath + ": " + error);
+                    return note;
+                }
+                note += ", moved the arbiter prefab to " + ArbiterPrefabPath;
+            } else {
+                GameObject made = new GameObject("Chess Arbiter");
+                UdonSharpUndo.AddComponent<ChessArbiter>(made);
+                PrefabUtility.SaveAsPrefabAsset(made, ArbiterPrefabPath);
+                Object.DestroyImmediate(made);
+                note += ", made " + ArbiterPrefabPath;
+            }
+        }
+        GameObject root = PrefabUtility.LoadPrefabContents(ArbiterPrefabPath);
+        root.name = "Chess Arbiter";
+        ChessArbiter arbiter = root.GetComponent<ChessArbiter>();
+        if (arbiter.simpleAuth == null) {
+            SiggiUSTools.FirstJoinerAuth auth = root.GetComponent<SiggiUSTools.FirstJoinerAuth>();
+            if (auth == null) auth = UdonSharpUndo.AddComponent<SiggiUSTools.FirstJoinerAuth>(root);
+            arbiter.simpleAuth = auth;
+            note += ", the arbiter prefab's Simple Auth set";
+        }
+        ChessPieceSet set = NestedDefaultSet(root.transform);
+        if (set == null) {
+            GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(setPrefab, root.transform);
+            set = instance.GetComponent<ChessPieceSet>();
+            note += ", " + DefaultSetName + " nested in the arbiter prefab";
+        }
+        if (arbiter.pieceSets == null || arbiter.pieceSets.Length != 1 || arbiter.pieceSets[0] != set) {
+            arbiter.pieceSets = new[] { set };
+            note += ", the arbiter prefab's Piece Sets listing only " + DefaultSetName;
+        }
+        // Saved every time, so the prefab holds every field of the current code.
+        UdonSharpEditorUtility.CopyProxyToUdon(arbiter);
+        PrefabUtility.SaveAsPrefabAsset(root, ArbiterPrefabPath);
+        PrefabUtility.UnloadPrefabContents(root);
+        return note;
+    }
+
+    // The ChessPieceSet directly under parent that's an instance of the Chess Pieces prefab, or null.
+    static ChessPieceSet NestedDefaultSet(Transform parent) {
+        GameObject setPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PieceSetPrefabPath);
+        if (setPrefab == null) return null;
+        for (int i = 0; i < parent.childCount; i++) {
+            Transform child = parent.GetChild(i);
+            ChessPieceSet set = child.GetComponent<ChessPieceSet>();
+            if (set != null && PrefabUtility.IsAnyPrefabInstanceRoot(child.gameObject)
+                && PrefabUtility.GetCorrespondingObjectFromOriginalSource(child.gameObject) == setPrefab) {
+                return set;
+            }
+        }
+        return null;
     }
 
     // A ChessPieceSet named name under parent (step 13.6), in rows SlotSpacing squares apart: White's, a slot per

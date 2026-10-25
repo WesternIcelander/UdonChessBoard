@@ -52,7 +52,7 @@ public static class ChessSettingsMenuBuilder {
         ChessArbiter[] arbiters = Object.FindObjectsOfType<ChessArbiter>(true);
         if (arbiters.Length != 1) {
             EditorUtility.DisplayDialog("Create Settings Menu", arbiters.Length == 0
-                ? "There's no ChessArbiter in the open scene. Add the ChessArbiter prefab first."
+                ? "There's no ChessArbiter in the open scene. Add the Chess Arbiter prefab (Assets/Siggi/ChessBoard/Prefabs) first."
                 : "There are several ChessArbiters in the scene; the menu needs exactly one.", "OK");
             return;
         }

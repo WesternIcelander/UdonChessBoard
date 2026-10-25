@@ -8,7 +8,8 @@ namespace SiggiChessBoard {
     // position, rotation and scale (under its parent, which stands for the square's centre on the playing surface) are
     // the piece's offset, rotation and size on its square, in the view's local units: a model facing any way, of any
     // size or with its origin off its base is set up by moving, turning and scaling its template where it can be seen.
-    // The builder puts each template in a slot of its own with a one-square guide beside the others.
+    // The Chess Pieces prefab (docs/prefabs.md) puts each template in a slot of its own with a one-square guide beside
+    // the others; a set of one's own starts as an unpacked copy of it.
     //
     // White's templates are set up facing Black (+z), Black's facing White (-z). White's are all required. Black's
     // are optional (step 13.6, the view's fallback): a Black template with no mesh wears White's mesh and transform

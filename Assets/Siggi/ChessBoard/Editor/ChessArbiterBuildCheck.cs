@@ -39,7 +39,7 @@ namespace SiggiChessBoard {
                 string setProblem = PieceSetProblem(arbiter);
                 if (setProblem.Length > 0) {
                     Debug.LogError("[ChessArbiter] " + path + ": " + setProblem + ". Fill it with ChessPieceSets "
-                        + "(Tools > Chess Board > Create Board View makes one). Build cancelled.", arbiter);
+                        + "(the Chess Pieces prefab is one). Build cancelled.", arbiter);
                     setPaths += "\n  • " + path + " (" + setProblem + ")";
                 }
             }
@@ -59,8 +59,8 @@ namespace SiggiChessBoard {
                 message += "The \"Piece Sets\" list is empty or has an empty entry on:\n" + setPaths + "\n\n"
                     + "This list holds the chess piece models the boards can use; the first is the default. To fix it, "
                     + "select the arbiter, and in the Inspector under \"Pieces\" drag a Chess Piece Set into each empty "
-                    + "entry of \"Piece Sets\", or remove the entry (Tools > Chess Board > Create Board View puts the "
-                    + "default Chess Pieces on an arbiter whose list is empty).\n\n";
+                    + "entry of \"Piece Sets\", or remove the entry (the Chess Arbiter prefab comes with the default "
+                    + "Chess Pieces nested in it, listed first).\n\n";
             }
             EditorUtility.DisplayDialog("Chess: build cancelled", message
                 + "The first arbiter is selected now. Then build again.", "OK");
