@@ -19,6 +19,9 @@ public class BoardTest : ChessTest {
     // loading checks fail if either isn't assigned.
     public TextAsset siggiVsNuka;
     public ChessPgnImporter importer;
+    // The board's debug view (step 14.2: a debug view on the placed Chess Board prefab can join, start, move and
+    // reset), set by Tools > Chess Board > Create Debug View. Its check fails if it isn't assigned.
+    public ChessDebugView debugView;
 
     string localName;
     bool started;
@@ -122,11 +125,12 @@ public class BoardTest : ChessTest {
         SendCustomEventDelayedFrames(nameof(RunFillChecks), 1);
     }
 
-    // The third frame: the notation fill-in (8.6) and the import (8.7), then an import over the next frames
-    // (PollImport), then the summary.
+    // The third frame: the notation fill-in (8.6) and the import (8.7), the debug view (14.2), then an import over
+    // the next frames (PollImport), then the summary.
     public void RunFillChecks() {
         TestNotationFill();
         TestImport();
+        TestDebugView();
         StartFrameImport();
     }
 
@@ -6578,6 +6582,32 @@ public class BoardTest : ChessTest {
         board.RemoveListener(this);
         board.importer = boardImporter;
         board._ClearState();
+    }
+
+    // Step 14.2: the board, placed from the Chess Board prefab and wired by hand, played through its debug view's
+    // buttons as a player would press them: both seats joined, started, the fool's mate and a reset.
+    void TestDebugView() {
+        string d = "debug view";
+        board._ClearState();
+        if (!Utilities.IsValid(debugView)) {
+            Check(false, d + ": assigned", "the debugView field is empty (Create Debug View)");
+            return;
+        }
+        Check(debugView.board == board, d + ": on the board", "on another board");
+        NothingForced();
+        debugView.JoinWhite();
+        debugView.JoinBlack();
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, d + ": joined");
+        CheckSeats(localName, localName, d);
+        debugView.StartGame();
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, d + ": started");
+        for (int i = 0; i < 4; i++) debugView.PlayFoolsMate();
+        CheckInt(board.moveCount, 4, d + ": the fool's mate played");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, d + ": the game ended");
+        CheckInt(board.ending, ChessGame.EndingCheckmate, d + ": by checkmate");
+        debugView.ResetBoard();
+        CheckInt(board.lifecycle, ChessBoard.LifecycleReset, d + ": reset");
+        CheckInt(board.moveCount, 0, d + ": no moves after the reset");
     }
 
     // An import over real frames: the importer's Update runs it and sends its done event to the board, which loads it.

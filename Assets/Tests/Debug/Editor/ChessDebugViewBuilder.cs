@@ -141,6 +141,14 @@ public static class ChessDebugViewBuilder {
             rootRect.localScale = old.transform.localScale;
             Undo.DestroyObjectImmediate(old);
         }
+        // BoardTest plays a game through the debug view of its board (14.2).
+        foreach (BoardTest test in Object.FindObjectsOfType<BoardTest>(true)) {
+            if (test.board != board) continue;
+            Undo.RecordObject(test, "Create Debug View");
+            test.debugView = view;
+            UdonSharpEditorUtility.CopyProxyToUdon(test);
+            EditorUtility.SetDirty(test);
+        }
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[ChessDebugViewBuilder] " + (old != null ? "Replaced " : "Created ") + root.name + " for "

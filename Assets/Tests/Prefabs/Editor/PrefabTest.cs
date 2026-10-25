@@ -11,11 +11,13 @@ using VRC.SDKBase.Editor.BuildPipeline;
 // It drops each prefab into a new scene of its own, opened beside the open one and closed unsaved afterwards, and
 // checks what it holds. 14.1: Chess Pieces on its own, and the Chess Arbiter with its nested Chess Pieces, the build
 // check on it, a change to the Chess Pieces prefab reaching the nested instance but not an unpacked copy. The change
-// is undone and the prefab saved again before it ends.
+// is undone and the prefab saved again before it ends. 14.2: the Chess Board with its importer, two placed with their
+// own board numbers, and the open scene's boards instances of it. Every prefab: nothing it uses is under Assets/Tests/.
 // Logs "[PrefabTest] PASS: <check>" or "[PrefabTest] FAIL: <check>: <details>" per check, then a summary line.
 public static class PrefabTest {
     const string PieceSetPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Pieces.prefab";
     const string ArbiterPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Arbiter.prefab";
+    const string BoardPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Board.prefab";
 
     static int passed;
     static int failed;
@@ -28,7 +30,9 @@ public static class PrefabTest {
         GameObject arbiterPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(ArbiterPrefabPath);
         Check(setPrefab != null, "the Chess Pieces prefab at " + PieceSetPrefabPath, "missing");
         Check(arbiterPrefab != null, "the Chess Arbiter prefab at " + ArbiterPrefabPath, "missing");
-        if (setPrefab == null || arbiterPrefab == null) {
+        GameObject boardPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(BoardPrefabPath);
+        Check(boardPrefab != null, "the Chess Board prefab at " + BoardPrefabPath, "missing");
+        if (setPrefab == null || arbiterPrefab == null || boardPrefab == null) {
             Summary();
             return;
         }
@@ -36,9 +40,12 @@ public static class PrefabTest {
         try {
             CheckPieceSet(setPrefab, scene);
             CheckArbiter(setPrefab, arbiterPrefab, scene);
+            CheckBoard(boardPrefab, scene);
         } finally {
             EditorSceneManager.CloseScene(scene, true);
         }
+        CheckSceneBoards(boardPrefab);
+        foreach (string path in new[] { PieceSetPrefabPath, ArbiterPrefabPath, BoardPrefabPath }) CheckNoTests(path);
         Summary();
     }
 
@@ -175,6 +182,82 @@ public static class PrefabTest {
         Transform restored = setPrefab.transform.Find(Slot);
         Check(restored != null && restored.localPosition == original, "the Chess Pieces prefab is put back",
             restored == null ? "no slot" : restored.localPosition.ToString("F3"));
+    }
+
+    // ---- 14.2: Chess Board ----
+
+    static void CheckBoard(GameObject boardPrefab, Scene scene) {
+        List<string> logged = new List<string>();
+        Application.LogCallback listener = (text, stack, type) => logged.Add(type + ": " + text);
+        Application.logMessageReceived += listener;
+        GameObject first;
+        GameObject second;
+        try {
+            first = (GameObject)PrefabUtility.InstantiatePrefab(boardPrefab, scene);
+            second = (GameObject)PrefabUtility.InstantiatePrefab(boardPrefab, scene);
+        } finally {
+            Application.logMessageReceived -= listener;
+        }
+        Check(logged.Count == 0, "the Chess Board placed logs nothing", string.Join("; ", logged));
+        ChessBoard board = first.GetComponent<ChessBoard>();
+        Check(board != null, "the Chess Board has a ChessBoard", "none");
+        if (board == null) return;
+        Check(board.importer != null && board.importer.transform.parent == first.transform,
+            "the board's importer is its own ChessPgnImporter child",
+            board.importer == null ? "empty" : "on " + board.importer.gameObject.name);
+        Check(board.arbiter == null && board.archive == null, "the board's arbiter and archive are left to set",
+            "arbiter " + board.arbiter + ", archive " + board.archive);
+        CheckIntValue(board.boardNumber, 0, "the board's number is 0");
+        CheckIntValue(board.listeners != null ? board.listeners.Length : -1, 0, "the board has no listeners");
+        Check(board.pgnSite == "VRChat" && board.pgnEvent == "", "the board's PGN tags are the defaults",
+            "Event \"" + board.pgnEvent + "\", Site \"" + board.pgnSite + "\"");
+
+        // Two placed boards wired by hand with their own numbers, as a world creator would set them in the Inspector.
+        ChessBoard other = second.GetComponent<ChessBoard>();
+        SerializedObject fields = new SerializedObject(other);
+        fields.FindProperty("boardNumber").intValue = 1;
+        fields.ApplyModifiedProperties();
+        CheckIntValue(board.boardNumber, 0, "two placed boards: the first keeps number 0");
+        CheckIntValue(other.boardNumber, 1, "two placed boards: the second has number 1");
+        Check(other.importer != null && other.importer != board.importer
+            && other.importer.transform.parent == second.transform, "two placed boards: each has its own importer",
+            "shared or missing");
+        CheckIntValue(boardPrefab.GetComponent<ChessBoard>().boardNumber, 0,
+            "two placed boards: the prefab's number is unchanged");
+        Object.DestroyImmediate(first);
+        Object.DestroyImmediate(second);
+    }
+
+    // The open scene's boards (the test scene's) are instances of the Chess Board prefab, keeping their own wiring.
+    static void CheckSceneBoards(GameObject boardPrefab) {
+        ChessBoard[] boards = Object.FindObjectsOfType<ChessBoard>(true);
+        Check(boards.Length > 0, "the open scene has boards", "none");
+        HashSet<int> numbers = new HashSet<int>();
+        foreach (ChessBoard board in boards) {
+            string name = "the scene's " + board.gameObject.name;
+            Check(PrefabUtility.IsAnyPrefabInstanceRoot(board.gameObject)
+                && PrefabUtility.GetCorrespondingObjectFromOriginalSource(board.gameObject) == boardPrefab,
+                name + " is a Chess Board instance", "it isn't");
+            Check(board.arbiter != null && board.archive != null, name + " has its arbiter and archive",
+                "arbiter " + board.arbiter + ", archive " + board.archive);
+            Check(board.importer != null && board.importer.transform.parent == board.transform,
+                name + " has its own importer", board.importer == null ? "empty" : "on " + board.importer.name);
+            Check(numbers.Add(board.boardNumber), name + "'s number " + board.boardNumber + " is its own",
+                "another board has it");
+        }
+    }
+
+    // Nothing a prefab uses (scripts, programs, assets) is a test's (step 14: no Assets/Tests/ references).
+    static void CheckNoTests(string path) {
+        List<string> tests = new List<string>();
+        foreach (string dependency in AssetDatabase.GetDependencies(path, true)) {
+            if (dependency.StartsWith("Assets/Tests/")) tests.Add(dependency);
+        }
+        Check(tests.Count == 0, path + " uses nothing under Assets/Tests/", string.Join(", ", tests));
+    }
+
+    static void CheckIntValue(int got, int expected, string name) {
+        Check(got == expected, name, "got " + got + ", expected " + expected);
     }
 
     static void Check(bool ok, string name, string details) {

@@ -85,8 +85,8 @@ namespace SiggiChessBoard {
         public ChessPgnImporter importer;
         // Where this board's logged games go (docs/archive.md): every client hands each game it logs to its own
         // archive.
-        [Tooltip("The GameArchive this board's games are archived in. Set by Tools > Chess Board > Create Game "
-            + "Archive.")]
+        [Tooltip("The GameArchive this board's games are archived in: the scene's Game Archive, set after placing "
+            + "the Chess Board prefab.")]
         public GameArchive archive;
         // The PGN Event and Site tags of this board's games (docs/pgn.md, Export tags); empty is written "?".
         [Tooltip("The PGN Event tag of games played on this board. Empty is written \"?\".")]
