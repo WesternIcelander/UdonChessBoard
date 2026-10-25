@@ -289,8 +289,8 @@ MonoBehaviour:
       Data: 18|UnityEngine.TooltipAttribute, UnityEngine.CoreModule
     - Name: tooltip
       Entry: 1
-      Data: The GameArchive this board's games are archived in. Set by Tools > Chess
-        Board > Create Game Archive.
+      Data: 'The GameArchive this board''s games are archived in: the scene''s Game
+        Archive, set after placing the Chess Board prefab.'
     - Name: 
       Entry: 8
       Data: 
