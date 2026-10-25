@@ -96,7 +96,7 @@ public class ArchiveTest : ChessTest {
         if (hasWall) {
             Check(wall.RefreshIfChanged(), "wall: redrawn once emptied", "not redrawn");
             CheckWallRows(0, 0, "wall: emptied");
-            CheckString(wall.title.text, "Previous games: none yet", "wall: emptied, title");
+            CheckString(wall.title.text, Text("wall_title_empty"), "wall: emptied, title");
         }
         RestoreGames(hasWall);
         LogSummary();
@@ -417,13 +417,13 @@ public class ArchiveTest : ChessTest {
         Check(assigned, "wall: title and rows assigned", "a text is missing");
         CheckString(ChessGame.EndingKey(ChessGame.EndingUnterminated, ChessRules.NoColor), "ending_unfinished",
             "wall: ending key, unfinished");
-        CheckString(WallEndingText(ChessGame.EndingUnterminated, ChessRules.NoColor), "Unfinished",
+        CheckString(WallEndingText(ChessGame.EndingUnterminated, ChessRules.NoColor), Text("ending_unfinished"),
             "wall: ending text, unfinished");
         CheckString(WallEndingText(ChessGame.EndingResignation, ChessRules.White),
-            "White wins by resignation", "wall: ending text, resignation");
-        CheckString(WallEndingText(ChessGame.EndingTimeForfeit, ChessRules.NoColor), "Draw on time",
+            Text("ending_resignation_white"), "wall: ending text, resignation");
+        CheckString(WallEndingText(ChessGame.EndingTimeForfeit, ChessRules.NoColor), Text("ending_time_forfeit_draw"),
             "wall: ending text, time forfeit drawn");
-        CheckString(WallEndingText(ChessGame.EndingUnknown, ChessRules.Black), "Black wins",
+        CheckString(WallEndingText(ChessGame.EndingUnknown, ChessRules.Black), Text("ending_black_wins"),
             "wall: ending text, a loaded game's result");
     }
 
@@ -431,9 +431,9 @@ public class ArchiveTest : ChessTest {
     void RunWallBoardChecks() {
         Check(wall.RefreshIfChanged(), "wall: redrawn after the board's game", "not redrawn");
         Check(!wall.RefreshIfChanged(), "wall: not redrawn again without a change", "redrawn");
-        CheckString(wall.title.text, "Previous games", "wall: board's game, title");
-        CheckString(wall.rows[0].text, "#1  Archive Ana vs Archive Bo: Unfinished (*), 1 move",
-            "wall: board's game, row");
+        CheckString(wall.title.text, Text("wall_title"), "wall: board's game, title");
+        CheckString(wall.rows[0].text, Row("wall_row", 1, "Archive Ana", "Archive Bo", Text("ending_unfinished"), "*",
+            1), "wall: board's game, row");
         bool rest = true;
         for (int i = 1; i < wall.rows.Length; i++) {
             if (wall.rows[i].text != "") rest = false;
@@ -444,16 +444,16 @@ public class ArchiveTest : ChessTest {
     // After RunAddChecks: test-1 to test-7.
     void RunWallAddChecks() {
         Check(wall.RefreshIfChanged(), "wall: redrawn after adding", "not redrawn");
-        CheckString(wall.title.text, "Previous games", "wall: 7 games, title");
-        CheckString(wall.rows[0].text, "#1  White 1 vs Black 1: Black wins by checkmate (0-1), 1 move, Chess960",
-            "wall: 7 games, test-1's row");
+        CheckString(wall.title.text, Text("wall_title"), "wall: 7 games, title");
+        CheckString(wall.rows[0].text, Row("wall_row_chess960", 1, "White 1", "Black 1",
+            Text("ending_checkmate_black"), "0-1", 1), "wall: 7 games, test-1's row");
         CheckWallRows(1, 7, "wall: 7 games");
     }
 
     // After RunWrapChecks: full and wrapped, test-4 to test-53, oldest first across every holder.
     void RunWallFullChecks() {
         Check(wall.RefreshIfChanged(), "wall: redrawn after wrapping", "not redrawn");
-        CheckString(wall.title.text, "Previous games", "wall: full, title");
+        CheckString(wall.title.text, Text("wall_title"), "wall: full, title");
         CheckWallRows(4, Capacity, "wall: full, test-4 to test-53");
         CheckString(wall.rows[Capacity - 1].text, ExpectedRow(Capacity + 3), "wall: full, the newest last");
         // Picked for RunWallPickGoneChecks, after RunRecentChecks overwrites it.
@@ -482,10 +482,16 @@ public class ArchiveTest : ChessTest {
     string ExpectedRow(int n) {
         int ending = n % 11;
         int winner = n % 3 - 1 < 0 ? ChessRules.NoColor : n % 2;
-        int moves = (n % 7 + 2) / 2;
-        return "#" + n + "  White " + n + " vs Black " + n + ": " + WallEndingText(ending, winner)
-            + " (" + ChessPgn.ResultText(ending, winner) + "), " + moves + (moves == 1 ? " move" : " moves")
-            + (n % 2 == ChessGame.ModeChess960 ? ", Chess960" : "");
+        return Row(n % 2 == ChessGame.ModeChess960 ? "wall_row_chess960" : "wall_row", n, "White " + n, "Black " + n,
+            Text(ChessGame.EndingKey(ending, winner)), ChessPgn.ResultText(ending, winner), (n % 7 + 2) / 2);
+    }
+
+    // A wall row by its key (wall_row, or wall_row_chess960 for a Chess960 game), PLAN.md 13.5a.
+    string Row(string key, int number, string white, string black, string ending, string result, int moves) {
+        return TextWith(key, new string[] {
+            "number", number.ToString(), "white", white, "black", black, "ending", ending, "result", result,
+            "moves", moves == 1 ? Text("moves_one") : TextWith("moves_many", new string[] { "count", moves.ToString() })
+        });
     }
 
     // ---- Picking a game and loading it (step 10.2b) ----
@@ -551,7 +557,7 @@ public class ArchiveTest : ChessTest {
             + "then Create Archive Test again)");
         if (hasUI) {
             CheckLoadButton(true, "Load it here: shown on a reset board with a game picked");
-            CheckString(ui.ButtonText(ChessBoardUI.ButtonLoadHere), "Load replay here", "Load it here: label");
+            CheckString(ui.ButtonText(ChessBoardUI.ButtonLoadHere), Text("button_load_here"), "Load it here: label");
             board.JoinAs(ChessRules.White, white);
             CheckLoadButton(false, "Load it here: hidden in the lobby");
             CheckInt(ui.PressButton(ChessBoardUI.ButtonLoadHere), ChessBoard.InputRejected,

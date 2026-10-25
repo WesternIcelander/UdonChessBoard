@@ -509,7 +509,7 @@ public class ViewTest : ChessTest {
         board.ClearState();
         StartGame(ChessGame.ModeStandard, c);
         CheckClickables(WhitePieces, "", c + ": White to move");
-        CheckText(Sq("e2"), "Select", c + ": e2");
+        CheckText(Sq("e2"), "hover_select", c + ": e2");
 
         // Selected and put back, by clicking the piece and by clicking its square.
         int pawn = view.squareObject[Sq("e2")];
@@ -520,10 +520,10 @@ public class ViewTest : ChessTest {
         Redraw();
         CheckLifted(pawn, "e2", c + ": e2 selected");
         CheckClickables(WhitePieces, "e2 e3 e4", c + ": e2 selected");
-        CheckText(Sq("e2"), "Put back", c + ": e2 selected");
-        CheckSquareText("e2", "Put back", c + ": e2 selected");
-        CheckSquareText("e4", "Place", c + ": e2 selected");
-        CheckText(Sq("d2"), "Select", c + ": e2 selected, d2");
+        CheckText(Sq("e2"), "hover_put_back", c + ": e2 selected");
+        CheckSquareText("e2", "hover_put_back", c + ": e2 selected");
+        CheckSquareText("e4", "hover_place", c + ": e2 selected");
+        CheckText(Sq("d2"), "hover_select", c + ": e2 selected, d2");
         ClickPiece("e2");
         CheckInt(board.lastChange, ChessBoard.ChangeStarted, c + ": e2 clicked again: the board not asked");
         CheckUnselected(0, c + ": e2 clicked again: put back");
@@ -554,7 +554,7 @@ public class ViewTest : ChessTest {
         // Capturing by clicking the opponent's piece.
         ClickPiece("f3");
         Redraw();
-        CheckText(Sq("e5"), "Capture", c + ": f3 selected, e5");
+        CheckText(Sq("e5"), "hover_capture", c + ": f3 selected, e5");
         Check(view.IsPieceClickable(view.squareObject[Sq("e5")]), c + ": f3 selected: e5 clickable", "it isn't");
         Check(!view.IsPieceClickable(view.squareObject[Sq("d7")]), c + ": f3 selected: d7 not clickable", "it is");
         ClickPiece("e5");
@@ -593,8 +593,8 @@ public class ViewTest : ChessTest {
         CheckInt(view.selectedObject, view.squareObject[Sq("a1")], c + ": replay: a1 selected");
         Redraw();
         CheckInt(SquareTargetCount(), 64, c + ": replay: a1 selected, every square clickable");
-        CheckText(Sq("a8"), "Capture", c + ": replay: a1 selected, a8");
-        CheckText(Sq("b1"), "Select", c + ": replay: a1 selected, b1");
+        CheckText(Sq("a8"), "hover_capture", c + ": replay: a1 selected, a8");
+        CheckText(Sq("b1"), "hover_select", c + ": replay: a1 selected, b1");
         ClickPiece("b1");
         CheckInt(view.selectedObject, view.squareObject[Sq("b1")], c + ": replay: b1 clicked: b1 selected instead");
         ClickPiece("b8");
@@ -621,7 +621,7 @@ public class ViewTest : ChessTest {
         ClickPiece("e1");
         Redraw();
         CheckClickables("a1 e1 h1", "a1 c1 d1 e1 f1 g1 h1 d2 e2 f2", "click castling: e1 selected");
-        CheckText(Sq("h1"), "Castle", "click castling: e1 selected, h1");
+        CheckText(Sq("h1"), "hover_castle", "click castling: e1 selected, h1");
         ClickPiece("h1");
         CheckUnselected(1, "click castling: h1 clicked with e1 selected: castled");
         Check(ChessRules.MoveIsCastle(board.LastMove()), "click castling: on the rook, a castle", "it isn't");
@@ -637,8 +637,8 @@ public class ViewTest : ChessTest {
         king = view.squareObject[Sq("f1")];
         rook = view.squareObject[Sq("h1")];
         ClickPiece("f1");
-        CheckText(Sq("h1"), "Castle", "click chess960: f1 selected, h1");
-        CheckSquareText("g1", "Place", "click chess960: f1 selected, g1");
+        CheckText(Sq("h1"), "hover_castle", "click chess960: f1 selected, h1");
+        CheckSquareText("g1", "hover_place", "click chess960: f1 selected, g1");
         ClickPiece("h1");
         CheckUnselected(1, "click chess960: h1 clicked with f1 selected: castled");
         Check(ChessRules.MoveIsCastle(board.LastMove()), "click chess960: on the rook, a castle", "it isn't");
@@ -717,9 +717,10 @@ public class ViewTest : ChessTest {
             if (!found) missing += buttonNames[action] + " ";
         }
         Check(missing.Length == 0, "buttons: every action has a button", "none for " + missing);
-        CheckString(ui.ClockText(ChessArbiter.NoClock, 0), "No clock", "clock text: none");
-        CheckString(ui.ClockText(300, 3), "5+3", "clock text: 5+3");
-        CheckString(ui.ClockText(45, 0), "45s+0", "clock text: 45 s");
+        CheckString(ui.ClockText(ChessArbiter.NoClock, 0), Text("clock_none"), "clock text: none");
+        CheckString(ui.ClockText(300, 3), Clock(5, 3), "clock text: 5+3");
+        CheckString(ui.ClockText(45, 0), TextWith("clock_seconds", new string[] { "seconds", "45", "increment", "0" }),
+            "clock text: 45 s");
 
         board.ClearState();
         CheckButtons("JoinWhite JoinBlack", "reset board");
@@ -736,19 +737,19 @@ public class ViewTest : ChessTest {
         if (!board.IsModeForced()) {
             CheckInt(ui.PressButton(ChessBoardUI.ButtonMode), ChessBoard.InputAccepted, "Mode pressed");
             CheckInt(board.mode, ChessGame.ModeChess960, "Mode pressed: Chess960");
-            CheckLabel(ChessBoardUI.ButtonMode, "Mode: Chess960", "Mode pressed");
+            CheckLabel(ChessBoardUI.ButtonMode, ModeLabel("mode_chess960"), "Mode pressed");
             ui.PressMode();
             CheckInt(board.mode, ChessGame.ModeStandard, "Mode pressed again: Standard");
-            CheckLabel(ChessBoardUI.ButtonMode, "Mode: Standard", "Mode pressed again");
+            CheckLabel(ChessBoardUI.ButtonMode, ModeLabel("mode_standard"), "Mode pressed again");
         }
         if (!board.IsClockForced()) {
-            CheckLabel(ChessBoardUI.ButtonClock, "Clock: No clock", "lobby, no clock");
+            CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(Text("clock_none")), "lobby, no clock");
             CheckInt(ui.PressButton(ChessBoardUI.ButtonClock), ChessBoard.InputAccepted, "Clock pressed");
             CheckInt(board.baseTime * 1000 + board.increment, 60000, "Clock pressed: 1+0");
-            CheckLabel(ChessBoardUI.ButtonClock, "Clock: 1+0", "Clock pressed");
+            CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(Clock(1, 0)), "Clock pressed");
             ui.PressClock();
             CheckInt(board.baseTime * 1000 + board.increment, 180002, "Clock pressed again: 3+2");
-            CheckLabel(ChessBoardUI.ButtonClock, "Clock: 3+2", "Clock pressed again");
+            CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(Clock(3, 2)), "Clock pressed again");
         }
         ui.PressJoinBlack();
         CheckString(board.blackPlayer, localName, "Join Black: seated as Black too");
@@ -813,8 +814,8 @@ public class ViewTest : ChessTest {
             if (!board.IsClockForced()) {
                 CheckInt(ui.PressButton(ChessBoardUI.ButtonClock), ChessBoard.InputAccepted,
                     "loaded game: Clock pressed");
-                CheckLabel(ChessBoardUI.ButtonClock, "Clock: " + ui.ClockText(board.baseTime,
-                    board.increment), "loaded game: Clock pressed");
+                CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(ui.ClockText(board.baseTime, board.increment)),
+                    "loaded game: Clock pressed");
             }
             CheckInt(board.StepToAs(localName, true, 3), ChessBoard.InputAccepted, "loaded game: stepped to ply 3");
             CheckButtons("LeaveWhite LeaveBlack Clock Continue First Back Forward Last Reset",
@@ -880,7 +881,7 @@ public class ViewTest : ChessTest {
         CheckButtons(OwnGame, "offer declined");
         ui.PressOfferDrawBlack();
         CheckButtons("ResignWhite ResignBlack AcceptDrawWhite DeclineDrawWhite Replay Reset", "Black's offer");
-        CheckLabel(ChessBoardUI.ButtonAcceptDrawWhite, "Accept draw", "Black's offer");
+        CheckLabel(ChessBoardUI.ButtonAcceptDrawWhite, Text("button_accept_draw"), "Black's offer");
         ui.PressAcceptDrawWhite();
         CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "Accept draw (White): the game ended");
         CheckInt(board.ending, ChessGame.EndingDrawAgreement, "Accept draw (White): drawn by agreement");
@@ -922,7 +923,7 @@ public class ViewTest : ChessTest {
         CheckInt(board.replayIndex, 2, "< twice: ply 2");
 
         // Continue from here (13.3), from ply 2: the player in both seats needs no request.
-        CheckLabel(ChessBoardUI.ButtonContinue, "Continue from here", "replay at ply 2");
+        CheckLabel(ChessBoardUI.ButtonContinue, Text("button_continue"), "replay at ply 2");
         ui.PressContinue();
         CheckInt(board.moveCount, 2, "Continue (both seats): back to ply 2");
         Check(!board.replayMode, "Continue (both seats): out of replay", "in replay");
@@ -959,7 +960,8 @@ public class ViewTest : ChessTest {
         CheckInt(board.replayIndex, 2, "takeback buttons: ply 2");
         CheckButtons(twoReplay + " TakebackWhite", "two players at ply 2");
         CheckRefused(ChessBoardUI.ButtonContinue, "two players");
-        CheckLabel(ChessBoardUI.ButtonRequestTakebackWhite, "Take back to here", "two players at ply 2");
+        CheckLabel(ChessBoardUI.ButtonRequestTakebackWhite, Text("button_take_back_to_here"),
+            "two players at ply 2");
         ui.PressRequestTakebackWhite();
         CheckInt(board.takebackColor, ChessRules.White, "Take back (White): requested");
         CheckInt(board.takebackPly, 2, "Take back (White): for ply 2");
@@ -994,7 +996,7 @@ public class ViewTest : ChessTest {
         PlayMoves("f6g8", "claim button");
         CheckButtons("ResignWhite ResignBlack OfferDrawWhite OfferDrawBlack ClaimDraw Replay Reset",
             "claim button: three times");
-        CheckLabel(ChessBoardUI.ButtonClaimDraw, "Claim draw (threefold)", "claim button: three times");
+        CheckLabel(ChessBoardUI.ButtonClaimDraw, Text("button_claim_draw_threefold"), "claim button: three times");
         ui.PressClaimDraw();
         CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "Claim draw: the game ended");
         CheckInt(board.ending, ChessGame.EndingThreefoldRepetition, "Claim draw: by threefold repetition");
@@ -1563,65 +1565,74 @@ public class ViewTest : ChessTest {
 
         // Two others' lobby and game, with a clock.
         board.ClearState();
-        CheckStatus("White: (open)\nBlack: (open)", "Join White or Black to play", s + ": reset board");
+        CheckStatus(Players(null, null), Text("status_reset"), s + ": reset board");
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana joined White");
         Unforce();
-        CheckStatus("White: Ana\nBlack: (open)", "Lobby: Standard, No clock", s + ": lobby");
+        CheckStatus(Players("Ana", null), Lobby("mode_standard", Text("clock_none")), s + ": lobby");
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob joined Black");
         CheckInt(board.SetClockAs("Ana", 300, 3), ChessBoard.InputAccepted, s + ": 5+3 chosen");
         CheckInt(board.SetModeAs("Bob", ChessGame.ModeChess960), ChessBoard.InputAccepted, s + ": Chess960 chosen");
-        CheckStatus("White: Ana\nBlack: Bob", "Lobby: Chess960, 5+3", s + ": lobby, both seats");
+        CheckStatus(Players("Ana", "Bob"), Lobby("mode_chess960", Clock(5, 3)), s + ": lobby, both seats");
         CheckInt(board.SetModeAs("Bob", ChessGame.ModeStandard), ChessBoard.InputAccepted, s + ": Standard chosen");
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, s + ": started");
-        CheckStatus("White: Ana  5:00\nBlack: Bob  5:00", "White to move", s + ": game started");
+        string toMove = ColorLine("status_to_move", ChessRules.White);
+        CheckStatus(PlayersWithClocks("Ana", "5:00", "Bob", "5:00"), toMove, s + ": game started");
         double start = board.turnStart;
-        CheckString(ui.PlayersTextAt(start + 61.5), "White: Ana  3:58\nBlack: Bob  5:00", s + ": a minute on");
-        CheckString(ui.StatusTextAt(start + 295.1), "White to move", s + ": 4.9 s left");
-        CheckString(ui.PlayersTextAt(start + 295.1), "White: Ana  0:04.9\nBlack: Bob  5:00", s + ": 4.9 s left");
-        CheckString(ui.StatusTextAt(start + 301), "White's time is up", s + ": flag fallen");
-        CheckString(ui.PlayersTextAt(start + 301), "White: Ana  0:00.0\nBlack: Bob  5:00", s + ": flag fallen");
+        CheckString(ui.PlayersTextAt(start + 61.5), PlayersWithClocks("Ana", "3:58", "Bob", "5:00"),
+            s + ": a minute on");
+        CheckString(ui.StatusTextAt(start + 295.1), toMove, s + ": 4.9 s left");
+        CheckString(ui.PlayersTextAt(start + 295.1), PlayersWithClocks("Ana", "0:04.9", "Bob", "5:00"),
+            s + ": 4.9 s left");
+        CheckString(ui.StatusTextAt(start + 301), ColorLine("status_time_up", ChessRules.White), s + ": flag fallen");
+        CheckString(ui.PlayersTextAt(start + 301), PlayersWithClocks("Ana", "0:00.0", "Bob", "5:00"),
+            s + ": flag fallen");
         CheckInt(board.PieceDroppedAs("Ana", Sq("e2"), Sq("e4")), ChessBoard.InputAccepted, s + ": e4");
         CheckInt(board.PieceDroppedAs("Bob", Sq("f7"), Sq("f6")), ChessBoard.InputAccepted, s + ": f6");
         CheckInt(board.PieceDroppedAs("Ana", Sq("d1"), Sq("h5")), ChessBoard.InputAccepted, s + ": Qh5+");
-        CheckStatus(null, "Black to move, in check", s + ": check");
+        string check = ColorLine("status_to_move_in_check", ChessRules.Black);
+        CheckStatus(null, check, s + ": check");
         SetRequestRules(true);
         CheckInt(board.OfferDrawAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob offered a draw");
-        CheckStatus(null, "Black to move, in check\nBlack offers a draw", s + ": draw offer");
+        string offer = check + "\n" + ColorLine("status_draw_offer", ChessRules.Black);
+        CheckStatus(null, offer, s + ": draw offer");
         CheckInt(board.EnterReplayAs("Ana", false), ChessBoard.InputAccepted, s + ": replay");
-        CheckStatus(null, "Black to move, in check\nBlack offers a draw\nReplay: 2. Qh5+ (3 of 3)", s + ": replay");
+        CheckStatus(null, offer + "\n" + ReplayLine("2.", "Qh5+", 3, 3), s + ": replay");
         CheckInt(board.StepToAs("Ana", false, 1), ChessBoard.InputAccepted, s + ": stepped to ply 1");
         CheckInt(board.RequestTakebackAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana asked");
-        CheckStatus(null, "Black to move, in check\nBlack offers a draw\nWhite asks to take back to here\n"
-            + "Replay: 1. e4 (1 of 3)", s + ": takeback request");
+        CheckStatus(null, offer + "\n" + ColorLine("status_takeback_to_here", ChessRules.White) + "\n"
+            + ReplayLine("1.", "e4", 1, 3), s + ": takeback request");
         CheckInt(board.StepToAs("Ana", false, 0), ChessBoard.InputAccepted, s + ": stepped to the start");
-        CheckStatus(null, "Black to move, in check\nBlack offers a draw\nReplay: start (0 of 3)",
-            s + ": request cancelled by stepping");
+        CheckStatus(null, offer + "\n" + ReplayStart(3), s + ": request cancelled by stepping");
         CheckInt(board.PieceDroppedAs("Ana", Sq("a2"), Sq("a4")), ChessBoard.InputAccepted, s + ": a free move");
-        CheckStatus(null, "Black to move, in check\nBlack offers a draw\nReplay: custom position", s + ": free move");
+        CheckStatus(null, offer + "\n" + Text("replay_custom"), s + ": free move");
         CheckInt(board.LeaveReplayAs("Ana", false), ChessBoard.InputAccepted, s + ": back to the game");
         CheckInt(board.ResignAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob resigned");
-        CheckStatus(null, "White wins by resignation (1-0)", s + ": resigned");
+        CheckStatus(null, Ending("ending_resignation_white", "1-0"), s + ": resigned");
         CheckString(ui.PlayerTextAt(ChessRules.Black, board.ServerTime() + 60),
             ui.PlayerTextAt(ChessRules.Black, board.ServerTime()), s + ": the clocks stopped");
 
         // Every ending's text, set on the ended game (Black was to move).
-        CheckEnding(ChessGame.EndingCheckmate, ChessRules.White, "White wins by checkmate (1-0)");
-        CheckEnding(ChessGame.EndingCheckmate, ChessRules.Black, "Black wins by checkmate (0-1)");
-        CheckEnding(ChessGame.EndingResignation, ChessRules.Black, "Black wins by resignation (0-1)");
-        CheckEnding(ChessGame.EndingTimeForfeit, ChessRules.White, "White wins on time (1-0)");
-        CheckEnding(ChessGame.EndingTimeForfeit, ChessRules.NoColor,
-            "Draw: Black ran out of time, White can't checkmate (1/2-1/2)");
-        CheckEnding(ChessGame.EndingStalemate, ChessRules.NoColor, "Draw by stalemate (1/2-1/2)");
-        CheckEnding(ChessGame.EndingDrawAgreement, ChessRules.NoColor, "Draw by agreement (1/2-1/2)");
-        CheckEnding(ChessGame.EndingThreefoldRepetition, ChessRules.NoColor, "Draw by threefold repetition (1/2-1/2)");
-        CheckEnding(ChessGame.EndingFivefoldRepetition, ChessRules.NoColor, "Draw by fivefold repetition (1/2-1/2)");
-        CheckEnding(ChessGame.EndingFiftyMoveRule, ChessRules.NoColor, "Draw by the fifty-move rule (1/2-1/2)");
+        CheckEnding(ChessGame.EndingCheckmate, ChessRules.White, Ending("ending_checkmate_white", "1-0"));
+        CheckEnding(ChessGame.EndingCheckmate, ChessRules.Black, Ending("ending_checkmate_black", "0-1"));
+        CheckEnding(ChessGame.EndingResignation, ChessRules.Black, Ending("ending_resignation_black", "0-1"));
+        CheckEnding(ChessGame.EndingTimeForfeit, ChessRules.White, Ending("ending_time_forfeit_white", "1-0"));
+        CheckEnding(ChessGame.EndingTimeForfeit, ChessRules.NoColor, TextWith("status_draw_time_forfeit",
+            new string[] { "flagged", ColorName(ChessRules.Black), "other", ColorName(ChessRules.White),
+                "result", "1/2-1/2" }));
+        CheckEnding(ChessGame.EndingStalemate, ChessRules.NoColor, Ending("ending_stalemate", "1/2-1/2"));
+        CheckEnding(ChessGame.EndingDrawAgreement, ChessRules.NoColor, Ending("ending_draw_agreement", "1/2-1/2"));
+        CheckEnding(ChessGame.EndingThreefoldRepetition, ChessRules.NoColor,
+            Ending("ending_threefold_repetition", "1/2-1/2"));
+        CheckEnding(ChessGame.EndingFivefoldRepetition, ChessRules.NoColor,
+            Ending("ending_fivefold_repetition", "1/2-1/2"));
+        CheckEnding(ChessGame.EndingFiftyMoveRule, ChessRules.NoColor, Ending("ending_fifty_move_rule", "1/2-1/2"));
         CheckEnding(ChessGame.EndingSeventyFiveMoveRule, ChessRules.NoColor,
-            "Draw by the seventy-five-move rule (1/2-1/2)");
-        CheckEnding(ChessGame.EndingInsufficientMaterial, ChessRules.NoColor, "Draw: insufficient material (1/2-1/2)");
-        CheckEnding(ChessGame.EndingKingCaptured, ChessRules.Black, "Black wins by capturing the king (0-1)");
-        CheckEnding(ChessGame.EndingUnknown, ChessRules.White, "White wins (1-0)");
-        CheckEnding(ChessGame.EndingUnknown, ChessRules.NoColor, "Draw (1/2-1/2)");
+            Ending("ending_seventy_five_move_rule", "1/2-1/2"));
+        CheckEnding(ChessGame.EndingInsufficientMaterial, ChessRules.NoColor,
+            Ending("ending_insufficient_material", "1/2-1/2"));
+        CheckEnding(ChessGame.EndingKingCaptured, ChessRules.Black, Ending("ending_king_captured_black", "0-1"));
+        CheckEnding(ChessGame.EndingUnknown, ChessRules.White, Ending("ending_white_wins", "1-0"));
+        CheckEnding(ChessGame.EndingUnknown, ChessRules.NoColor, Ending("ending_draw", "1/2-1/2"));
         CheckEnding(ChessGame.EndingNone, ChessRules.NoColor, "");
 
         // Playing on untimed after Black's flag fell (12.9): the timed game's times, GG for the side out of time.
@@ -1634,14 +1645,15 @@ public class ViewTest : ChessTest {
         board.whiteTime = 59000;
         board.blackTime = 0;
         double later = board.ServerTime() + 100;
+        string flagFallen = Text("player_flag_fallen");
         Check(ui.PlayerTextAt(ChessRules.White, later).EndsWith("  0:59"), s + ": play-on: White's time kept",
             ui.PlayerTextAt(ChessRules.White, later));
-        Check(ui.PlayerTextAt(ChessRules.Black, later).EndsWith("  GG"), s + ": play-on: GG for Black",
+        Check(ui.PlayerTextAt(ChessRules.Black, later).EndsWith("  " + flagFallen), s + ": play-on: GG for Black",
             ui.PlayerTextAt(ChessRules.Black, later));
-        Check(ui.StatusTextAt(later).Contains("Playing on untimed: Black ran out of time"),
+        Check(ui.StatusTextAt(later).Contains(ColorLine("status_playing_on", ChessRules.Black)),
             s + ": play-on: the status says so", ui.StatusTextAt(later));
         board.untimedAfterFlagFall = false;
-        Check(!ui.PlayerTextAt(ChessRules.Black, later).Contains("GG"), s + ": no GG without play-on",
+        Check(!ui.PlayerTextAt(ChessRules.Black, later).Contains(flagFallen), s + ": no GG without play-on",
             ui.PlayerTextAt(ChessRules.Black, later));
 
         // A stalemate and a checkmate played on the local player's games, with no clock.
@@ -1649,36 +1661,34 @@ public class ViewTest : ChessTest {
         StartUnforced(s + ": stalemate game");
         PlayMoves(LoydStalemate, s + ": stalemate game");
         CheckInt(board.ending, ChessGame.EndingStalemate, s + ": stalemated");
-        CheckStatus("White: " + localName + "\nBlack: " + localName, "Draw by stalemate (1/2-1/2)",
-            s + ": stalemate");
+        CheckStatus(Players(localName, localName), Ending("ending_stalemate", "1/2-1/2"), s + ": stalemate");
         board.ClearState();
         StartUnforced(s + ": checkmate game");
         PlayMoves(FoolsMate, s + ": checkmate game");
-        CheckStatus("White: " + localName + "\nBlack: " + localName, "Black wins by checkmate (0-1)",
-            s + ": checkmate");
+        string mate = Ending("ending_checkmate_black", "0-1");
+        CheckStatus(Players(localName, localName), mate, s + ": checkmate");
         CheckInt(board.EnterReplayAs(localName, false), ChessBoard.InputAccepted, s + ": the mate in replay");
         CheckInt(board.StepToAs(localName, false, 2), ChessBoard.InputAccepted, s + ": stepped to ply 2");
-        CheckStatus(null, "Black wins by checkmate (0-1)\nReplay: 1... e5 (2 of 4)", s + ": the mate in replay");
+        CheckStatus(null, mate + "\n" + ReplayLine("1...", "e5", 2, 4), s + ": the mate in replay");
 
-        // Loaded games.
+        // Loaded games (the names are the PGNs' White and Black tags).
+        string unfinished = Text("status_unfinished_game");
         if (LoadPgn(chess960Pgn, s + ": chess960.pgn")) {
-            string loaded = "Loaded game: White vs Black (Chess960)\nUnfinished game (*)\n";
-            CheckStatus("White: (open)\nBlack: (open)", loaded + "Replay: 3... O-O-O (6 of 6)",
-                s + ": chess960.pgn loaded");
+            string loaded = Loaded("status_loaded_chess960") + "\n" + unfinished + "\n";
+            CheckStatus(Players(null, null), loaded + ReplayLine("3...", "O-O-O", 6, 6), s + ": chess960.pgn loaded");
             CheckInt(board.StepToAs(localName, true, 0), ChessBoard.InputAccepted, s + ": chess960.pgn at the start");
-            CheckStatus(null, loaded + "Replay: start (0 of 6)", s + ": chess960.pgn at the start");
+            CheckStatus(null, loaded + ReplayStart(6), s + ": chess960.pgn at the start");
             CheckInt(board.JoinAs(ChessRules.White, localName), ChessBoard.InputAccepted, s + ": joined the loaded game");
-            CheckStatus("White: " + localName + "\nBlack: (open)", loaded + "Replay: start (0 of 6)",
-                s + ": the loaded game joined");
+            CheckStatus(Players(localName, null), loaded + ReplayStart(6), s + ": the loaded game joined");
         }
         if (LoadPgn(promotionsPgn, s + ": promotions.pgn")) {
             CheckInt(board.StepToAs(localName, true, 1), ChessBoard.InputAccepted, s + ": promotions.pgn at ply 1");
-            CheckStatus(null, "Loaded game: White vs Black\nUnfinished game (*)\nReplay: 40... gxh1=Q+ (1 of 9)",
+            CheckStatus(null, Loaded("status_loaded") + "\n" + unfinished + "\n" + ReplayLine("40...", "gxh1=Q+", 1, 9),
                 s + ": promotions.pgn at ply 1");
         }
 
         board.ClearState();
-        CheckStatus("White: (open)\nBlack: (open)", "Join White or Black to play", s + ": cleared");
+        CheckStatus(Players(null, null), Text("status_reset"), s + ": cleared");
         Redraw();
         CheckView("cleared after the status checks");
         SendCustomEventDelayedFrames(nameof(RunPgnBoxChecks), 1);
@@ -1710,10 +1720,10 @@ public class ViewTest : ChessTest {
         PlayOnBoard("e2", "e4", s);
         PlayOnBoard("e7", "e5", s);
         CheckButtons(OwnGame + " Pgn", s + ": 1. e4 e5");
-        CheckLabel(ChessBoardUI.ButtonPgn, "Export PGN", s + ": closed");
+        CheckLabel(ChessBoardUI.ButtonPgn, Text("button_pgn"), s + ": closed");
         ui.PressPgn();
         CheckPgnBox(true, s + ": opened");
-        CheckLabel(ChessBoardUI.ButtonPgn, "Hide PGN", s + ": opened");
+        CheckLabel(ChessBoardUI.ButtonPgn, Text("button_hide_pgn"), s + ": opened");
         string text = ui.pgnField.text;
         Check(text.Contains("[White \"" + localName + "\"]") && text.EndsWith("\n\n1. e4 e5 *\n"),
             s + ": opened: the tags and 1. e4 e5 *", text);
@@ -1759,7 +1769,7 @@ public class ViewTest : ChessTest {
         // Closed and opened again; a reset closes it, and the next game doesn't open it.
         ui.PressPgn();
         CheckPgnBox(false, s + ": closed");
-        CheckLabel(ChessBoardUI.ButtonPgn, "Export PGN", s + ": closed again");
+        CheckLabel(ChessBoardUI.ButtonPgn, Text("button_pgn"), s + ": closed again");
         ui.PressPgn();
         CheckPgnBox(true, s + ": opened again");
         ui.PressReset();
@@ -1827,16 +1837,16 @@ public class ViewTest : ChessTest {
         board.ClearState();
         Redraw();
         CheckButtons("JoinWhite JoinBlack LoadPgn", s + ": reset board");
-        CheckLabel(ChessBoardUI.ButtonLoadPgn, "Load PGN", s + ": closed");
+        CheckLabel(ChessBoardUI.ButtonLoadPgn, Text("button_load_pgn"), s + ": closed");
         ui.PressLoadPgn();
         CheckPasteBox(true, true, "", s + ": opened");
-        CheckLabel(ChessBoardUI.ButtonLoadPgn, "Hide PGN", s + ": opened");
+        CheckLabel(ChessBoardUI.ButtonLoadPgn, Text("button_hide_pgn"), s + ": opened");
         bool white = ui.LocalEnd() == ChessRules.White;
         Check(box.localPosition.z > 0 == white, s + ": opened: beyond the board from the local end",
             "at " + box.localPosition.ToString("F3"));
         ui.PressLoadPgn();
         CheckPasteBox(false, false, "", s + ": closed by the button");
-        CheckLabel(ChessBoardUI.ButtonLoadPgn, "Load PGN", s + ": closed again");
+        CheckLabel(ChessBoardUI.ButtonLoadPgn, Text("button_load_pgn"), s + ": closed again");
         ui.PressLoadPgn();
         ui.PressPgnClose();
         CheckPasteBox(false, false, "", s + ": closed by Close");
@@ -1847,14 +1857,14 @@ public class ViewTest : ChessTest {
         ui.pgnPasteField.text = "  \n";
         int status = board.importStatus;
         CheckInt(ui.ImportPasted(), ChessBoard.InputRejected, s + ": nothing pasted: refused");
-        CheckPasteBox(true, true, "Paste a PGN into the box first.", s + ": nothing pasted");
+        CheckPasteBox(true, true, Text("import_paste_first"), s + ": nothing pasted");
         CheckInt(board.importStatus, status, s + ": nothing pasted: no import");
 
         // Siggi-vs-Nuka over the next frames, run by the importer's Update.
         ui.pgnPasteField.text = nuka.text;
         CheckInt(ui.ImportPasted(), ChessBoard.InputAccepted, s + ": Siggi-vs-Nuka: started");
         CheckInt(board.importStatus, ChessBoard.ImportRunning, s + ": Siggi-vs-Nuka: under way");
-        CheckPasteBox(true, false, "Importing: 0 moves read", s + ": Siggi-vs-Nuka: started");
+        CheckPasteBox(true, false, ImportRunning(0), s + ": Siggi-vs-Nuka: started");
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, s + ": Siggi-vs-Nuka: the board still reset");
         progressSeen = false;
         loadPgnStart = Time.frameCount;
@@ -1868,8 +1878,13 @@ public class ViewTest : ChessTest {
         string s = "Load PGN";
         int frames = Time.frameCount - loadPgnStart;
         if (board.importStatus == ChessBoard.ImportRunning && frames < 600) {
+            // A running import's line (import_running, up to the count) with a count above 0.
             string label = ui.pgnImportLabel.text;
-            if (label.StartsWith("Importing: ") && label != "Importing: 0 moves read") progressSeen = true;
+            string running = Text("import_running");
+            int count = running.IndexOf("${");
+            if (count >= 0 && label.StartsWith(running.Substring(0, count)) && label != ImportRunning(0)) {
+                progressSeen = true;
+            }
             SendCustomEventDelayedFrames(nameof(PollLoadPgn), 1);
             return;
         }
@@ -1902,7 +1917,7 @@ public class ViewTest : ChessTest {
         CheckInt(ui.ImportPasted(), ChessBoard.InputAccepted, f + ": started");
         importer.ImportFor(float.MaxValue);
         board._ImportFinished();
-        CheckPasteBox(true, true, "Import failed at move 2.: illegal move", f);
+        CheckPasteBox(true, true, ImportFailed("2.", "import_error_illegal_move"), f);
         CheckInt(board.lifecycle * 1000 + board.moveCount, ChessBoard.LifecycleReset * 1000, f + ": the board reset");
         CheckString(ui.pgnPasteField.text, "1. e4 e5 2. Ke3 *", f + ": the paste kept");
         // Closed while it runs: opened again to say why.
@@ -1912,7 +1927,7 @@ public class ViewTest : ChessTest {
         CheckPasteBox(false, false, "", f + " while closed: closed");
         importer.ImportFor(float.MaxValue);
         board._ImportFinished();
-        CheckPasteBox(true, true, "Import failed at move 4.: illegal move", f + " while closed: opened again");
+        CheckPasteBox(true, true, ImportFailed("4.", "import_error_illegal_move"), f + " while closed: opened again");
         // Opened afresh, the old outcome is gone.
         ui.PressLoadPgn();
         ui.PressLoadPgn();
@@ -1926,7 +1941,7 @@ public class ViewTest : ChessTest {
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, a + ": Ana joins");
         CheckInt(board.importStatus, ChessBoard.ImportAbandoned, a);
         Redraw();
-        CheckPasteBox(true, false, "Import abandoned: the board changed before the import finished", a);
+        CheckPasteBox(true, false, Text("import_abandoned"), a);
         CheckButtons("JoinBlack Reset?", a + ": Ana's lobby");
         ui.PressPgnClose();
         CheckPasteBox(false, false, "", a + ": closed");
@@ -3398,6 +3413,86 @@ public class ViewTest : ChessTest {
         CheckString(ui.EndingText(), expected, "status: ending " + ending + ", winner " + winner);
     }
 
+    // ---- The expected texts, by key (PLAN.md 13.5a) ----
+
+    string ColorName(int color) {
+        return Text(color == ChessRules.White ? "color_white" : "color_black");
+    }
+
+    // A text naming a side: "White to move", "Black offers a draw".
+    string ColorLine(string key, int color) {
+        return TextWith(key, new string[] { "color", ColorName(color) });
+    }
+
+    // The players text, each seat's line ("White: Ana", null for an open seat).
+    string Players(string white, string black) {
+        return PlayersWithClocks(white, "", black, "");
+    }
+
+    // The players text with each side's clock after its name ("White: Ana  5:00"), "" for none.
+    string PlayersWithClocks(string white, string whiteClock, string black, string blackClock) {
+        return PlayerLine(ChessRules.White, white, whiteClock) + "\n" + PlayerLine(ChessRules.Black, black, blackClock);
+    }
+
+    string PlayerLine(int color, string name, string clock) {
+        string line = TextWith("player_line", new string[] {
+            "color", ColorName(color), "name", name == null ? Text("player_open") : name });
+        return clock.Length > 0 ? line + "  " + clock : line;
+    }
+
+    // A time control in whole minutes: "5+3".
+    string Clock(int minutes, int increment) {
+        return TextWith("clock_minutes", new string[] {
+            "minutes", minutes.ToString(), "increment", increment.ToString() });
+    }
+
+    // The lobby's status line for the mode's key and a time control.
+    string Lobby(string modeKey, string clock) {
+        return TextWith("status_lobby", new string[] { "mode", Text(modeKey), "clock", clock });
+    }
+
+    // The Mode button's label for the mode's key, and the Clock button's for a time control.
+    string ModeLabel(string modeKey) {
+        return TextWith("button_mode", new string[] { "mode", Text(modeKey) });
+    }
+
+    string ClockLabel(string clock) {
+        return TextWith("button_clock", new string[] { "clock", clock });
+    }
+
+    // An ended game's line: the ending's text and the result, "White wins by checkmate (1-0)".
+    string Ending(string endingKey, string result) {
+        return TextWith("status_ending", new string[] { "ending", Text(endingKey), "result", result });
+    }
+
+    // A loaded game's line (status_loaded, or status_loaded_chess960) for the test PGNs, whose players are named
+    // White and Black.
+    string Loaded(string key) {
+        return TextWith(key, new string[] { "white", "White", "black", "Black" });
+    }
+
+    // The replay line of the position after a move ("Replay: 2. Qh5+ (3 of 3)") and of the start.
+    string ReplayLine(string move, string san, int ply, int count) {
+        return TextWith("replay_move", new string[] {
+            "move", move, "san", san, "ply", ply.ToString(), "count", count.ToString() });
+    }
+
+    string ReplayStart(int count) {
+        return TextWith("replay_start", new string[] { "ply", "0", "count", count.ToString() });
+    }
+
+    // The PGN box's line while an import runs, moves read so far.
+    string ImportRunning(int moves) {
+        return TextWith("import_running", new string[] {
+            "moves", moves == 1 ? Text("moves_one") : TextWith("moves_many", new string[] { "count", moves.ToString() })
+        });
+    }
+
+    // The PGN box's line for an import failed at move (its label, "2.") for the reason's key.
+    string ImportFailed(string move, string reasonKey) {
+        return TextWith("import_failed", new string[] { "move", move, "reason", Text(reasonKey) });
+    }
+
     // No mode or clock forced in the snapshot, and no clock chosen, whatever the arbiter's defaults.
     void Unforce() {
         board.gameSettings &= ~(ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced);
@@ -3873,16 +3968,18 @@ public class ViewTest : ChessTest {
             + "; squares wrong on " + wrongSquares + "; " + offBoard + " off the board");
     }
 
-    // Whether the piece on square has the interact text.
-    void CheckText(int square, string text, string name) {
+    // Whether the piece on square has the interact text of key (hover_select, …).
+    void CheckText(int square, string key, string name) {
+        string text = Text(key);
         int obj = view.squareObject[square];
         ChessPiece piece = obj == ChessBoardView.NoObject ? null : PieceBehaviour(obj);
         string actual = Utilities.IsValid(piece) ? piece.InteractionText : "(no piece)";
         Check(actual == text, name + ": labelled " + text, "labelled " + actual);
     }
 
-    // Whether square's target is clickable with the interact text.
-    void CheckSquareText(string square, string text, string name) {
+    // Whether square's target is clickable with the interact text of key.
+    void CheckSquareText(string square, string key, string name) {
+        string text = Text(key);
         ChessSquare target = view.squareTargets[Sq(square)];
         string actual = Utilities.IsValid(target) ? target.InteractionText : "(no target)";
         Check(view.IsSquareClickable(Sq(square)) && actual == text, name + ": the square " + square + " labelled "

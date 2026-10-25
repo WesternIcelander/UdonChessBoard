@@ -183,7 +183,7 @@ public class Board2DTest : ChessTest {
         CheckInt(second.ResetBoardAs(Ana, true), ChessBoard.InputAccepted, s + ": the second board reset while shown");
         view.Refresh();
         CheckShown(1, s + ": the second board still shown once reset");
-        CheckString(view.statusLabel.text, "Join White or Black to play", s + ": the reset board's status");
+        CheckString(view.statusLabel.text, Text("status_reset"), s + ": the reset board's status");
         view.PressRight();
         CheckShown(0, s + ": right to the first board, the only one in use");
         view.PressLeft();
@@ -197,7 +197,7 @@ public class Board2DTest : ChessTest {
         ChessBoard other = view.boards[1 - index];
         Check(IsListening(board) && !IsListening(other), name + ": listening to it alone",
             "listening to the shown: " + IsListening(board) + ", to the other: " + IsListening(other));
-        CheckString(view.boardLabel.text, "Board " + (board.boardNumber + 1), name + ": board label");
+        CheckString(view.boardLabel.text, BoardLabel(board), name + ": board label");
     }
 
     bool IsListening(ChessBoard board) {
@@ -232,14 +232,15 @@ public class Board2DTest : ChessTest {
         view.Refresh();
         CheckView(s + ": Qh5+");
         CheckSquareColor("e8", false, true, s + ": Qh5+, Black's king red");
-        CheckString(view.statusLabel.text, "Black to move, in check", s + ": Qh5+, status");
+        CheckString(view.statusLabel.text, ColorLine("status_to_move_in_check", ChessRules.Black),
+            s + ": Qh5+, status");
         // The board's replay at ply 1 leaves the view on the latest (12.14).
         CheckInt(first.EnterReplayAs(Ana, false), ChessBoard.InputAccepted, s + ": replay entered");
         CheckInt(first.StepToAs(Ana, false, 1), ChessBoard.InputAccepted, s + ": replay at ply 1");
         view.Refresh();
         CheckView(s + ": the board's replay at ply 1, the view on the latest");
-        Check(view.statusLabel.text.IndexOf("Replay:") < 0, s + ": the board's replay at ply 1, no replay line",
-            "got \"" + view.statusLabel.text + "\"");
+        Check(view.statusLabel.text == ColorLine("status_to_move_in_check", ChessRules.Black),
+            s + ": the board's replay at ply 1, no replay line", "got \"" + view.statusLabel.text + "\"");
         CheckSquareColor("e8", false, true, s + ": the board's replay at ply 1, Black's king still red");
         CheckInt(first.LeaveReplayAs(Ana, false), ChessBoard.InputAccepted, s + ": replay left");
         view.Refresh();
@@ -293,14 +294,14 @@ public class Board2DTest : ChessTest {
         // Each button.
         view.PressBack();
         CheckViewAt(FenAfterNf3, 3, s + ": < to ply 3");
-        CheckStatusEnds("Replay: 2. Nf3 (3 of 4)", s + ": < to ply 3");
+        CheckStatusEnds(ReplayLine("2.", "Nf3", 3, 4), s + ": < to ply 3");
         CheckSquareColor("g1", true, false, s + ": ply 3, g1 tinted");
         CheckSquareColor("f3", true, false, s + ": ply 3, f3 tinted");
         CheckSquareColor("c6", false, false, s + ": ply 3, c6 not tinted");
         CheckSteps(true, true, true, true, s + ": ply 3");
         view.PressFirst();
         CheckViewAt(ChessFen.StartFen, 0, s + ": << to the start");
-        CheckStatusEnds("Replay: start (0 of 4)", s + ": << to the start");
+        CheckStatusEnds(TextWith("replay_start", new string[] { "ply", "0", "count", "4" }), s + ": << to the start");
         CheckSquareColor("b8", false, false, s + ": the start, b8 not tinted");
         CheckSteps(false, false, true, true, s + ": the start");
         view.PressBack();
@@ -311,7 +312,7 @@ public class Board2DTest : ChessTest {
             "a ply allowed");
         view.PressForward();
         CheckViewAt(FenAfterE4, 1, s + ": > to ply 1");
-        CheckStatusEnds("Replay: 1. e4 (1 of 4)", s + ": > to ply 1");
+        CheckStatusEnds(ReplayLine("1.", "e4", 1, 4), s + ": > to ply 1");
         CheckSquareColor("e2", true, false, s + ": ply 1, e2 tinted");
         view.PressLast();
         CheckViewAt(FenAfterNc6, 4, s + ": >> to the latest");
@@ -338,7 +339,7 @@ public class Board2DTest : ChessTest {
         Play(first, "a7", "a6", s);
         view.Refresh();
         CheckViewAt(FenAfterNc6, 4, s + ": one back, a6 leaves it at ply 4");
-        CheckStatusEnds("Replay: 2... Nc6 (4 of 6)", s + ": a6, still ply 4");
+        CheckStatusEnds(ReplayLine("2...", "Nc6", 4, 6), s + ": a6, still ply 4");
         CheckSteps(true, true, true, true, s + ": ply 4 of 6");
 
         // The board's replay leaves the view where it is, and the view steps through the game meanwhile.
@@ -348,7 +349,7 @@ public class Board2DTest : ChessTest {
         CheckInt(first.StepToAs(Ana, false, 1), ChessBoard.InputAccepted, s + ": the board steps to ply 1");
         view.Refresh();
         CheckViewAt(FenAfterNc6, 4, s + ": the board at ply 1, the view at ply 4");
-        CheckStatusEnds("Replay: 2... Nc6 (4 of 6)", s + ": the board at ply 1, the view's replay line");
+        CheckStatusEnds(ReplayLine("2...", "Nc6", 4, 6), s + ": the board at ply 1, the view's replay line");
         view.PressFirst();
         CheckViewAt(ChessFen.StartFen, 0, s + ": the board in replay, << to the start");
         view.PressLast();
@@ -450,7 +451,7 @@ public class Board2DTest : ChessTest {
         CheckInt(view.ShownIndex(), -1, s + ": no index in boards");
         Check(IsListening(second) && !IsListening(first), s + ": listening to the second board alone",
             "the second: " + IsListening(second) + ", the first: " + IsListening(first));
-        CheckString(view.boardLabel.text, "Board " + (second.boardNumber + 1), s + ": board label");
+        CheckString(view.boardLabel.text, BoardLabel(second), s + ": board label");
         Check(!view.leftButton.gameObject.activeSelf && !view.rightButton.gameObject.activeSelf,
             s + ": selector hidden", "shown");
         Check(!view.leftButton.interactable && !view.rightButton.interactable, s + ": selector disabled", "enabled");
@@ -841,7 +842,8 @@ public class Board2DTest : ChessTest {
         CheckNear(holder.minSize, ChessBoard2DViewHolder.DefaultMinSize, s + ": smallest size 0.25");
         // From the language pack (step 13.5), set by the holder at run time.
         CheckString(holder.gripPickup.InteractionText + "|" + holder.gripPickup.UseText + "|"
-            + holder.cornerPickup.InteractionText + "|" + holder.cornerPickup.UseText, "Move|Move|Resize|Resize",
+            + holder.cornerPickup.InteractionText + "|" + holder.cornerPickup.UseText,
+            Text("hover_move") + "|" + Text("hover_move") + "|" + Text("hover_resize") + "|" + Text("hover_resize"),
             s + ": the grip's and the corner's hover texts");
         Check(holder.i18n == view.i18n && Utilities.IsValid(view.i18n), s + ": the holder and the view share one I18n",
             "they don't");
@@ -998,9 +1000,9 @@ public class Board2DTest : ChessTest {
             name + ": takeback to ply " + ply + " asked");
         if (view.ShownBoard() == board) {
             view.Refresh();
-            Check(view.statusLabel.text.IndexOf("White asks for a takeback") >= 0
-                && view.statusLabel.text.IndexOf("to here") < 0, name + ": the request in the view's status",
-                "got \"" + view.statusLabel.text + "\"");
+            Check(view.statusLabel.text.IndexOf(ColorLine("status_takeback", ChessRules.White)) >= 0
+                && view.statusLabel.text.IndexOf(ColorLine("status_takeback_to_here", ChessRules.White)) < 0,
+                name + ": the request in the view's status", "got \"" + view.statusLabel.text + "\"");
         }
         CheckInt(board.AcceptTakebackAs(ChessRules.Black, Bo), ChessBoard.InputAccepted,
             name + ": takeback to ply " + ply + " accepted");
@@ -1026,6 +1028,21 @@ public class Board2DTest : ChessTest {
     void CheckStatusEnds(string line, string name) {
         Check(view.statusLabel.text.EndsWith(line), name + ": status ends \"" + line + "\"",
             "got \"" + view.statusLabel.text + "\"");
+    }
+
+    // The view's texts by key (PLAN.md 13.5a): board's label ("Board 1"), a status line naming a side ("Black to
+    // move, in check") and the replay line of a move ("Replay: 2. Nf3 (3 of 4)").
+    string BoardLabel(ChessBoard board) {
+        return TextWith("board_number", new string[] { "number", (board.boardNumber + 1).ToString() });
+    }
+
+    string ColorLine(string key, int color) {
+        return TextWith(key, new string[] { "color", Text(color == ChessRules.White ? "color_white" : "color_black") });
+    }
+
+    string ReplayLine(string move, string san, int ply, int count) {
+        return TextWith("replay_move", new string[] {
+            "move", move, "san", san, "ply", ply.ToString(), "count", count.ToString() });
     }
 
     // The view at ply showing the position of fen, with the texts for that ply.
@@ -1074,7 +1091,7 @@ public class Board2DTest : ChessTest {
         CheckString(view.playersLabel.text, ChessBoardUI.PlayersTextFor(board, now, texts), name + ": players");
         CheckString(view.statusLabel.text, ChessBoard2DView.StatusTextFor(board, now, view.ViewPly(), texts),
             name + ": status");
-        CheckString(view.boardLabel.text, "Board " + (board.boardNumber + 1), name + ": board label");
+        CheckString(view.boardLabel.text, BoardLabel(board), name + ": board label");
     }
 
     // The view on the latest position of the board shown: the game's position (not the board's replay), and the
@@ -1103,7 +1120,7 @@ public class Board2DTest : ChessTest {
         CheckString(view.playersLabel.text, ChessBoardUI.PlayersTextFor(board, now, texts), name + ": players");
         // No takeback request is pending where this is called, so the view's lines are the UI's game lines.
         CheckString(view.statusLabel.text, ChessBoardUI.GameStatusTextFor(board, now, texts), name + ": status");
-        CheckString(view.boardLabel.text, "Board " + (board.boardNumber + 1), name + ": board label");
+        CheckString(view.boardLabel.text, BoardLabel(board), name + ": board label");
     }
 
     // A square's colour: its own, tinted for the last move, or the check colour.

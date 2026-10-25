@@ -14,6 +14,7 @@ public abstract class ChessTest : ChessBoardListener {
     protected int passed;
     protected int failed;
     int waitedFrames;
+    I18n textLanguage;
 
     // The test's name in its log lines, e.g. "BoardTest".
     protected virtual string TestName() {
@@ -57,11 +58,23 @@ public abstract class ChessTest : ChessBoardListener {
         return false;
     }
 
-    // The text checks expect the English pack's strings (Languages/en.json; PLAN.md 13.5), so a test sets the chess
-    // system's I18n (i18n, the Chess Language its behaviours use) to English first, whatever the player's VRChat
-    // language.
+    // The text checks name the key whose text they expect and read it through the chess system's I18n (i18n, the
+    // Chess Language its behaviours use) with Text and TextWith (PLAN.md 13.5a), so a test hands it over here first.
+    // It's set to English, whatever the player's VRChat language, so the logs read the same on every machine.
     protected void UseEnglish(I18n i18n) {
+        textLanguage = i18n;
         if (Utilities.IsValid(i18n)) i18n.SetLanguage("en");
+    }
+
+    // key's text in the Chess Language, as the code reads it (ChessUtil.Text); the key itself before UseEnglish. A
+    // key missing from the pack logs an I18n error when read, which fails the run.
+    protected string Text(string key) {
+        return ChessUtil.Text(textLanguage, key);
+    }
+
+    // key's text with its ${name} parts filled from args (name, value pairs), as the code fills them (I18n.Format).
+    protected string TextWith(string key, string[] args) {
+        return I18n.Format(Text(key), args);
     }
 
     // board's first count notation entries, separated by spaces.
