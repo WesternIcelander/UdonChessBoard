@@ -100,7 +100,7 @@ public class BoardTest : ChessTest {
         TestContinueLoaded();
         TestLoadedBy();
         TestReset();
-        board.ClearState();
+        board._ClearState();
         SendCustomEventDelayedFrames(nameof(RunSyncChecks), 1);
     }
 
@@ -118,7 +118,7 @@ public class BoardTest : ChessTest {
         TestInactivity();
         TestTouchPieces();
         TestCanPickUp();
-        board.ClearState();
+        board._ClearState();
         SendCustomEventDelayedFrames(nameof(RunFillChecks), 1);
     }
 
@@ -134,7 +134,7 @@ public class BoardTest : ChessTest {
         // Every [ChessPGN] entry in the log is one of these, so the two counts must agree.
         Debug.Log("[BoardTest] games logged by the board: " + board.loggedGames);
         if (Utilities.IsValid(board.arbiter)) board.arbiter.ClearOverrides(board.boardNumber);
-        board.ClearState();
+        board._ClearState();
         LogSummary();
     }
 
@@ -161,7 +161,7 @@ public class BoardTest : ChessTest {
         board.moveCount = 3;
         board.gameId = "20261011120000-000001";
         board.board[ChessRules.E4] = ChessRules.WhitePawn;
-        board.ClearState();
+        board._ClearState();
 
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, "reset: lifecycle");
         CheckSeats("", "", "reset");
@@ -185,20 +185,20 @@ public class BoardTest : ChessTest {
     }
 
     void TestJoin() {
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.JoinWhite(), ChessBoard.InputAccepted, "join white: accepted");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "join white: reset board enters the lobby");
         CheckSeats(localName, "", "join white");
         Check(board.IsSeated(ChessRules.White, localName), "join white: IsSeated", "not seated");
 
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.JoinBlack(), ChessBoard.InputAccepted, "join black first: accepted");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "join black first: reset board enters the lobby");
         CheckSeats("", localName, "join black first");
     }
 
     void TestJoinBothSeats() {
-        board.ClearState();
+        board._ClearState();
         board.JoinWhite();
         CheckInt(board.JoinBlack(), ChessBoard.InputAccepted, "same player both seats: accepted");
         CheckSeats(localName, localName, "same player both seats");
@@ -208,7 +208,7 @@ public class BoardTest : ChessTest {
     }
 
     void TestSeatTaken() {
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.JoinAs(ChessRules.Black, "Siggi"), ChessBoard.InputAccepted, "named join: accepted");
         CheckInt(board.JoinAs(ChessRules.Black, "Ana"), ChessBoard.InputRejected, "seat taken by another: rejected");
         // A lookalike name (Cyrillic і) is someone else.
@@ -221,7 +221,7 @@ public class BoardTest : ChessTest {
     }
 
     void TestJoinInvalid() {
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.JoinAs(ChessRules.NoColor, "Ana"), ChessBoard.InputRejected, "join no colour: rejected");
         CheckInt(board.JoinAs(2, "Ana"), ChessBoard.InputRejected, "join colour 2: rejected");
         CheckInt(board.JoinAs(ChessRules.White, ""), ChessBoard.InputRejected, "join empty name: rejected");
@@ -232,7 +232,7 @@ public class BoardTest : ChessTest {
 
     void TestJoinByLifecycle() {
         // There's no Start yet (7.1b), so the lifecycle is set directly.
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.White, "Ana");
         board.lifecycle = ChessBoard.LifecycleInGame;
         CheckInt(board.JoinBlack(), ChessBoard.InputRejected, "in game: join empty seat rejected");
@@ -244,7 +244,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.JoinBlack(), ChessBoard.InputRejected, "ended: join rejected");
         CheckSeats("Ana", "", "ended");
 
-        board.ClearState();
+        board._ClearState();
         board.lifecycle = ChessBoard.LifecycleLoaded;
         CheckInt(board.JoinWhite(), ChessBoard.InputAccepted, "loaded: join white accepted");
         CheckInt(board.JoinAs(ChessRules.Black, "Ana"), ChessBoard.InputAccepted, "loaded: join black accepted");
@@ -275,7 +275,7 @@ public class BoardTest : ChessTest {
         CheckSeats("Cleo", "Bob", "leave: White joined again");
 
         // The same player in both seats leaves one at a time; the lobby's last seat emptied resets the board.
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.White, "Ana");
         board.JoinAs(ChessRules.Black, "Ana");
         CheckInt(board.LeaveSeatAs(ChessRules.Black, "Ana"), ChessBoard.InputAccepted, "leave: Ana leaves Black");
@@ -310,7 +310,7 @@ public class BoardTest : ChessTest {
         // A loaded board: leaving keeps the game loaded, even with both seats emptied.
         if (!Utilities.IsValid(importer) || siggiVsNuka == null) {
             Check(false, "leave: importer and Siggi-vs-Nuka assigned", "assign them in the Inspector");
-            board.ClearState();
+            board._ClearState();
             return;
         }
         LoadText(siggiVsNuka.text, "leave: loaded game");
@@ -332,20 +332,20 @@ public class BoardTest : ChessTest {
         CheckInt(board.lastChange, ChessBoard.ChangeLeft, "leave: loaded, told as ChangeLeft");
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted,
             "leave: the emptied loaded board can be joined");
-        board.ClearState();
+        board._ClearState();
     }
 
     // ---- 7.1b ----
 
     // A board in the lobby with Ana as White and Bob as Black (no snapshot until 7.2, so nothing is forced).
     void LobbyWithTwoPlayers() {
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.White, "Ana");
         board.JoinAs(ChessRules.Black, "Bob");
     }
 
     void TestSetMode() {
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.SetModeAs("Ana", ChessGame.ModeChess960), ChessBoard.InputRejected, "mode: reset board rejects");
         board.JoinAs(ChessRules.White, "Ana");
         CheckInt(board.SetModeAs("Ana", ChessGame.ModeChess960), ChessBoard.InputAccepted, "mode: white player sets it");
@@ -364,13 +364,13 @@ public class BoardTest : ChessTest {
 
         // The local player's button.
         CheckInt(board.SetMode(ChessGame.ModeChess960), ChessBoard.InputRejected, "mode: unseated local player rejected");
-        board.ClearState();
+        board._ClearState();
         board.JoinWhite();
         CheckInt(board.SetMode(ChessGame.ModeChess960), ChessBoard.InputAccepted, "mode: seated local player sets it");
         CheckInt(board.mode, ChessGame.ModeChess960, "mode: set by the local player");
 
         // The mode of a loaded game is the game's own; once started or ended it's fixed.
-        board.ClearState();
+        board._ClearState();
         board.lifecycle = ChessBoard.LifecycleLoaded;
         board.JoinAs(ChessRules.White, "Ana");
         CheckInt(board.SetModeAs("Ana", ChessGame.ModeChess960), ChessBoard.InputRejected, "mode: loaded board rejects");
@@ -383,7 +383,7 @@ public class BoardTest : ChessTest {
     }
 
     void TestSetClock() {
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.SetClockAs("Ana", 300, 3), ChessBoard.InputRejected, "clock: reset board rejects");
         board.JoinAs(ChessRules.White, "Ana");
         CheckInt(board.SetClockAs("Ana", 300, 3), ChessBoard.InputAccepted, "clock: player sets 5+3");
@@ -412,7 +412,7 @@ public class BoardTest : ChessTest {
             "clock: the maximum accepted");
 
         // The local player's button.
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.White, "Ana");
         CheckInt(board.SetClock(180, 2), ChessBoard.InputRejected, "clock: unseated local player rejected");
         board.JoinBlack();
@@ -420,7 +420,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.baseTime * 1000 + board.increment, 180002, "clock: 3+2 set by the local player");
 
         // A loaded board chooses the clock for continuing; once started or ended it's fixed.
-        board.ClearState();
+        board._ClearState();
         board.lifecycle = ChessBoard.LifecycleLoaded;
         CheckInt(board.SetClockAs("Ana", 300, 0), ChessBoard.InputRejected, "clock: loaded, nobody seated, rejected");
         board.JoinAs(ChessRules.Black, "Ana");
@@ -489,7 +489,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.whiteTime + board.blackTime, 0, "forced no clock: no time on the clocks");
 
         // On a loaded board the forced clock blocks the choice too.
-        board.ClearState();
+        board._ClearState();
         board.lifecycle = ChessBoard.LifecycleLoaded;
         board.JoinAs(ChessRules.White, "Ana");
         board.gameSettings = ChessArbiter.SettingClockForced;
@@ -497,11 +497,11 @@ public class BoardTest : ChessTest {
     }
 
     void TestStart() {
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputRejected, "start: reset board rejects");
         board.JoinAs(ChessRules.White, "Ana");
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputRejected, "start: only white seated rejected");
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.Black, "Bob");
         CheckInt(board.StartGameAs("Bob"), ChessBoard.InputRejected, "start: only black seated rejected");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "start: rejected start stays in the lobby");
@@ -533,7 +533,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputRejected, "start: ended board rejects");
 
         // A loaded board continues with "Continue from here" (7.9b), not Start.
-        board.ClearState();
+        board._ClearState();
         board.lifecycle = ChessBoard.LifecycleLoaded;
         board.JoinAs(ChessRules.White, "Ana");
         board.JoinAs(ChessRules.Black, "Bob");
@@ -541,7 +541,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "start: loaded board stays loaded");
 
         // The local player's button, seated as both colours, with no clock.
-        board.ClearState();
+        board._ClearState();
         board.JoinWhite();
         CheckInt(board.StartGame(), ChessBoard.InputRejected, "start: local player alone, one seat, rejected");
         board.JoinBlack();
@@ -720,7 +720,7 @@ public class BoardTest : ChessTest {
         int invalid = 0;
         string firstProblem = "";
         for (int i = 0; i < 1000; i++) {
-            int index = board.RandomChess960Index();
+            int index = board._RandomChess960Index();
             string problem = "";
             if (!ChessGame.Chess960Position(index, b, s)) problem = "index " + index + " out of range";
             else problem = Chess960Problem(b, s);
@@ -797,7 +797,7 @@ public class BoardTest : ChessTest {
     // Checks the board's snapshot against expected bits and numbers.
     void CheckSnapshot(int settings, int resetAvailable, int autoReset, int forcedMode, int forcedBase, int forcedInc,
             string name) {
-        CheckString(ChessArbiter.SettingsToString(board.gameSettings), ChessArbiter.SettingsToString(settings),
+        CheckString(ChessArbiter._SettingsToString(board.gameSettings), ChessArbiter._SettingsToString(settings),
             name + ": setting bits");
         int[] expected = new int[ChessArbiter.NumberCount];
         expected[ChessArbiter.NumberResetAvailableTime] = resetAvailable;
@@ -805,7 +805,7 @@ public class BoardTest : ChessTest {
         expected[ChessArbiter.NumberForcedMode] = forcedMode;
         expected[ChessArbiter.NumberForcedBaseTime] = forcedBase;
         expected[ChessArbiter.NumberForcedIncrement] = forcedInc;
-        CheckString(ChessArbiter.NumbersToString(board.gameNumbers), ChessArbiter.NumbersToString(expected),
+        CheckString(ChessArbiter._NumbersToString(board.gameNumbers), ChessArbiter._NumbersToString(expected),
             name + ": numbers");
     }
 
@@ -828,7 +828,7 @@ public class BoardTest : ChessTest {
 
         // A reset board has no snapshot, even with settings to copy.
         OverrideAll(s1, 30, 300, ChessGame.ModeChess960, 180, 2);
-        board.ClearState();
+        board._ClearState();
         CheckSnapshot(0, 0, 0, 0, 0, 0, "snapshot: none on a reset board");
 
         // The first join takes it.
@@ -872,7 +872,7 @@ public class BoardTest : ChessTest {
         arbiter.simpleAuth = auth;
         CheckInt(board.ResnapshotAs(null), ChessBoard.InputRejected, "re-snapshot: no player rejected");
         CheckSnapshot(s2, 60, 900, ChessGame.ModeChess960, 300, 0, "re-snapshot: rejected ones change nothing");
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.Resnapshot(), ChessBoard.InputRejected, "re-snapshot: reset board rejected");
         CheckSnapshot(0, 0, 0, 0, 0, 0, "re-snapshot: reset board still has none");
 
@@ -888,7 +888,7 @@ public class BoardTest : ChessTest {
         // Forced settings are applied when the snapshot is taken, so the lobby shows them.
         OverrideAll(ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced, 30, 300, ChessGame.ModeChess960,
             300, 5);
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.Black, "Bob");
         CheckInt(board.mode, ChessGame.ModeChess960, "snapshot: forced mode shown in the lobby");
         CheckInt(board.baseTime * 1000 + board.increment, 300005, "snapshot: forced clock shown in the lobby");
@@ -908,14 +908,14 @@ public class BoardTest : ChessTest {
         board.StartGameAs("Bob");
         CheckInt(board.baseTime * 1000 + board.increment, 900010, "re-snapshot: lobby, the game has the forced clock");
 
-        // On a loaded board (loading, step 7.9a, calls TakeSnapshot) the forced clock is applied but not the forced
+        // On a loaded board (loading, step 7.9a, calls _TakeSnapshot) the forced clock is applied but not the forced
         // mode: the mode is the loaded game's. Joining it doesn't take another.
-        board.ClearState();
+        board._ClearState();
         board.lifecycle = ChessBoard.LifecycleLoaded;
         board.mode = ChessGame.ModeChess960;
         int forcedBoth = ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced;
         OverrideAll(forcedBoth, 30, 300, ChessGame.ModeStandard, 120, 1);
-        board.TakeSnapshot();
+        board._TakeSnapshot();
         CheckSnapshot(forcedBoth, 30, 300, ChessGame.ModeStandard, 120, 1, "snapshot: loaded board");
         CheckInt(board.mode, ChessGame.ModeChess960, "snapshot: loaded board keeps the game's mode");
         CheckInt(board.baseTime * 1000 + board.increment, 120001, "snapshot: loaded board shows the forced clock");
@@ -926,7 +926,7 @@ public class BoardTest : ChessTest {
         // A conflicting override is corrected in the snapshot, as in EffectiveNumbers: auto-reset 60 clamps the
         // reset-available time 120 to 60.
         OverrideAll(0, 120, 60, ChessGame.ModeStandard, ChessArbiter.NoClock, 0);
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.White, "Ana");
         CheckSnapshot(0, 60, 60, ChessGame.ModeStandard, ChessArbiter.NoClock, 0, "snapshot: numbers corrected");
 
@@ -937,7 +937,7 @@ public class BoardTest : ChessTest {
         int[] defaultNumbers = arbiter.defaultNumbers;
         int[] effective = new int[ChessArbiter.NumberCount];
         arbiter.EffectiveNumbers(n, effective);
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.White, "Ana");
         CheckSnapshot(defaults, effective[0], effective[1], effective[2], effective[3], effective[4],
             "snapshot: the defaults without overrides");
@@ -960,7 +960,7 @@ public class BoardTest : ChessTest {
         // A board number without overrides gets the defaults, whatever the board's own number has.
         OverrideAll(s1, 30, 300, ChessGame.ModeChess960, 180, 2);
         board.boardNumber = arbiter.BoardCount();
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.White, "Ana");
         CheckSnapshot(defaults, effective[0], effective[1], effective[2], effective[3], effective[4],
             "snapshot: board number out of range gets the defaults");
@@ -968,7 +968,7 @@ public class BoardTest : ChessTest {
 
         // With no arbiter, everything off, and no re-snapshot.
         board.arbiter = null;
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.White, "Ana");
         CheckSnapshot(0, ChessArbiter.Never, ChessArbiter.Never, ChessGame.ModeStandard, ChessArbiter.NoClock, 0,
             "snapshot: no arbiter, everything off");
@@ -976,7 +976,7 @@ public class BoardTest : ChessTest {
         board.arbiter = arbiter;
 
         arbiter.ClearOverrides(n);
-        board.ClearState();
+        board._ClearState();
     }
 
     // ---- 7.3 clocks ----
@@ -1001,8 +1001,8 @@ public class BoardTest : ChessTest {
     }
 
     void CheckTimes(int white, int black, double now, string name) {
-        CheckInt(board.RemainingTimeAt(ChessRules.White, now), white, name + ": white's remaining time");
-        CheckInt(board.RemainingTimeAt(ChessRules.Black, now), black, name + ": black's remaining time");
+        CheckInt(board._RemainingTimeAt(ChessRules.White, now), white, name + ": white's remaining time");
+        CheckInt(board._RemainingTimeAt(ChessRules.Black, now), black, name + ": black's remaining time");
     }
 
     // Plays from-to at server time now, checking it's legal and accepted.
@@ -1010,7 +1010,7 @@ public class BoardTest : ChessTest {
         int move = FindMove(from, to);
         Check(move != 0, name + ": move found",
             ChessRules.SquareName(from) + ChessRules.SquareName(to) + " isn't legal");
-        CheckInt(board.PlayMoveAt(move, now), ChessBoard.InputAccepted, name + ": accepted");
+        CheckInt(board._PlayMoveAt(move, now), ChessBoard.InputAccepted, name + ": accepted");
     }
 
     // The times are binary fractions of a second, so the milliseconds come out exact.
@@ -1022,7 +1022,7 @@ public class BoardTest : ChessTest {
         CheckTimes(60000, 60000, 1000, "clock: at the turn start");
         CheckTimes(57500, 60000, 1002.5, "clock: white's runs, black's doesn't");
         CheckTimes(60000, 60000, 999, "clock: a time before the turn start counts as none passed");
-        CheckInt(board.FlaggedColorAt(1059.5), ChessRules.NoColor, "clock: 0.5 s left is no flag fall");
+        CheckInt(board._FlaggedColorAt(1059.5), ChessRules.NoColor, "clock: 0.5 s left is no flag fall");
 
         Play(ChessRules.E2, ChessRules.E4, 1002.5, "clock: 1. e4 after 2.5 s");
         CheckInt(board.whiteTime, 59500, "clock: 1. e4 takes 2.5 s and adds 2 s");
@@ -1053,42 +1053,42 @@ public class BoardTest : ChessTest {
         board.replayMode = true;
         CheckTimes(61500, 53250, 1011.25, "clock: still running in replay");
         int nc6 = FindMove(ChessRules.B8, ChessRules.C6);
-        CheckInt(board.PlayMoveAt(nc6, 1011.25), ChessBoard.InputRejected, "clock: no move in replay");
+        CheckInt(board._PlayMoveAt(nc6, 1011.25), ChessBoard.InputRejected, "clock: no move in replay");
         board.replayMode = false;
 
         // Black has 54.25 s from 1010.25, so the flag falls at 1064.5.
-        CheckInt(board.FlaggedColorAt(1064), ChessRules.NoColor, "clock: 0.5 s left, no flag fall");
-        CheckInt(board.FlaggedColorAt(1064.5), ChessRules.Black, "clock: black's flag falls at 0");
-        CheckInt(board.FlaggedColorAt(5000), ChessRules.Black, "clock: and stays fallen");
+        CheckInt(board._FlaggedColorAt(1064), ChessRules.NoColor, "clock: 0.5 s left, no flag fall");
+        CheckInt(board._FlaggedColorAt(1064.5), ChessRules.Black, "clock: black's flag falls at 0");
+        CheckInt(board._FlaggedColorAt(5000), ChessRules.Black, "clock: and stays fallen");
         CheckTimes(61500, 0, 5000, "clock: out of time shows 0, not less");
-        CheckInt(board.PlayMoveAt(nc6, 1064.5), ChessBoard.InputRejected, "clock: no move once the flag has fallen");
+        CheckInt(board._PlayMoveAt(nc6, 1064.5), ChessBoard.InputRejected, "clock: no move once the flag has fallen");
         CheckInt(board.moveCount, 3, "clock: refused move not recorded");
         CheckInt(board.blackTime, 54250, "clock: refused move leaves the time");
         Check(board.turnStart == 1010.25, "clock: refused move leaves the turn start", "turn start " + board.turnStart);
         Play(ChessRules.B8, ChessRules.C6, 1064.25, "clock: 2... Nc6 with 0.25 s left");
         CheckInt(board.blackTime, 2250, "clock: 0.25 s left plus 2 s");
-        CheckInt(board.FlaggedColorAt(1064.5), ChessRules.NoColor, "clock: no flag fall after moving in time");
+        CheckInt(board._FlaggedColorAt(1064.5), ChessRules.NoColor, "clock: no flag fall after moving in time");
 
         // Moves that aren't legal.
-        CheckInt(board.PlayMoveAt(FindMove(ChessRules.E4, ChessRules.E5), 1065), ChessBoard.InputRejected,
+        CheckInt(board._PlayMoveAt(FindMove(ChessRules.E4, ChessRules.E5), 1065), ChessBoard.InputRejected,
             "clock: no move (0) refused");
         int illegal = ChessRules.PackMove(ChessRules.D2, ChessRules.D5, ChessRules.Pawn, 0, 0, false, 15, -1);
-        CheckInt(board.PlayMoveAt(illegal, 1065), ChessBoard.InputRejected, "clock: an illegal move refused");
+        CheckInt(board._PlayMoveAt(illegal, 1065), ChessBoard.InputRejected, "clock: an illegal move refused");
         CheckInt(board.moveCount, 4, "clock: refused moves not recorded");
 
         // The clocks stop when the game ends (set directly here; TestEndings ends games).
         board.lifecycle = ChessBoard.LifecycleEnded;
         Check(!board.IsClockRunning(), "clock: stopped once ended", "running");
         CheckTimes(61500, 2250, 1e6, "clock: ended, times as stored");
-        CheckInt(board.FlaggedColorAt(1e6), ChessRules.NoColor, "clock: no flag fall once ended");
-        CheckInt(board.PlayMoveAt(FindMove(ChessRules.D2, ChessRules.D4), 1065), ChessBoard.InputRejected,
+        CheckInt(board._FlaggedColorAt(1e6), ChessRules.NoColor, "clock: no flag fall once ended");
+        CheckInt(board._PlayMoveAt(FindMove(ChessRules.D2, ChessRules.D4), 1065), ChessBoard.InputRejected,
             "clock: no move once ended");
 
         // Not running before a game: in the lobby and on a loaded board.
         LobbyWithTwoPlayers();
         board.SetClockAs("Ana", 60, 0);
         Check(!board.IsClockRunning(), "clock: not running in the lobby", "running");
-        CheckInt(board.PlayMoveAt(FindMove(ChessRules.E2, ChessRules.E4), 1000), ChessBoard.InputRejected,
+        CheckInt(board._PlayMoveAt(FindMove(ChessRules.E2, ChessRules.E4), 1000), ChessBoard.InputRejected,
             "clock: no move in the lobby");
         board.lifecycle = ChessBoard.LifecycleLoaded;
         Check(!board.IsClockRunning(), "clock: not running on a loaded board", "running");
@@ -1097,8 +1097,8 @@ public class BoardTest : ChessTest {
         StartedGame(1, 0, 20);
         Play(ChessRules.E2, ChessRules.E4, 20.9990234375, "clock: 1+0, 1. e4");
         CheckInt(board.whiteTime, 1, "clock: 1+0, 1 ms left after 999 ms");
-        CheckInt(board.FlaggedColorAt(21.998046875), ChessRules.NoColor, "clock: 1+0, black with 1 ms left");
-        CheckInt(board.FlaggedColorAt(21.9990234375), ChessRules.Black, "clock: 1+0, black's flag falls after 1 s");
+        CheckInt(board._FlaggedColorAt(21.998046875), ChessRules.NoColor, "clock: 1+0, black with 1 ms left");
+        CheckInt(board._FlaggedColorAt(21.9990234375), ChessRules.Black, "clock: 1+0, black's flag falls after 1 s");
 
         // The real server time: Start sets the turn start, so the clocks start full and run down.
         LobbyWithTwoPlayers();
@@ -1107,12 +1107,12 @@ public class BoardTest : ChessTest {
         int left = board.RemainingTime(ChessRules.White);
         Check(left > 590000 && left <= 600000, "clock: server time, white's clock starts full", "left " + left);
         CheckInt(board.FlaggedColor(), ChessRules.NoColor, "clock: server time, no flag at the start");
-        CheckInt(board.PlayMove(FindMove(ChessRules.D2, ChessRules.D4)), ChessBoard.InputAccepted,
+        CheckInt(board._PlayMove(FindMove(ChessRules.D2, ChessRules.D4)), ChessBoard.InputAccepted,
             "clock: server time, 1. d4");
-        board.turnStart = board.ServerTime() - 601;
+        board.turnStart = board._ServerTime() - 601;
         CheckInt(board.RemainingTime(ChessRules.Black), 0, "clock: server time, black out of time after 601 s");
         CheckInt(board.FlaggedColor(), ChessRules.Black, "clock: server time, black's flag falls");
-        CheckInt(board.PlayMove(FindMove(ChessRules.D7, ChessRules.D5)), ChessBoard.InputRejected,
+        CheckInt(board._PlayMove(FindMove(ChessRules.D7, ChessRules.D5)), ChessBoard.InputRejected,
             "clock: server time, no move after the flag");
 
         // A time can't overflow.
@@ -1130,7 +1130,7 @@ public class BoardTest : ChessTest {
         Play(ChessRules.E7, ChessRules.E5, 2e6, "no clock: 1... e5");
         Play(ChessRules.G2, ChessRules.G4, 3e6, "no clock: 2. g4");
         CheckTimes(0, 0, 4e6, "no clock: times stay 0");
-        CheckInt(board.FlaggedColorAt(4e6), ChessRules.NoColor, "no clock: no flag fall");
+        CheckInt(board._FlaggedColorAt(4e6), ChessRules.NoColor, "no clock: no flag fall");
         Play(ChessRules.D8, ChessRules.H4, 4e6, "no clock: 2... Qh4#");
         CheckString(board.notation[3], "Qh4#", "no clock: SAN with the mate suffix");
         bool noClocks = true;
@@ -1151,7 +1151,7 @@ public class BoardTest : ChessTest {
         bool allAccepted = true;
         for (int i = 0; i < plies; i++) {
             int step = (i % 4) * 2;
-            if (board.PlayMoveAt(FindMove(route[step], route[step + 1]), i + 1) != ChessBoard.InputAccepted) {
+            if (board._PlayMoveAt(FindMove(route[step], route[step + 1]), i + 1) != ChessBoard.InputAccepted) {
                 allAccepted = false;
             }
         }
@@ -1180,7 +1180,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.halfmoveClock, plies, "history: halfmove clock");
         CheckInt(board.moveNumber, 1 + plies / 2, "history: move number");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     // ---- 7.4a piece input ----
@@ -1272,16 +1272,16 @@ public class BoardTest : ChessTest {
 
         // Not once the side to move's flag has fallen.
         StartedGame(60, 0, 0);
-        board.turnStart = board.ServerTime() - 61;
+        board.turnStart = board._ServerTime() - 61;
         CheckInt(board.PiecePickedUpAs("Ana", ChessRules.E2), ChessBoard.InputRejected, "pickup: not after the flag");
         CheckInt(board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4), ChessBoard.InputRejected,
             "drop: not after the flag");
-        board.turnStart = board.ServerTime();
+        board.turnStart = board._ServerTime();
         CheckInt(board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4), ChessBoard.InputAccepted,
             "drop: with time left");
 
         // The local player in both seats plays both sides.
-        board.ClearState();
+        board._ClearState();
         board.JoinWhite();
         board.JoinBlack();
         board.StartGame();
@@ -1292,7 +1292,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.PieceDropped(ChessRules.D4, ChessRules.D5), ChessBoard.InputRejected, "local: 2. d4-d5 blocked");
         CheckInt(board.moveCount, 2, "local: two moves");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     // White pawn b7 can promote on b8 or by capturing the rook on a8 or c8; black pawn g2 on g1 or by capturing h1.
@@ -1364,7 +1364,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.moveCount, 2, "promotion: two moves");
 
         // The local player's methods.
-        board.ClearState();
+        board._ClearState();
         board.JoinWhite();
         board.JoinBlack();
         board.StartGame();
@@ -1375,7 +1375,7 @@ public class BoardTest : ChessTest {
             "local: b8=R");
         CheckInt(board.board[ChessRules.B8], ChessRules.WhiteRook, "local: rook on b8");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     // ---- 7.4b ----
@@ -1556,7 +1556,7 @@ public class BoardTest : ChessTest {
             "chess960 swap: f1 on g1");
 
         // The local player's methods.
-        board.ClearState();
+        board._ClearState();
         board.JoinWhite();
         board.JoinBlack();
         board.StartGame();
@@ -1568,7 +1568,7 @@ public class BoardTest : ChessTest {
         CheckCastled("O-O", ChessRules.BlackKing, ChessRules.G8, ChessRules.BlackRook, ChessRules.F8,
             "local: f8 on h8");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     // ---- 7.4c buttons ----
@@ -1597,12 +1597,12 @@ public class BoardTest : ChessTest {
         board.baseTime = 60;
         board.whiteTime = 60000;
         board.blackTime = 60000;
-        board.turnStart = board.ServerTime() - 61;
+        board.turnStart = board._ServerTime() - 61;
     }
 
     void TestLobbyButtons() {
         NothingForced();
-        board.ClearState();
+        board._ClearState();
         Check(board.CanJoinAs(ChessRules.White, "Ana"), "join button: white on a reset board", "refused");
         Check(board.CanJoinAs(ChessRules.Black, "Ana"), "join button: black on a reset board", "refused");
         Check(!board.CanJoinAs(ChessRules.NoColor, "Ana"), "join button: no colour", "allowed");
@@ -1655,7 +1655,7 @@ public class BoardTest : ChessTest {
         Check(!board.CanStartGameAs("Ana"), "start button: not once ended", "allowed");
 
         // A loaded board: seats and the clock, but not the mode or Start (it continues instead).
-        board.ClearState();
+        board._ClearState();
         board.lifecycle = ChessBoard.LifecycleLoaded;
         board.replayMode = true;
         Check(board.CanJoinAs(ChessRules.White, "Ana"), "join button: on a loaded board", "refused");
@@ -1665,7 +1665,7 @@ public class BoardTest : ChessTest {
         Check(!board.CanSetModeAs("Ana"), "mode button: not on a loaded board", "allowed");
         Check(!board.CanStartGameAs("Ana"), "start button: not on a loaded board", "allowed");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     void TestResignAndDrawButtons() {
@@ -1685,7 +1685,7 @@ public class BoardTest : ChessTest {
         board.replayMode = false;
         FlagFallen();
         Check(!board.CanResignAs(ChessRules.White, "Ana"), "resign button: not after the flag", "allowed");
-        board.turnStart = board.ServerTime();
+        board.turnStart = board._ServerTime();
         Check(board.CanResignAs(ChessRules.White, "Ana"), "resign button: with time left", "refused");
         board.lifecycle = ChessBoard.LifecycleEnded;
         Check(!board.CanResignAs(ChessRules.White, "Ana"), "resign button: not once ended", "allowed");
@@ -1736,7 +1736,7 @@ public class BoardTest : ChessTest {
             "allowed");
         FlagFallen();
         Check(!board.CanAcceptDrawAs(ChessRules.White, "Ana"), "accept draw button: not after the flag", "allowed");
-        board.turnStart = board.ServerTime();
+        board.turnStart = board._ServerTime();
         board.lifecycle = ChessBoard.LifecycleEnded;
         Check(!board.CanAcceptDrawAs(ChessRules.White, "Ana"), "accept draw button: not once ended", "allowed");
         board.drawOfferColor = ChessRules.NoColor;
@@ -1772,7 +1772,7 @@ public class BoardTest : ChessTest {
         board.halfmoveClock = 8;
         FlagFallen();
         Check(!board.CanClaimDrawAs("Ana"), "claim button: not after the flag", "allowed");
-        board.turnStart = board.ServerTime();
+        board.turnStart = board._ServerTime();
         board.lifecycle = ChessBoard.LifecycleEnded;
         Check(!board.CanClaimDrawAs("Ana"), "claim button: not once ended", "allowed");
 
@@ -1792,7 +1792,7 @@ public class BoardTest : ChessTest {
         board.gameSettings = ChessArbiter.SettingsDrawRules;
         Check(!board.CanClaimDrawAs("Ana"), "claim button: not in the lobby", "allowed");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     void TestReplayButtons() {
@@ -1801,7 +1801,7 @@ public class BoardTest : ChessTest {
         Check(!board.CanEnterReplayAs("Ana", false), "enter replay button: not in the lobby", "allowed");
         Check(!board.CanEnterReplayAs("Cleo", true), "enter replay button: not in the lobby for an organizer",
             "allowed");
-        board.ClearState();
+        board._ClearState();
         Check(!board.CanEnterReplayAs("Cleo", true), "enter replay button: not on a reset board", "allowed");
 
         ButtonGame(0);
@@ -1814,7 +1814,7 @@ public class BoardTest : ChessTest {
         Check(!board.CanStepToAs("Ana", false, 2), "step button: not out of replay", "allowed");
         FlagFallen();
         Check(board.CanEnterReplayAs("Ana", false), "enter replay button: after the flag", "refused");
-        board.turnStart = board.ServerTime();
+        board.turnStart = board._ServerTime();
 
         board.replayMode = true;
         board.replayIndex = 4;
@@ -1861,7 +1861,7 @@ public class BoardTest : ChessTest {
             "allowed");
         Check(board.CanStepToAs("Cleo", true, 2), "step button: an organizer on a loaded board", "refused");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     void TestTakebackButtons() {
@@ -1893,7 +1893,7 @@ public class BoardTest : ChessTest {
         FlagFallen();
         Check(!board.CanRequestTakebackAs(ChessRules.White, "Ana"), "takeback button: not after the flag",
             "allowed");
-        board.turnStart = board.ServerTime();
+        board.turnStart = board._ServerTime();
         board.lifecycle = ChessBoard.LifecycleEnded;
         Check(board.CanRequestTakebackAs(ChessRules.White, "Ana"), "takeback button: once ended", "refused");
         board.lifecycle = ChessBoard.LifecycleLoaded;
@@ -1937,7 +1937,7 @@ public class BoardTest : ChessTest {
         Check(!board.CanAcceptTakebackAs(ChessRules.Black, "Bob"),
             "accept takeback button: not black, black's request", "allowed");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     void TestContinueResetLoadButtons() {
@@ -1964,7 +1964,7 @@ public class BoardTest : ChessTest {
         Check(!board.CanContinueAs("Ana"), "continue button: not once ended", "allowed");
 
         // Reset: a seated player or an organizer, on any board that isn't reset; loading only onto a reset board.
-        board.ClearState();
+        board._ClearState();
         Check(!board.CanResetAs("Ana", false), "reset button: not on a reset board", "allowed");
         Check(!board.CanResetAs("Cleo", true), "reset button: not on a reset board for an organizer", "allowed");
         Check(board.CanLoadGame(), "load: on a reset board", "refused");
@@ -1990,13 +1990,13 @@ public class BoardTest : ChessTest {
         Check(board.CanResetAs("Cleo", true), "reset button: an organizer on a loaded board", "refused");
         Check(!board.CanLoadGame(), "load: not on a loaded board", "allowed");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     // The local player's checks, seated in both seats.
     void TestLocalButtons() {
         NothingForced();
-        board.ClearState();
+        board._ClearState();
         Check(board.CanJoin(ChessRules.White), "local buttons: join white", "refused");
         board.JoinWhite();
         board.JoinBlack();
@@ -2036,7 +2036,7 @@ public class BoardTest : ChessTest {
         board.lifecycle = ChessBoard.LifecycleLoaded;
         Check(board.CanContinue(), "local buttons: continue a loaded game", "refused");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     // ---- 7.5a game endings ----
@@ -2069,8 +2069,8 @@ public class BoardTest : ChessTest {
         CheckInt(board.clockHistory[3], 61500, "mate: the mating move's clock entry");
         Check(!board.IsClockRunning(), "mate: clock stopped", "running");
         CheckTimes(62000, 61500, 1e6, "mate: times kept");
-        CheckInt(board.FlaggedColorAt(1e6), ChessRules.NoColor, "mate: no flag fall later");
-        Check(!board.CheckFlagFallAt(1e6), "mate: no time forfeit later", "forfeit");
+        CheckInt(board._FlaggedColorAt(1e6), ChessRules.NoColor, "mate: no flag fall later");
+        Check(!board._CheckFlagFallAt(1e6), "mate: no time forfeit later", "forfeit");
         CheckInt(board.ending, ChessGame.EndingCheckmate, "mate: still checkmate");
         CheckInt(board.PieceDroppedAs("Ana", ChessRules.E1, ChessRules.F2), ChessBoard.InputRejected,
             "mate: no move after it");
@@ -2125,7 +2125,7 @@ public class BoardTest : ChessTest {
             "no stalemate: Qe7");
         CheckInGame("no stalemate: Kg8 left");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     void TestResign() {
@@ -2170,17 +2170,17 @@ public class BoardTest : ChessTest {
         CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "resign: lobby stays");
 
         // With a clock: it stops with the time the side to move had left.
-        StartedGame(60, 0, board.ServerTime() - 2);
+        StartedGame(60, 0, board._ServerTime() - 2);
         CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "resign: with a clock");
         Check(board.whiteTime > 57000 && board.whiteTime <= 58000, "resign: white's time stopped after 2 s",
             "time " + board.whiteTime);
         CheckInt(board.blackTime, 60000, "resign: black's time untouched");
         Check(!board.IsClockRunning(), "resign: clock stopped", "running");
-        CheckInt(board.RemainingTimeAt(ChessRules.White, board.ServerTime() + 1000), board.whiteTime,
+        CheckInt(board._RemainingTimeAt(ChessRules.White, board._ServerTime() + 1000), board.whiteTime,
             "resign: white's time stays");
 
         // The local player in both seats chooses the side.
-        board.ClearState();
+        board._ClearState();
         board.JoinWhite();
         board.JoinBlack();
         board.StartGame();
@@ -2188,17 +2188,17 @@ public class BoardTest : ChessTest {
         CheckEnded(ChessGame.EndingResignation, ChessRules.White, "1-0", "resign: local player");
         CheckInt(board.Resign(ChessRules.White), ChessBoard.InputRejected, "resign: local player, not twice");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     // A game with a 60 s clock from server time 1000 in the position fen, with these settings, ended by
-    // CheckFlagFallAt at 1060, when the side to move's flag falls.
+    // _CheckFlagFallAt at 1060, when the side to move's flag falls.
     void CheckForfeit(string fen, int settings, int winner, string result, string name) {
         StartedGame(60, 0, 1000);
         board.gameSettings = settings;
         SetPosition(fen);
         CheckString(Fen(), fen, name + ": position set up");
-        Check(board.CheckFlagFallAt(1060), name + ": forfeit", "not ended");
+        Check(board._CheckFlagFallAt(1060), name + ": forfeit", "not ended");
         CheckEnded(ChessGame.EndingTimeForfeit, winner, result, name);
     }
 
@@ -2210,16 +2210,16 @@ public class BoardTest : ChessTest {
         // White's flag falls at exactly 0.
         StartedGame(60, 0, 1000);
         board.drawOfferColor = ChessRules.Black;
-        Check(!board.CheckFlagFallAt(1059.5), "forfeit: not with 0.5 s left", "ended");
+        Check(!board._CheckFlagFallAt(1059.5), "forfeit: not with 0.5 s left", "ended");
         CheckInGame("forfeit: 0.5 s left");
-        Check(board.CheckFlagFallAt(1060), "forfeit: white's flag", "not ended");
+        Check(board._CheckFlagFallAt(1060), "forfeit: white's flag", "not ended");
         CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.Black, "0-1", "forfeit: white out of time");
         CheckInt(board.whiteTime, 0, "forfeit: white's time 0");
         CheckInt(board.blackTime, 60000, "forfeit: black's time untouched");
         CheckInt(board.drawOfferColor, ChessRules.NoColor, "forfeit: the draw offer lapses");
         Check(!board.IsClockRunning(), "forfeit: clock stopped", "running");
         CheckTimes(0, 60000, 1e6, "forfeit: times kept");
-        Check(!board.CheckFlagFallAt(1e6), "forfeit: only once", "ended again");
+        Check(!board._CheckFlagFallAt(1e6), "forfeit: only once", "ended again");
         CheckInt(board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4), ChessBoard.InputRejected,
             "forfeit: no move after it");
         Check(!board.CanResignAs(ChessRules.Black, "Bob"), "forfeit: no resigning after it", "allowed");
@@ -2228,8 +2228,8 @@ public class BoardTest : ChessTest {
         StartedGame(60, 0, 1000);
         board.gameSettings = allDraws;
         Play(ChessRules.E2, ChessRules.E4, 1000, "forfeit: 1. e4");
-        Check(!board.CheckFlagFallAt(1059.5), "forfeit: black not yet", "ended");
-        Check(board.CheckFlagFallAt(1060), "forfeit: black's flag", "not ended");
+        Check(!board._CheckFlagFallAt(1059.5), "forfeit: black not yet", "ended");
+        Check(board._CheckFlagFallAt(1060), "forfeit: black's flag", "not ended");
         CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.White, "1-0", "forfeit: black out of time");
         CheckInt(board.blackTime, 0, "forfeit: black's time 0");
 
@@ -2261,30 +2261,30 @@ public class BoardTest : ChessTest {
         // In replay too: replay doesn't stop the clock.
         StartedGame(60, 0, 1000);
         board.replayMode = true;
-        Check(board.CheckFlagFallAt(1060), "forfeit: in replay", "not ended");
+        Check(board._CheckFlagFallAt(1060), "forfeit: in replay", "not ended");
         CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.Black, "0-1", "forfeit: in replay");
         Check(board.replayMode, "forfeit: replay kept", "left replay");
 
         // Never without a clock, before a game, or on a loaded board.
         StartedGame(ChessArbiter.NoClock, 0, 0);
-        Check(!board.CheckFlagFallAt(1e9), "forfeit: never without a clock", "ended");
+        Check(!board._CheckFlagFallAt(1e9), "forfeit: never without a clock", "ended");
         CheckInGame("forfeit: no clock");
         LobbyWithTwoPlayers();
         board.SetClockAs("Ana", 60, 0);
-        Check(!board.CheckFlagFallAt(1e9), "forfeit: not in the lobby", "ended");
+        Check(!board._CheckFlagFallAt(1e9), "forfeit: not in the lobby", "ended");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "forfeit: lobby stays");
         board.lifecycle = ChessBoard.LifecycleLoaded;
-        Check(!board.CheckFlagFallAt(1e9), "forfeit: not on a loaded board", "ended");
+        Check(!board._CheckFlagFallAt(1e9), "forfeit: not on a loaded board", "ended");
 
         // The real server time.
         StartedGame(60, 0, 0);
-        board.turnStart = board.ServerTime();
-        Check(!board.CheckFlagFall(), "forfeit: server time, time left", "ended");
+        board.turnStart = board._ServerTime();
+        Check(!board._CheckFlagFall(), "forfeit: server time, time left", "ended");
         FlagFallen();
-        Check(board.CheckFlagFall(), "forfeit: server time, flag fallen", "not ended");
+        Check(board._CheckFlagFall(), "forfeit: server time, flag fallen", "not ended");
         CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.Black, "0-1", "forfeit: server time");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     // ---- 7.5b draws ----
@@ -2310,7 +2310,7 @@ public class BoardTest : ChessTest {
         int agreement = ChessArbiter.SettingDrawAgreement;
 
         // White offers, Black declines; Black offers, White accepts.
-        StartedGame(60, 0, board.ServerTime() - 2);
+        StartedGame(60, 0, board._ServerTime() - 2);
         board.gameSettings = agreement;
         CheckInt(board.OfferDrawAs(ChessRules.Black, "Ana"), ChessBoard.InputRejected, "draw offer: not white for black");
         CheckInt(board.OfferDrawAs(ChessRules.White, "Cleo"), ChessBoard.InputRejected, "draw offer: not a non-player");
@@ -2401,7 +2401,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.OfferDrawAs(ChessRules.White, "Ana"), ChessBoard.InputRejected, "draw offer: not in the lobby");
 
         // The local player in both seats offers for one side and accepts for the other.
-        board.ClearState();
+        board._ClearState();
         board.JoinWhite();
         board.JoinBlack();
         board.StartGame();
@@ -2414,7 +2414,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.AcceptDraw(ChessRules.White), ChessBoard.InputAccepted, "draw offer: local player accepts");
         CheckEnded(ChessGame.EndingDrawAgreement, ChessRules.NoColor, "1/2-1/2", "draw offer: local player");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     void TestDrawClaims() {
@@ -2486,7 +2486,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.ClaimDrawAs("Ana"), ChessBoard.InputRejected, "claim: not after the flag");
         CheckInt(board.ending, ChessGame.EndingNone, "claim: refused after the flag, no ending");
 
-        board.ClearState();
+        board._ClearState();
         board.JoinWhite();
         board.JoinBlack();
         board.StartGame();
@@ -2495,7 +2495,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.ClaimDraw(), ChessBoard.InputAccepted, "claim: local player");
         CheckEnded(ChessGame.EndingFiftyMoveRule, ChessRules.NoColor, "1/2-1/2", "claim: local player");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     void TestAutomaticDraws() {
@@ -2506,7 +2506,7 @@ public class BoardTest : ChessTest {
         int allDraws = ChessArbiter.SettingsDrawRules;
 
         // Fivefold: the starting position for the fifth time after 16 plies ends the game.
-        StartedGame(60, 0, board.ServerTime());
+        StartedGame(60, 0, board._ServerTime());
         board.gameSettings = fivefold;
         KnightShuffle(3, "fivefold");
         Drop("Ana", ChessRules.G1, ChessRules.F3, "fivefold");
@@ -2603,7 +2603,7 @@ public class BoardTest : ChessTest {
         CheckEnded(ChessGame.EndingInsufficientMaterial, ChessRules.NoColor, "1/2-1/2", "dead with an offer");
         CheckInt(board.drawOfferColor, ChessRules.NoColor, "dead with an offer: the offer lapses");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     // ---- 7.6 Game IDs ----
@@ -2634,33 +2634,33 @@ public class BoardTest : ChessTest {
 
     // The formatting itself, on fixed times and suffixes.
     void TestGameIdFormat() {
-        CheckString(ChessGame.GameId(new System.DateTime(2026, 10, 5, 14, 30, 27), 48213), "20261005143027-048213",
+        CheckString(ChessGame._GameId(new System.DateTime(2026, 10, 5, 14, 30, 27), 48213), "20261005143027-048213",
             "game ID format: the docs' example");
-        CheckString(ChessGame.GameId(new System.DateTime(2026, 1, 2, 3, 4, 5), 0), "20260102030405-000000",
+        CheckString(ChessGame._GameId(new System.DateTime(2026, 1, 2, 3, 4, 5), 0), "20260102030405-000000",
             "game ID format: single digits padded, suffix 0");
-        CheckString(ChessGame.GameId(new System.DateTime(9999, 12, 31, 23, 59, 59), 999999), "99991231235959-999999",
+        CheckString(ChessGame._GameId(new System.DateTime(9999, 12, 31, 23, 59, 59), 999999), "99991231235959-999999",
             "game ID format: largest values");
-        CheckString(ChessGame.GameId(new System.DateTime(33, 7, 9, 0, 0, 0), 7), "00330709000000-000007",
+        CheckString(ChessGame._GameId(new System.DateTime(33, 7, 9, 0, 0, 0), 7), "00330709000000-000007",
             "game ID format: a short year padded");
-        CheckString(ChessGame.GameId(new System.DateTime(2026, 10, 5, 14, 30, 27), -1), "",
+        CheckString(ChessGame._GameId(new System.DateTime(2026, 10, 5, 14, 30, 27), -1), "",
             "game ID format: negative suffix refused");
-        CheckString(ChessGame.GameId(new System.DateTime(2026, 10, 5, 14, 30, 27), 1000000), "",
+        CheckString(ChessGame._GameId(new System.DateTime(2026, 10, 5, 14, 30, 27), 1000000), "",
             "game ID format: seven-digit suffix refused");
-        CheckGameId(ChessGame.GameId(new System.DateTime(2026, 10, 5, 14, 30, 27), 48213),
+        CheckGameId(ChessGame._GameId(new System.DateTime(2026, 10, 5, 14, 30, 27), 48213),
             "game ID format: the checker accepts the docs' example");
         Check(GameIdProblem("20261005143027048213") != "" && GameIdProblem("20261305143027-048213") != ""
             && GameIdProblem("2026100514302-0048213") != "", "game ID format: the checker refuses malformed IDs",
             "a malformed ID was accepted");
 
-        CheckString(ChessGame.ContinuedFromText("20261005143027-048213", 3), "20261005143027-048213/3",
+        CheckString(ChessGame._ContinuedFromText("20261005143027-048213", 3), "20261005143027-048213/3",
             "continued from: the docs' example");
-        CheckString(ChessGame.ContinuedFromText("20261005143027-048213", 0), "20261005143027-048213/0",
+        CheckString(ChessGame._ContinuedFromText("20261005143027-048213", 0), "20261005143027-048213/0",
             "continued from: ply 0");
-        CheckString(ChessGame.ContinuedFromText("20261005143027-048213", 142), "20261005143027-048213/142",
+        CheckString(ChessGame._ContinuedFromText("20261005143027-048213", 142), "20261005143027-048213/142",
             "continued from: three-digit ply");
-        CheckString(ChessGame.ContinuedFromText("h0rrawli", 5), "h0rrawli/5", "continued from: any imported ID kept");
-        CheckString(ChessGame.ContinuedFromText("", 3), "", "continued from: none without a Game ID");
-        CheckString(ChessGame.ContinuedFromText(null, 3), "", "continued from: none for null");
+        CheckString(ChessGame._ContinuedFromText("h0rrawli", 5), "h0rrawli/5", "continued from: any imported ID kept");
+        CheckString(ChessGame._ContinuedFromText("", 3), "", "continued from: none without a Game ID");
+        CheckString(ChessGame._ContinuedFromText(null, 3), "", "continued from: none for null");
 
         // The random suffix: 1000 IDs for one time, all well formed, nearly all distinct (two of 1000 draws below a
         // million coincide with chance about 0.4), spread over the range so short suffixes get padded.
@@ -2672,7 +2672,7 @@ public class BoardTest : ChessTest {
         int high = 0;
         string firstBad = "";
         for (int i = 0; i < 1000; i++) {
-            string id = board.NewGameIdAt(time);
+            string id = board._NewGameIdAt(time);
             if (GameIdProblem(id) != "" || !id.StartsWith("20261011120000-")) {
                 if (bad == 0) firstBad = id;
                 bad++;
@@ -2694,15 +2694,15 @@ public class BoardTest : ChessTest {
     void TestGameIds() {
         LobbyWithTwoPlayers();
         CheckString(board.gameId, "", "game ID: none in the lobby");
-        System.DateTime before = board.NetworkDateTime();
+        System.DateTime before = board._NetworkDateTime();
         board.StartGameAs("Ana");
-        System.DateTime after = board.NetworkDateTime();
+        System.DateTime after = board._NetworkDateTime();
         string id = board.gameId;
         CheckGameId(id, "game ID: set on Start");
         CheckString(board.continuedFrom, "", "game ID: a started game continues nothing");
         // Fixed-width digits compare as text in time order.
-        string earliest = ChessGame.GameId(before, 0).Substring(0, 14);
-        string latest = ChessGame.GameId(after, 0).Substring(0, 14);
+        string earliest = ChessGame._GameId(before, 0).Substring(0, 14);
+        string latest = ChessGame._GameId(after, 0).Substring(0, 14);
         Check(id.Length == 21 && string.CompareOrdinal(id.Substring(0, 14), earliest) >= 0
             && string.CompareOrdinal(id.Substring(0, 14), latest) <= 0, "game ID: the network time at Start",
             id + " not from " + earliest + " to " + latest);
@@ -2738,37 +2738,37 @@ public class BoardTest : ChessTest {
         ButtonGame(0);
         string first = board.gameId;
         System.DateTime time = new System.DateTime(2026, 10, 11, 12, 0, 0);
-        board.ContinueGameIdAt(3, time);
+        board._ContinueGameIdAt(3, time);
         CheckString(board.continuedFrom, first + "/3", "continued: ContinuedFrom is the old ID and ply 3");
         Check(board.gameId.StartsWith("20261011120000-") && GameIdProblem(board.gameId) == "",
             "continued: new ID from the given time", "got \"" + board.gameId + "\"");
         Check(board.gameId != first, "continued: the ID changes", "still " + first);
         string second = board.gameId;
-        board.ContinueGameIdAt(0, time.AddSeconds(5));
+        board._ContinueGameIdAt(0, time.AddSeconds(5));
         CheckString(board.continuedFrom, second + "/0", "continued again: references the game it came from, ply 0");
         Check(board.gameId.StartsWith("20261011120005-"), "continued again: new ID from the given time",
             "got \"" + board.gameId + "\"");
 
         // A game with no ID (a PGN import without a GameID tag) gets a new one but no ContinuedFrom.
         board.gameId = "";
-        board.ContinueGameIdAt(2, time);
+        board._ContinueGameIdAt(2, time);
         CheckString(board.continuedFrom, "", "continued without an ID: no ContinuedFrom");
         CheckGameId(board.gameId, "continued without an ID: gets a new ID");
 
         // An imported ID that isn't one of ours is referenced as it is.
         board.gameId = "h0rrawli";
-        board.ContinueGameIdAt(7, time);
+        board._ContinueGameIdAt(7, time);
         CheckString(board.continuedFrom, "h0rrawli/7", "continued from a foreign ID: kept as it is");
 
         // A new Start clears what an earlier continued game left.
-        board.ClearState();
+        board._ClearState();
         CheckString(board.continuedFrom, "", "reset clears ContinuedFrom");
         LobbyWithTwoPlayers();
         board.continuedFrom = "20261011120000-000001/4";
         board.StartGameAs("Ana");
         CheckString(board.continuedFrom, "", "Start clears ContinuedFrom");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     // ---- 7.8a replay ----
@@ -2802,7 +2802,7 @@ public class BoardTest : ChessTest {
         NothingForced();
 
         // A game with en passant, captures and castling, each position recorded.
-        StartedGame(60, 0, board.ServerTime());
+        StartedGame(60, 0, board._ServerTime());
         int[] from = { ChessRules.E2, ChessRules.G8, ChessRules.E4, ChessRules.D7, ChessRules.E5, ChessRules.C7,
             ChessRules.G1, ChessRules.B8, ChessRules.F1, ChessRules.G7, ChessRules.E1, ChessRules.F8 };
         int[] to = { ChessRules.E4, ChessRules.F6, ChessRules.E5, ChessRules.D5, ChessRules.D6, ChessRules.D6,
@@ -2879,7 +2879,7 @@ public class BoardTest : ChessTest {
             "free: the pawn placed on e8, not promoted", "e8 " + board.replayBoard[ChessRules.E8]);
         CheckInt(board.PieceDroppedAs("Ana", ChessRules.D1, ChessRules.E1), ChessBoard.InputAccepted,
             "free: the queen on her own king");
-        CheckInt(board.ReplayPieceDroppedAs("Cleo", true, ChessRules.A2, ChessRules.A7), ChessBoard.InputAccepted,
+        CheckInt(board._ReplayPieceDroppedAs("Cleo", true, ChessRules.A2, ChessRules.A7), ChessBoard.InputAccepted,
             "free: an organizer");
         CheckInt(board.PromotionChosenAs("Ana", ChessRules.H2, ChessRules.H4, ChessRules.Queen),
             ChessBoard.InputRejected, "free: no promotion choice in replay");
@@ -2944,7 +2944,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.StepToAs("Ana", false, 1), ChessBoard.InputAccepted, "loaded: the seated player steps");
 
         // The local player's methods, seated in both seats.
-        board.ClearState();
+        board._ClearState();
         board.JoinWhite();
         board.JoinBlack();
         board.StartGame();
@@ -2959,7 +2959,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.LeaveReplay(), ChessBoard.InputAccepted, "local replay: leave");
         CheckString(GameText(), local, "local replay: the game as it was");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     // ---- 13.4 putting captured pieces back in replay ----
@@ -3096,7 +3096,7 @@ public class BoardTest : ChessTest {
         CheckCaptured("PP", "PQP", c + ": the game's places again");
 
         // A promoted pawn captured stands in its place as a pawn, and goes back as one.
-        board.ClearState();
+        board._ClearState();
         StartedGame(ChessArbiter.NoClock, 0, 0);
         int[] from = { ChessRules.A2, ChessRules.B7, ChessRules.A4, ChessRules.A7, ChessRules.B5, ChessRules.C8,
             ChessRules.A6, ChessRules.B8 };
@@ -3117,7 +3117,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.replayBoard[ChessRules.A2], ChessRules.WhitePawn, c + ": a pawn on a2");
         CheckCaptured("", "PPBR", c + ": the promoted pawn out of its place");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     // Whether each colour's captured places in the position shown are expected (piece letters in place order).
@@ -3185,7 +3185,7 @@ public class BoardTest : ChessTest {
             Play(from[i], to[i], times[i], "takeback game ply " + i);
             fens[i + 1] = Fen();
         }
-        board.turnStart = board.ServerTime();
+        board.turnStart = board._ServerTime();
         string game = GameText();
         string firstId = board.gameId;
 
@@ -3251,9 +3251,9 @@ public class BoardTest : ChessTest {
         board.gameSettings = takebacks | ChessArbiter.SettingDrawAgreement;
         board.OfferDrawAs(ChessRules.White, "Ana");
         int before = board.loggedGames;
-        double timeBefore = board.ServerTime();
+        double timeBefore = board._ServerTime();
         Takeback(3, ChessRules.Black, "takeback to 3");
-        double timeAfter = board.ServerTime();
+        double timeAfter = board._ServerTime();
         CheckLogged(before, 1, "takeback to 3: the unfinished game logged once");
         CheckLogHas("[Result \"*\"]\n", "takeback to 3: logged as *");
         CheckLogHas("[GameID \"" + firstId + "\"]\n", "takeback to 3: logged with its own ID");
@@ -3278,7 +3278,7 @@ public class BoardTest : ChessTest {
         Play(ChessRules.G8, ChessRules.F6, 2001, "continued: 2... Nf6");
         Play(ChessRules.D2, ChessRules.D4, 2002, "continued: 3. d4");
         CheckInt(board.blackTime, 61000, "continued: black's clock runs on from the restored time");
-        board.turnStart = board.ServerTime();
+        board.turnStart = board._ServerTime();
         before = board.loggedGames;
         board.ResignAs(ChessRules.Black, "Bob");
         CheckLoggedEnding(before, "1-0", "resignation", "continued");
@@ -3315,7 +3315,7 @@ public class BoardTest : ChessTest {
         StartedGame(60, 2, 1000);
         board.gameSettings = takebacks;
         for (int i = 0; i < 5; i++) Play(from[i], to[i], times[i], "white-to-move takeback game ply " + i);
-        board.turnStart = board.ServerTime();
+        board.turnStart = board._ServerTime();
         Takeback(4, ChessRules.White, "takeback to 4");
         CheckContinued(4, fens[4], "takeback to 4");
         CheckInt(board.whiteTime, 62000, "takeback to 4: white's clock after its second move");
@@ -3325,7 +3325,7 @@ public class BoardTest : ChessTest {
         StartedGame(60, 0, 1000);
         board.gameSettings = takebacks;
         Play(ChessRules.E2, ChessRules.E4, 1001, "forfeit takeback: 1. e4");
-        Check(board.CheckFlagFallAt(1100), "forfeit takeback: black's flag", "not ended");
+        Check(board._CheckFlagFallAt(1100), "forfeit takeback: black's flag", "not ended");
         before = board.loggedGames;
         Takeback(0, ChessRules.White, "forfeit takeback");
         CheckLogged(before, 0, "forfeit takeback: nothing more logged");
@@ -3357,7 +3357,7 @@ public class BoardTest : ChessTest {
         CheckString(Fen(), fens2[5], "takeback before en passant: the same position after it");
 
         // The local player's methods, seated in both seats: Continue from here in place of a takeback (13.3).
-        board.ClearState();
+        board._ClearState();
         board.JoinWhite();
         board.JoinBlack();
         board.StartGame();
@@ -3371,7 +3371,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.ContinueGame(), ChessBoard.InputAccepted, "local continue: accepted");
         CheckContinued(1, fens[1], "local continue");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     // ---- 13.3 continuing from here in both seats ----
@@ -3382,7 +3382,7 @@ public class BoardTest : ChessTest {
         int takebacks = ChessArbiter.SettingTakebacks;
 
         // The takeback test's 60+2 game, Ana in both seats: White 61, 62, 63 s, Black 60, 59, 57 s.
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.White, "Ana");
         board.JoinAs(ChessRules.Black, "Ana");
         board.SetClockAs("Ana", 60, 2);
@@ -3398,7 +3398,7 @@ public class BoardTest : ChessTest {
             Play(from[i], to[i], times[i], "continue alone game ply " + i);
             fens[i + 1] = Fen();
         }
-        board.turnStart = board.ServerTime();
+        board.turnStart = board._ServerTime();
         string game = GameText();
         string firstId = board.gameId;
 
@@ -3434,9 +3434,9 @@ public class BoardTest : ChessTest {
         board.OfferDrawAs(ChessRules.White, "Ana");
         Check(board.CanContinueAs("Ana"), "continue alone: in game", "refused");
         int before = board.loggedGames;
-        double timeBefore = board.ServerTime();
+        double timeBefore = board._ServerTime();
         CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputAccepted, "continue alone to 3: accepted");
-        double timeAfter = board.ServerTime();
+        double timeAfter = board._ServerTime();
         CheckInt(board.lastChange, ChessBoard.ChangeTakeback, "continue alone to 3: told as a takeback");
         CheckLogged(before, 1, "continue alone to 3: the unfinished game logged once");
         CheckLogHas("[Result \"*\"]\n", "continue alone to 3: logged as *");
@@ -3480,7 +3480,7 @@ public class BoardTest : ChessTest {
         Check(board.CanRequestTakebackAs(ChessRules.White, "Ana"), "continue, two players: a takeback instead",
             "refused");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     // ---- 7.9a loading a game ----
@@ -3489,15 +3489,15 @@ public class BoardTest : ChessTest {
 
     // Imports text in one go with the importer and returns the result.
     int ImportText(string text) {
-        importer.StartImport(text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
-        return importer.ImportFor(float.MaxValue);
+        importer._StartImport(text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
+        return importer._ImportFor(float.MaxValue);
     }
 
     // Imports text and loads it onto a reset board, checking both are accepted.
     void LoadText(string text, string name) {
-        board.ClearState();
+        board._ClearState();
         CheckInt(ImportText(text), ChessPgn.ImportDone, name + ": imported");
-        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputAccepted, name + ": loaded");
+        CheckInt(board._LoadImportAs("", importer), ChessBoard.InputAccepted, name + ": loaded");
     }
 
     // Whether the board's PGN has this tag line.
@@ -3506,7 +3506,7 @@ public class BoardTest : ChessTest {
         Check(pgn.Contains(line + "\n") == expected, name, (expected ? "missing " : "has ") + line + " in\n" + pgn);
     }
 
-    // A refused load leaves the board reset, as ClearState makes it.
+    // A refused load leaves the board reset, as _ClearState makes it.
     void CheckStillReset(string name) {
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, name + ": still reset");
         CheckString(Fen(), ChessFen.StartFen, name + ": the standard start");
@@ -3524,11 +3524,11 @@ public class BoardTest : ChessTest {
 
         // Siggi-vs-Nuka: the loaded state in replay on the last position, the PGN's names, result and ID, its time
         // control and clocks, and the moves played through (FEN counters included).
-        board.ClearState();
+        board._ClearState();
         Check(board.CanLoadGame(), "load: a reset board can load", "refused");
         CheckInt(ImportText(nuka), ChessPgn.ImportDone, "load: Siggi-vs-Nuka imported");
         CheckInt(importer.MoveCount(), 54, "load: Siggi-vs-Nuka has 54 plies");
-        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputAccepted, "load: Siggi-vs-Nuka loaded");
+        CheckInt(board._LoadImportAs("", importer), ChessBoard.InputAccepted, "load: Siggi-vs-Nuka loaded");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "load: loaded state");
         Check(board.replayMode, "load: in replay", "not in replay");
         CheckShows(54, BoardText(board.board), "load: shows the last position");
@@ -3553,7 +3553,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.clockHistory[53], 480500, "load: clock of ply 54");
         string errors = "";
         int[] clocks = new int[600];
-        ChessDraws.BuildHalfmoveClocks(board.moveHistory, 54, 0, clocks);
+        ChessDraws._BuildHalfmoveClocks(board.moveHistory, 54, 0, clocks);
         for (int i = 0; i < board.moveHistory.Length; i++) {
             bool played = i < 54;
             if (board.moveHistory[i] != (played ? importer.moves[i] : 0)
@@ -3605,58 +3605,58 @@ public class BoardTest : ChessTest {
         string loaded = GameText();
         Check(!board.CanLoadGame(), "load: a loaded board can't load", "allowed");
         CheckInt(ImportText(nuka), ChessPgn.ImportDone, "load: imported again");
-        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused on a loaded board");
+        CheckInt(board._LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused on a loaded board");
         CheckString(GameText(), loaded, "load: refused on a loaded board, nothing changed");
         LobbyWithTwoPlayers();
         string lobby = GameText();
-        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused in the lobby");
+        CheckInt(board._LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused in the lobby");
         CheckString(GameText(), lobby, "load: refused in the lobby, nothing changed");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "load: refused in the lobby, still the lobby");
         board.StartGameAs("Ana");
         board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4);
         string inGame = GameText();
-        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused in game");
+        CheckInt(board._LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused in game");
         CheckString(GameText(), inGame, "load: refused in game, nothing changed");
         board.ResignAs(ChessRules.Black, "Bob");
         string ended = GameText();
-        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused once ended");
+        CheckInt(board._LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused once ended");
         CheckString(GameText(), ended, "load: refused once ended, nothing changed");
         Check(!board.CanLoadGame(), "load: an ended board can't load", "allowed");
 
         // An import still under way or failed is refused, and so is no importer.
-        board.ClearState();
-        importer.StartImport(nuka, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
-        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused while importing");
+        board._ClearState();
+        importer._StartImport(nuka, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
+        CheckInt(board._LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused while importing");
         CheckStillReset("load: refused while importing");
-        importer.Abandon();
+        importer._Abandon();
         CheckInt(ImportText("1. e4 hello"), ChessPgn.ImportBadSyntax, "load: a failed import");
-        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused after a failed import");
+        CheckInt(board._LoadImportAs("", importer), ChessBoard.InputRejected, "load: refused after a failed import");
         CheckStillReset("load: refused after a failed import");
-        CheckInt(board.LoadImportAs("", null), ChessBoard.InputRejected, "load: refused with no importer");
+        CheckInt(board._LoadImportAs("", null), ChessBoard.InputRejected, "load: refused with no importer");
 
-        // LoadGame refuses invalid data and leaves the board reset.
+        // _LoadGame refuses invalid data and leaves the board reset.
         int[] moves = new int[4];
         string[] sans = new string[] { "", "", "", "" };
         int[] noClocks = new int[] { -1, -1, -1, -1 };
-        CheckInt(board.LoadGameAs("", "not a fen", moves, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "",
+        CheckInt(board._LoadGameAs("", "not a fen", moves, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "",
             ChessArbiter.NoClock, 0), ChessBoard.InputRejected, "load: bad FEN refused");
         CheckStillReset("load: bad FEN refused");
-        CheckInt(board.LoadGameAs("", "", moves, sans, noClocks, 5, ChessGame.ModeStandard, "", "", "", "",
+        CheckInt(board._LoadGameAs("", "", moves, sans, noClocks, 5, ChessGame.ModeStandard, "", "", "", "",
             ChessArbiter.NoClock, 0), ChessBoard.InputRejected, "load: more moves than given refused");
-        CheckInt(board.LoadGameAs("", "", moves, sans, noClocks, -1, ChessGame.ModeStandard, "", "", "", "",
+        CheckInt(board._LoadGameAs("", "", moves, sans, noClocks, -1, ChessGame.ModeStandard, "", "", "", "",
             ChessArbiter.NoClock, 0), ChessBoard.InputRejected, "load: a negative count refused");
-        CheckInt(board.LoadGameAs("", "", null, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "",
+        CheckInt(board._LoadGameAs("", "", null, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "",
             ChessArbiter.NoClock, 0), ChessBoard.InputRejected, "load: no moves array refused");
-        CheckInt(board.LoadGameAs("", "", moves, sans, noClocks, 0, 7, "", "", "", "", ChessArbiter.NoClock, 0),
+        CheckInt(board._LoadGameAs("", "", moves, sans, noClocks, 0, 7, "", "", "", "", ChessArbiter.NoClock, 0),
             ChessBoard.InputRejected, "load: unknown mode refused");
-        CheckInt(board.LoadGameAs("", "", moves, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "", 0, 0),
+        CheckInt(board._LoadGameAs("", "", moves, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "", 0, 0),
             ChessBoard.InputRejected, "load: base time 0 refused");
-        CheckInt(board.LoadGameAs("", "", moves, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "", 60, -1),
+        CheckInt(board._LoadGameAs("", "", moves, sans, noClocks, 0, ChessGame.ModeStandard, "", "", "", "", 60, -1),
             ChessBoard.InputRejected, "load: negative increment refused");
         CheckStillReset("load: invalid data refused");
 
-        // LoadGame directly (as the archive will): no moves, null tags, the standard start.
-        CheckInt(board.LoadGameAs("", null, moves, sans, noClocks, 0, ChessGame.ModeStandard, null, null, null, null,
+        // _LoadGame directly (as the archive will): no moves, null tags, the standard start.
+        CheckInt(board._LoadGameAs("", null, moves, sans, noClocks, 0, ChessGame.ModeStandard, null, null, null, null,
             ChessArbiter.NoClock, 0), ChessBoard.InputAccepted, "load: a game with no moves");
         CheckShows(0, BoardText(StartBoard()), "load: a game with no moves");
         CheckString(board.replaySourceWhite + board.replaySourceBlack + board.replaySourceResult + board.gameId, "",
@@ -3749,7 +3749,7 @@ public class BoardTest : ChessTest {
                 "load: no arbiter, never reset");
         }
 
-        board.ClearState();
+        board._ClearState();
     }
 
     // ---- 7.9b continuing a loaded game ----
@@ -3813,9 +3813,9 @@ public class BoardTest : ChessTest {
 
     // Imports Siggi-vs-Nuka and loads it onto a reset board as loader.
     void LoadNukaAs(string loader, string name) {
-        board.ClearState();
+        board._ClearState();
         CheckInt(ImportText(siggiVsNuka.text), ChessPgn.ImportDone, name + ": imported");
-        CheckInt(board.LoadImportAs(loader, importer), ChessBoard.InputAccepted, name + ": loaded");
+        CheckInt(board._LoadImportAs(loader, importer), ChessBoard.InputAccepted, name + ": loaded");
     }
 
     // The first square of the replay board with a piece on it (occupied) or without (not).
@@ -3836,7 +3836,7 @@ public class BoardTest : ChessTest {
         if (board.CanStepToAs(name, organizer, to) != expected) errors += "step; ";
         if (board.CanPickUpAs(name, organizer, ReplaySquare(true)) != expected) errors += "free move; ";
         if (board.MayTouchPiecesAs(name, organizer) != expected) errors += "touch; ";
-        if (board.MayOwnAs(name, organizer, true, now) != expected) errors += "own; ";
+        if (board._MayOwnAs(name, organizer, true, now) != expected) errors += "own; ";
         if (withReset && board.CanResetAs(name, organizer) != expected) errors += "reset; ";
         Check(errors.Length == 0, label, (expected ? "refused: " : "allowed: ") + errors);
     }
@@ -3851,10 +3851,10 @@ public class BoardTest : ChessTest {
         int resetTime = ChessArbiter.NumberResetAvailableTime;
 
         // The local-player forms record the local player; "" records nobody and locks nothing.
-        board.ClearState();
+        board._ClearState();
         CheckInt(ImportText(siggiVsNuka.text), ChessPgn.ImportDone, s + ": imported");
-        CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, s + ": LoadImport");
-        CheckString(board.loadedBy, ChessUtil.LocalName(""), s + ": LoadImport records the local player");
+        CheckInt(board._LoadImport(importer), ChessBoard.InputAccepted, s + ": LoadImport");
+        CheckString(board.loadedBy, ChessUtil._LocalName(""), s + ": LoadImport records the local player");
         LoadNukaAs("", s + ": nobody");
         CheckString(board.loadedBy, "", s + ": nobody recorded");
         Check(!board.IsLockedToLoader(), s + ": nobody recorded, not locked", "locked");
@@ -3868,10 +3868,10 @@ public class BoardTest : ChessTest {
         Check(board.IsLockedToLoader(), s + ": locked to Lena", "not locked");
         Check(board.IsLoader("Lena") && !board.IsLoader("Lena ") && !board.IsLoader("") && !board.IsLoader(null),
             s + ": the loader's name compared exactly", "a lookalike or no name counts");
-        board.PackState();
+        board._PackState();
         CheckString(board.syncedLoadedBy, "Lena", s + ": sent");
         board.loadedBy = "";
-        board.ReceiveState();
+        board._ReceiveState();
         CheckString(board.loadedBy, "Lena", s + ": received");
         Check(board.IsLockedToLoader(), s + ": received, locked", "not locked");
 
@@ -3888,30 +3888,30 @@ public class BoardTest : ChessTest {
             "allowed");
         string locked = GameText();
         CheckInt(board.StepToAs("Cleo", false, 0), ChessBoard.InputRejected, s + ": locked, Cleo's step refused");
-        CheckInt(board.ReplayPieceDroppedAs("Cleo", false, ReplaySquare(true), ReplaySquare(false)),
+        CheckInt(board._ReplayPieceDroppedAs("Cleo", false, ReplaySquare(true), ReplaySquare(false)),
             ChessBoard.InputRejected, s + ": locked, Cleo's free move refused");
         CheckInt(board.JoinAs(ChessRules.White, "Cleo"), ChessBoard.InputRejected, s + ": locked, Cleo's join refused");
         CheckInt(board.ResetBoardAs("Cleo", false), ChessBoard.InputRejected, s + ": locked, Cleo's reset refused");
-        Check(!board.TouchAsAt("Cleo", false, board.lastActivity + 100), s + ": locked, Cleo's touch doesn't count",
+        Check(!board._TouchAsAt("Cleo", false, board.lastActivity + 100), s + ": locked, Cleo's touch doesn't count",
             "counted");
         CheckString(GameText(), locked, s + ": locked, Cleo's refused inputs change nothing");
         CheckString(board.loadedBy, "Lena", s + ": locked, still Lena's");
         CheckInt(board.StepToAs("Olaf", true, 10), ChessBoard.InputAccepted, s + ": locked, an organizer steps");
         CheckInt(board.StepToAs("Lena", false, 20), ChessBoard.InputAccepted, s + ": locked, Lena steps");
-        CheckInt(board.ReplayPieceDroppedAs("Lena", false, ReplaySquare(true), ReplaySquare(false)),
+        CheckInt(board._ReplayPieceDroppedAs("Lena", false, ReplaySquare(true), ReplaySquare(false)),
             ChessBoard.InputAccepted, s + ": locked, Lena's free move");
         CheckInt(board.StepToAs("Lena", false, 20), ChessBoard.InputAccepted, s + ": locked, Lena steps back");
 
         // Leaving the instance doesn't free a locked board: only the reset-available time does (or never).
         double t = board.lastActivity;
-        Check(!board.MayOwnAs("Cleo", false, false, t), s + ": locked, Lena away, Cleo may not own it", "allowed");
-        Check(!board.MayOwnAs("Cleo", false, false, t + 119.9), s + ": locked, refused before the reset-available time",
-            "allowed");
-        Check(board.MayOwnAs("Cleo", false, false, t + 120), s + ": locked, anyone once idle for reset", "refused");
-        Check(board.MayOwnAs("Olaf", true, false, t), s + ": locked, an organizer may own it", "refused");
-        Check(board.MayOwnAs("Lena", false, false, t), s + ": locked, Lena may own it", "refused");
+        Check(!board._MayOwnAs("Cleo", false, false, t), s + ": locked, Lena away, Cleo may not own it", "allowed");
+        Check(!board._MayOwnAs("Cleo", false, false, t + 119.9), 
+            s + ": locked, refused before the reset-available time", "allowed");
+        Check(board._MayOwnAs("Cleo", false, false, t + 120), s + ": locked, anyone once idle for reset", "refused");
+        Check(board._MayOwnAs("Olaf", true, false, t), s + ": locked, an organizer may own it", "refused");
+        Check(board._MayOwnAs("Lena", false, false, t), s + ": locked, Lena may own it", "refused");
         board.gameNumbers[resetTime] = ChessArbiter.Never;
-        Check(!board.MayOwnAs("Cleo", false, false, t + 10000000), s + ": locked, never: refused however long idle",
+        Check(!board._MayOwnAs("Cleo", false, false, t + 10000000), s + ": locked, never: refused however long idle",
             "allowed");
         board.gameNumbers[resetTime] = 120;
 
@@ -3958,12 +3958,12 @@ public class BoardTest : ChessTest {
         LoadNukaAs("Lena", s + ": idle");
         board.gameNumbers[resetTime] = 120;
         Check(!board.CanResetAs("Cleo", false), s + ": not idle yet, Cleo may not reset", "allowed");
-        board.lastActivity = board.ServerTime() - 121;
+        board.lastActivity = board._ServerTime() - 121;
         Check(board.CanResetAs("Cleo", false), s + ": idle, Cleo may reset", "refused");
         CheckInt(board.ResetBoardAs("Cleo", false), ChessBoard.InputAccepted, s + ": idle, Cleo resets");
         CheckString(board.loadedBy, "", s + ": idle reset, cleared");
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, s + ": idle reset, reset");
-        board.ClearState();
+        board._ClearState();
     }
 
     void TestContinueLoaded() {
@@ -3988,16 +3988,16 @@ public class BoardTest : ChessTest {
         board.JoinAs(ChessRules.Black, "Bob");
         CheckInt(board.SetClockAs("Ana", 300, 3), ChessBoard.InputAccepted, "continue: clock chosen");
         CheckInt(board.ContinueGameAs("Cleo"), ChessBoard.InputRejected, "continue: refused for a non-player");
-        board.ReplayPieceDroppedAs("Ana", false, ChessRules.A1, ChessRules.A3);
+        board._ReplayPieceDroppedAs("Ana", false, ChessRules.A1, ChessRules.A3);
         string custom = GameText();
         CheckInt(board.ContinueGameAs("Ana"), ChessBoard.InputRejected, "continue: refused from a custom position");
         CheckString(GameText(), custom, "continue: refused, nothing changed");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "continue: refused, still loaded");
         board.StepToAs("Ana", false, 20);
         int logged = board.loggedGames;
-        double before = board.ServerTime();
+        double before = board._ServerTime();
         CheckInt(board.ContinueGameAs("Bob"), ChessBoard.InputAccepted, "continue: from ply 20 by Black");
-        double after = board.ServerTime();
+        double after = board._ServerTime();
         string fen20 = FenAfter(ChessFen.StartFen, nukaMoves, 20);
         CheckContinuedLoaded(20, fen20, 300000, "continue: ply 20");
         CheckInt(board.state[ChessPosition.StateSideToMove], ChessRules.White, "continue: ply 20, White to move");
@@ -4025,9 +4025,9 @@ public class BoardTest : ChessTest {
         board.gameSettings = takebacks;
         int[] legal = new int[ChessMoves.MaxMoves];
         ChessMoves.GenerateLegalMoves(board.board, board.state, legal, true);
-        CheckInt(board.PlayMove(legal[0]), ChessBoard.InputAccepted, "continue: White plays on");
+        CheckInt(board._PlayMove(legal[0]), ChessBoard.InputAccepted, "continue: White plays on");
         ChessMoves.GenerateLegalMoves(board.board, board.state, legal, true);
-        CheckInt(board.PlayMove(legal[0]), ChessBoard.InputAccepted, "continue: Black plays on");
+        CheckInt(board._PlayMove(legal[0]), ChessBoard.InputAccepted, "continue: Black plays on");
         int whiteAfter = board.clockHistory[20];
         Check(whiteAfter > 300000 && whiteAfter <= 303000, "continue: White's clock after its move",
             "" + whiteAfter);
@@ -4149,7 +4149,7 @@ public class BoardTest : ChessTest {
         CheckString(board.whitePlayer + "|" + board.blackPlayer, localName + "|" + localName,
             "continue local: the local player in both seats");
 
-        board.ClearState();
+        board._ClearState();
     }
 
     // The standard starting position's squares.
@@ -4192,12 +4192,12 @@ public class BoardTest : ChessTest {
         board.pgnSite = "Test Site";
         int dead = ChessArbiter.SettingDeadPosition;
 
-        CheckString(ChessGame.DateFromGameId("20261005143027-048213"), "2026.10.05", "PGN date: from a game ID");
-        CheckString(ChessGame.DateFromGameId("h0rrawli"), "", "PGN date: none from a foreign ID");
-        CheckString(ChessGame.DateFromGameId("202610051430270048213"), "", "PGN date: none without the dash");
-        CheckString(ChessGame.DateFromGameId("2026100514302a-048213"), "", "PGN date: none with a letter");
-        CheckString(ChessGame.DateFromGameId(""), "", "PGN date: none from no ID");
-        CheckString(ChessGame.DateFromGameId(null), "", "PGN date: none from null");
+        CheckString(ChessGame._DateFromGameId("20261005143027-048213"), "2026.10.05", "PGN date: from a game ID");
+        CheckString(ChessGame._DateFromGameId("h0rrawli"), "", "PGN date: none from a foreign ID");
+        CheckString(ChessGame._DateFromGameId("202610051430270048213"), "", "PGN date: none without the dash");
+        CheckString(ChessGame._DateFromGameId("2026100514302a-048213"), "", "PGN date: none with a letter");
+        CheckString(ChessGame._DateFromGameId(""), "", "PGN date: none from no ID");
+        CheckString(ChessGame._DateFromGameId(null), "", "PGN date: none from null");
 
         // Fool's mate with 60+2: the whole PGN, logged once.
         int before = board.loggedGames;
@@ -4217,7 +4217,7 @@ public class BoardTest : ChessTest {
             + "2... Qh4# { [%clk 0:01:01.5] } 0-1\n";
         CheckString(board.lastLoggedPgn, expected, "log: fool's mate PGN");
         CheckString(board.GamePgn(), expected, "log: GamePgn gives it too");
-        board.CheckFlagFallAt(1e6);
+        board._CheckFlagFallAt(1e6);
         board.ResignAs(ChessRules.White, "Ana");
         board.PieceDroppedAs("Ana", ChessRules.E1, ChessRules.F2);
         CheckLogged(before, 1, "log: nothing more once ended");
@@ -4228,13 +4228,13 @@ public class BoardTest : ChessTest {
         board.ResignAs(ChessRules.White, "Ana");
         CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "no moves: resigned");
         StartedGame(60, 0, 1000);
-        Check(board.CheckFlagFallAt(1060), "no moves: flag fall", "not ended");
+        Check(board._CheckFlagFallAt(1060), "no moves: flag fall", "not ended");
         StartedGame(ChessArbiter.NoClock, 0, 0);
         board.gameSettings = ChessArbiter.SettingDrawAgreement;
         board.OfferDrawAs(ChessRules.White, "Ana");
         CheckInt(board.AcceptDrawAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "no moves: draw agreed");
         LobbyWithTwoPlayers();
-        board.ClearState();
+        board._ClearState();
         CheckLogged(before, 0, "no moves: nothing logged");
 
         // Resignation, with no clock and a ContinuedFrom.
@@ -4253,7 +4253,7 @@ public class BoardTest : ChessTest {
         before = board.loggedGames;
         StartedGame(60, 0, 1000);
         Play(ChessRules.E2, ChessRules.E4, 1001, "log: forfeit: 1. e4");
-        Check(board.CheckFlagFallAt(1100), "log: forfeit: black's flag", "not ended");
+        Check(board._CheckFlagFallAt(1100), "log: forfeit: black's flag", "not ended");
         CheckLoggedEnding(before, "1-0", "time forfeit", "log: time forfeit");
         CheckLogHas("1. e4 { [%clk 0:00:59] } 1-0\n", "log: time forfeit: move text");
 
@@ -4262,7 +4262,7 @@ public class BoardTest : ChessTest {
         board.gameSettings = dead;
         SetPosition("k7/p7/8/8/8/8/8/K7 w - - 0 1");
         Play(ChessRules.A1, ChessRules.A2, 1001, "log: forfeit draw: Ka2");
-        Check(board.CheckFlagFallAt(1100), "log: forfeit draw: black's flag", "not ended");
+        Check(board._CheckFlagFallAt(1100), "log: forfeit draw: black's flag", "not ended");
         CheckLoggedEnding(before, "1/2-1/2", "time forfeit", "log: time forfeit drawn");
 
         // Stalemate and every draw.
@@ -4320,7 +4320,7 @@ public class BoardTest : ChessTest {
         board.StartGameAs("Ana");
         int[] moves = new int[ChessMoves.MaxMoves];
         ChessMoves.GenerateLegalMoves(board.board, board.state, moves, true);
-        CheckInt(board.PlayMove(moves[0]), ChessBoard.InputAccepted, "log: Chess960: a move");
+        CheckInt(board._PlayMove(moves[0]), ChessBoard.InputAccepted, "log: Chess960: a move");
         board.ResignAs(ChessRules.Black, "Bob");
         CheckLoggedEnding(before, "1-0", "resignation", "log: Chess960");
         CheckLogHas("[Variant \"Chess960\"]\n[SetUp \"1\"]\n[FEN \"" + board.startFen + "\"]\n",
@@ -4345,12 +4345,12 @@ public class BoardTest : ChessTest {
 
         board.pgnEvent = savedEvent;
         board.pgnSite = savedSite;
-        board.ClearState();
+        board._ClearState();
     }
 
     // ---- 7.10 reset ----
 
-    // The board cleared as ClearState leaves it, seats included.
+    // The board cleared as _ClearState leaves it, seats included.
     void CheckCleared(string name) {
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, name + ": reset");
         CheckSeats("", "", name);
@@ -4398,7 +4398,7 @@ public class BoardTest : ChessTest {
         int takebacks = ChessArbiter.SettingTakebacks;
 
         // Nothing to reset on a reset board.
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.ResetBoardAs("Cleo", true), ChessBoard.InputRejected, "reset: refused on a reset board");
 
         // The lobby: a seated player resets, nothing is logged; a bystander can't.
@@ -4432,8 +4432,8 @@ public class BoardTest : ChessTest {
 
         // By an organizer in game, with a clock; and in replay with a takeback request pending.
         before = board.loggedGames;
-        StartedGame(60, 0, board.ServerTime());
-        Play(ChessRules.E2, ChessRules.E4, board.ServerTime(), "reset: organizer: 1. e4");
+        StartedGame(60, 0, board._ServerTime());
+        Play(ChessRules.E2, ChessRules.E4, board._ServerTime(), "reset: organizer: 1. e4");
         CheckInt(board.ResetBoardAs("Cleo", true), ChessBoard.InputAccepted, "reset: in game by an organizer");
         CheckLoggedOnReset(before, "*", "unterminated", "reset: by an organizer");
         CheckLogHas("[TimeControl \"60\"]\n", "reset: by an organizer: the clock");
@@ -4477,7 +4477,7 @@ public class BoardTest : ChessTest {
 
         // The local player's button.
         before = board.loggedGames;
-        board.ClearState();
+        board._ClearState();
         board.JoinWhite();
         board.JoinBlack();
         board.StartGame();
@@ -4509,7 +4509,7 @@ public class BoardTest : ChessTest {
         string continuedFrom = board.continuedFrom;
         int[] moves = new int[ChessMoves.MaxMoves];
         ChessMoves.GenerateLegalMoves(board.board, board.state, moves, true);
-        CheckInt(board.PlayMove(moves[0]), ChessBoard.InputAccepted, "reset: continued: a move");
+        CheckInt(board._PlayMove(moves[0]), ChessBoard.InputAccepted, "reset: continued: a move");
         CheckInt(board.ResetBoardAs("Ana", false), ChessBoard.InputAccepted, "reset: continued: reset");
         CheckLoggedOnReset(before, "*", "unterminated", "reset: continued");
         CheckLogHas("[ContinuedFrom \"" + continuedFrom + "\"]\n", "reset: continued: ContinuedFrom");
@@ -4575,7 +4575,7 @@ public class BoardTest : ChessTest {
 
     void TestListeners() {
         NothingForced();
-        board.ClearState();
+        board._ClearState();
         int listenerCount = board.listeners == null ? 0 : board.listeners.Length;
         board.AddListener(this);
         board.AddListener(this);
@@ -4634,7 +4634,7 @@ public class BoardTest : ChessTest {
         CheckTold(ChessBoard.ChangeRejected, "listeners: promotion picker cancelled");
         board.PromotionChosenAs("Ana", ChessRules.E2, ChessRules.E4, ChessRules.Queen);
         CheckTold(ChessBoard.ChangeRejected, "listeners: not a promotion");
-        board.PlayMove(0);
+        board._PlayMove(0);
         CheckNotTold("listeners: refused PlayMove (not piece input)");
 
         // Moves.
@@ -4768,17 +4768,17 @@ public class BoardTest : ChessTest {
         CheckTold(ChessBoard.ChangeMove, "listeners: castle on the rook");
         CheckLastMove(ChessRules.E1, ChessRules.H1, "listeners: castle on the rook (to is the rook's square)");
 
-        // Flag fall: told once by CheckFlagFall; a reset that ends the game on time on its way is told as a reset.
-        StartedGame(60, 0, board.ServerTime());
+        // Flag fall: told once by _CheckFlagFall; a reset that ends the game on time on its way is told as a reset.
+        StartedGame(60, 0, board._ServerTime());
         Drop("Ana", ChessRules.E2, ChessRules.E4, "listeners: flag");
         FlagFallen();
         MarkNotifications();
         CheckInt(board.FlaggedColor(), ChessRules.Black, "listeners: flag: black's flag fallen");
-        board.CheckFlagFall();
+        board._CheckFlagFall();
         CheckTold(ChessBoard.ChangeEnded, "listeners: flag fall");
-        board.CheckFlagFall();
+        board._CheckFlagFall();
         CheckNotTold("listeners: flag fall once");
-        StartedGame(60, 0, board.ServerTime());
+        StartedGame(60, 0, board._ServerTime());
         Drop("Ana", ChessRules.E2, ChessRules.E4, "listeners: flag on reset");
         FlagFallen();
         MarkNotifications();
@@ -4791,16 +4791,16 @@ public class BoardTest : ChessTest {
         if (!Utilities.IsValid(importer) || !Utilities.IsValid(siggiVsNuka)) {
             Check(false, "listeners: loading", "the importer or siggiVsNuka field is empty");
         } else {
-            board.ClearState();
+            board._ClearState();
             CheckInt(ImportText(siggiVsNuka.text), ChessPgn.ImportDone, "listeners: imported");
             MarkNotifications();
-            board.LoadImportAs("", importer);
+            board._LoadImportAs("", importer);
             CheckTold(ChessBoard.ChangeLoaded, "listeners: loaded");
             CheckShown("6k1/1b4pp/p3p3/2p1P1b1/NPPn4/7P/P5q1/RN2Kr2 w - - 0 28", "listeners: loaded");
             CheckLastMove(ChessRules.F8, ChessRules.F1, "listeners: loaded: the mating move");
             Check(board.IsInCheck(), "listeners: loaded: White in check", "not in check");
             CheckString(board.ResultText(), "0-1", "listeners: loaded: result");
-            board.LoadImportAs("", importer);
+            board._LoadImportAs("", importer);
             CheckNotTold("listeners: refused load");
             board.JoinAs(ChessRules.White, "Ana");
             CheckTold(ChessBoard.ChangeJoined, "listeners: loaded: join");
@@ -4825,7 +4825,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.listeners.Length, listenerCount, "listeners: removed");
         board.JoinAs(ChessRules.White, "Ana");
         CheckNotTold("listeners: removed");
-        board.ClearState();
+        board._ClearState();
     }
 
     // ---- 7.12 scenarios ----
@@ -4846,7 +4846,7 @@ public class BoardTest : ChessTest {
         board.RemoveListener(this);
         board.arbiter.ClearOverrides(board.boardNumber);
         NothingForced();
-        board.ClearState();
+        board._ClearState();
     }
 
     // The arbiter's overrides for the board: these bits on and the rest off, both inactivity times never, and the
@@ -4863,10 +4863,10 @@ public class BoardTest : ChessTest {
     // Ana and Bob join a reset board (the snapshot must have these bits), choose this clock unless it's none, and
     // Ana starts.
     void ScenarioGame(int settings, int baseSeconds, string name) {
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, name + ": Ana joins");
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, name + ": Bob joins");
-        CheckString(ChessArbiter.SettingsToString(board.gameSettings), ChessArbiter.SettingsToString(settings),
+        CheckString(ChessArbiter._SettingsToString(board.gameSettings), ChessArbiter._SettingsToString(settings),
             name + ": the snapshot");
         if (baseSeconds != ChessArbiter.NoClock) {
             CheckInt(board.SetClockAs("Ana", baseSeconds, 0), ChessBoard.InputAccepted, name + ": the clock chosen");
@@ -4903,7 +4903,7 @@ public class BoardTest : ChessTest {
         string s = "scenario tournament";
         int settings = ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced;
         ScenarioSettings(settings, ChessGame.ModeChess960, 180, 2);
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.gameSettings, 0, s + ": no snapshot on the reset board");
         MarkNotifications();
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana joins");
@@ -4945,10 +4945,10 @@ public class BoardTest : ChessTest {
 
         // White's flag falls: lost on time.
         double late = board.turnStart + 1000;
-        CheckInt(board.FlaggedColorAt(late), ChessRules.White, s + ": white's flag falls");
+        CheckInt(board._FlaggedColorAt(late), ChessRules.White, s + ": white's flag falls");
         int before = board.loggedGames;
         MarkNotifications();
-        Check(board.CheckFlagFallAt(late), s + ": the flag fall ends the game", "not ended");
+        Check(board._CheckFlagFallAt(late), s + ": the flag fall ends the game", "not ended");
         CheckTold(ChessBoard.ChangeEnded, s + ": flag fall");
         CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.Black, "0-1", s + ": lost on time");
         CheckInt(board.whiteTime, 0, s + ": white's clock stopped at 0");
@@ -4974,7 +4974,7 @@ public class BoardTest : ChessTest {
         CheckScenarioSnapshot(open, ChessGame.ModeStandard, ChessArbiter.NoClock, 0, s + ": the next snapshot");
         Check(!board.IsModeForced() && !board.IsClockForced(), s + ": nothing forced now", "a forced bit is on");
         CheckInt(board.SetModeAs("Cleo", ChessGame.ModeChess960), ChessBoard.InputAccepted, s + ": the mode is free");
-        board.ClearState();
+        board._ClearState();
     }
 
     // A casual board with takebacks and every draw rule on, nothing forced: the players choose the mode and clock,
@@ -4984,7 +4984,7 @@ public class BoardTest : ChessTest {
         string s = "scenario casual";
         int settings = ChessArbiter.SettingTakebacks | ChessArbiter.SettingsDrawRules;
         ScenarioSettings(settings, ChessGame.ModeChess960, 180, 2);
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana joins");
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob joins");
         CheckScenarioSnapshot(settings, ChessGame.ModeChess960, 180, 2, s + ": snapshot");
@@ -5060,14 +5060,14 @@ public class BoardTest : ChessTest {
     void ScenarioResnapshot() {
         string s = "scenario re-snapshot";
         ScenarioSettings(ChessArbiter.SettingDrawAgreement, ChessGame.ModeStandard, ChessArbiter.NoClock, 0);
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana joins");
         int both = ChessArbiter.SettingDrawAgreement | ChessArbiter.SettingTakebacks;
         ScenarioSettings(both, ChessGame.ModeStandard, ChessArbiter.NoClock, 0);
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob joins");
         CheckInt(board.StartGameAs("Bob"), ChessBoard.InputAccepted, s + ": started");
-        CheckString(ChessArbiter.SettingsToString(board.gameSettings),
-            ChessArbiter.SettingsToString(ChessArbiter.SettingDrawAgreement), s + ": the first join's snapshot");
+        CheckString(ChessArbiter._SettingsToString(board.gameSettings),
+            ChessArbiter._SettingsToString(ChessArbiter.SettingDrawAgreement), s + ": the first join's snapshot");
         Drop("Ana", ChessRules.E2, ChessRules.E4, s);
         Drop("Bob", ChessRules.E7, ChessRules.E5, s);
         Drop("Ana", ChessRules.D2, ChessRules.D4, s);
@@ -5120,11 +5120,11 @@ public class BoardTest : ChessTest {
         int settings = ChessArbiter.SettingTakebacks | ChessArbiter.SettingModeForced
             | ChessArbiter.SettingClockForced;
         ScenarioSettings(settings, ChessGame.ModeChess960, 300, 0);
-        board.ClearState();
+        board._ClearState();
         CheckInt(ImportText(siggiVsNuka.text), ChessPgn.ImportDone, s + ": imported");
         CheckInt(board.gameSettings, 0, s + ": no snapshot before loading");
         MarkNotifications();
-        CheckInt(board.LoadImportAs("", importer), ChessBoard.InputAccepted, s + ": loaded");
+        CheckInt(board._LoadImportAs("", importer), ChessBoard.InputAccepted, s + ": loaded");
         CheckTold(ChessBoard.ChangeLoaded, s + ": loaded");
         CheckScenarioSnapshot(settings, ChessGame.ModeChess960, 300, 0, s + ": snapshot on loading");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, s + ": the loaded state");
@@ -5283,7 +5283,7 @@ public class BoardTest : ChessTest {
         double late = board.turnStart + 61;
         before = board.loggedGames;
         MarkNotifications();
-        Check(board.CheckFlagFallAt(late), t + ": the flag fall ends the game", "not ended");
+        Check(board._CheckFlagFallAt(late), t + ": the flag fall ends the game", "not ended");
         CheckTold(ChessBoard.ChangeEnded, t + ": flag fall");
         CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.White, "1-0", t);
         CheckLoggedEnding(before, "1-0", "time forfeit", t);
@@ -5293,7 +5293,7 @@ public class BoardTest : ChessTest {
 
     // ---- 8.3 sync ----
 
-    // The board's whole state as text: every field PackState sends, and the halfmove clocks worked out from them, so
+    // The board's whole state as text: every field _PackState sends, and the halfmove clocks worked out from them, so
     // two states compare in one check.
     string StateText() {
         string text = "position " + ChessFen.WriteFen(board.board, board.state, board.halfmoveClock, board.moveNumber)
@@ -5324,7 +5324,7 @@ public class BoardTest : ChessTest {
 
     // Ana and Bob start a game, with a clock of baseSeconds (or none), and play e4 e5.
     void SyncGame(int baseSeconds, string name) {
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.White, "Ana");
         board.JoinAs(ChessRules.Black, "Bob");
         if (baseSeconds != ChessArbiter.NoClock) board.SetClockAs("Ana", baseSeconds, 0);
@@ -5336,7 +5336,7 @@ public class BoardTest : ChessTest {
     // The synced fields as an update replacing the game with another (a reset or a takeback elsewhere): only the
     // game ID matters to the receiver's logging.
     void SyncReplaceGame() {
-        board.PackState();
+        board._PackState();
         board.syncedGameId = "";
         board.syncedInts[ChessBoard.SyncLifecycle] = ChessBoard.LifecycleReset;
     }
@@ -5347,17 +5347,17 @@ public class BoardTest : ChessTest {
 
         // The reset state, as a late joiner gets it when nobody has played yet.
         string r = "sync reset";
-        board.ClearState();
-        board.PackState();
+        board._ClearState();
+        board._PackState();
         string sent = StateText();
         board.JoinAs(ChessRules.White, "Ana");
-        board.ReceiveState();
+        board._ReceiveState();
         CheckString(StateText(), sent, r + ": received as sent");
         CheckCleared(r);
 
         // A game in progress with a clock, a draw offer, and replay showing ply 1 with a takeback request.
         string s = "sync";
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.White, "Ana");
         board.JoinAs(ChessRules.Black, "Bob");
         board.SetClockAs("Ana", 300, 2);
@@ -5371,7 +5371,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.StepToAs("Bob", false, 1), ChessBoard.InputAccepted, s + ": stepped to ply 1");
         CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": takeback asked");
         board.lastActivity = 12345.5;
-        board.PackState();
+        board._PackState();
         CheckInt(board.syncedMoves.Length * 100 + board.syncedClocks.Length * 10 + board.syncedNotation.Length, 333,
             s + ": only the game's moves, clocks and notation sent");
         CheckString(board.syncedNotation[0] + " " + board.syncedNotation[1] + " " + board.syncedNotation[2],
@@ -5381,12 +5381,12 @@ public class BoardTest : ChessTest {
 
         // A late joiner: a reset board receives it, with junk in the history arrays' spare room.
         int before = board.loggedGames;
-        board.ClearState();
+        board._ClearState();
         board.moveHistory[5] = 123;
         board.notation[5] = "junk";
         board.clockHistory[5] = 7;
         MarkNotifications();
-        board.ReceiveState();
+        board._ReceiveState();
         CheckTold(ChessBoard.ChangeRequest, s + ": received");
         Check(board.lastChangeReceived, s + ": the change is marked received", "not marked");
         CheckString(StateText(), sent, s + ": received as sent");
@@ -5401,12 +5401,12 @@ public class BoardTest : ChessTest {
         CheckInt(board.PieceDroppedAs("Bob", ChessRules.E7, ChessRules.E5), ChessBoard.InputRejected,
             s + ": a drop from an empty square");
         CheckInt(board.lastChange, ChessBoard.ChangeRejected, s + ": rejected");
-        board.PackState();
+        board._PackState();
         CheckInt(board.syncedInts[ChessBoard.SyncChange], ChessBoard.ChangeLeftReplay, s + ": the rejection not sent");
 
         // A synced string[] must never hold null.
         board.notation[1] = null;
-        board.PackState();
+        board._PackState();
         board.notation[1] = "e5";
         string nulls = "";
         for (int i = 0; i < board.syncedNotation.Length; i++) {
@@ -5419,12 +5419,12 @@ public class BoardTest : ChessTest {
         string c = "sync custom replay";
         SyncGame(ChessArbiter.NoClock, c);
         CheckInt(board.EnterReplayAs("Ana", false), ChessBoard.InputAccepted, c + ": replay entered");
-        CheckInt(board.ReplayPieceDroppedAs("Ana", false, ChessRules.D1, ChessRules.H5), ChessBoard.InputAccepted,
+        CheckInt(board._ReplayPieceDroppedAs("Ana", false, ChessRules.D1, ChessRules.H5), ChessBoard.InputAccepted,
             c + ": a free move");
-        board.PackState();
+        board._PackState();
         sent = StateText();
-        board.ClearState();
-        board.ReceiveState();
+        board._ClearState();
+        board._ReceiveState();
         CheckString(StateText(), sent, c + ": received as sent");
         Check(board.replayCustom, c + ": custom", "not custom");
 
@@ -5433,10 +5433,10 @@ public class BoardTest : ChessTest {
         SyncGame(ChessArbiter.NoClock, l);
         KnightShuffle(32, l);
         CheckInt(board.moveCount, 130, l + ": 130 plies");
-        board.PackState();
+        board._PackState();
         sent = StateText();
-        board.ClearState();
-        board.ReceiveState();
+        board._ClearState();
+        board._ReceiveState();
         CheckString(StateText(), sent, l + ": received as sent");
         Check(board.moveHistory.Length >= 130, l + ": the history grown", "room for " + board.moveHistory.Length);
 
@@ -5444,23 +5444,23 @@ public class BoardTest : ChessTest {
         string e = "sync ended";
         SyncGame(ChessArbiter.NoClock, e);
         CheckInt(board.ResignAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, e + ": Bob resigns");
-        board.PackState();
+        board._PackState();
         // As this client had it before the update.
         board.lifecycle = ChessBoard.LifecycleInGame;
         board.ending = ChessGame.EndingNone;
         board.winner = ChessRules.NoColor;
         before = board.loggedGames;
-        board.ReceiveState();
+        board._ReceiveState();
         CheckLoggedEnding(before, "1-0", "resignation", e);
         before = board.loggedGames;
-        board.ReceiveState();
+        board._ReceiveState();
         CheckLogged(before, 0, e + ": the same update again logs nothing");
-        board.ClearState();
-        board.ReceiveState();
+        board._ClearState();
+        board._ReceiveState();
         CheckLogged(before, 0, e + ": a late joiner logs nothing");
         CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, e + ": a late joiner sees it ended");
         SyncReplaceGame();
-        board.ReceiveState();
+        board._ReceiveState();
         CheckLogged(before, 0, e + ": an ended game replaced logs nothing");
 
         // A game in progress replaced elsewhere (a reset, a takeback), logged here as unfinished.
@@ -5468,7 +5468,7 @@ public class BoardTest : ChessTest {
         SyncGame(ChessArbiter.NoClock, g);
         SyncReplaceGame();
         before = board.loggedGames;
-        board.ReceiveState();
+        board._ReceiveState();
         CheckLoggedOnReset(before, "*", "unterminated", g);
         CheckLogHas("1. e4 e5 *", g + ": its moves");
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, g + ": the update taken");
@@ -5479,47 +5479,47 @@ public class BoardTest : ChessTest {
         SyncReplaceGame();
         board.turnStart -= 61;
         before = board.loggedGames;
-        board.ReceiveState();
+        board._ReceiveState();
         CheckLoggedOnReset(before, "0-1", "time forfeit", f);
 
         // ... and not at all with no moves.
         string n = "sync replaced, no moves";
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.White, "Ana");
         board.JoinAs(ChessRules.Black, "Bob");
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, n + ": started");
         SyncReplaceGame();
         before = board.loggedGames;
-        board.ReceiveState();
+        board._ReceiveState();
         CheckLogged(before, 0, n + ": nothing logged");
 
         // An update that isn't valid is ignored.
         string v = "sync invalid";
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.White, "Ana");
         string kept = StateText();
-        board.PackState();
+        board._PackState();
         board.syncedInts = new int[3];
         MarkNotifications();
-        board.ReceiveState();
+        board._ReceiveState();
         CheckNotTold(v + ": ints too short");
-        board.PackState();
+        board._PackState();
         board.syncedMoves = new int[1];
-        board.ReceiveState();
+        board._ReceiveState();
         CheckNotTold(v + ": more moves than the count");
-        board.PackState();
+        board._PackState();
         board.syncedNotation = null;
-        board.ReceiveState();
+        board._ReceiveState();
         CheckNotTold(v + ": no notation");
-        board.PackState();
+        board._PackState();
         board.syncedBlackPlayer = null;
-        board.ReceiveState();
+        board._ReceiveState();
         CheckNotTold(v + ": a missing string");
         CheckString(StateText(), kept, v + ": the state kept");
 
         board.RemoveListener(this);
-        board.ClearState();
-        board.PackState();
+        board._ClearState();
+        board._PackState();
     }
 
     // ---- 12.9 playing on untimed after a flag fall ----
@@ -5540,7 +5540,7 @@ public class BoardTest : ChessTest {
         // Off: the game ends as before.
         string o = "play-on off";
         FlagFallAfterE4(0, o);
-        Check(board.CheckFlagFallAt(1100), o + ": the flag falls", "no flag fall");
+        Check(board._CheckFlagFallAt(1100), o + ": the flag falls", "no flag fall");
         CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.White, "1-0", o);
         Check(!board.ClocksFromPreviousGame(), o + ": no clocks from a previous game", "set");
 
@@ -5550,7 +5550,7 @@ public class BoardTest : ChessTest {
         string timedId = board.gameId;
         int before = board.loggedGames;
         MarkNotifications();
-        Check(board.CheckFlagFallAt(1100), s + ": the flag falls", "no flag fall");
+        Check(board._CheckFlagFallAt(1100), s + ": the flag falls", "no flag fall");
         CheckTold(ChessBoard.ChangeEnded, s + ": told as ended");
         CheckLogged(before, 1, s + ": the timed game logged once");
         CheckLogHas("[Result \"1-0\"]\n", s + ": logged 1-0");
@@ -5564,7 +5564,7 @@ public class BoardTest : ChessTest {
         Check(!board.HasClock() && !board.IsClockRunning(), s + ": no clock", "clock");
         Check(board.ClocksFromPreviousGame(), s + ": the clocks are the previous game's", "not");
         CheckTimes(59000, 0, 1e6, s + ": the times at the flag fall");
-        CheckInt(board.FlaggedColorAt(1e9), ChessRules.NoColor, s + ": no flag can fall");
+        CheckInt(board._FlaggedColorAt(1e9), ChessRules.NoColor, s + ": no flag can fall");
         CheckInt(board.clockHistory[0], -1, s + ": the timed game's clocks emptied");
         CheckInt(board.moveCount, 1, s + ": the moves kept");
         CheckSeats("Ana", "Bob", s);
@@ -5573,7 +5573,7 @@ public class BoardTest : ChessTest {
         Play(ChessRules.E7, ChessRules.E5, 5000, s + ": 1... e5");
         CheckInt(board.clockHistory[1], -1, s + ": e5 has no clock");
         CheckTimes(59000, 0, 1e7, s + ": the times unchanged by a move");
-        Check(!board.CheckFlagFallAt(1e9), s + ": no flag fall later", "flag fell");
+        Check(!board._CheckFlagFallAt(1e9), s + ": no flag fall later", "flag fell");
         string pgn = board.GamePgn();
         Check(pgn.Contains("[TimeControl \"-\"]\n") && !pgn.Contains("[%clk"), s + ": its PGN is untimed", pgn);
         string playOnId = board.gameId;
@@ -5594,17 +5594,17 @@ public class BoardTest : ChessTest {
         // With no move since the flag fell, a reset or a resignation logs nothing; after a move, a reset logs it.
         string n = "play-on, no move";
         FlagFallAfterE4(playOn, n);
-        board.CheckFlagFallAt(1100);
+        board._CheckFlagFallAt(1100);
         before = board.loggedGames;
         CheckInt(board.ResetBoardAs("Bob", false), ChessBoard.InputAccepted, n + ": reset");
         CheckLogged(before, 0, n + ": reset: nothing logged");
         FlagFallAfterE4(playOn, n);
-        board.CheckFlagFallAt(1100);
+        board._CheckFlagFallAt(1100);
         before = board.loggedGames;
         CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, n + ": Ana resigns");
         CheckLogged(before, 0, n + ": resigned: nothing logged");
         FlagFallAfterE4(playOn, n);
-        board.CheckFlagFallAt(1100);
+        board._CheckFlagFallAt(1100);
         Play(ChessRules.E7, ChessRules.E5, 5000, n + ": 1... e5");
         before = board.loggedGames;
         board.ResetBoardAs("Bob", false);
@@ -5617,14 +5617,14 @@ public class BoardTest : ChessTest {
         StartedGame(60, 0, 1000);
         board.gameSettings = playOn | ChessArbiter.SettingDeadPosition;
         SetPosition("k7/8/8/8/8/8/8/KQR5 w - - 0 1");
-        Check(board.CheckFlagFallAt(1060), d + ": White's flag falls", "no flag fall");
+        Check(board._CheckFlagFallAt(1060), d + ": White's flag falls", "no flag fall");
         CheckInGame(d + ": playing on");
         CheckTimes(0, 60000, 1e6, d + ": White out of time");
         string v = "play-on, dead position";
         StartedGame(60, 0, 1000);
         board.gameSettings = playOn | ChessArbiter.SettingDeadPosition;
         SetPosition("k7/8/8/8/8/8/8/K5n1 w - - 0 1");
-        Check(board.CheckFlagFallAt(1060), v + ": White's flag falls", "no flag fall");
+        Check(board._CheckFlagFallAt(1060), v + ": White's flag falls", "no flag fall");
         CheckEnded(ChessGame.EndingTimeForfeit, ChessRules.NoColor, "1/2-1/2", v + ": no play-on");
         Check(!board.ClocksFromPreviousGame(), v + ": no clocks from a previous game", "set");
 
@@ -5633,7 +5633,7 @@ public class BoardTest : ChessTest {
         FlagFallAfterE4(playOn, r);
         CheckInt(board.EnterReplayAs("Ana", false), ChessBoard.InputAccepted, r + ": replay");
         CheckInt(board.StepToAs("Ana", false, 0), ChessBoard.InputAccepted, r + ": step to the start");
-        Check(board.CheckFlagFallAt(1100), r + ": the flag falls", "no flag fall");
+        Check(board._CheckFlagFallAt(1100), r + ": the flag falls", "no flag fall");
         CheckInGame(r + ": playing on");
         Check(board.replayMode && board.replayIndex == 0, r + ": replay kept at the start",
             "replay " + board.replayMode + " at " + board.replayIndex);
@@ -5645,7 +5645,7 @@ public class BoardTest : ChessTest {
         Play(ChessRules.E2, ChessRules.E4, 1001, t + ": 1. e4");
         Play(ChessRules.E7, ChessRules.E5, 1002, t + ": 1... e5");
         Play(ChessRules.G1, ChessRules.F3, 1003, t + ": 2. Nf3");
-        Check(board.CheckFlagFallAt(1100), t + ": Black's flag falls", "no flag fall");
+        Check(board._CheckFlagFallAt(1100), t + ": Black's flag falls", "no flag fall");
         playOnId = board.gameId;
         Play(ChessRules.B8, ChessRules.C6, 5000, t + ": 2... Nc6");
         before = TakeBackTo(1, t);
@@ -5664,7 +5664,7 @@ public class BoardTest : ChessTest {
         Play(ChessRules.E2, ChessRules.E4, 1001, u + ": 1. e4");
         Play(ChessRules.E7, ChessRules.E5, 1002, u + ": 1... e5");
         Play(ChessRules.G1, ChessRules.F3, 1003, u + ": 2. Nf3");
-        board.CheckFlagFallAt(1100);
+        board._CheckFlagFallAt(1100);
         before = TakeBackTo(1, u);
         CheckLogged(before, 0, u + ": nothing logged");
 
@@ -5673,42 +5673,42 @@ public class BoardTest : ChessTest {
         string y = "play-on sync";
         FlagFallAfterE4(playOn, y);
         timedId = board.gameId;
-        board.CheckFlagFallAt(1100);
+        board._CheckFlagFallAt(1100);
         playOnId = board.gameId;
-        board.PackState();
+        board._PackState();
         // As this client had it before the update.
         board.gameId = timedId;
         board.continuedFrom = "";
         board.baseTime = 60;
         board.whiteTime = 59000;
         board.blackTime = 60000;
-        board.turnStart = board.ServerTime() + 1000;
+        board.turnStart = board._ServerTime() + 1000;
         board.clockHistory[0] = 59000;
         board.untimedAfterFlagFall = false;
         board.flagFallPly = -1;
         before = board.loggedGames;
-        board.ReceiveState();
+        board._ReceiveState();
         CheckLoggedOnReset(before, "1-0", "time forfeit", y);
         CheckLogHas("[GameID \"" + timedId + "\"]\n", y + ": logged with the timed game's ID");
         CheckInGame(y + ": playing on");
         CheckString(board.gameId, playOnId, y + ": the new game taken");
         Check(board.ClocksFromPreviousGame() && board.flagFallPly == 1, y + ": playing on after the flag fall",
             "untimed " + board.untimedAfterFlagFall + ", ply " + board.flagFallPly);
-        board.PackState();
+        board._PackState();
         string sent = StateText();
-        board.ClearState();
-        board.ReceiveState();
+        board._ClearState();
+        board._ReceiveState();
         CheckString(StateText(), sent, y + ": received as sent");
         before = board.loggedGames;
-        board.ReceiveState();
+        board._ReceiveState();
         CheckLogged(before, 0, y + ": the same update again logs nothing");
         SyncReplaceGame();
-        board.ReceiveState();
+        board._ReceiveState();
         CheckLogged(before, 0, y + ": a reset arriving with no move since the flag fell logs nothing");
 
         board.RemoveListener(this);
-        board.ClearState();
-        board.PackState();
+        board._ClearState();
+        board._PackState();
     }
 
     // Steps the replay to ply, White asks to take back to there and Black accepts. Returns the games logged before
@@ -5725,7 +5725,7 @@ public class BoardTest : ChessTest {
     // ---- 13.6 piece sets ----
 
     // The synced piece set indexes: 0 on a reset board, set (ChangePieceSet), sent and received, refused out of range,
-    // for no colour and from someone MayOwnAs refuses, back to 0 on a reset; a join's preferred set put on both sides
+    // for no colour and from someone _MayOwnAs refuses, back to 0 on a reset; a join's preferred set put on both sides
     // of an empty board (a loaded one too), on the joined colour alone with the other seat held (also when the joiner
     // holds it), none for -1 or out of range; the local Join reading the arbiter's preferredPieceSet. With the arbiter's
     // list made three entries (copies of its first), put back afterwards.
@@ -5745,7 +5745,7 @@ public class BoardTest : ChessTest {
         arbiter.pieceSets = new ChessPieceSet[] { first, first, first };
         arbiter.preferredPieceSet = -1;
 
-        board.ClearState();
+        board._ClearState();
         CheckSets(0, 0, s + ": a reset board");
         CheckInt(board.SetPieceSetAs("Ana", false, white, 2), ChessBoard.InputAccepted, s + ": White set 2");
         CheckInt(board.lastChange, ChessBoard.ChangePieceSet, s + ": told as ChangePieceSet");
@@ -5755,12 +5755,12 @@ public class BoardTest : ChessTest {
         CheckInt(board.PieceSetIndex(ChessRules.NoColor), -1, s + ": no colour's index -1");
 
         // Sent and received.
-        board.PackState();
+        board._PackState();
         CheckInt(board.syncedInts[ChessBoard.SyncWhitePieceSet] * 10 + board.syncedInts[ChessBoard.SyncBlackPieceSet],
             21, s + ": packed (White * 10 + Black)");
         board.whitePieceSet = 0;
         board.blackPieceSet = 0;
-        board.ReceiveState();
+        board._ReceiveState();
         CheckSets(2, 1, s + ": unpacked");
 
         // Refused: out of range, no colour; nothing changes.
@@ -5778,7 +5778,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.ResetBoardAs("Ana", false), ChessBoard.InputAccepted, s + ": reset");
         CheckSets(0, 0, s + ": reset");
 
-        // Who may: as MayOwnAs, so a board locked to its loader refuses a bystander and allows the loader and
+        // Who may: as _MayOwnAs, so a board locked to its loader refuses a bystander and allows the loader and
         // organizers.
         if (Utilities.IsValid(importer) && siggiVsNuka != null) {
             LoadNukaAs("Lena", s + ": locked");
@@ -5796,7 +5796,7 @@ public class BoardTest : ChessTest {
 
         // A join's preferred set: on both sides of an empty board, in the same change.
         string j = s + ": preferred";
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.JoinAs(white, "Ana", 1), ChessBoard.InputAccepted, j + ": Ana joins an empty board with 1");
         CheckInt(board.lastChange, ChessBoard.ChangeJoined, j + ": told as the join");
         CheckSets(1, 1, j + ": an empty board: both sides");
@@ -5808,12 +5808,12 @@ public class BoardTest : ChessTest {
         CheckInt(board.JoinAs(white, "Ana", 0), ChessBoard.InputAccepted, j + ": Ana's own seat again");
         CheckSets(1, 2, j + ": refused and repeated joins: unchanged");
         // The second seat of a player already seated: that colour alone.
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(white, "Ana", 1);
         CheckInt(board.JoinAs(black, "Ana", 2), ChessBoard.InputAccepted, j + ": Ana takes Black too, with 2");
         CheckSets(1, 2, j + ": the joiner's second seat: Black alone");
         // -1 and out of range: nothing.
-        board.ClearState();
+        board._ClearState();
         board.SetPieceSetAs("Ana", false, white, 2);
         CheckInt(board.JoinAs(white, "Ana", -1), ChessBoard.InputAccepted, j + ": Ana joins with -1");
         CheckSets(2, 0, j + ": -1 changes nothing");
@@ -5833,7 +5833,7 @@ public class BoardTest : ChessTest {
         CheckInt(arbiter.PreferredPieceSet(), -1, l + ": refused: still none");
         Check(arbiter.SetPreferredPieceSet(2), l + ": preference 2 accepted", "refused");
         CheckInt(arbiter.PreferredPieceSet(), 2, l + ": preference 2");
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.JoinWhite(), ChessBoard.InputAccepted, l + ": the local player joins White");
         CheckSets(2, 2, l + ": the preference on both sides");
         Check(arbiter.SetPreferredPieceSet(-1), l + ": preference -1 accepted", "refused");
@@ -5842,7 +5842,7 @@ public class BoardTest : ChessTest {
 
         arbiter.pieceSets = savedSets;
         arbiter.preferredPieceSet = savedPreferred;
-        board.ClearState();
+        board._ClearState();
     }
 
     void CheckSets(int whiteSet, int blackSet, string name) {
@@ -5852,24 +5852,24 @@ public class BoardTest : ChessTest {
 
     // ---- 8.4 ownership ----
 
-    // Who may take the board (MayOwnAs), with each player's presence given; then MayOwn for the local player, alone
+    // Who may take the board (_MayOwnAs), with each player's presence given; then _MayOwn for the local player, alone
     // in the instance.
     void TestOwnership() {
         NothingForced();
         string o = "ownership";
         int resetTime = ChessArbiter.NumberResetAvailableTime;
 
-        board.ClearState();
-        double now = board.ServerTime();
-        Check(board.MayOwnAs("Cleo", false, true, now), o + ": anyone on a reset board", "refused");
-        Check(!board.IsIdleForResetAt(now + 100000), o + ": a reset board is never idle for reset", "idle");
+        board._ClearState();
+        double now = board._ServerTime();
+        Check(board._MayOwnAs("Cleo", false, true, now), o + ": anyone on a reset board", "refused");
+        Check(!board._IsIdleForResetAt(now + 100000), o + ": a reset board is never idle for reset", "idle");
         board.JoinAs(ChessRules.White, "Ana");
-        Check(board.MayOwnAs("Cleo", false, true, now), o + ": anyone while a seat is empty", "refused");
+        Check(board._MayOwnAs("Cleo", false, true, now), o + ": anyone while a seat is empty", "refused");
 
         // Every change sent stamps the activity time; a rejection doesn't.
-        double before = board.ServerTime();
+        double before = board._ServerTime();
         board.JoinAs(ChessRules.Black, "Bob");
-        double after = board.ServerTime();
+        double after = board._ServerTime();
         Check(board.lastActivity >= before && board.lastActivity <= after, o + ": a change stamps the activity",
             "activity " + board.lastActivity + ", change between " + before + " and " + after);
         double t = board.lastActivity;
@@ -5879,18 +5879,18 @@ public class BoardTest : ChessTest {
         // The lobby with both players present.
         board.gameNumbers[resetTime] = 120;
         CheckOwners(t, o + ": lobby");
-        Check(board.MayOwnAs("Cleo", false, false, t), o + ": anyone while a player is away", "refused");
-        Check(!board.MayOwnAs("Cleo", false, true, t + 119.9), o + ": refused before the reset-available time",
+        Check(board._MayOwnAs("Cleo", false, false, t), o + ": anyone while a player is away", "refused");
+        Check(!board._MayOwnAs("Cleo", false, true, t + 119.9), o + ": refused before the reset-available time",
             "allowed");
-        Check(board.MayOwnAs("Cleo", false, true, t + 120), o + ": anyone once idle for the reset-available time",
+        Check(board._MayOwnAs("Cleo", false, true, t + 120), o + ": anyone once idle for the reset-available time",
             "refused");
-        Check(board.IsIdleForResetAt(t + 120), o + ": idle for reset", "not idle");
+        Check(board._IsIdleForResetAt(t + 120), o + ": idle for reset", "not idle");
         board.gameNumbers[resetTime] = ChessArbiter.Never;
-        Check(!board.MayOwnAs("Cleo", false, true, t + 10000000), o + ": never: refused however long idle",
+        Check(!board._MayOwnAs("Cleo", false, true, t + 10000000), o + ": never: refused however long idle",
             "allowed");
-        Check(!board.IsIdleForResetAt(t + 10000000), o + ": never: not idle for reset", "idle");
+        Check(!board._IsIdleForResetAt(t + 10000000), o + ": never: not idle for reset", "idle");
         board.gameNumbers[resetTime] = 0;
-        Check(board.MayOwnAs("Cleo", false, true, t), o + ": 0: anyone at once", "refused");
+        Check(board._MayOwnAs("Cleo", false, true, t), o + ": 0: anyone at once", "refused");
 
         // A game in progress, then ended.
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, o + ": started");
@@ -5900,44 +5900,44 @@ public class BoardTest : ChessTest {
         Drop("Ana", ChessRules.E2, ChessRules.E4, o);
         Check(board.lastActivity >= t, o + ": a move stamps the activity", "activity " + board.lastActivity);
         t = board.lastActivity;
-        Check(!board.MayOwnAs("Cleo", false, true, t + 119.9), o + ": in game: refused before the move's time + 120",
+        Check(!board._MayOwnAs("Cleo", false, true, t + 119.9), o + ": in game: refused before the move's time + 120",
             "allowed");
-        Check(board.MayOwnAs("Cleo", false, true, t + 120), o + ": in game: anyone once idle", "refused");
+        Check(board._MayOwnAs("Cleo", false, true, t + 120), o + ": in game: anyone once idle", "refused");
         CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, o + ": resigned");
         t = board.lastActivity;
         CheckOwners(t, o + ": ended");
-        Check(board.MayOwnAs("Cleo", false, true, t + 120), o + ": ended: anyone once idle", "refused");
+        Check(board._MayOwnAs("Cleo", false, true, t + 120), o + ": ended: anyone once idle", "refused");
 
         // The local player, alone: a seat held by someone absent lets anyone take the board.
         VRCPlayerApi local = Networking.LocalPlayer;
-        Check(!board.MayOwn(null), o + ": no player refused", "allowed");
+        Check(!board._MayOwn(null), o + ": no player refused", "allowed");
         LobbyWithTwoPlayers();
-        Check(!board.BothPlayersPresent(), o + ": Ana and Bob aren't here", "present");
-        Check(board.MayOwn(local), o + ": the local player while Ana and Bob are away", "refused");
-        board.ClearState();
+        Check(!board._BothPlayersPresent(), o + ": Ana and Bob aren't here", "present");
+        Check(board._MayOwn(local), o + ": the local player while Ana and Bob are away", "refused");
+        board._ClearState();
         board.JoinAs(ChessRules.White, localName);
         board.JoinAs(ChessRules.Black, "Bob");
-        Check(!board.BothPlayersPresent(), o + ": Bob isn't here", "present");
-        board.ClearState();
+        Check(!board._BothPlayersPresent(), o + ": Bob isn't here", "present");
+        board._ClearState();
         board.JoinAs(ChessRules.White, localName);
         board.JoinAs(ChessRules.Black, localName);
-        Check(board.BothPlayersPresent(), o + ": the local player in both seats is present", "absent");
-        Check(board.MayOwn(local), o + ": the local player in both seats", "refused");
+        Check(board._BothPlayersPresent(), o + ": the local player in both seats is present", "absent");
+        Check(board._MayOwn(local), o + ": the local player in both seats", "refused");
         Check(board.OnOwnershipRequest(local, local) && !board.OnOwnershipRequest(local, null),
             o + ": OnOwnershipRequest answers MayOwn", "wrong answer");
-        board.ClearState();
+        board._ClearState();
     }
 
     // With both players present at server time now (the last activity): the players and an organizer may own the
     // board, a bystander may not, names compared exactly.
     void CheckOwners(double now, string name) {
-        Check(board.MayOwnAs("Ana", false, true, now), name + ": the white player", "refused");
-        Check(board.MayOwnAs("Bob", false, true, now), name + ": the black player", "refused");
-        Check(board.MayOwnAs("Cleo", true, true, now), name + ": an organizer", "refused");
-        Check(!board.MayOwnAs("Cleo", false, true, now), name + ": a bystander refused", "allowed");
-        Check(!board.MayOwnAs("ana", false, true, now) && !board.MayOwnAs("Ana ", false, true, now),
+        Check(board._MayOwnAs("Ana", false, true, now), name + ": the white player", "refused");
+        Check(board._MayOwnAs("Bob", false, true, now), name + ": the black player", "refused");
+        Check(board._MayOwnAs("Cleo", true, true, now), name + ": an organizer", "refused");
+        Check(!board._MayOwnAs("Cleo", false, true, now), name + ": a bystander refused", "allowed");
+        Check(!board._MayOwnAs("ana", false, true, now) && !board._MayOwnAs("Ana ", false, true, now),
             name + ": names compared exactly", "allowed");
-        Check(!board.MayOwnAs(null, false, true, now) && !board.MayOwnAs("", false, true, now),
+        Check(!board._MayOwnAs(null, false, true, now) && !board._MayOwnAs("", false, true, now),
             name + ": no name refused", "allowed");
     }
     // ---- 8.5 inactivity ----
@@ -5950,26 +5950,26 @@ public class BoardTest : ChessTest {
         MarkNotifications();
 
         // A reset board is never idle, and a touch on it counts for nobody.
-        board.ClearState();
-        double now = board.ServerTime();
-        Check(!board.IsIdleForAutoResetAt(now + 10000000), s + ": a reset board never resets itself", "idle");
-        Check(!board.CheckAutoResetAt(now + 10000000), s + ": nothing to auto-reset on a reset board", "reset");
-        Check(!board.TouchAsAt("Ana", true, now + 100), s + ": a touch on a reset board doesn't count", "sent");
+        board._ClearState();
+        double now = board._ServerTime();
+        Check(!board._IsIdleForAutoResetAt(now + 10000000), s + ": a reset board never resets itself", "idle");
+        Check(!board._CheckAutoResetAt(now + 10000000), s + ": nothing to auto-reset on a reset board", "reset");
+        Check(!board._TouchAsAt("Ana", true, now + 100), s + ": a touch on a reset board doesn't count", "sent");
 
         // The reset button for a bystander, once the board is idle for the reset-available time.
         int before = board.loggedGames;
         IdleTestGame(120, 600);
         Check(!board.CanResetAs("Cleo", false), s + ": a bystander can't reset an active board", "allowed");
         CheckInt(board.ResetBoardAs("Cleo", false), ChessBoard.InputRejected, s + ": bystander's reset refused");
-        board.lastActivity = board.ServerTime() - 119;
+        board.lastActivity = board._ServerTime() - 119;
         Check(!board.CanResetAs("Cleo", false), s + ": nor before the reset-available time", "allowed");
-        board.lastActivity = board.ServerTime() - 121;
+        board.lastActivity = board._ServerTime() - 121;
         Check(board.CanResetAs("Cleo", false), s + ": a bystander may reset once idle", "refused");
         CheckInt(board.ResetBoardAs("Cleo", false), ChessBoard.InputAccepted, s + ": bystander's reset");
         CheckLoggedOnReset(before, "*", "unterminated", s + ": bystander's reset");
         CheckCleared(s + ": bystander's reset");
         IdleTestGame(ChessArbiter.Never, 600);
-        board.lastActivity = board.ServerTime() - 10000000;
+        board.lastActivity = board._ServerTime() - 10000000;
         Check(!board.CanResetAs("Cleo", false), s + ": never: a bystander can't reset however long idle", "allowed");
         Check(board.CanResetAs("Ana", false) && board.CanResetAs("Cleo", true),
             s + ": never: the players and organizers still may", "refused");
@@ -5979,75 +5979,75 @@ public class BoardTest : ChessTest {
         IdleTestGame(120, 600);
         double t = board.lastActivity;
         MarkNotifications();
-        Check(!board.IsIdleForAutoResetAt(t + 599.9), s + ": not idle before the auto-reset time", "idle");
-        Check(!board.CheckAutoResetAt(t + 599.9), s + ": no auto-reset before its time", "reset");
+        Check(!board._IsIdleForAutoResetAt(t + 599.9), s + ": not idle before the auto-reset time", "idle");
+        Check(!board._CheckAutoResetAt(t + 599.9), s + ": no auto-reset before its time", "reset");
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, s + ": still in game before the auto-reset time");
         CheckNotTold(s + ": before the auto-reset time");
-        Check(board.IsIdleForAutoResetAt(t + 600), s + ": idle at the auto-reset time", "not idle");
-        Check(board.CheckAutoResetAt(t + 600), s + ": auto-reset at its time", "not reset");
+        Check(board._IsIdleForAutoResetAt(t + 600), s + ": idle at the auto-reset time", "not idle");
+        Check(board._CheckAutoResetAt(t + 600), s + ": auto-reset at its time", "not reset");
         CheckTold(ChessBoard.ChangeReset, s + ": auto-reset");
         CheckCleared(s + ": auto-reset");
         CheckLoggedOnReset(before, "*", "unterminated", s + ": auto-reset");
-        board.PackState();
+        board._PackState();
         CheckInt(board.syncedInts[ChessBoard.SyncChange], ChessBoard.ChangeReset, s + ": the auto-reset is sent");
-        Check(!board.CheckAutoResetAt(t + 100000), s + ": auto-reset only once", "reset again");
+        Check(!board._CheckAutoResetAt(t + 100000), s + ": auto-reset only once", "reset again");
         CheckLogged(before, 1, s + ": auto-reset logged once");
 
         // Never, 0, an ended game, a fallen flag and the lobby.
         IdleTestGame(120, ChessArbiter.Never);
         t = board.lastActivity;
-        Check(!board.CheckAutoResetAt(t + 10000000), s + ": never: no auto-reset however long idle", "reset");
+        Check(!board._CheckAutoResetAt(t + 10000000), s + ": never: no auto-reset however long idle", "reset");
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, s + ": never: still in game");
         IdleTestGame(0, 0);
-        Check(board.CheckAutoResetAt(board.lastActivity), s + ": 0: auto-reset at once", "not reset");
+        Check(board._CheckAutoResetAt(board.lastActivity), s + ": 0: auto-reset at once", "not reset");
         before = board.loggedGames;
         IdleTestGame(120, 600);
         board.ResignAs(ChessRules.Black, "Bob");
         CheckLogged(before, 1, s + ": ended: logged on resigning");
-        Check(board.CheckAutoResetAt(board.lastActivity + 600), s + ": an ended game resets itself", "not reset");
+        Check(board._CheckAutoResetAt(board.lastActivity + 600), s + ": an ended game resets itself", "not reset");
         CheckLogged(before, 1, s + ": ended: not logged again");
         before = board.loggedGames;
         IdleTestGame(120, 600);
         FlagFallen();
-        Check(board.CheckAutoResetAt(board.lastActivity + 600), s + ": flag fallen: auto-reset", "not reset");
+        Check(board._CheckAutoResetAt(board.lastActivity + 600), s + ": flag fallen: auto-reset", "not reset");
         CheckLoggedOnReset(before, "0-1", "time forfeit", s + ": flag fallen");
         LobbyWithTwoPlayers();
         board.gameNumbers[autoTime] = 600;
-        Check(board.CheckAutoResetAt(board.lastActivity + 600), s + ": the lobby resets itself", "not reset");
+        Check(board._CheckAutoResetAt(board.lastActivity + 600), s + ": the lobby resets itself", "not reset");
         CheckCleared(s + ": the lobby");
 
         // Touches: the side to move's, sent at most once per ActivityThrottle seconds and not told locally.
         IdleTestGame(120, 600);
         t = board.lastActivity;
         MarkNotifications();
-        Check(!board.TouchAsAt("Ana", false, t + ChessBoard.ActivityThrottle - 0.1),
+        Check(!board._TouchAsAt("Ana", false, t + ChessBoard.ActivityThrottle - 0.1),
             s + ": a touch within the throttle isn't sent", "sent");
         Check(board.lastActivity == t, s + ": a touch within the throttle doesn't stamp", "activity " + board.lastActivity);
-        Check(board.TouchAsAt("Ana", false, t + ChessBoard.ActivityThrottle), s + ": a touch after the throttle is sent",
+        Check(board._TouchAsAt("Ana", false, t + ChessBoard.ActivityThrottle), s + ": a touch after the throttle is sent",
             "not sent");
         Check(board.lastActivity == t + ChessBoard.ActivityThrottle, s + ": the touch stamps the activity",
             "activity " + board.lastActivity);
         CheckNotTold(s + ": a touch");
-        board.PackState();
+        board._PackState();
         CheckInt(board.syncedInts[ChessBoard.SyncChange], ChessBoard.ChangeActivity, s + ": the touch sent as activity");
         Check(board.syncedLastActivity == t + ChessBoard.ActivityThrottle, s + ": the touch's time sent",
             "sent " + board.syncedLastActivity);
-        Check(!board.TouchAsAt("Ana", false, t + ChessBoard.ActivityThrottle + 1), s + ": the throttle starts again",
+        Check(!board._TouchAsAt("Ana", false, t + ChessBoard.ActivityThrottle + 1), s + ": the throttle starts again",
             "sent");
         t = board.lastActivity + 100;
-        Check(!board.TouchAsAt("Bob", false, t), s + ": the player not to move doesn't count", "sent");
-        Check(!board.TouchAsAt("Cleo", false, t) && !board.TouchAsAt("Cleo", true, t),
+        Check(!board._TouchAsAt("Bob", false, t), s + ": the player not to move doesn't count", "sent");
+        Check(!board._TouchAsAt("Cleo", false, t) && !board._TouchAsAt("Cleo", true, t),
             s + ": a bystander or an organizer outside replay doesn't count", "sent");
-        Check(board.TouchAsAt("Ana", false, t), s + ": the side to move counts", "not sent");
-        Check(!board.IsIdleForResetAt(t + 119), s + ": a touch keeps the board from going idle", "idle");
+        Check(board._TouchAsAt("Ana", false, t), s + ": the side to move counts", "not sent");
+        Check(!board._IsIdleForResetAt(t + 119), s + ": a touch keeps the board from going idle", "idle");
 
         // Received: every client gets the new activity time, and the change says nothing else happened.
         string sent = SeatedGameText();
         before = board.loggedGames;
-        board.PackState();
+        board._PackState();
         board.lastActivity = 0;
         MarkNotifications();
-        board.ReceiveState();
+        board._ReceiveState();
         CheckTold(ChessBoard.ChangeActivity, s + ": activity received");
         Check(board.lastChangeReceived, s + ": activity marked received", "not marked");
         Check(board.lastActivity == t, s + ": the activity time received", "activity " + board.lastActivity);
@@ -6058,28 +6058,29 @@ public class BoardTest : ChessTest {
         CheckTouched("Ana", true, ChessRules.G1, ChessRules.G1, s + ": pickup and drop back by the side to move");
         CheckTouched("Ana", true, ChessRules.D7, ChessRules.D5, s + ": rejected pickup and drop by the side to move");
         CheckTouched("Bob", false, ChessRules.D7, ChessRules.D5, s + ": the other player's pickup and drop");
-        board.lastActivity = board.ServerTime() - 10;
+        board.lastActivity = board._ServerTime() - 10;
         CheckInt(board.PromotionChosenAs("Ana", ChessRules.G1, ChessRules.F3, ChessRules.Queen),
             ChessBoard.InputRejected, s + ": not a promotion");
-        Check(board.lastActivity >= board.ServerTime() - 1, s + ": a promotion choice touches",
+        Check(board.lastActivity >= board._ServerTime() - 1, s + ": a promotion choice touches",
             "activity " + board.lastActivity);
 
         // In replay, whoever may work the replay controls.
         CheckInt(board.EnterReplayAs("Bob", false), ChessBoard.InputAccepted, s + ": replay entered");
         CheckTouched("Bob", true, ChessRules.D7, ChessRules.D7, s + ": replay: the player not to move");
         CheckTouched("Cleo", false, ChessRules.D7, ChessRules.D7, s + ": replay: a bystander");
-        Check(board.TouchAsAt("Cleo", true, board.lastActivity + 100), s + ": replay: an organizer counts", "not sent");
+        Check(board._TouchAsAt("Cleo", true, board.lastActivity + 100), s + ": replay: an organizer counts",
+            "not sent");
 
         // Lobby and ended: nothing to touch.
         LobbyWithTwoPlayers();
-        Check(!board.TouchAsAt("Ana", false, board.lastActivity + 100), s + ": the lobby: a touch doesn't count",
+        Check(!board._TouchAsAt("Ana", false, board.lastActivity + 100), s + ": the lobby: a touch doesn't count",
             "sent");
         IdleTestGame(120, 600);
         board.ResignAs(ChessRules.White, "Ana");
-        Check(!board.TouchAsAt("Bob", false, board.lastActivity + 100), s + ": ended: a touch doesn't count", "sent");
+        Check(!board._TouchAsAt("Bob", false, board.lastActivity + 100), s + ": ended: a touch doesn't count", "sent");
 
         board.RemoveListener(this);
-        board.ClearState();
+        board._ClearState();
     }
 
     // A game between Ana and Bob with no clock, 1. e4 e5 played (White, Ana, to move), with these inactivity times in
@@ -6095,7 +6096,7 @@ public class BoardTest : ChessTest {
     // name picks up the piece on from, then drops it on to, each with the board idle for 10 s before: whether each
     // stamped the activity (touched) or left it as it was.
     void CheckTouched(string name, bool touched, int from, int to, string label) {
-        double old = board.ServerTime() - 10;
+        double old = board._ServerTime() - 10;
         board.lastActivity = old;
         board.PiecePickedUpAs(name, from);
         CheckStamped(touched, old, label + ": pickup");
@@ -6117,7 +6118,7 @@ public class BoardTest : ChessTest {
     void TestTouchPieces() {
         NothingForced();
         string t = "touch";
-        board.ClearState();
+        board._ClearState();
         CheckTouch(true, true, true, t + ": a reset board, anyone");
         Check(!board.MayTouchPiecesAs("", false) && !board.MayTouchPiecesAs(null, true), t + ": no name refused",
             "allowed");
@@ -6152,17 +6153,17 @@ public class BoardTest : ChessTest {
 
         // The local player, alone: through the player forms.
         VRCPlayerApi local = Networking.LocalPlayer;
-        board.ClearState();
+        board._ClearState();
         Check(board.MayTouchPieces() && board.PlayerMayTouchPieces(local), t + ": the local player on a reset board",
             "refused");
         Check(!board.PlayerMayTouchPieces(null), t + ": no player refused", "allowed");
         LobbyWithTwoPlayers();
         Check(!board.MayTouchPieces() && !board.PlayerMayTouchPieces(local),
             t + ": the local player, not seated, in the lobby", "allowed");
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.Black, localName);
         Check(board.MayTouchPieces() && board.PlayerMayTouchPieces(local), t + ": the local player seated", "refused");
-        board.ClearState();
+        board._ClearState();
     }
 
     // Whether Ana (White, if seated), Bob (Black, if seated) and the bystander Cleo may touch the pieces.
@@ -6179,7 +6180,7 @@ public class BoardTest : ChessTest {
     void TestCanPickUp() {
         NothingForced();
         string p = "can pick up";
-        board.ClearState();
+        board._ClearState();
         CheckPickUps("Ana", 0, p + ": a reset board");
         LobbyWithTwoPlayers();
         CheckPickUps("Ana", 0, p + ": the lobby");
@@ -6226,13 +6227,13 @@ public class BoardTest : ChessTest {
         CheckPickUps("Bob", 0, p + ": ended, Bob");
 
         // The local player, in both seats.
-        board.ClearState();
+        board._ClearState();
         board.JoinAs(ChessRules.White, localName);
         board.JoinAs(ChessRules.Black, localName);
         CheckInt(board.StartGameAs(localName), ChessBoard.InputAccepted, p + ": local game started");
         Check(board.CanPickUp(ChessRules.E2) && !board.CanPickUp(ChessRules.E7), p + ": the local player, White to move",
             "wrong");
-        board.ClearState();
+        board._ClearState();
     }
 
     // Whether CanPickUpAs (no organizer) agrees with the pickup itself on every square for name, and allows count.
@@ -6242,7 +6243,7 @@ public class BoardTest : ChessTest {
         string first = "";
         for (int square = 0; square < 64; square++) {
             bool can = board.CanPickUpAs(name, false, square);
-            int result = board.replayMode ? board.ReplayPiecePickedUpAs(name, false, square)
+            int result = board.replayMode ? board._ReplayPiecePickedUpAs(name, false, square)
                 : board.PiecePickedUpAs(name, square);
             if (can) allowed++;
             if (can != (result == ChessBoard.InputAccepted) && wrong++ == 0) first = ChessRules.SquareName(square);
@@ -6282,36 +6283,36 @@ public class BoardTest : ChessTest {
             Check(false, s + ": importer and Siggi-vs-Nuka assigned", "assign them in the Inspector");
         }
 
-        // Filling in tells the listeners once, through OnNotationFilled only, on the next frame (FillNotationFrame, as
+        // Filling in tells the listeners once, through OnNotationFilled only, on the next frame (_FillNotationFrame, as
         // Update calls it), and sends nothing.
         SyncGame(ChessArbiter.NoClock, s);
         Drop("Ana", ChessRules.G1, ChessRules.F3, s);
-        board.FillNotationFrame();
+        board._FillNotationFrame();
         string full = NotationText(board, board.moveCount);
         CheckString(full, "e4 e5 Nf3", s + ": the game's notation");
         ForgetNotation(1);
-        CheckInt(board.FirstMissingNotation(), 0, s + ": the first missing entry");
+        CheckInt(board._FirstMissingNotation(), 0, s + ": the first missing entry");
         int filled = board.filledNotation;
         int told = notationTold;
         MarkNotifications();
-        Check(board.FillNotationFor(float.MaxValue), s + ": filled in", "still missing from ply "
-            + board.FirstMissingNotation());
+        Check(board._FillNotationFor(float.MaxValue), s + ": filled in", "still missing from ply "
+            + board._FirstMissingNotation());
         CheckString(NotationText(board, board.moveCount), full, s + ": filled in as played");
         CheckInt(board.filledNotation - filled, 3, s + ": three entries filled in");
         CheckInt(notationTold - told, 0, s + ": listeners not told at once");
-        board.FillNotationFrame();
+        board._FillNotationFrame();
         CheckInt(notationTold - told, 1, s + ": listeners told on the next frame");
-        board.FillNotationFrame();
+        board._FillNotationFrame();
         CheckInt(notationTold - told, 1, s + ": listeners told once");
         CheckNotTold(s + ": OnBoardChanged");
         CheckInt(board.lastChange, ChessBoard.ChangeMove, s + ": lastChange kept");
-        board.PackState();
+        board._PackState();
         CheckInt(board.syncedInts[ChessBoard.SyncChange], ChessBoard.ChangeMove, s + ": nothing new to send");
         ForgetNotation(1);
         CheckInt(FillFrames(ChessBoard.DefaultFillBudgetMs), 1, s + ": filled in in a frame");
         CheckString(NotationText(board, board.moveCount), full, s + ": filled in as played in a frame");
         CheckInt(notationTold - told, 2, s + ": listeners told after the frame");
-        board.FillNotationFrame();
+        board._FillNotationFrame();
         CheckInt(notationTold - told, 2, s + ": nothing more filled, nobody told");
 
         // A long gap over frames: with no budget, one entry per frame (passing the entries known), with the normal
@@ -6321,10 +6322,10 @@ public class BoardTest : ChessTest {
         KnightShuffle(32, l);
         full = NotationText(board, board.moveCount);
         ForgetNotation(4);
-        CheckInt(board.FirstMissingNotation(), 0, l + ": the first missing entry");
+        CheckInt(board._FirstMissingNotation(), 0, l + ": the first missing entry");
         told = notationTold;
         board.fillBudgetMs = 0f;
-        board.FillNotationFrame();
+        board._FillNotationFrame();
         board.fillBudgetMs = ChessBoard.DefaultFillBudgetMs;
         CheckInt(notationTold - told, 0, l + ": nobody told during the walk");
         CheckInt(FillFrames(0f), 97, l + ": one frame per missing entry with no budget");
@@ -6348,7 +6349,7 @@ public class BoardTest : ChessTest {
         Drop("Ana", ChessRules.B5, ChessRules.C6, c);
         full = NotationText(board, board.moveCount);
         CheckString(full, "e4 e5 Nf3 Nc6 Bb5 a6 Bxc6", c + ": the game's notation");
-        board.PackState();
+        board._PackState();
         string[] sent = board.syncedNotation;
         for (int i = 0; i < sent.Length; i++) {
             if (i % 2 == 0) sent[i] = "";
@@ -6359,25 +6360,25 @@ public class BoardTest : ChessTest {
         CheckInt(board.ResignAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, c + ": the game here ended");
         ForgetNotation(1);
         board.fillBudgetMs = 0f;
-        board.FillNotationFrame();
-        board.FillNotationFrame();
+        board._FillNotationFrame();
+        board._FillNotationFrame();
         board.fillBudgetMs = ChessBoard.DefaultFillBudgetMs;
-        CheckInt(board.FirstMissingNotation(), 2, c + ": a walk under way");
-        board.ReceiveState();
-        CheckInt(board.FirstMissingNotation(), 0, c + ": the update's gaps");
+        CheckInt(board._FirstMissingNotation(), 2, c + ": a walk under way");
+        board._ReceiveState();
+        CheckInt(board._FirstMissingNotation(), 0, c + ": the update's gaps");
         FillFrames(ChessBoard.DefaultFillBudgetMs);
-        CheckInt(board.FirstMissingNotation(), -1, c + ": the update filled in");
+        CheckInt(board._FirstMissingNotation(), -1, c + ": the update filled in");
         CheckString(NotationText(board, board.moveCount), full, c + ": the update filled in as played there");
 
         // A reset drops a walk under way.
         ForgetNotation(1);
         board.fillBudgetMs = 0f;
-        board.FillNotationFrame();
+        board._FillNotationFrame();
         board.fillBudgetMs = ChessBoard.DefaultFillBudgetMs;
         filled = board.filledNotation;
-        board.ClearState();
+        board._ClearState();
         CheckInt(FillFrames(ChessBoard.DefaultFillBudgetMs), 0, c + ": nothing to fill after a reset");
-        board.FillNotationFrame();
+        board._FillNotationFrame();
         CheckInt(board.filledNotation - filled, 0, c + ": nothing filled after a reset");
 
         // A game's PGN fills in its gaps first: logging and export.
@@ -6392,9 +6393,9 @@ public class BoardTest : ChessTest {
         CheckLogged(before, 1, p + ": logged once");
         CheckLogHas("1. e4 e5 2. Nf3 1-0", p + ": logged");
 
-        board.FillNotationFrame();
+        board._FillNotationFrame();
         board.RemoveListener(this);
-        board.ClearState();
+        board._ClearState();
     }
 
     // Loads pgn with every notation entry forgotten, fills it in, and checks it's as the import had it (and
@@ -6404,9 +6405,9 @@ public class BoardTest : ChessTest {
         string imported = NotationText(board, board.moveCount);
         if (expected != "") CheckString(imported, expected, name + ": imported");
         ForgetNotation(1);
-        CheckInt(board.FirstMissingNotation(), 0, name + ": forgotten");
-        Check(board.FillNotationFor(float.MaxValue), name + ": filled in", "still missing from ply "
-            + board.FirstMissingNotation());
+        CheckInt(board._FirstMissingNotation(), 0, name + ": forgotten");
+        Check(board._FillNotationFor(float.MaxValue), name + ": filled in", "still missing from ply "
+            + board._FirstMissingNotation());
         CheckString(NotationText(board, board.moveCount), imported, name + ": filled in as imported");
     }
 
@@ -6417,16 +6418,16 @@ public class BoardTest : ChessTest {
             if (keep > 1 && i % keep == keep - 1) continue;
             board.notation[i] = "";
         }
-        board.RecheckNotation();
+        board._RecheckNotation();
     }
 
-    // Runs frames of filling in (FillNotationFrame) with this budget until no notation is missing, and returns how
+    // Runs frames of filling in (_FillNotationFrame) with this budget until no notation is missing, and returns how
     // many it took (at most 1000).
     int FillFrames(float budget) {
         board.fillBudgetMs = budget;
         int frames = 0;
-        while (board.FirstMissingNotation() >= 0 && frames < 1000) {
-            board.FillNotationFrame();
+        while (board._FirstMissingNotation() >= 0 && frames < 1000) {
+            board._FillNotationFrame();
             frames++;
         }
         board.fillBudgetMs = ChessBoard.DefaultFillBudgetMs;
@@ -6441,7 +6442,7 @@ public class BoardTest : ChessTest {
         importTold++;
     }
 
-    // The board's import on one client, driven by hand: the importer run in one go (ImportFor) and its done event
+    // The board's import on one client, driven by hand: the importer run in one go (_ImportFor) and its done event
     // called directly (_ImportFinished), as its Update would.
     void TestImport() {
         NothingForced();
@@ -6455,7 +6456,7 @@ public class BoardTest : ChessTest {
         string nuka = siggiVsNuka.text;
 
         // Refused with no importer and on a board that isn't reset; nobody told.
-        board.ClearState();
+        board._ClearState();
         board.importer = null;
         int told = importTold;
         int status = board.importStatus;
@@ -6470,7 +6471,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.importStatus, status, s + ": refusals: status unchanged");
 
         // Started: nothing changes on the board or is sent until it finishes, then it's loaded and sent in one update.
-        board.ClearState();
+        board._ClearState();
         int sentChange = board.lastSentChange;
         MarkNotifications();
         told = importTold;
@@ -6478,7 +6479,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.importStatus, ChessBoard.ImportRunning, s + ": under way");
         CheckInt(importTold - told, 1, s + ": started: told");
         Check(importer.importing, s + ": the importer is importing", "not importing");
-        CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, s + ": imported");
+        CheckInt(importer._ImportFor(float.MaxValue), ChessPgn.ImportDone, s + ": imported");
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, s + ": the board still reset");
         CheckNotTold(s + ": while importing: OnBoardChanged");
         CheckInt(board.lastSentChange, sentChange, s + ": while importing: nothing sent");
@@ -6491,7 +6492,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, s + ": the board loaded");
         CheckInt(board.moveCount, 54, s + ": 54 plies");
         CheckString(board.gameId, "20250710001921", s + ": the PGN's GameID");
-        board.PackState();
+        board._PackState();
         CheckInt(board.syncedInts[ChessBoard.SyncChange], ChessBoard.ChangeLoaded, s + ": sent as loaded");
         CheckInt(board.syncedMoves.Length, 54, s + ": every move sent");
         CheckString(board.syncedNotation[53], board.notation[53], s + ": the notation sent");
@@ -6499,18 +6500,18 @@ public class BoardTest : ChessTest {
         CheckInt(importTold - told, 2, s + ": a second done event: nobody told");
         CheckNotTold(s + ": a second done event: OnBoardChanged");
         CheckInt(board.importStatus, ChessBoard.ImportLoaded, s + ": a second done event: still loaded");
-        board.ClearState();
-        board.PackState();
+        board._ClearState();
+        board._PackState();
         CheckInt(board.syncedInts[ChessBoard.SyncChange], ChessBoard.ChangeReset, s + ": cleared: sent as reset");
 
         // A failed import: the reason, nothing changed or sent.
         string f = "import failed";
-        board.ClearState();
+        board._ClearState();
         sentChange = board.lastSentChange;
         told = importTold;
         MarkNotifications();
         CheckInt(board.StartImport("1. e4 e5 2. Ke3 *"), ChessBoard.InputAccepted, f + ": started");
-        importer.ImportFor(float.MaxValue);
+        importer._ImportFor(float.MaxValue);
         board._ImportFinished();
         CheckInt(board.importStatus, ChessBoard.ImportFailed, f + ": failed");
         CheckInt(board.importResult, ChessPgn.ImportIllegalMove, f + ": the reason: an illegal move");
@@ -6522,16 +6523,16 @@ public class BoardTest : ChessTest {
 
         // Abandoned by a change made here: the importer stops, and its result is never loaded.
         string a = "import abandoned";
-        board.ClearState();
+        board._ClearState();
         told = importTold;
         CheckInt(board.StartImport(nuka), ChessBoard.InputAccepted, a + ": started");
-        importer.ImportFor(0f);
+        importer._ImportFor(0f);
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, a + ": Ana joins");
         CheckInt(board.importStatus, ChessBoard.ImportAbandoned, a + ": abandoned");
         CheckInt(board.importResult, ChessPgn.ImportMore, a + ": no failure recorded");
         CheckInt(importTold - told, 2, a + ": told when started and when abandoned");
         Check(!importer.importing, a + ": the importer stopped", "still importing");
-        importer.ImportFor(float.MaxValue);
+        importer._ImportFor(float.MaxValue);
         MarkNotifications();
         board._ImportFinished();
         CheckInt(board.importStatus, ChessBoard.ImportAbandoned, a + ": a late done event: still abandoned");
@@ -6543,21 +6544,21 @@ public class BoardTest : ChessTest {
         // A rejected piece input and a received touch change nothing, so the import goes on; any other update
         // arriving abandons it.
         string r = "import received";
-        board.ClearState();
+        board._ClearState();
         board.lastSentChange = ChessBoard.ChangeActivity;
-        board.PackState();
+        board._PackState();
         told = importTold;
         CheckInt(board.StartImport(nuka), ChessBoard.InputAccepted, r + ": started");
         CheckInt(board.PieceDroppedAs("Ana", ChessRules.E2, ChessRules.E4), ChessBoard.InputRejected,
             r + ": a drop on a reset board");
         CheckInt(board.importStatus, ChessBoard.ImportRunning, r + ": a rejection: still under way");
-        board.ReceiveState();
+        board._ReceiveState();
         CheckInt(board.importStatus, ChessBoard.ImportRunning, r + ": a touch received: still under way");
         board.JoinAs(ChessRules.Black, "Bob");
-        board.PackState();
-        board.ClearState();
+        board._PackState();
+        board._ClearState();
         CheckInt(board.StartImport(nuka), ChessBoard.InputAccepted, r + ": started again");
-        board.ReceiveState();
+        board._ReceiveState();
         CheckInt(board.importStatus, ChessBoard.ImportAbandoned, r + ": a join received: abandoned");
         CheckString(board.blackPlayer, "Bob", r + ": the update taken");
         CheckInt(importTold - told, 4, r + ": told twice for each import");
@@ -6565,18 +6566,18 @@ public class BoardTest : ChessTest {
 
         // Starting again replaces an import under way.
         string g = "import again";
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.StartImport(nuka), ChessBoard.InputAccepted, g + ": the first");
-        importer.ImportFor(0f);
+        importer._ImportFor(0f);
         CheckInt(board.StartImport("1. e4 *"), ChessBoard.InputAccepted, g + ": the second");
-        CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, g + ": imported");
+        CheckInt(importer._ImportFor(float.MaxValue), ChessPgn.ImportDone, g + ": imported");
         board._ImportFinished();
         CheckInt(board.importStatus, ChessBoard.ImportLoaded, g + ": loaded");
         CheckInt(board.moveCount, 1, g + ": the second one's moves");
 
         board.RemoveListener(this);
         board.importer = boardImporter;
-        board.ClearState();
+        board._ClearState();
     }
 
     // An import over real frames: the importer's Update runs it and sends its done event to the board, which loads it.
@@ -6588,7 +6589,7 @@ public class BoardTest : ChessTest {
             Finish();
             return;
         }
-        board.ClearState();
+        board._ClearState();
         frameBoardImporter = board.importer;
         board.importer = importer;
         board.AddListener(this);

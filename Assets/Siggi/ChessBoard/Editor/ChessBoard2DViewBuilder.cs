@@ -375,8 +375,8 @@ public static class ChessBoard2DViewBuilder {
     // The move list (12.15) right of the board: a scroll rect over the rows (its content an empty rect sized by the view
     // to every row, which scrolling moves), the pooled rows in its viewport (enough to fill it and one more, moved by
     // the view within a row's height as it scrolls), and its scrollbar, shown while the rows don't fit. Each cell is
-    // a button with a ChessMoveListCell calling the view's PressMoveCell. Dragging or the wheel over a cell scrolls the
-    // list (the cells' parents carry the scroll rect).
+    // a button with a ChessMoveListCell calling the view's _PressMoveCell. Dragging or the wheel over a cell scrolls
+    // the list (the cells' parents carry the scroll rect).
     static void BuildMoveList(GameObject root, ChessBoard2DView view, UdonBehaviour udon, TMP_FontAsset font) {
         GameObject list = NewChild(root, "Move List", new Vector2(Margin + BoardSize + Gap, Margin),
             new Vector2(MoveListWidth, MoveListHeight));
@@ -423,7 +423,7 @@ public static class ChessBoard2DViewBuilder {
                 UdonSharpEditorUtility.CopyProxyToUdon(target);
                 UnityEventTools.AddStringPersistentListener(button.onClick,
                     new UnityAction<string>(UdonSharpEditorUtility.GetBackingUdonBehaviour(target).SendCustomEvent),
-                    nameof(ChessMoveListCell.Press));
+                    nameof(ChessMoveListCell._Press));
                 TextMeshProUGUI label = NewText(cellObject, "Label", font, 34, new Vector2(12, 0),
                     new Vector2(MoveCellWidth - 12, MoveRowHeight - 4));
                 label.color = view.moveTextColor;
@@ -467,7 +467,7 @@ public static class ChessBoard2DViewBuilder {
         scroll.verticalScrollbar = scrollbar;
         scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
         UnityEventTools.AddStringPersistentListener(scroll.onValueChanged, new UnityAction<string>(udon.SendCustomEvent),
-            nameof(ChessBoard2DView.OnMoveListScrolled));
+            nameof(ChessBoard2DView._OnMoveListScrolled));
 
         view.moveList = scroll;
         view.moveListViewport = viewport.GetComponent<RectTransform>();

@@ -21,7 +21,7 @@ namespace SiggiChessBoard {
         public TextMeshProUGUI title;
         // One text per archived game, oldest first: as many as the archive holds.
         public TextMeshProUGUI[] rows = new TextMeshProUGUI[0];
-        // Each row's click target (the same index), calling SelectRow.
+        // Each row's click target (the same index), calling _SelectRow.
         public GameHistoryRow[] rowTargets = new GameHistoryRow[0];
         // A row's text colour, and the selected game's.
         public Color rowColor = Color.white;
@@ -34,7 +34,7 @@ namespace SiggiChessBoard {
         // Counts every change to the selection, for the board views.
         [System.NonSerialized] public int selectionChanges;
         // The strings the wall shows, from i18n (LoadTexts), read on first use and again on a language change: the game
-        // texts for the names, endings and move counts (ChessBoardUI.LoadGameTexts), and the wall's own.
+        // texts for the names, endings and move counts (ChessBoardUI._LoadGameTexts), and the wall's own.
         string[] gameTexts;
         string textTitle = "";
         string textTitleEmpty = "";
@@ -46,18 +46,18 @@ namespace SiggiChessBoard {
         }
 
         void Update() {
-            RefreshIfChanged();
+            _RefreshIfChanged();
         }
 
         // The game texts in the language now. Public for tests.
-        public string[] GameTexts() {
+        public string[] _GameTexts() {
             if (gameTexts == null) LoadTexts();
             return gameTexts;
         }
 
         void LoadTexts() {
-            ChessUtil.CheckI18n(i18n, "[GameHistoryWall] " + gameObject.name);
-            gameTexts = ChessBoardUI.LoadGameTexts(i18n);
+            ChessUtil._CheckI18n(i18n, "[GameHistoryWall] " + gameObject.name);
+            gameTexts = ChessBoardUI._LoadGameTexts(i18n);
             textTitle = ChessUtil.Text(i18n, "wall_title");
             textTitleEmpty = ChessUtil.Text(i18n, "wall_title_empty");
             textRow = ChessUtil.Text(i18n, "wall_row");
@@ -67,50 +67,50 @@ namespace SiggiChessBoard {
         // The I18n's language changed (its AddLanguageChangeListener): every row is written again.
         public void OnLanguageChange() {
             LoadTexts();
-            Refresh();
+            _Refresh();
         }
 
         // Redraws if the archive has changed since the last drawing. Returns whether it did.
-        public bool RefreshIfChanged() {
+        public bool _RefreshIfChanged() {
             if (!Utilities.IsValid(archive) || archive.changes == drawnChanges) return false;
-            Refresh();
+            _Refresh();
             return true;
         }
 
         // Redraws every row. A selected game no longer archived (overwritten once the archive is full) is unselected.
-        public void Refresh() {
+        public void _Refresh() {
             if (!Utilities.IsValid(archive)) return;
             drawnChanges = archive.changes;
             int count = archive.GameCount();
             if (selectedGameId.Length > 0 && archive.IndexOf(selectedGameId) < 0) SetSelection("");
-            ChessUtil.SetText(title, TitleText());
-            for (int i = 0; i < rows.Length; i++) ChessUtil.SetText(rows[i], i < count ? RowText(i) : "");
+            ChessUtil._SetText(title, _TitleText());
+            for (int i = 0; i < rows.Length; i++) ChessUtil._SetText(rows[i], i < count ? _RowText(i) : "");
             DrawSelection();
         }
 
         // ---- Picking a game (step 10.2b) ----
 
         // A row pressed: selects its game, or unselects it when it's the one selected. An empty row does nothing.
-        public void SelectRow(int index) {
+        public void _SelectRow(int index) {
             if (!Utilities.IsValid(archive) || index < 0 || index >= archive.GameCount()) return;
             string gameId = archive.GameIdAt(index);
             SetSelection(gameId == selectedGameId ? "" : gameId);
             DrawSelection();
         }
 
-        public void ClearSelection() {
+        public void _ClearSelection() {
             if (selectedGameId.Length == 0) return;
             SetSelection("");
             DrawSelection();
         }
 
         // Whether the local player has picked a game that's still archived.
-        public bool HasSelection() {
-            return SelectedIndex() >= 0;
+        public bool _HasSelection() {
+            return _SelectedIndex() >= 0;
         }
 
         // The selected game's index, oldest first; -1 for none.
-        public int SelectedIndex() {
+        public int _SelectedIndex() {
             if (!Utilities.IsValid(archive) || selectedGameId.Length == 0) return -1;
             return archive.IndexOf(selectedGameId);
         }
@@ -123,7 +123,7 @@ namespace SiggiChessBoard {
 
         // Colours the selected game's row, and every other row as usual.
         void DrawSelection() {
-            int selected = SelectedIndex();
+            int selected = _SelectedIndex();
             for (int i = 0; i < rows.Length; i++) {
                 TextMeshProUGUI row = rows[i];
                 if (!Utilities.IsValid(row)) continue;
@@ -135,7 +135,7 @@ namespace SiggiChessBoard {
         // ---- Texts ----
 
         // "Previous games", or "Previous games: none yet" while the archive is empty.
-        public string TitleText() {
+        public string _TitleText() {
             if (!Utilities.IsValid(archive)) return "";
             int count = archive.GameCount();
             if (gameTexts == null) LoadTexts();
@@ -144,19 +144,19 @@ namespace SiggiChessBoard {
 
         // The index-th archived game, oldest first: "#12  Ana vs Bo: White wins by checkmate (1-0), 12 moves", with
         // ", Chess960" for that mode. A name missing is "?".
-        public string RowText(int index) {
-            string[] texts = GameTexts();
+        public string _RowText(int index) {
+            string[] texts = _GameTexts();
             int moves = (archive.MoveCountAt(index) + 1) / 2;
             int ending = archive.EndingAt(index);
             int winner = archive.WinnerAt(index);
             string row = archive.ModeAt(index) == ChessGame.ModeChess960 ? textRowChess960 : textRow;
             return I18n.Format(row, new string[] {
-                "number", archive.SequenceAt(index).ToString(),
-                "white", ChessBoardUI.NameText(texts, archive.WhiteAt(index)),
-                "black", ChessBoardUI.NameText(texts, archive.BlackAt(index)),
-                "ending", ChessBoardUI.EndingText(texts, ending, winner),
+                "number", archive._SequenceAt(index).ToString(),
+                "white", ChessBoardUI._NameText(texts, archive.WhiteAt(index)),
+                "black", ChessBoardUI._NameText(texts, archive.BlackAt(index)),
+                "ending", ChessBoardUI._EndingText(texts, ending, winner),
                 "result", ChessPgn.ResultText(ending, winner),
-                "moves", ChessBoardUI.MovesText(texts, moves) });
+                "moves", ChessBoardUI._MovesText(texts, moves) });
         }
     }
 }

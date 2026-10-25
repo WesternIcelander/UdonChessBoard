@@ -113,7 +113,7 @@ namespace SiggiChessBoard {
 
         // The Game ID of a game started at utc (a UTC time; its Kind isn't looked at) with this suffix, or "" for a
         // suffix out of range.
-        public static string GameId(DateTime utc, int suffix) {
+        public static string _GameId(DateTime utc, int suffix) {
             if (suffix < 0 || suffix >= GameIdSuffixCount) return "";
             return Digits(utc.Year, 4) + Digits(utc.Month, 2) + Digits(utc.Day, 2) + Digits(utc.Hour, 2)
                 + Digits(utc.Minute, 2) + Digits(utc.Second, 2) + "-" + Digits(suffix, 6);
@@ -121,7 +121,7 @@ namespace SiggiChessBoard {
 
         // The PGN Date (yyyy.MM.dd) of the game whose ID is gameId: the UTC start date its first eight digits give, or
         // "" (an unknown date) when gameId isn't in the yyyyMMddHHmmss-xxxxxx form, e.g. an imported game's own ID.
-        public static string DateFromGameId(string gameId) {
+        public static string _DateFromGameId(string gameId) {
             if (gameId == null || gameId.Length != GameIdLength) return "";
             for (int i = 0; i < GameIdLength; i++) {
                 char c = gameId[i];
@@ -133,7 +133,7 @@ namespace SiggiChessBoard {
         // The ContinuedFrom value of a game continued from ply (half-moves from the original game's starting
         // position) of the game with ID gameId: "<gameId>/<ply>", or "" when that game has no ID (a PGN import without
         // a GameID tag), so the continued game gets no ContinuedFrom tag.
-        public static string ContinuedFromText(string gameId, int ply) {
+        public static string _ContinuedFromText(string gameId, int ply) {
             if (gameId == null || gameId.Length == 0) return "";
             return gameId + "/" + ply.ToString();
         }

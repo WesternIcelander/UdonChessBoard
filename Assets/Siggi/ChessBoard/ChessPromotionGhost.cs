@@ -14,7 +14,7 @@ namespace SiggiChessBoard {
         public int pieceType = ChessRules.Queen;
 
         public override void Interact() {
-            if (Utilities.IsValid(view)) view.ChoosePromotion(pieceType);
+            if (Utilities.IsValid(view)) view._ChoosePromotion(pieceType);
         }
     }
 }

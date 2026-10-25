@@ -11,8 +11,8 @@ namespace SiggiChessBoard {
         // The cell's index in the view's moveCells: 2 * row + 0 for White's move, + 1 for Black's.
         public int cell;
 
-        public void Press() {
-            if (Utilities.IsValid(view)) view.PressMoveCell(cell);
+        public void _Press() {
+            if (Utilities.IsValid(view)) view._PressMoveCell(cell);
         }
     }
 }

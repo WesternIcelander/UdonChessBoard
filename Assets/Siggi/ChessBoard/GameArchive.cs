@@ -5,7 +5,7 @@ using VRC.SDKBase;
 
 namespace SiggiChessBoard {
     // The instance's archive of played games (docs/archive.md): a circular log of the last games logged, in holders
-    // of GameArchiveHolder.Capacity games each. Every board on every client hands each game it logs here (AddGame).
+    // of GameArchiveHolder.Capacity games each. Every board on every client hands each game it logs here (_AddGame).
     // Only the archive's owner writes to the holders, so additions never race; every client also keeps its own last
     // games in a local-only holder (recent), and whoever owns the archive adds those missing from it, so a game
     // ending as the owner leaves isn't lost. Reading gives the games oldest first. Holds no board and touches no
@@ -62,28 +62,28 @@ namespace SiggiChessBoard {
         // FEN, time control (seconds, base ChessArbiter.NoClock for no clock) and the first count of its moves
         // (packed) and clocks (milliseconds, -1 unknown). Kept in the recent games, then archived if this client owns
         // the archive (Flush). Returns false for a game with no ID or no moves, or one already in the recent games.
-        public bool AddGame(string gameId, string continuedFrom, string white, string black, int mode, int ending,
+        public bool _AddGame(string gameId, string continuedFrom, string white, string black, int mode, int ending,
             int winner, string startFen, int baseTime, int increment, int[] moves, int[] clocks, int count) {
-            if (!StoreRecent(gameId, continuedFrom, white, black, mode, ending, winner, startFen, baseTime, increment,
+            if (!_StoreRecent(gameId, continuedFrom, white, black, mode, ending, winner, startFen, baseTime, increment,
                     moves, clocks, count)) {
                 return false;
             }
-            Flush();
+            _Flush();
             return true;
         }
 
-        // AddGame without archiving: the game goes only into the recent games, replacing the oldest when they're
+        // _AddGame without archiving: the game goes only into the recent games, replacing the oldest when they're
         // full. Public for tests, which use it as a client that doesn't own the archive.
-        public bool StoreRecent(string gameId, string continuedFrom, string white, string black, int mode,
+        public bool _StoreRecent(string gameId, string continuedFrom, string white, string black, int mode,
             int ending, int winner, string startFen, int baseTime, int increment, int[] moves, int[] clocks,
             int count) {
             if (!Utilities.IsValid(recent) || string.IsNullOrEmpty(gameId) || moves == null || clocks == null
                 || count <= 0 || count > moves.Length || count > clocks.Length) {
                 return false;
             }
-            if (recent.SlotOf(gameId) >= 0) return false;
+            if (recent._SlotOf(gameId) >= 0) return false;
             int slot = OldestSlot(recent);
-            recent.WriteSlot(slot, HighestSequence(recent) + 1, gameId, continuedFrom, white, black, mode, ending,
+            recent._WriteSlot(slot, HighestSequence(recent) + 1, gameId, continuedFrom, white, black, mode, ending,
                 winner, startFen, baseTime, increment, moves, clocks, count);
             recentSeen[slot] = IsArchived(gameId);
             return true;
@@ -91,9 +91,9 @@ namespace SiggiChessBoard {
 
         // On the archive's owner, once every holder is ready (and unless held): archives each recent game, oldest
         // first, that no holder has and this client hasn't seen archived (recentSeen). Returns how many were added.
-        public int Flush() {
+        public int _Flush() {
             MarkRecentSeen();
-            if (held || !Utilities.IsValid(recent) || !Networking.IsOwner(gameObject) || !AllReady()) return 0;
+            if (held || !Utilities.IsValid(recent) || !Networking.IsOwner(gameObject) || !_AllReady()) return 0;
             int added = 0;
             int last = 0;
             // The recent games by sequence, oldest first.
@@ -122,13 +122,13 @@ namespace SiggiChessBoard {
         }
 
         // Whether the recent game in slot still waits to be archived: there, not in the archive and never seen in it.
-        public bool IsRecentWaiting(int slot) {
+        public bool _IsRecentWaiting(int slot) {
             return Utilities.IsValid(recent) && slot >= 0 && slot < GameArchiveHolder.Capacity
                 && recent.sequences[slot] > 0 && !recentSeen[slot] && !IsArchived(recent.gameIds[slot]);
         }
 
         // Whether every holder has the instance's games (GameArchiveHolder.ready).
-        public bool AllReady() {
+        public bool _AllReady() {
             for (int i = 0; i < holders.Length; i++) {
                 if (!Utilities.IsValid(holders[i]) || !holders[i].ready) return false;
             }
@@ -137,7 +137,7 @@ namespace SiggiChessBoard {
 
         public bool IsArchived(string gameId) {
             for (int i = 0; i < holders.Length; i++) {
-                if (Utilities.IsValid(holders[i]) && holders[i].SlotOf(gameId) >= 0) return true;
+                if (Utilities.IsValid(holders[i]) && holders[i]._SlotOf(gameId) >= 0) return true;
             }
             return false;
         }
@@ -157,25 +157,25 @@ namespace SiggiChessBoard {
             GameArchiveHolder holder = holders[slot / GameArchiveHolder.Capacity];
             int holderSlot = slot % GameArchiveHolder.Capacity;
 
-            int count = recent.MoveCount(recentSlot);
+            int count = recent._MoveCount(recentSlot);
             if (scratchMoves.Length < count) {
                 scratchMoves = new int[count];
                 scratchClocks = new int[count];
             }
-            recent.CopyMoves(recentSlot, scratchMoves);
-            recent.CopyClocks(recentSlot, scratchClocks);
-            holder.WriteSlot(holderSlot, sequence, recent.gameIds[recentSlot], recent.continuedFroms[recentSlot],
+            recent._CopyMoves(recentSlot, scratchMoves);
+            recent._CopyClocks(recentSlot, scratchClocks);
+            holder._WriteSlot(holderSlot, sequence, recent.gameIds[recentSlot], recent.continuedFroms[recentSlot],
                 recent.whites[recentSlot], recent.blacks[recentSlot],
-                recent.Info(recentSlot, GameArchiveHolder.InfoMode),
-                recent.Info(recentSlot, GameArchiveHolder.InfoEnding),
-                recent.Info(recentSlot, GameArchiveHolder.InfoWinner), recent.startFens[recentSlot],
-                recent.Info(recentSlot, GameArchiveHolder.InfoBaseTime),
-                recent.Info(recentSlot, GameArchiveHolder.InfoIncrement), scratchMoves, scratchClocks, count);
-            holder.Send();
+                recent._Info(recentSlot, GameArchiveHolder.InfoMode),
+                recent._Info(recentSlot, GameArchiveHolder.InfoEnding),
+                recent._Info(recentSlot, GameArchiveHolder.InfoWinner), recent.startFens[recentSlot],
+                recent._Info(recentSlot, GameArchiveHolder.InfoBaseTime),
+                recent._Info(recentSlot, GameArchiveHolder.InfoIncrement), scratchMoves, scratchClocks, count);
+            holder._Send();
             Debug.Log("[GameArchive] archived game " + sequence + ", " + recent.gameIds[recentSlot] + " ("
                 + recent.whites[recentSlot] + " vs " + recent.blacks[recentSlot] + "), in " + holder.gameObject.name
                 + " slot " + holderSlot);
-            // Not OnHolderChanged: it flushes, and Udon methods mustn't recurse.
+            // Not _OnHolderChanged: it flushes, and Udon methods mustn't recurse.
             orderDirty = true;
             changes++;
             return true;
@@ -201,19 +201,19 @@ namespace SiggiChessBoard {
         }
 
         // A holder's games changed: an update arrived or this client wrote one. Waiting recent games may now go in.
-        public void OnHolderChanged() {
+        public void _OnHolderChanged() {
             orderDirty = true;
             changes++;
-            Flush();
+            _Flush();
         }
 
         // The previous owner left (nobody asks for the archive): this client's recent games missing from the archive go
         // in, perhaps a game that ended as the owner left. Logged, so the clients' logs show the handover.
         public override void OnOwnershipTransferred(VRCPlayerApi player) {
             if (!Utilities.IsValid(player) || !player.isLocal) return;
-            int added = Flush();
+            int added = _Flush();
             Debug.Log("[GameArchive] " + gameObject.name + " now owned here: " + added + " recent game(s) added"
-                + (AllReady() ? "" : ", waiting for holders") + (held ? ", held" : ""));
+                + (_AllReady() ? "" : ", waiting for holders") + (held ? ", held" : ""));
         }
 
         // Nobody asks for the archive: VRChat hands it on when its owner leaves.
@@ -222,14 +222,14 @@ namespace SiggiChessBoard {
         }
 
         // Empties every holder and the recent games, for tests. Only the archive's owner; returns whether it did.
-        public bool ClearArchive() {
+        public bool _ClearArchive() {
             if (!Networking.IsOwner(gameObject)) return false;
             for (int i = 0; i < holders.Length; i++) {
                 if (!Utilities.IsValid(holders[i])) continue;
-                holders[i].Clear();
-                holders[i].Send();
+                holders[i]._Clear();
+                holders[i]._Send();
             }
-            if (Utilities.IsValid(recent)) recent.Clear();
+            if (Utilities.IsValid(recent)) recent._Clear();
             recentSeen = new bool[GameArchiveHolder.Capacity];
             orderDirty = true;
             changes++;
@@ -254,20 +254,20 @@ namespace SiggiChessBoard {
         }
 
         // The holder slot (holder * Capacity + slot) of the index-th game, oldest first.
-        public int SlotAt(int index) {
+        public int _SlotAt(int index) {
             UpdateOrder();
             return order[index];
         }
 
         GameArchiveHolder HolderAt(int index) {
-            return holders[SlotAt(index) / GameArchiveHolder.Capacity];
+            return holders[_SlotAt(index) / GameArchiveHolder.Capacity];
         }
 
         int HolderSlotAt(int index) {
-            return SlotAt(index) % GameArchiveHolder.Capacity;
+            return _SlotAt(index) % GameArchiveHolder.Capacity;
         }
 
-        public int SequenceAt(int index) {
+        public int _SequenceAt(int index) {
             return HolderAt(index).sequences[HolderSlotAt(index)];
         }
 
@@ -292,36 +292,36 @@ namespace SiggiChessBoard {
         }
 
         public int ModeAt(int index) {
-            return HolderAt(index).Info(HolderSlotAt(index), GameArchiveHolder.InfoMode);
+            return HolderAt(index)._Info(HolderSlotAt(index), GameArchiveHolder.InfoMode);
         }
 
         public int EndingAt(int index) {
-            return HolderAt(index).Info(HolderSlotAt(index), GameArchiveHolder.InfoEnding);
+            return HolderAt(index)._Info(HolderSlotAt(index), GameArchiveHolder.InfoEnding);
         }
 
         public int WinnerAt(int index) {
-            return HolderAt(index).Info(HolderSlotAt(index), GameArchiveHolder.InfoWinner);
+            return HolderAt(index)._Info(HolderSlotAt(index), GameArchiveHolder.InfoWinner);
         }
 
         public int BaseTimeAt(int index) {
-            return HolderAt(index).Info(HolderSlotAt(index), GameArchiveHolder.InfoBaseTime);
+            return HolderAt(index)._Info(HolderSlotAt(index), GameArchiveHolder.InfoBaseTime);
         }
 
         public int IncrementAt(int index) {
-            return HolderAt(index).Info(HolderSlotAt(index), GameArchiveHolder.InfoIncrement);
+            return HolderAt(index)._Info(HolderSlotAt(index), GameArchiveHolder.InfoIncrement);
         }
 
         public int MoveCountAt(int index) {
-            return HolderAt(index).MoveCount(HolderSlotAt(index));
+            return HolderAt(index)._MoveCount(HolderSlotAt(index));
         }
 
         // Copies the index-th game's moves (or clocks) into destination, which needs room for MoveCountAt(index).
         public void CopyMovesAt(int index, int[] destination) {
-            HolderAt(index).CopyMoves(HolderSlotAt(index), destination);
+            HolderAt(index)._CopyMoves(HolderSlotAt(index), destination);
         }
 
         public void CopyClocksAt(int index, int[] destination) {
-            HolderAt(index).CopyClocks(HolderSlotAt(index), destination);
+            HolderAt(index)._CopyClocks(HolderSlotAt(index), destination);
         }
 
         static string Text(string value) {

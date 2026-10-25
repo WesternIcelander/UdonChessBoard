@@ -11,8 +11,8 @@ namespace SiggiChessBoard {
         public GameHistoryWall wall;
         public int index;
 
-        public void Press() {
-            if (Utilities.IsValid(wall)) wall.SelectRow(index);
+        public void _Press() {
+            if (Utilities.IsValid(wall)) wall._SelectRow(index);
         }
     }
 }

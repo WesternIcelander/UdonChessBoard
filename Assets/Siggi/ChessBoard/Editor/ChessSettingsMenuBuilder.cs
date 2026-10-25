@@ -177,7 +177,7 @@ public static class ChessSettingsMenuBuilder {
             new Vector2(LabelWidth, RowHeight));
         TextMeshProUGUI value = NewText(parent, "Value " + item, font, TextFontSize, new Vector2(Margin + LabelWidth, top),
             new Vector2(ValueWidth, RowHeight));
-        bool setting = ChessSettingsMenu.IsSettingItem(item);
+        bool setting = ChessSettingsMenu._IsSettingItem(item);
         int[] actions = setting
             ? new[] { ChessSettingsMenu.ActionOn, ChessSettingsMenu.ActionOff, ChessSettingsMenu.ActionDefault }
             : new[] { ChessSettingsMenu.ActionPrevious, ChessSettingsMenu.ActionNext, ChessSettingsMenu.ActionDefault };
@@ -218,7 +218,7 @@ public static class ChessSettingsMenuBuilder {
         UdonSharpEditorUtility.CopyProxyToUdon(target);
         UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(target);
         UnityEventTools.AddStringPersistentListener(button.onClick, new UnityAction<string>(udon.SendCustomEvent),
-            "Press");
+            "_Press");
 
         TextMeshProUGUI label = NewText(buttonObject, "Label", font, ButtonFontSize, Vector2.zero,
             new Vector2(ButtonWidth, ButtonHeight));

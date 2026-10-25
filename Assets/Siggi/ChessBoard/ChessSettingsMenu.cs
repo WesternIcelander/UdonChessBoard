@@ -151,11 +151,11 @@ namespace SiggiChessBoard {
         // redraw calls none.
         void LoadTexts() {
             textsLoaded = true;
-            ChessUtil.CheckI18n(i18n, "[ChessSettingsMenu] " + gameObject.name);
-            for (int item = 0; item < ItemCount; item++) itemTexts[item] = ChessUtil.Text(i18n, ItemKey(item));
+            ChessUtil._CheckI18n(i18n, "[ChessSettingsMenu] " + gameObject.name);
+            for (int item = 0; item < ItemCount; item++) itemTexts[item] = ChessUtil.Text(i18n, _ItemKey(item));
             textTitle = ChessUtil.Text(i18n, "settings_title");
-            textScope = ChessUtil.Text(i18n, ItemKey(ItemScope));
-            textResnapshot = ChessUtil.Text(i18n, ItemKey(ItemResnapshot));
+            textScope = ChessUtil.Text(i18n, _ItemKey(ItemScope));
+            textResnapshot = ChessUtil.Text(i18n, _ItemKey(ItemResnapshot));
             textAllBoards = ChessUtil.Text(i18n, "settings_all_boards");
             textBoardNumber = ChessUtil.Text(i18n, "board_number");
             textOn = ChessUtil.Text(i18n, "settings_on");
@@ -190,60 +190,60 @@ namespace SiggiChessBoard {
         public void OnLanguageChange() {
             LoadTexts();
             if (resnapshotText.Length > 0) {
-                resnapshotText = ResnapshotText(resnapshotCounts[0], resnapshotCounts[1], resnapshotCounts[2]);
+                resnapshotText = _ResnapshotText(resnapshotCounts[0], resnapshotCounts[1], resnapshotCounts[2]);
             }
-            Refresh();
-            UpdateVisibility();
+            _Refresh();
+            _UpdateVisibility();
         }
 
         void Update() {
             if (!everChecked || Time.time >= nextOrganizerCheck) {
                 everChecked = true;
                 nextOrganizerCheck = Time.time + OrganizerCheckInterval;
-                UpdateVisibility();
+                _UpdateVisibility();
             }
-            RefreshIfChanged();
+            _RefreshIfChanged();
         }
 
         // Shows the controls only to an organizer, with the notice saying why when they're hidden.
-        public void UpdateVisibility() {
+        public void _UpdateVisibility() {
             bool shown = Utilities.IsValid(arbiter) && arbiter.IsOrganizer(Networking.LocalPlayer);
             if (Utilities.IsValid(controls) && controls.activeSelf != shown) controls.SetActive(shown);
             controlsShown = shown;
-            ChessUtil.SetText(notice, NoticeText());
+            ChessUtil._SetText(notice, _NoticeText());
         }
 
         // Redraws if the arbiter's settings have changed since the last drawing. Returns whether it did.
-        public bool RefreshIfChanged() {
+        public bool _RefreshIfChanged() {
             if (!Utilities.IsValid(arbiter) || arbiter.changes == drawnChanges) return false;
-            Refresh();
+            _Refresh();
             return true;
         }
 
         // Redraws the scope, every value and every button.
-        public void Refresh() {
+        public void _Refresh() {
             if (!Utilities.IsValid(arbiter)) return;
             drawnChanges = arbiter.changes;
             FixScope();
             SetFixedTexts();
-            ChessUtil.SetText(scopeLabel, ScopeText());
+            ChessUtil._SetText(scopeLabel, _ScopeText());
             for (int item = 0; item < ItemCount && item < values.Length; item++) {
-                ChessUtil.SetText(values[item], ValueText(item));
+                ChessUtil._SetText(values[item], _ValueText(item));
             }
-            ChessUtil.SetText(resnapshotLabel, resnapshotText);
+            ChessUtil._SetText(resnapshotLabel, resnapshotText);
             for (int i = 0; i < buttons.Length; i++) {
                 GameObject button = buttons[i];
                 if (!Utilities.IsValid(button) || i >= buttonItems.Length || i >= buttonActions.Length) continue;
                 int item = buttonItems[i];
                 int action = buttonActions[i];
-                bool shown = ButtonShown(item, action);
+                bool shown = _ButtonShown(item, action);
                 if (button.activeSelf != shown) button.SetActive(shown);
                 if (i < buttonImages.Length && Utilities.IsValid(buttonImages[i])) {
-                    Color color = IsSelected(item, action) ? selectedButtonColor : buttonColor;
+                    Color color = _IsSelected(item, action) ? selectedButtonColor : buttonColor;
                     if (buttonImages[i].color != color) buttonImages[i].color = color;
                 }
             }
-            ChessUtil.SetText(notice, NoticeText());
+            ChessUtil._SetText(notice, _NoticeText());
         }
 
         // ---- Pressing ----
@@ -251,27 +251,27 @@ namespace SiggiChessBoard {
         // A button pressed (its ChessSettingsButton): the scope row's Previous and Next pick the boards shown, locally;
         // everything else changes the arbiter's settings as an organizer, sent to every client. Returns whether
         // anything changed: false for a non-organizer, a button that doesn't apply, or a choice at the end of its list.
-        public bool Press(int item, int action) {
+        public bool _Press(int item, int action) {
             if (!Utilities.IsValid(arbiter)) return false;
             FixScope();
             if (item == ItemScope && (action == ActionPrevious || action == ActionNext)) {
                 StepScope(action == ActionNext ? 1 : -1);
                 return true;
             }
-            if (item == ItemResnapshot) return action == ActionOn && ResnapshotBoards();
-            if (!ButtonShown(item, action) || !WouldChange(item, action)) return false;
+            if (item == ItemResnapshot) return action == ActionOn && _ResnapshotBoards();
+            if (!_ButtonShown(item, action) || !WouldChange(item, action)) return false;
             if (!arbiter.BeginChange()) {
                 // No longer an organizer: hide the controls now rather than at the next check.
-                UpdateVisibility();
+                _UpdateVisibility();
                 return false;
             }
             bool done = Apply(item, action);
             arbiter.EndChange();
             resnapshotText = "";
-            Debug.Log("[ChessSettingsMenu] " + ChessUtil.LocalName("?") + ": " + ScopeLogText()
+            Debug.Log("[ChessSettingsMenu] " + ChessUtil._LocalName("?") + ": " + ScopeLogText()
                 + ", " + ChangeText(item, action)
                 + (done ? "" : " (not changed)"));
-            Refresh();
+            _Refresh();
             return done;
         }
 
@@ -288,7 +288,7 @@ namespace SiggiChessBoard {
             if (next < ScopeAllBoards) next = count - 1;
             scope = next;
             resnapshotText = "";
-            Refresh();
+            _Refresh();
         }
 
         // ---- Re-snapshot (step 11.1b) ----
@@ -297,10 +297,10 @@ namespace SiggiChessBoard {
         // snapshot of the settings as the local organizer (ChessBoard.ResnapshotAs, which takes ownership of each and
         // sends it). A reset board has no snapshot and takes the settings when it's next used, so it's only counted.
         // Returns whether any board took one; the outcome is shown beside the button and logged.
-        public bool ResnapshotBoards() {
+        public bool _ResnapshotBoards() {
             VRCPlayerApi local = Networking.LocalPlayer;
             if (!arbiter.IsOrganizer(local)) {
-                UpdateVisibility();
+                _UpdateVisibility();
                 return false;
             }
             int updated = 0;
@@ -321,15 +321,15 @@ namespace SiggiChessBoard {
             resnapshotCounts[0] = updated;
             resnapshotCounts[1] = unused;
             resnapshotCounts[2] = refused;
-            resnapshotText = ResnapshotText(updated, unused, refused);
-            ChessUtil.SetText(resnapshotLabel, resnapshotText);
-            Debug.Log("[ChessSettingsMenu] " + ChessUtil.LocalName("?") + ": " + ScopeLogText() + ", re-snapshot: "
+            resnapshotText = _ResnapshotText(updated, unused, refused);
+            ChessUtil._SetText(resnapshotLabel, resnapshotText);
+            Debug.Log("[ChessSettingsMenu] " + ChessUtil._LocalName("?") + ": " + ScopeLogText() + ", re-snapshot: "
                 + updated + " updated, " + unused + " not in use, " + refused + " refused");
             return updated > 0;
         }
 
         // "2 boards updated, 1 not in use", "No board in use: each takes the settings when next used", "No such board".
-        public string ResnapshotText(int updated, int unused, int refused) {
+        public string _ResnapshotText(int updated, int unused, int refused) {
             if (!textsLoaded) LoadTexts();
             if (updated + unused + refused == 0) return textNoSuchBoard;
             if (updated == 0 && refused == 0) return textNoneInUse;
@@ -344,7 +344,7 @@ namespace SiggiChessBoard {
         bool Apply(int item, int action) {
             bool all = scope == ScopeAllBoards;
             if (item == ItemScope) return !all && arbiter.ClearOverrides(scope);
-            int setting = ItemSetting(item);
+            int setting = _ItemSetting(item);
             if (setting != 0) {
                 if (action == ActionDefault) return arbiter.ClearSettingOverride(scope, setting);
                 bool on = action == ActionOn;
@@ -354,9 +354,9 @@ namespace SiggiChessBoard {
                 }
                 return arbiter.SetSettingOverride(scope, setting, on);
             }
-            int number = ItemNumber(item);
+            int number = _ItemNumber(item);
             if (action == ActionDefault) return arbiter.ClearNumberOverride(scope, number);
-            int value = StepChoice(item, CurrentNumber(item), action == ActionNext ? 1 : -1);
+            int value = _StepChoice(item, _CurrentNumber(item), action == ActionNext ? 1 : -1);
             if (all) return arbiter.SetDefaultNumber(number, value);
             return arbiter.SetNumberOverride(scope, number, value);
         }
@@ -364,16 +364,16 @@ namespace SiggiChessBoard {
         // Whether pressing would change anything: not a choice already made, or a step past the end of the list.
         bool WouldChange(int item, int action) {
             if (item == ItemScope) return scope != ScopeAllBoards && arbiter.overrideMask[scope] != 0;
-            if (IsSettingItem(item)) return !IsSelected(item, action);
-            if (action == ActionDefault) return !IsSelected(item, action);
-            int current = CurrentNumber(item);
-            return StepChoice(item, current, action == ActionNext ? 1 : -1) != current;
+            if (_IsSettingItem(item)) return !_IsSelected(item, action);
+            if (action == ActionDefault) return !_IsSelected(item, action);
+            int current = _CurrentNumber(item);
+            return _StepChoice(item, current, action == ActionNext ? 1 : -1) != current;
         }
 
         // ---- Items ----
 
         // The setting bits an item sets, 0 for a number item.
-        public static int ItemSetting(int item) {
+        public static int _ItemSetting(int item) {
             switch (item) {
                 case ItemTakebacks: return ChessArbiter.SettingTakebacks;
                 case ItemDrawRules: return ChessArbiter.SettingsDrawRules;
@@ -391,7 +391,7 @@ namespace SiggiChessBoard {
         }
 
         // The ChessArbiter.Number* an item sets, -1 for a setting item.
-        public static int ItemNumber(int item) {
+        public static int _ItemNumber(int item) {
             switch (item) {
                 case ItemForcedMode: return ChessArbiter.NumberForcedMode;
                 case ItemForcedBaseTime: return ChessArbiter.NumberForcedBaseTime;
@@ -402,12 +402,12 @@ namespace SiggiChessBoard {
             return -1;
         }
 
-        public static bool IsSettingItem(int item) {
-            return ItemSetting(item) != 0;
+        public static bool _IsSettingItem(int item) {
+            return _ItemSetting(item) != 0;
         }
 
         // An item's row label's key in the language pack.
-        public static string ItemKey(int item) {
+        public static string _ItemKey(int item) {
             switch (item) {
                 case ItemTakebacks: return "settings_item_takebacks";
                 case ItemDrawRules: return "settings_item_draw_rules";
@@ -432,7 +432,7 @@ namespace SiggiChessBoard {
         }
 
         // A button's label's key in the language pack; "" for Previous and Next, whose labels are the signs < and >.
-        public static string ActionKey(int item, int action) {
+        public static string _ActionKey(int item, int action) {
             switch (action) {
                 case ActionOn: return item == ItemResnapshot ? "settings_apply_now" : "settings_on";
                 case ActionOff: return item == ItemDrawRules ? "settings_no_draws" : "settings_off";
@@ -442,15 +442,15 @@ namespace SiggiChessBoard {
         }
 
         // An item's row label ("Takebacks").
-        public string ItemText(int item) {
+        public string _ItemText(int item) {
             if (!textsLoaded) LoadTexts();
             if (item == ItemScope) return textScope;
             if (item == ItemResnapshot) return textResnapshot;
             return item >= 0 && item < ItemCount ? itemTexts[item] : "";
         }
 
-        // A button's label ("On", "No draws", "<"): the text of ActionKey's key.
-        public string ActionText(int item, int action) {
+        // A button's label ("On", "No draws", "<"): the text of _ActionKey's key.
+        public string _ActionText(int item, int action) {
             if (!textsLoaded) LoadTexts();
             if (action == ActionPrevious) return "<";
             if (action == ActionNext) return ">";
@@ -462,22 +462,22 @@ namespace SiggiChessBoard {
 
         // Whether a button is shown: Default only for a single board, and each item's own buttons (setting items On and
         // Off, number items and the scope Previous and Next).
-        public bool ButtonShown(int item, int action) {
+        public bool _ButtonShown(int item, int action) {
             if (item == ItemResnapshot) return action == ActionOn;
             if (action == ActionDefault) return scope != ScopeAllBoards;
             if (item == ItemScope) return action == ActionPrevious || action == ActionNext;
-            if (IsSettingItem(item)) return action == ActionOn || action == ActionOff;
+            if (_IsSettingItem(item)) return action == ActionOn || action == ActionOff;
             return action == ActionPrevious || action == ActionNext;
         }
 
         // Whether a button is the current choice: On or Off when every one of the item's bits is that way (and, for a
         // board, overridden), Default when the board overrides none of it. A number item marks only Default.
-        public bool IsSelected(int item, int action) {
+        public bool _IsSelected(int item, int action) {
             if (!Utilities.IsValid(arbiter) || item == ItemScope) return false;
             bool all = scope == ScopeAllBoards;
-            int setting = ItemSetting(item);
+            int setting = _ItemSetting(item);
             if (setting == 0) {
-                return action == ActionDefault && !all && !arbiter.IsNumberOverridden(scope, ItemNumber(item));
+                return action == ActionDefault && !all && !arbiter.IsNumberOverridden(scope, _ItemNumber(item));
             }
             int bits;
             if (all) {
@@ -495,15 +495,15 @@ namespace SiggiChessBoard {
 
         // A number item's value as it applies: the instance default, or the board's effective value (corrected, so an
         // auto-reset time below the reset-available time shows the latter clamped).
-        public int CurrentNumber(int item) {
-            int number = ItemNumber(item);
+        public int _CurrentNumber(int item) {
+            int number = _ItemNumber(item);
             if (scope == ScopeAllBoards) return arbiter.DefaultNumber(number);
             return arbiter.EffectiveNumber(scope, number);
         }
 
         // The choice after (direction 1) or before (-1) a value in the item's list, or the value itself at the end.
         // A value not in the list steps to the nearest choice that way.
-        public int StepChoice(int item, int value, int direction) {
+        public int _StepChoice(int item, int value, int direction) {
             int[] choices = Choices(item);
             int rank = ChoiceRank(item, value);
             int found = value;
@@ -543,19 +543,19 @@ namespace SiggiChessBoard {
         // The labels that change only with the language: the title, the rows' labels and the buttons'.
         void SetFixedTexts() {
             if (!textsLoaded) LoadTexts();
-            ChessUtil.SetText(title, textTitle);
-            ChessUtil.SetText(scopeTitle, ItemText(ItemScope));
-            ChessUtil.SetText(resnapshotTitle, ItemText(ItemResnapshot));
+            ChessUtil._SetText(title, textTitle);
+            ChessUtil._SetText(scopeTitle, _ItemText(ItemScope));
+            ChessUtil._SetText(resnapshotTitle, _ItemText(ItemResnapshot));
             for (int item = 0; item < ItemCount && item < itemLabels.Length; item++) {
-                ChessUtil.SetText(itemLabels[item], ItemText(item));
+                ChessUtil._SetText(itemLabels[item], _ItemText(item));
             }
             for (int i = 0; i < buttonLabels.Length && i < buttonItems.Length && i < buttonActions.Length; i++) {
-                ChessUtil.SetText(buttonLabels[i], ActionText(buttonItems[i], buttonActions[i]));
+                ChessUtil._SetText(buttonLabels[i], _ActionText(buttonItems[i], buttonActions[i]));
             }
         }
 
         // "All boards", or "Board 2" for board number 1.
-        public string ScopeText() {
+        public string _ScopeText() {
             if (!textsLoaded) LoadTexts();
             if (scope == ScopeAllBoards) return textAllBoards;
             return I18n.Format(textBoardNumber, new string[] { "number", (scope + 1).ToString() });
@@ -568,11 +568,11 @@ namespace SiggiChessBoard {
 
         // An item's value as shown: "On", "Off (No draws)", "Mixed", "2 min", "Never", "Chess960", "No clock"; for a
         // board, " (default)" after a value it takes from the instance defaults.
-        public string ValueText(int item) {
+        public string _ValueText(int item) {
             if (!Utilities.IsValid(arbiter)) return "";
             if (!textsLoaded) LoadTexts();
             bool all = scope == ScopeAllBoards;
-            int setting = ItemSetting(item);
+            int setting = _ItemSetting(item);
             string value;
             bool fromDefault;
             if (setting != 0) {
@@ -582,25 +582,25 @@ namespace SiggiChessBoard {
                     : textValueMixed;
                 fromDefault = !all && (arbiter.overrideMask[scope] & setting) == 0;
             } else {
-                value = NumberText(item, CurrentNumber(item));
-                fromDefault = !all && !arbiter.IsNumberOverridden(scope, ItemNumber(item));
+                value = _NumberText(item, _CurrentNumber(item));
+                fromDefault = !all && !arbiter.IsNumberOverridden(scope, _ItemNumber(item));
             }
             return fromDefault ? I18n.Format(textValueDefault, new string[] { "value", value }) : value;
         }
 
         // A number item's value: "Standard", "No clock", "Never", "5 min", "0 s".
-        public string NumberText(int item, int value) {
+        public string _NumberText(int item, int value) {
             if (!textsLoaded) LoadTexts();
             if (item == ItemForcedMode) return value == ChessGame.ModeChess960 ? textModeChess960 : textModeStandard;
             if (item == ItemForcedBaseTime && value == ChessArbiter.NoClock) return textClockNone;
             if ((item == ItemResetAvailableTime || item == ItemAutoResetTime) && value == ChessArbiter.Never) {
                 return textNever;
             }
-            return DurationText(value);
+            return _DurationText(value);
         }
 
         // Seconds as "45 s", "2 min", "1 h", or "1 min 30 s".
-        public string DurationText(int seconds) {
+        public string _DurationText(int seconds) {
             if (!textsLoaded) LoadTexts();
             if (seconds < 60) return I18n.Format(textSeconds, new string[] { "seconds", seconds.ToString() });
             if (seconds % 3600 == 0) {
@@ -614,13 +614,13 @@ namespace SiggiChessBoard {
 
         // The notice while the arbiter's Simple Auth field is empty (docs/organizers.md, In-game fallback): nobody is
         // an organizer then, so nobody sees the controls.
-        public string SimpleAuthMissingText() {
+        public string _SimpleAuthMissingText() {
             if (!textsLoaded) LoadTexts();
             return textSimpleAuthMissing;
         }
 
         // Why the controls are hidden (the empty Simple Auth field first); "" when they're shown.
-        public string NoticeText() {
+        public string _NoticeText() {
             if (!textsLoaded) LoadTexts();
             if (!Utilities.IsValid(arbiter)) return textNoArbiter;
             if (arbiter.simpleAuthMissing) return textSimpleAuthMissing;
@@ -631,11 +631,11 @@ namespace SiggiChessBoard {
         // A change for the log, by the language pack's keys: "settings_item_takebacks: settings_off",
         // "settings_item_forced_base_time: > (now 300)", "settings_all_default".
         string ChangeText(int item, int action) {
-            string actionText = ActionKey(item, action);
+            string actionText = _ActionKey(item, action);
             if (actionText.Length == 0) actionText = action == ActionNext ? ">" : "<";
             if (item == ItemScope) return actionText;
-            string text = ItemKey(item) + ": " + actionText;
-            if (!IsSettingItem(item) && action != ActionDefault) text += " (now " + CurrentNumber(item) + ")";
+            string text = _ItemKey(item) + ": " + actionText;
+            if (!_IsSettingItem(item) && action != ActionDefault) text += " (now " + _CurrentNumber(item) + ")";
             return text;
         }
     }

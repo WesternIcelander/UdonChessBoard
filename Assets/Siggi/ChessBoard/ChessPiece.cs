@@ -16,7 +16,7 @@ namespace SiggiChessBoard {
 
         // Asked on the requesting client and on the owner. A refusal is logged, so a client's log shows it.
         public override bool OnOwnershipRequest(VRCPlayerApi requestingPlayer, VRCPlayerApi requestedOwner) {
-            bool allowed = Utilities.IsValid(view) && view.PlayerMayTouchPieces(requestedOwner);
+            bool allowed = Utilities.IsValid(view) && view._PlayerMayTouchPieces(requestedOwner);
             if (!allowed) {
                 Debug.Log("[ChessPiece] " + gameObject.name + ": ownership refused for "
                     + (Utilities.IsValid(requestedOwner) ? requestedOwner.displayName : "nobody"));
@@ -26,16 +26,16 @@ namespace SiggiChessBoard {
 
         // Only on the client picking it up or letting it go; the view forwards both to the board.
         public override void OnPickup() {
-            if (Utilities.IsValid(view)) view.OnPiecePickedUp(index);
+            if (Utilities.IsValid(view)) view._OnPiecePickedUp(index);
         }
 
         public override void OnDrop() {
-            if (Utilities.IsValid(view)) view.OnPieceDropped(index);
+            if (Utilities.IsValid(view)) view._OnPieceDropped(index);
         }
 
         // A click in desktop mode (step 9.3c); the view makes the piece interactive only where a click does something.
         public override void Interact() {
-            if (Utilities.IsValid(view)) view.OnPieceClicked(index);
+            if (Utilities.IsValid(view)) view._OnPieceClicked(index);
         }
     }
 }

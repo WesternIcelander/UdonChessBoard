@@ -14,7 +14,7 @@ namespace SiggiChessBoard {
 
         // Whether move sets the halfmove clock to 0: any pawn move (en passant and promotions included) or capture.
         // Castling captures nothing, since its to-square is the mover's own rook and the captured field is empty.
-        public static bool ResetsHalfmoveClock(int move) {
+        public static bool _ResetsHalfmoveClock(int move) {
             return ((move >> ChessRules.MovePieceTypeShift) & ChessRules.MoveTypeMask) == ChessRules.Pawn
                 || ((move >> ChessRules.MoveCapturedShift) & ChessRules.MoveTypeMask) != ChessRules.NoPieceType;
         }
@@ -22,14 +22,14 @@ namespace SiggiChessBoard {
         // The halfmove clock after playing move with the clock at clock. (The Java's halfMoves never reset, see
         // docs/java-bugs.md.)
         public static int HalfmoveClockAfter(int clock, int move) {
-            return ResetsHalfmoveClock(move) ? 0 : clock + 1;
+            return _ResetsHalfmoveClock(move) ? 0 : clock + 1;
         }
 
         // Works out the halfmove clock before each ply of moves[0..moveCount) into clocks[0..moveCount), starting
         // from the starting position's clock, and returns the clock after the last move (the current clock).
         // Undoing ply i restores clocks[i]. The array is local, not synced: every client rebuilds it from the synced
         // move history and starting clock (docs/move-encoding.md#undo).
-        public static int BuildHalfmoveClocks(int[] moves, int moveCount, int startClock, int[] clocks) {
+        public static int _BuildHalfmoveClocks(int[] moves, int moveCount, int startClock, int[] clocks) {
             int clock = startClock;
             for (int i = 0; i < moveCount; i++) {
                 clocks[i] = clock;
@@ -70,7 +70,7 @@ namespace SiggiChessBoard {
             // Every move changes the board, so a repeat takes at least two moves each.
             if (plies < 4) return 1;
             int castlingRights = state[ChessPosition.StateCastlingRights];
-            int enPassantFile = EffectiveEnPassantFile(board, state, scratchMoves, prohibitSelfCheck);
+            int enPassantFile = _EffectiveEnPassantFile(board, state, scratchMoves, prohibitSelfCheck);
             System.Array.Copy(board, scratchBoard, 64);
             System.Array.Copy(state, scratchState, ChessPosition.StateLength);
             int count = 1;
@@ -80,7 +80,7 @@ namespace SiggiChessBoard {
                 if (((move >> ChessRules.MoveCastlingRightsShift) & ChessRules.MoveCastlingRightsMask) != castlingRights) break;
                 ChessPosition.UnmakeMove(scratchBoard, scratchState, move);
                 if ((k & 1) != 0 || !SameSquares(board, scratchBoard)) continue;
-                if (EffectiveEnPassantFile(scratchBoard, scratchState, scratchMoves, prohibitSelfCheck) == enPassantFile) count++;
+                if (_EffectiveEnPassantFile(scratchBoard, scratchState, scratchMoves, prohibitSelfCheck) == enPassantFile) count++;
             }
             return count;
         }
@@ -106,7 +106,7 @@ namespace SiggiChessBoard {
         // a legal en passant capture (any pseudo-legal one with prohibitSelfCheck off), otherwise -1. A double push
         // sets the en passant file even with no pawn beside it, and that position is the same as one without it.
         // The position is left as it was.
-        public static int EffectiveEnPassantFile(byte[] board, int[] state, int[] scratchMoves, bool prohibitSelfCheck) {
+        public static int _EffectiveEnPassantFile(byte[] board, int[] state, int[] scratchMoves, bool prohibitSelfCheck) {
             int file = state[ChessPosition.StateEnPassantFile];
             if (file < 0) return -1;
             int mover = state[ChessPosition.StateSideToMove];

@@ -104,13 +104,13 @@ namespace SiggiChessBoard {
             if (maxSize < minSize) maxSize = minSize;
             VRCPlayerApi local = Networking.LocalPlayer;
             inVR = Utilities.IsValid(local) && local.IsUserInVR();
-            heading = Upright(grip.rotation, Quaternion.identity);
+            heading = _Upright(grip.rotation, Quaternion.identity);
             if (!Utilities.IsValid(gripModel) && grip.childCount > 0) gripModel = grip.GetChild(0);
             if (inVR) {
                 gripPickup.proximity = vrReach;
                 cornerPickup.proximity = vrReach;
             }
-            if (ChessUtil.CheckI18n(i18n, "[ChessBoard2DViewHolder] " + gameObject.name)) {
+            if (ChessUtil._CheckI18n(i18n, "[ChessBoard2DViewHolder] " + gameObject.name)) {
                 i18n.AddLanguageChangeListener(this);
             }
             SetHoverTexts();
@@ -121,7 +121,7 @@ namespace SiggiChessBoard {
                 upright = syncedUpright;
             }
             ApplyMovable();
-            Follow();
+            _Follow();
         }
 
         // The I18n's language changed (its AddLanguageChangeListener).
@@ -155,7 +155,7 @@ namespace SiggiChessBoard {
             bool cornerHere = HeldHere(cornerPickup);
             if (cornerHere) {
                 if (!cornerHeld && view.synced) Networking.SetOwner(Networking.LocalPlayer, gameObject);
-                float wanted = SizeFor(Quaternion.Inverse(turn) * (corner.position - grip.position) - bottom
+                float wanted = _SizeFor(Quaternion.Inverse(turn) * (corner.position - grip.position) - bottom
                     - cornerOut, rightFromBottom, minSize, maxSize);
                 if (wanted != size) {
                     size = wanted;
@@ -177,7 +177,7 @@ namespace SiggiChessBoard {
                 if (Mathf.Abs(size - targetSize) < 0.001f) size = targetSize;
                 placed = false;
             }
-            if (!placed || grip.hasChanged) Follow();
+            if (!placed || grip.hasChanged) _Follow();
         }
 
         public override void OnDeserialization() {
@@ -191,16 +191,16 @@ namespace SiggiChessBoard {
             if (received == targetSize) return;
             targetSize = received;
             Debug.Log("[ChessBoard2DViewHolder] " + gameObject.name + ": resized to " + Round(received) + " by "
-                + ChessUtil.OwnerName(gameObject, "?"));
+                + ChessUtil._OwnerName(gameObject, "?"));
         }
 
         // ---- Moving and resizing ----
 
         // Places the view (and the corner, unless it's held here) from the grip and the size. Done when either changes,
         // after the frame's moves (PostLateUpdate); public for tests, which move the grip themselves.
-        public void Follow() {
+        public void _Follow() {
             if (!started) return;
-            heading = Upright(grip.rotation, heading);
+            heading = _Upright(grip.rotation, heading);
             turn = upright ? heading : grip.rotation;
             if (Utilities.IsValid(gripModel)) gripModel.localRotation = Quaternion.Inverse(grip.rotation) * turn;
             Vector3 bottomWorld = grip.position + turn * bottom;
@@ -224,7 +224,7 @@ namespace SiggiChessBoard {
                 Networking.SetOwner(Networking.LocalPlayer, gameObject);
                 SendSize();
             }
-            Follow();
+            _Follow();
         }
 
         // Puts the view back where it was placed in the scene, at its size there; synced, for everyone. Not on a button:
@@ -249,7 +249,7 @@ namespace SiggiChessBoard {
             return size;
         }
 
-        public float TargetSize() {
+        public float _TargetSize() {
             return targetSize;
         }
 
@@ -272,7 +272,7 @@ namespace SiggiChessBoard {
         }
 
         // rotation's heading alone (turning about the vertical); fallback when it points straight up or down.
-        public static Quaternion Upright(Quaternion rotation, Quaternion fallback) {
+        public static Quaternion _Upright(Quaternion rotation, Quaternion fallback) {
             Vector3 forward = rotation * Vector3.forward;
             forward.y = 0;
             if (forward.sqrMagnitude < 0.0001f) return fallback;
@@ -282,7 +282,7 @@ namespace SiggiChessBoard {
         // The size for the corner at local (from the view's bottom middle, less the corner's own offset, in the grip's
         // space) when the view's bottom right corner is at baseRight at size 1: how far along the bottom edge it is,
         // clamped to min and max.
-        public static float SizeFor(Vector3 local, Vector3 baseRight, float min, float max) {
+        public static float _SizeFor(Vector3 local, Vector3 baseRight, float min, float max) {
             float lengthSquared = baseRight.sqrMagnitude;
             if (lengthSquared <= 0) return Mathf.Clamp(1, min, max);
             return Mathf.Clamp(Vector3.Dot(local, baseRight) / lengthSquared, min, max);

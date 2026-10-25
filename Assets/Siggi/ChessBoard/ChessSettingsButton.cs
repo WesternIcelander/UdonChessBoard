@@ -12,8 +12,8 @@ namespace SiggiChessBoard {
         public int item;
         public int action;
 
-        public void Press() {
-            if (Utilities.IsValid(menu)) menu.Press(item, action);
+        public void _Press() {
+            if (Utilities.IsValid(menu)) menu._Press(item, action);
         }
     }
 }

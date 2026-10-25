@@ -91,7 +91,7 @@ public class ViewTest : ChessTest {
     // The first frame: a cleared board, a game with an en passant capture and both castles, and a move left for the
     // view's own redraw on the next frame (RunResetChecks).
     void RunGameChecks() {
-        board.ClearState();
+        board._ClearState();
         Redraw();
         CheckView("a cleared board");
         CheckInt(OnBoardCount(), 32, "a cleared board: all 32 objects on the board");
@@ -133,7 +133,7 @@ public class ViewTest : ChessTest {
         CheckView("after a reset");
         CheckInt(OnBoardCount(), 32, "after a reset: all 32 objects back on the board");
 
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, "promotion game");
         int aPawn = view.squareObject[Sq("a2")];
         Play("a2", "a4", "a4", "a4");
@@ -155,11 +155,11 @@ public class ViewTest : ChessTest {
         CheckInt(view.squareObject[Sq("a8")], aPawn, "bxa8=Q: the a2 pawn's object is the queen");
         CheckInt(view.objectType[aPawn], ChessRules.Queen, "bxa8=Q: the object stands for a queen");
 
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeChess960, "Chess960 game");
         Redraw();
         CheckView("a Chess960 game started (" + ChessFen.WriteFen(board.board, board.state, 0, 1) + ")");
-        board.ClearState();
+        board._ClearState();
         SendCustomEventDelayedFrames(nameof(RunLoadChecks), 1);
     }
 
@@ -167,7 +167,7 @@ public class ViewTest : ChessTest {
     public void RunLoadChecks() {
         CheckReplay(chess960Pgn, "chess960.pgn", 6);
         CheckReplay(promotionsPgn, "promotions.pgn", 9);
-        board.ClearState();
+        board._ClearState();
         Redraw();
         CheckView("cleared after the loaded games");
         SendCustomEventDelayedFrames(nameof(RunPickupChecks), 1);
@@ -179,10 +179,10 @@ public class ViewTest : ChessTest {
         Check(Utilities.IsValid(importer) && pgn != null, name + ": importer and PGN assigned",
             "assign ViewTest's Importer and PGNs in the Inspector");
         if (!Utilities.IsValid(importer) || pgn == null) return;
-        board.ClearState();
-        importer.StartImport(pgn.text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
-        CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, name + ": imported");
-        CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, name + ": loaded");
+        board._ClearState();
+        importer._StartImport(pgn.text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
+        CheckInt(importer._ImportFor(float.MaxValue), ChessPgn.ImportDone, name + ": imported");
+        CheckInt(board._LoadImport(importer), ChessBoard.InputAccepted, name + ": loaded");
         CheckInt(board.moveCount, plies, name + ": " + plies + " plies");
         Redraw();
         CheckView(name + ": loaded, the last position");
@@ -221,19 +221,19 @@ public class ViewTest : ChessTest {
         }
         CheckInt(wired, ChessBoardView.PieceCount, "every piece has its pickup, collider and ChessPiece");
 
-        board.ClearState();
-        view.SetInputStyle(ChessBoardView.InputClicks);
+        board._ClearState();
+        view._SetInputStyle(ChessBoardView.InputClicks);
         Redraw();
-        Check(!view.UsesPickups(), "Clicks: no pickups", "uses pickups");
+        Check(!view._UsesPickups(), "Clicks: no pickups", "uses pickups");
         CheckPickupable(0, "Clicks: a reset board");
-        view.SetInputStyle(ChessBoardView.InputAuto);
+        view._SetInputStyle(ChessBoardView.InputAuto);
         bool inVR = local.IsUserInVR();
-        Check(view.UsesPickups() == inVR, "Auto: pickups exactly in VR (in VR: " + inVR + ")",
-            "uses pickups: " + view.UsesPickups());
+        Check(view._UsesPickups() == inVR, "Auto: pickups exactly in VR (in VR: " + inVR + ")",
+            "uses pickups: " + view._UsesPickups());
         CheckPickupable(inVR ? 32 : 0, "Auto: a reset board");
 
-        view.SetInputStyle(ChessBoardView.InputPickups);
-        Check(view.UsesPickups(), "Pickups: pickups", "no pickups");
+        view._SetInputStyle(ChessBoardView.InputPickups);
+        Check(view._UsesPickups(), "Pickups: pickups", "no pickups");
         CheckPickupable(32, "Pickups: a reset board, anyone");
         CheckOwnership(true, "a reset board");
 
@@ -250,7 +250,7 @@ public class ViewTest : ChessTest {
         Redraw();
         CheckPickupable(0, "Pickups: others' ended game");
 
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.JoinAs(ChessRules.White, localName), ChessBoard.InputAccepted, "pickups game: joined White");
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "pickups game: Bob joined Black");
         CheckInt(board.StartGameAs(localName), ChessBoard.InputAccepted, "pickups game: started");
@@ -268,13 +268,13 @@ public class ViewTest : ChessTest {
         Redraw();
         CheckPickupable(31, "Pickups: own ended game");
         CheckOwnership(true, "own ended game");
-        view.SetInputStyle(ChessBoardView.InputClicks);
+        view._SetInputStyle(ChessBoardView.InputClicks);
         CheckPickupable(0, "Clicks: own ended game");
-        view.SetInputStyle(ChessBoardView.InputPickups);
+        view._SetInputStyle(ChessBoardView.InputPickups);
         CheckPickupable(31, "Pickups again: own ended game");
 
-        board.ClearState();
-        view.SetInputStyle(savedStyle);
+        board._ClearState();
+        view._SetInputStyle(savedStyle);
         Redraw();
         CheckView("cleared after the pickup checks");
         SendCustomEventDelayedFrames(nameof(RunDropChecks), 1);
@@ -288,24 +288,24 @@ public class ViewTest : ChessTest {
     // takes its square, free moves in replay, and a promotion waiting for its piece.
     public void RunDropChecks() {
         int savedStyle = view.inputStyle;
-        view.SetInputStyle(ChessBoardView.InputPickups);
-        board.ClearState();
+        view._SetInputStyle(ChessBoardView.InputPickups);
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, "drop game");
 
-        CheckInt(view.DropSquare(view.transform.TransformPoint(Over("e4"))), Sq("e4"), "drop square: over e4");
-        CheckInt(view.DropSquare(view.transform.TransformPoint(Over("a1"))), Sq("a1"), "drop square: over a1");
-        CheckInt(view.DropSquare(view.transform.TransformPoint(Over("h8"))), Sq("h8"), "drop square: over h8");
-        CheckInt(view.DropSquare(view.transform.TransformPoint(OffBoard())), ChessRules.NoSquare,
+        CheckInt(view._DropSquare(view.transform.TransformPoint(Over("e4"))), Sq("e4"), "drop square: over e4");
+        CheckInt(view._DropSquare(view.transform.TransformPoint(Over("a1"))), Sq("a1"), "drop square: over a1");
+        CheckInt(view._DropSquare(view.transform.TransformPoint(Over("h8"))), Sq("h8"), "drop square: over h8");
+        CheckInt(view._DropSquare(view.transform.TransformPoint(OffBoard())), ChessRules.NoSquare,
             "drop square: beside the board");
 
         int pawn = view.squareObject[Sq("e2")];
-        view.OnPiecePickedUp(pawn);
+        view._OnPiecePickedUp(pawn);
         CheckInt(view.heldObject, pawn, "e2 picked up: held");
         view.pieces[pawn].localPosition = Over("e4");
         Redraw();
         Check((view.pieces[pawn].localPosition - Over("e4")).sqrMagnitude < 1e-8f, "e2 held: not placed by Refresh",
             "at " + view.pieces[pawn].localPosition.ToString("F3"));
-        view.OnPieceDropped(pawn);
+        view._OnPieceDropped(pawn);
         CheckInt(view.heldObject, ChessBoardView.NoObject, "e2 dropped: no longer held");
         CheckDropped(1, ChessBoard.ChangeMove, "e2 dropped over e4: e4 played");
         CheckInt(ChessRules.MoveTo(board.LastMove()), Sq("e4"), "e2 dropped over e4: the move goes to e4");
@@ -325,13 +325,13 @@ public class ViewTest : ChessTest {
 
         // Picked up, then the game ends before the drop.
         int d2 = view.squareObject[Sq("d2")];
-        view.OnPiecePickedUp(d2);
+        view._OnPiecePickedUp(d2);
         CheckInt(view.heldObject, d2, "d2 picked up");
         CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, "White resigned while holding d2");
         Redraw();
         CheckInt(view.heldObject, d2, "d2 still held after the game ended, its square unchanged");
         view.pieces[d2].localPosition = Over("d4");
-        view.OnPieceDropped(d2);
+        view._OnPieceDropped(d2);
         CheckDropped(2, ChessBoard.ChangeRejected, "d2 dropped over d4 after the game ended: rejected, put back");
 
         // In replay: free moves, and a held piece whose square another free move takes.
@@ -342,7 +342,7 @@ public class ViewTest : ChessTest {
         CheckInt(board.replayBoard[Sq("a5")], ChessRules.PieceOf(ChessRules.White, ChessRules.Rook),
             "replay: the rook on a5");
         int e4 = view.squareObject[Sq("e4")];
-        view.OnPiecePickedUp(e4);
+        view._OnPiecePickedUp(e4);
         CheckInt(view.heldObject, e4, "replay: e4 picked up");
         CheckInt(board.PieceDroppedAs(localName, Sq("d8"), Sq("e4")), ChessBoard.InputAccepted,
             "replay: the queen freely to e4 while e4 is held");
@@ -351,7 +351,7 @@ public class ViewTest : ChessTest {
         CheckView("replay: e4 let go");
 
         // A promotion waits for its piece, refuses what isn't one, then is played.
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, "promotion drop game");
         Play("a2", "a4", "a4", "a4");
         Play("b7", "b5", "b5", "b5");
@@ -366,23 +366,23 @@ public class ViewTest : ChessTest {
         CheckInt(view.promotionObject, promoting, "b7 dropped over a8: waits for a piece");
         CheckInt(board.moveCount, 8, "b7 dropped over a8: nothing played yet");
         Redraw();
-        Check((view.pieces[promoting].localPosition - view.SquarePosition(Sq("a8"))).sqrMagnitude < 1e-8f,
+        Check((view.pieces[promoting].localPosition - view._SquarePosition(Sq("a8"))).sqrMagnitude < 1e-8f,
             "b7 dropped over a8: the pawn stands on a8 meanwhile",
             "at " + view.pieces[promoting].localPosition.ToString("F3"));
         // No cancel (step 12.11): a choice that isn't a promotion piece is refused, and the pawn goes on waiting.
-        CheckInt(view.ChoosePromotion(ChessRules.NoPieceType), ChessBoard.InputRejected, "no piece chosen: refused");
-        CheckInt(view.ChoosePromotion(ChessRules.King), ChessBoard.InputRejected, "a king chosen: refused");
+        CheckInt(view._ChoosePromotion(ChessRules.NoPieceType), ChessBoard.InputRejected, "no piece chosen: refused");
+        CheckInt(view._ChoosePromotion(ChessRules.King), ChessBoard.InputRejected, "a king chosen: refused");
         CheckInt(view.promotionObject, promoting, "refused choices: the pawn still waits");
         CheckInt(board.moveCount, 8, "refused choices: nothing played");
-        CheckInt(view.ChoosePromotion(ChessRules.Knight), ChessBoard.InputAccepted, "bxa8=N chosen: played");
+        CheckInt(view._ChoosePromotion(ChessRules.Knight), ChessBoard.InputAccepted, "bxa8=N chosen: played");
         CheckDropped(9, ChessBoard.ChangeMove, "bxa8=N");
         CheckInt(view.squareObject[Sq("a8")], promoting, "bxa8=N: the pawn's object on a8");
         CheckInt(view.objectType[promoting], ChessRules.Knight, "bxa8=N: the object stands for a knight");
-        CheckInt(view.ChoosePromotion(ChessRules.Queen), ChessBoard.InputRejected,
+        CheckInt(view._ChoosePromotion(ChessRules.Queen), ChessBoard.InputRejected,
             "a choice with no promotion waiting: refused");
 
-        board.ClearState();
-        view.SetInputStyle(savedStyle);
+        board._ClearState();
+        view._SetInputStyle(savedStyle);
         Redraw();
         CheckView("cleared after the drop checks");
         SendCustomEventDelayedFrames(nameof(RunCastleDropChecks), 1);
@@ -402,15 +402,15 @@ public class ViewTest : ChessTest {
     // a king dropped beyond the back rank, where the space stood, is put back.
     public void RunCastleDropChecks() {
         int savedStyle = view.inputStyle;
-        view.SetInputStyle(ChessBoardView.InputPickups);
+        view._SetInputStyle(ChessBoardView.InputPickups);
 
         CastleGame(OneSquareFen, "f1 game");
         int king = view.squareObject[Sq("f1")];
         int rook = view.squareObject[Sq("h1")];
-        view.OnPiecePickedUp(king);
+        view._OnPiecePickedUp(king);
         CheckInt(view.heldObject, king, "f1 picked up");
         view.pieces[king].localPosition = Over("h1");
-        view.OnPieceDropped(king);
+        view._OnPieceDropped(king);
         CheckDropped(1, ChessBoard.ChangeMove, "f1 dropped on h1: castled");
         Check(ChessRules.MoveIsCastle(board.LastMove()), "f1 dropped on h1: the move is a castle", "it isn't");
         CheckInt(view.squareObject[Sq("g1")], king, "f1 dropped on h1: the king's object on g1");
@@ -418,9 +418,9 @@ public class ViewTest : ChessTest {
 
         // Black: a drop on the destination is Kg8, not a castle.
         int blackKing = view.squareObject[Sq("f8")];
-        view.OnPiecePickedUp(blackKing);
+        view._OnPiecePickedUp(blackKing);
         view.pieces[blackKing].localPosition = Over("g8");
-        view.OnPieceDropped(blackKing);
+        view._OnPieceDropped(blackKing);
         CheckDropped(2, ChessBoard.ChangeMove, "f8 dropped over g8: played");
         Check(!ChessRules.MoveIsCastle(board.LastMove()), "f8 dropped over g8: Kg8, not a castle", "it castled");
         CheckInt(board.PieceAt(Sq("h8")), ChessRules.PieceOf(ChessRules.Black, ChessRules.Rook),
@@ -429,13 +429,13 @@ public class ViewTest : ChessTest {
         // A king dropped beyond the back rank, where the space stood, is put back; over g1 it plays Kg1.
         CastleGame(OneSquareFen, "f1 game again");
         king = view.squareObject[Sq("f1")];
-        view.OnPiecePickedUp(king);
+        view._OnPiecePickedUp(king);
         view.pieces[king].localPosition = Over("g1") + new Vector3(0, 0, -view.squareSize);
-        view.OnPieceDropped(king);
+        view._OnPieceDropped(king);
         CheckDropped(0, ChessBoard.ChangeRejected, "f1 dropped beyond g1: put back");
-        view.OnPiecePickedUp(king);
+        view._OnPiecePickedUp(king);
         view.pieces[king].localPosition = Over("g1");
-        view.OnPieceDropped(king);
+        view._OnPieceDropped(king);
         CheckDropped(1, ChessBoard.ChangeMove, "f1 dropped over g1: played");
         Check(!ChessRules.MoveIsCastle(board.LastMove()), "f1 dropped over g1: Kg1, not a castle", "it castled");
 
@@ -443,9 +443,9 @@ public class ViewTest : ChessTest {
         CastleGame(QueenOneSquareFen, "d1 game");
         king = view.squareObject[Sq("d1")];
         rook = view.squareObject[Sq("a1")];
-        view.OnPiecePickedUp(king);
+        view._OnPiecePickedUp(king);
         view.pieces[king].localPosition = Over("a1");
-        view.OnPieceDropped(king);
+        view._OnPieceDropped(king);
         CheckDropped(1, ChessBoard.ChangeMove, "d1 dropped on a1: castled");
         Check(ChessRules.MoveIsCastle(board.LastMove()), "d1 dropped on a1: the move is a castle", "it isn't");
         CheckInt(view.squareObject[Sq("c1")], king, "d1 dropped on a1: the king's object on c1");
@@ -455,16 +455,16 @@ public class ViewTest : ChessTest {
         CastleGame(KingStaysFen, "g1 game");
         king = view.squareObject[Sq("g1")];
         rook = view.squareObject[Sq("h1")];
-        view.OnPiecePickedUp(king);
+        view._OnPiecePickedUp(king);
         view.pieces[king].localPosition = Over("h1");
-        view.OnPieceDropped(king);
+        view._OnPieceDropped(king);
         CheckDropped(1, ChessBoard.ChangeMove, "g1 dropped on h1: castled");
         Check(ChessRules.MoveIsCastle(board.LastMove()), "g1 dropped on h1: the move is a castle", "it isn't");
         CheckInt(view.squareObject[Sq("g1")], king, "g1 dropped on h1: the king's object on g1");
         CheckInt(view.squareObject[Sq("f1")], rook, "g1 dropped on h1: the rook's object on f1");
 
-        board.ClearState();
-        view.SetInputStyle(savedStyle);
+        board._ClearState();
+        view._SetInputStyle(savedStyle);
         Redraw();
         CheckView("cleared at the end");
         SendCustomEventDelayedFrames(nameof(RunClickChecks), 1);
@@ -483,7 +483,7 @@ public class ViewTest : ChessTest {
     // interacts at all.
     public void RunClickChecks() {
         int savedStyle = view.inputStyle;
-        view.SetInputStyle(ChessBoardView.InputClicks);
+        view._SetInputStyle(ChessBoardView.InputClicks);
         int wired = 0;
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
             if (Utilities.IsValid(view.pieceBehaviours[obj]) && view.pieceBehaviours[obj] == PieceBehaviour(obj)) wired++;
@@ -494,19 +494,19 @@ public class ViewTest : ChessTest {
             ChessSquare target = view.squareTargets[square];
             if (Utilities.IsValid(target) && target.view == view && target.square == square
                 && Utilities.IsValid(target.GetComponent<Collider>())
-                && view.DropSquare(target.transform.position) == square) {
+                && view._DropSquare(target.transform.position) == square) {
                 squares++;
             }
         }
         CheckInt(squares, 64, "clicks: every square has its target, over that square");
 
         // Nobody's game: nothing to click.
-        board.ClearState();
+        board._ClearState();
         Redraw();
         CheckClickables("", "", "clicks: a reset board");
 
         string c = "click game";
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, c);
         CheckClickables(WhitePieces, "", c + ": White to move");
         CheckText(Sq("e2"), "hover_select", c + ": e2");
@@ -539,7 +539,7 @@ public class ViewTest : ChessTest {
         CheckInt(view.selectedObject, knight, c + ": g1 clicked with e2 selected: g1 selected");
         Redraw();
         CheckLifted(knight, "g1", c + ": g1 selected");
-        Check((view.pieces[pawn].localPosition - view.SquarePosition(Sq("e2"))).sqrMagnitude < 1e-8f,
+        Check((view.pieces[pawn].localPosition - view._SquarePosition(Sq("e2"))).sqrMagnitude < 1e-8f,
             c + ": g1 selected: e2 back down", "at " + view.pieces[pawn].localPosition.ToString("F3"));
         CheckClickables(WhitePieces, "g1 f3 h3", c + ": g1 selected");
         ClickSquare("f3");
@@ -555,8 +555,8 @@ public class ViewTest : ChessTest {
         ClickPiece("f3");
         Redraw();
         CheckText(Sq("e5"), "hover_capture", c + ": f3 selected, e5");
-        Check(view.IsPieceClickable(view.squareObject[Sq("e5")]), c + ": f3 selected: e5 clickable", "it isn't");
-        Check(!view.IsPieceClickable(view.squareObject[Sq("d7")]), c + ": f3 selected: d7 not clickable", "it is");
+        Check(view._IsPieceClickable(view.squareObject[Sq("e5")]), c + ": f3 selected: e5 clickable", "it isn't");
+        Check(!view._IsPieceClickable(view.squareObject[Sq("d7")]), c + ": f3 selected: d7 not clickable", "it is");
         ClickPiece("e5");
         CheckUnselected(3, c + ": e5 clicked with f3 selected: Nxe5 played");
         CheckInt(ChessRules.MoveTo(board.LastMove()), Sq("e5"), c + ": Nxe5 goes to e5");
@@ -564,11 +564,11 @@ public class ViewTest : ChessTest {
 
         // Illegal placings: put back, unselected.
         ClickPiece("a7");
-        view.OnSquareClicked(Sq("a4"));
+        view._OnSquareClicked(Sq("a4"));
         CheckInt(board.lastChange, ChessBoard.ChangeRejected, c + ": a7 to a4 rejected");
         CheckUnselected(3, c + ": a7 selected, a4 clicked: put back");
         ClickPiece("d8");
-        view.OnPieceClicked(view.squareObject[Sq("e5")]);
+        view._OnPieceClicked(view.squareObject[Sq("e5")]);
         CheckInt(board.lastChange, ChessBoard.ChangeRejected, c + ": d8 to e5 rejected");
         CheckUnselected(3, c + ": d8 selected, the e5 knight clicked: put back");
         CheckInt(view.squareObject[Sq("e5")], knight, c + ": the e5 knight still there");
@@ -659,27 +659,27 @@ public class ViewTest : ChessTest {
         CheckInt(view.selectedObject, ChessBoardView.NoObject, "click promotion: nothing selected");
         CheckInt(board.moveCount, 0, "click promotion: nothing played yet");
         Redraw();
-        Check((view.pieces[promoting].localPosition - view.SquarePosition(Sq("e8"))).sqrMagnitude < 1e-8f,
+        Check((view.pieces[promoting].localPosition - view._SquarePosition(Sq("e8"))).sqrMagnitude < 1e-8f,
             "click promotion: the pawn stands on e8 meanwhile", "at " + view.pieces[promoting].localPosition.ToString("F3"));
-        CheckInt(view.ChoosePromotion(ChessRules.Rook), ChessBoard.InputAccepted, "click promotion: e8=R chosen");
+        CheckInt(view._ChoosePromotion(ChessRules.Rook), ChessBoard.InputAccepted, "click promotion: e8=R chosen");
         CheckDropped(1, ChessBoard.ChangeMove, "click promotion: e8=R");
         CheckInt(view.objectType[promoting], ChessRules.Rook, "click promotion: the pawn's object is a rook");
 
         // A VR player (Pickups): pickups and no interacts; switching to it puts a selection back.
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, "pickups, no clicks");
         ClickPiece("e2");
         CheckInt(view.selectedObject, view.squareObject[Sq("e2")], "pickups, no clicks: e2 selected with Clicks");
-        view.SetInputStyle(ChessBoardView.InputPickups);
+        view._SetInputStyle(ChessBoardView.InputPickups);
         Redraw();
         CheckUnselected(0, "pickups, no clicks: switched to Pickups: e2 put back");
         CheckClickables("", "", "pickups, no clicks: Pickups");
         CheckPickupable(32, "pickups, no clicks: Pickups");
-        view.OnPieceClicked(view.squareObject[Sq("e2")]);
+        view._OnPieceClicked(view.squareObject[Sq("e2")]);
         CheckInt(view.selectedObject, ChessBoardView.NoObject, "pickups, no clicks: a click selects nothing");
 
-        board.ClearState();
-        view.SetInputStyle(savedStyle);
+        board._ClearState();
+        view._SetInputStyle(savedStyle);
         Redraw();
         CheckView("cleared after the click checks");
         SendCustomEventDelayedFrames(nameof(RunButtonChecks), 1);
@@ -717,60 +717,60 @@ public class ViewTest : ChessTest {
             if (!found) missing += buttonNames[action] + " ";
         }
         Check(missing.Length == 0, "buttons: every action has a button", "none for " + missing);
-        CheckString(ui.ClockText(ChessArbiter.NoClock, 0), Text("clock_none"), "clock text: none");
-        CheckString(ui.ClockText(300, 3), Clock(5, 3), "clock text: 5+3");
-        CheckString(ui.ClockText(45, 0), TextWith("clock_seconds", new string[] { "seconds", "45", "increment", "0" }),
+        CheckString(ui._ClockText(ChessArbiter.NoClock, 0), Text("clock_none"), "clock text: none");
+        CheckString(ui._ClockText(300, 3), Clock(5, 3), "clock text: 5+3");
+        CheckString(ui._ClockText(45, 0), TextWith("clock_seconds", new string[] { "seconds", "45", "increment", "0" }),
             "clock text: 45 s");
 
-        board.ClearState();
+        board._ClearState();
         CheckButtons("JoinWhite JoinBlack", "reset board");
-        CheckInt(ui.PressButton(ChessBoardUI.ButtonStart), ChessBoard.InputRejected, "reset board: Start refused");
-        CheckInt(ui.PressButton(ChessBoardUI.ButtonReset), ChessBoard.InputRejected, "reset board: Reset refused");
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonStart), ChessBoard.InputRejected, "reset board: Start refused");
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonReset), ChessBoard.InputRejected, "reset board: Reset refused");
 
         // The local player's lobby, White first.
-        ui.PressJoinWhite();
+        ui._PressJoinWhite();
         CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "Join White: in the lobby");
         CheckString(board.whitePlayer, localName, "Join White: seated as White");
         CheckButtons("JoinBlack LeaveWhite Mode Clock Reset", "lobby, White joined");
-        CheckInt(ui.PressButton(ChessBoardUI.ButtonStart), ChessBoard.InputRejected,
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonStart), ChessBoard.InputRejected,
             "lobby, White joined: Start refused");
         if (!board.IsModeForced()) {
-            CheckInt(ui.PressButton(ChessBoardUI.ButtonMode), ChessBoard.InputAccepted, "Mode pressed");
+            CheckInt(ui._PressButton(ChessBoardUI.ButtonMode), ChessBoard.InputAccepted, "Mode pressed");
             CheckInt(board.mode, ChessGame.ModeChess960, "Mode pressed: Chess960");
             CheckLabel(ChessBoardUI.ButtonMode, ModeLabel("mode_chess960"), "Mode pressed");
-            ui.PressMode();
+            ui._PressMode();
             CheckInt(board.mode, ChessGame.ModeStandard, "Mode pressed again: Standard");
             CheckLabel(ChessBoardUI.ButtonMode, ModeLabel("mode_standard"), "Mode pressed again");
         }
         if (!board.IsClockForced()) {
             CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(Text("clock_none")), "lobby, no clock");
-            CheckInt(ui.PressButton(ChessBoardUI.ButtonClock), ChessBoard.InputAccepted, "Clock pressed");
+            CheckInt(ui._PressButton(ChessBoardUI.ButtonClock), ChessBoard.InputAccepted, "Clock pressed");
             CheckInt(board.baseTime * 1000 + board.increment, 60000, "Clock pressed: 1+0");
             CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(Clock(1, 0)), "Clock pressed");
-            ui.PressClock();
+            ui._PressClock();
             CheckInt(board.baseTime * 1000 + board.increment, 180002, "Clock pressed again: 3+2");
             CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(Clock(3, 2)), "Clock pressed again");
         }
-        ui.PressJoinBlack();
+        ui._PressJoinBlack();
         CheckString(board.blackPlayer, localName, "Join Black: seated as Black too");
         CheckButtons("LeaveWhite LeaveBlack Mode Clock Start Reset", "lobby, both seats");
         CheckLeaveEnds();
-        CheckInt(ui.PressButton(ChessBoardUI.ButtonLeaveBlack), ChessBoard.InputAccepted, "Leave Black pressed");
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonLeaveBlack), ChessBoard.InputAccepted, "Leave Black pressed");
         CheckString(board.whitePlayer + "|" + board.blackPlayer, localName + "|", "Leave Black: White kept");
         CheckButtons("JoinBlack LeaveWhite Mode Clock Reset", "lobby, Black left");
-        ui.PressJoinBlack();
+        ui._PressJoinBlack();
         CheckString(board.blackPlayer, localName, "Join Black again after leaving");
         int baseTime = board.baseTime;
-        ui.PressStart();
+        ui._PressStart();
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Start: in game");
         CheckInt(board.baseTime, baseTime, "Start: with the clock chosen");
         CheckButtons(OwnGame, "own game");
-        CheckInt(ui.PressButton(ChessBoardUI.ButtonJoinWhite), ChessBoard.InputRejected,
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonJoinWhite), ChessBoard.InputRejected,
             "own game: Join White refused");
         CheckRefused(ChessBoardUI.ButtonLeaveWhite, "own game");
         CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, "own game: resigned");
         CheckButtons("Replay Reset", "own game ended");
-        ui.PressReset();
+        ui._PressReset();
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, "Reset: the board is reset");
         CheckButtons("JoinWhite JoinBlack", "after Reset");
 
@@ -779,54 +779,54 @@ public class ViewTest : ChessTest {
         CheckButtons("JoinBlack Reset?", "others' lobby, Black open");
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "others: Bob joined Black");
         CheckButtons("Reset?", "others' lobby");
-        CheckInt(ui.PressButton(ChessBoardUI.ButtonMode), ChessBoard.InputRejected, "others' lobby: Mode refused");
-        CheckInt(ui.PressButton(ChessBoardUI.ButtonClock), ChessBoard.InputRejected,
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonMode), ChessBoard.InputRejected, "others' lobby: Mode refused");
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonClock), ChessBoard.InputRejected,
             "others' lobby: Clock refused");
-        CheckInt(ui.PressButton(ChessBoardUI.ButtonStart), ChessBoard.InputRejected,
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonStart), ChessBoard.InputRejected,
             "others' lobby: Start refused");
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, "others: Ana started");
         CheckButtons("Replay? Reset?", "others' game");
 
         // A loaded game: both seats joined, the clock chosen, continued from ply 3.
-        board.ClearState();
+        board._ClearState();
         Check(Utilities.IsValid(importer) && chess960Pgn != null, "buttons: importer and PGN assigned",
             "assign ViewTest's Importer and PGNs in the Inspector");
         if (Utilities.IsValid(importer) && chess960Pgn != null) {
-            importer.StartImport(chess960Pgn.text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
-            CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, "loaded game: imported");
-            CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, "loaded game: loaded");
+            importer._StartImport(chess960Pgn.text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
+            CheckInt(importer._ImportFor(float.MaxValue), ChessPgn.ImportDone, "loaded game: imported");
+            CheckInt(board._LoadImport(importer), ChessBoard.InputAccepted, "loaded game: loaded");
             CheckButtons("JoinWhite JoinBlack First Back Reset?", "loaded game");
-            ui.PressJoinWhite();
+            ui._PressJoinWhite();
             CheckButtons("JoinBlack LeaveWhite Clock First Back Reset", "loaded game, White joined");
-            CheckInt(ui.PressButton(ChessBoardUI.ButtonContinue), ChessBoard.InputRejected,
+            CheckInt(ui._PressButton(ChessBoardUI.ButtonContinue), ChessBoard.InputRejected,
                 "loaded game, White joined: Continue refused");
-            ui.PressJoinBlack();
+            ui._PressJoinBlack();
             CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "loaded game, both seats: still loaded");
             CheckButtons("LeaveWhite LeaveBlack Clock Continue First Back Reset", "loaded game, both seats");
-            CheckInt(ui.PressButton(ChessBoardUI.ButtonLeaveWhite), ChessBoard.InputAccepted,
+            CheckInt(ui._PressButton(ChessBoardUI.ButtonLeaveWhite), ChessBoard.InputAccepted,
                 "loaded game: Leave White pressed");
             CheckString(board.whitePlayer + "|" + board.blackPlayer, "|" + localName, "loaded game: White left");
             CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "loaded game, White left: still loaded");
             CheckButtons("JoinWhite LeaveBlack Clock First Back Reset", "loaded game, White left");
-            ui.PressJoinWhite();
-            CheckInt(ui.PressButton(ChessBoardUI.ButtonMode), ChessBoard.InputRejected,
+            ui._PressJoinWhite();
+            CheckInt(ui._PressButton(ChessBoardUI.ButtonMode), ChessBoard.InputRejected,
                 "loaded game: Mode refused");
             if (!board.IsClockForced()) {
-                CheckInt(ui.PressButton(ChessBoardUI.ButtonClock), ChessBoard.InputAccepted,
+                CheckInt(ui._PressButton(ChessBoardUI.ButtonClock), ChessBoard.InputAccepted,
                     "loaded game: Clock pressed");
-                CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(ui.ClockText(board.baseTime, board.increment)),
+                CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(ui._ClockText(board.baseTime, board.increment)),
                     "loaded game: Clock pressed");
             }
             CheckInt(board.StepToAs(localName, true, 3), ChessBoard.InputAccepted, "loaded game: stepped to ply 3");
             CheckButtons("LeaveWhite LeaveBlack Clock Continue First Back Forward Last Reset",
                 "loaded game at ply 3");
-            ui.PressContinue();
+            ui._PressContinue();
             CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Continue: in game");
             CheckInt(board.moveCount, 3, "Continue: from ply 3");
             CheckButtons(OwnGame, "continued game");
         }
 
-        board.ClearState();
+        board._ClearState();
         CheckButtons("JoinWhite JoinBlack", "cleared after the button checks");
         CheckView("cleared after the button checks");
         SendCustomEventDelayedFrames(nameof(RunGameButtonChecks), 1);
@@ -847,7 +847,7 @@ public class ViewTest : ChessTest {
     // refused; then someone else's game.
     public void RunGameButtonChecks() {
         // Resigning.
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, "resign button");
         SetRequestRules(true);
         CheckButtons(OwnGame, "resign button: own game");
@@ -858,7 +858,7 @@ public class ViewTest : ChessTest {
         CheckRefused(ChessBoardUI.ButtonStepBack, "not in replay");
         CheckRefused(ChessBoardUI.ButtonRequestTakebackWhite, "not in replay");
         CheckRefused(ChessBoardUI.ButtonAcceptTakebackBlack, "no request");
-        ui.PressResignBlack();
+        ui._PressResignBlack();
         CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "Resign (Black): the game ended");
         CheckInt(board.ending, ChessGame.EndingResignation, "Resign (Black): by resignation");
         CheckInt(board.winner, ChessRules.White, "Resign (Black): White won");
@@ -867,73 +867,73 @@ public class ViewTest : ChessTest {
         CheckRefused(ChessBoardUI.ButtonOfferDrawWhite, "resigned");
 
         // Draw offers.
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, "draw buttons");
         SetRequestRules(true);
-        ui.PressOfferDrawWhite();
+        ui._PressOfferDrawWhite();
         CheckInt(board.drawOfferColor, ChessRules.White, "Offer draw (White): offered");
         CheckButtons("ResignWhite ResignBlack AcceptDrawBlack DeclineDrawBlack Replay Reset", "White's offer");
         CheckRefused(ChessBoardUI.ButtonOfferDrawBlack, "White's offer");
         CheckRefused(ChessBoardUI.ButtonAcceptDrawWhite, "White's offer");
-        ui.PressDeclineDrawBlack();
+        ui._PressDeclineDrawBlack();
         CheckInt(board.drawOfferColor, ChessRules.NoColor, "Decline draw (Black): no offer");
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Decline draw (Black): still in game");
         CheckButtons(OwnGame, "offer declined");
-        ui.PressOfferDrawBlack();
+        ui._PressOfferDrawBlack();
         CheckButtons("ResignWhite ResignBlack AcceptDrawWhite DeclineDrawWhite Replay Reset", "Black's offer");
         CheckLabel(ChessBoardUI.ButtonAcceptDrawWhite, Text("button_accept_draw"), "Black's offer");
-        ui.PressAcceptDrawWhite();
+        ui._PressAcceptDrawWhite();
         CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "Accept draw (White): the game ended");
         CheckInt(board.ending, ChessGame.EndingDrawAgreement, "Accept draw (White): drawn by agreement");
         CheckButtons("Replay Reset", "draw accepted");
 
         // Replay and its steps, on 1. e4 e5 2. Nf3 Nc6.
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, "replay buttons");
         SetRequestRules(true);
         PlayMoves("e2e4 e7e5 g1f3 b8c6", "replay buttons");
-        ui.PressEnterReplay();
+        ui._PressEnterReplay();
         Check(board.replayMode, "Replay: in replay", "not in replay");
         CheckInt(board.replayIndex, 4, "Replay: at the current position");
         CheckButtons(OwnReplay + " First Back", "replay at ply 4");
         CheckRefused(ChessBoardUI.ButtonStepForward, "replay at ply 4");
         CheckRefused(ChessBoardUI.ButtonStepLast, "replay at ply 4");
         CheckRefused(ChessBoardUI.ButtonEnterReplay, "in replay");
-        ui.PressStepBack();
+        ui._PressStepBack();
         CheckInt(board.replayIndex, 3, "< : ply 3");
         Redraw();
         CheckView("< : ply 3");
         CheckButtons(OwnReplay + " First Back Forward Last Continue", "replay at ply 3");
         CheckRefused(ChessBoardUI.ButtonRequestTakebackWhite, "both seats");
         CheckRefused(ChessBoardUI.ButtonRequestTakebackBlack, "both seats");
-        ui.PressStepFirst();
+        ui._PressStepFirst();
         CheckInt(board.replayIndex, 0, "<< : ply 0");
         Redraw();
         CheckView("<< : ply 0");
         CheckButtons(OwnReplay + " Forward Last Continue", "replay at ply 0");
         CheckRefused(ChessBoardUI.ButtonStepBack, "replay at ply 0");
-        ui.PressStepForward();
+        ui._PressStepForward();
         CheckInt(board.replayIndex, 1, "> : ply 1");
-        ui.PressStepLast();
+        ui._PressStepLast();
         CheckInt(board.replayIndex, 4, ">> : ply 4");
         Redraw();
         CheckView(">> : ply 4");
-        ui.PressStepBack();
-        ui.PressStepBack();
+        ui._PressStepBack();
+        ui._PressStepBack();
         CheckInt(board.replayIndex, 2, "< twice: ply 2");
 
         // Continue from here (13.3), from ply 2: the player in both seats needs no request.
         CheckLabel(ChessBoardUI.ButtonContinue, Text("button_continue"), "replay at ply 2");
-        ui.PressContinue();
+        ui._PressContinue();
         CheckInt(board.moveCount, 2, "Continue (both seats): back to ply 2");
         Check(!board.replayMode, "Continue (both seats): out of replay", "in replay");
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Continue (both seats): in game");
         Redraw();
         CheckView("continued from ply 2");
         CheckButtons(OwnGame, "continued from ply 2");
-        ui.PressEnterReplay();
-        ui.PressStepFirst();
-        ui.PressLeaveReplay();
+        ui._PressEnterReplay();
+        ui._PressStepFirst();
+        ui._PressLeaveReplay();
         Check(!board.replayMode, "Back to game: out of replay", "in replay");
         CheckInt(board.moveCount, 2, "Back to game: the game unchanged");
         Redraw();
@@ -941,7 +941,7 @@ public class ViewTest : ChessTest {
         CheckButtons(OwnGame, "back to game");
 
         // Takeback requests between two players (the local player White, Bob Black), from ply 2 of the same game.
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.JoinAs(ChessRules.White, localName), ChessBoard.InputAccepted, "takeback buttons: joined White");
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted,
             "takeback buttons: Bob joined Black");
@@ -954,15 +954,15 @@ public class ViewTest : ChessTest {
                 Sq(move.Substring(2, 2))), ChessBoard.InputAccepted, "takeback buttons: " + move + " played");
         }
         string twoReplay = "ResignWhite OfferDrawWhite? Leave First Back Forward Last Reset";
-        ui.PressEnterReplay();
-        ui.PressStepBack();
-        ui.PressStepBack();
+        ui._PressEnterReplay();
+        ui._PressStepBack();
+        ui._PressStepBack();
         CheckInt(board.replayIndex, 2, "takeback buttons: ply 2");
         CheckButtons(twoReplay + " TakebackWhite", "two players at ply 2");
         CheckRefused(ChessBoardUI.ButtonContinue, "two players");
         CheckLabel(ChessBoardUI.ButtonRequestTakebackWhite, Text("button_take_back_to_here"),
             "two players at ply 2");
-        ui.PressRequestTakebackWhite();
+        ui._PressRequestTakebackWhite();
         CheckInt(board.takebackColor, ChessRules.White, "Take back (White): requested");
         CheckInt(board.takebackPly, 2, "Take back (White): for ply 2");
         CheckButtons(twoReplay, "White's request");
@@ -974,12 +974,12 @@ public class ViewTest : ChessTest {
         CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted,
             "Take back (Bob): requested");
         CheckButtons(twoReplay + " AcceptTakebackWhite DeclineTakebackWhite", "Bob's request");
-        ui.PressDeclineTakebackWhite();
+        ui._PressDeclineTakebackWhite();
         CheckInt(board.takebackColor, ChessRules.NoColor, "Decline takeback (White): no request");
         CheckInt(board.moveCount, 4, "Decline takeback (White): the game unchanged");
         CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted,
             "Take back (Bob): requested again");
-        ui.PressAcceptTakebackWhite();
+        ui._PressAcceptTakebackWhite();
         CheckInt(board.moveCount, 2, "Accept takeback (White): back to ply 2");
         Check(!board.replayMode, "Accept takeback (White): out of replay", "in replay");
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Accept takeback (White): in game");
@@ -988,7 +988,7 @@ public class ViewTest : ChessTest {
         CheckButtons("ResignWhite OfferDrawWhite? Replay Reset", "takeback accepted");
 
         // A threefold repetition claim: the knights out and back twice.
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, "claim button");
         SetRequestRules(true);
         PlayMoves("g1f3 g8f6 f3g1 f6g8 g1f3 g8f6 f3g1", "claim button");
@@ -997,13 +997,13 @@ public class ViewTest : ChessTest {
         CheckButtons("ResignWhite ResignBlack OfferDrawWhite OfferDrawBlack ClaimDraw Replay Reset",
             "claim button: three times");
         CheckLabel(ChessBoardUI.ButtonClaimDraw, Text("button_claim_draw_threefold"), "claim button: three times");
-        ui.PressClaimDraw();
+        ui._PressClaimDraw();
         CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "Claim draw: the game ended");
         CheckInt(board.ending, ChessGame.EndingThreefoldRepetition, "Claim draw: by threefold repetition");
         CheckButtons("Replay Reset", "draw claimed");
 
         // The same with takebacks, draws by agreement and threefold claims off.
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, "rules off");
         SetRequestRules(false);
         CheckButtons("ResignWhite ResignBlack Replay Reset", "rules off: own game");
@@ -1011,15 +1011,15 @@ public class ViewTest : ChessTest {
         PlayMoves("g1f3 g8f6 f3g1 f6g8 g1f3 g8f6 f3g1 f6g8", "rules off");
         CheckButtons("ResignWhite ResignBlack Replay Reset", "rules off: three times");
         CheckRefused(ChessBoardUI.ButtonClaimDraw, "rules off");
-        ui.PressEnterReplay();
-        ui.PressStepBack();
+        ui._PressEnterReplay();
+        ui._PressStepBack();
         CheckButtons("ResignWhite ResignBlack Leave First Back Forward Last Reset", "rules off: replay at ply 7");
         CheckRefused(ChessBoardUI.ButtonRequestTakebackWhite, "rules off");
         CheckRefused(ChessBoardUI.ButtonContinue, "rules off");
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "rules off: still in game");
 
         // Someone else's game: none of the players' buttons.
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "others: Ana joined White");
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "others: Bob joined Black");
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, "others: Ana started");
@@ -1031,7 +1031,7 @@ public class ViewTest : ChessTest {
         CheckButtons("Replay? Reset?", "others' game, Ana's offer");
         CheckRefused(ChessBoardUI.ButtonAcceptDrawBlack, "others' game, Ana's offer");
 
-        board.ClearState();
+        board._ClearState();
         CheckButtons("JoinWhite JoinBlack", "cleared after the game button checks");
         CheckView("cleared after the game button checks");
         SendCustomEventDelayedFrames(nameof(RunHighlightChecks), 1);
@@ -1068,7 +1068,7 @@ public class ViewTest : ChessTest {
         for (int i = 0; i < view.promotionGhosts.Length; i++) {
             ChessPromotionGhost ghost = view.promotionGhosts[i];
             if (Utilities.IsValid(ghost) && !ghost.gameObject.activeSelf
-                && ghost.pieceType == ChessBoardView.GhostType(i)) {
+                && ghost.pieceType == ChessBoardView._GhostType(i)) {
                 ghostsReady++;
             }
         }
@@ -1092,7 +1092,7 @@ public class ViewTest : ChessTest {
         int marks = 0;
         for (int square = 0; square < 64 && square < view.targetHighlights.Length; square++) {
             GameObject mark = view.targetHighlights[square];
-            if (Utilities.IsValid(mark) && view.DropSquare(mark.transform.position) == square) marks++;
+            if (Utilities.IsValid(mark) && view._DropSquare(mark.transform.position) == square) marks++;
         }
         CheckInt(marks, 64, "highlights: every square has its target mark, over that square");
         Check(Utilities.IsValid(view.targetMaterial) && Utilities.IsValid(view.captureMaterial)
@@ -1101,7 +1101,7 @@ public class ViewTest : ChessTest {
 
         // The last move.
         string g = "last move";
-        board.ClearState();
+        board._ClearState();
         Redraw();
         CheckLastMove("", "", g + ": a cleared board");
         StartGame(ChessGame.ModeStandard, g);
@@ -1123,13 +1123,13 @@ public class ViewTest : ChessTest {
         CheckLastMove("", "", g + ": replay at the start");
 
         // No target marks in replay, where every square is a target.
-        view.SetInputStyle(ChessBoardView.InputPickups);
+        view._SetInputStyle(ChessBoardView.InputPickups);
         int replayPawn = view.squareObject[Sq("e2")];
-        view.OnPiecePickedUp(replayPawn);
+        view._OnPiecePickedUp(replayPawn);
         CheckInt(view.heldObject, replayPawn, g + ": e2 picked up in replay");
         CheckTargets("", g + ": e2 held in replay");
-        view.OnPieceDropped(replayPawn);
-        view.SetInputStyle(ChessBoardView.InputClicks);
+        view._OnPieceDropped(replayPawn);
+        view._SetInputStyle(ChessBoardView.InputClicks);
         Redraw();
         ClickPiece("e2");
         CheckInt(view.selectedObject, replayPawn, g + ": e2 selected in replay");
@@ -1144,7 +1144,7 @@ public class ViewTest : ChessTest {
 
         // Check lines: one from each piece giving check, in the game and in replay, and none once it's answered.
         string k = "check lines";
-        board.ClearState();
+        board._ClearState();
         Redraw();
         CheckCheckLines("", k + ": a cleared board");
         StartGame(ChessGame.ModeStandard, k);
@@ -1177,7 +1177,7 @@ public class ViewTest : ChessTest {
         PlayMoves("e8d8", k + " (double check)");
         CheckCheckLines("", k + " (double check): Kd8, answered");
 
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, k + " (mate)");
         PlayMoves("e2e4 e7e5 d1h5 b8c6 f1c4 g8f6 h5f7", k + " (mate)");
         CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, k + " (mate): Qxf7# ends the game");
@@ -1185,39 +1185,39 @@ public class ViewTest : ChessTest {
 
         // Target marks of a held piece.
         string t = "held targets";
-        view.SetInputStyle(ChessBoardView.InputPickups);
-        board.ClearState();
+        view._SetInputStyle(ChessBoardView.InputPickups);
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, t);
         CheckTargets("", t + ": nothing held");
         int pawn = view.squareObject[Sq("e2")];
-        view.OnPiecePickedUp(pawn);
+        view._OnPiecePickedUp(pawn);
         CheckTargets("e3 e4", t + ": e2 held");
         Redraw();
         CheckTargets("e3 e4", t + ": e2 held, refreshed");
         view.pieces[pawn].localPosition = Over("e4");
-        view.OnPieceDropped(pawn);
+        view._OnPieceDropped(pawn);
         CheckTargets("", t + ": e2 dropped over e4");
         Redraw();
         CheckLastMove("e2", "e4", t + ": e4 by a drop");
         int knight = view.squareObject[Sq("g8")];
-        view.OnPiecePickedUp(knight);
+        view._OnPiecePickedUp(knight);
         CheckTargets("f6 h6", t + ": g8 held");
-        view.OnPiecePickedUp(view.squareObject[Sq("d2")]);
+        view._OnPiecePickedUp(view.squareObject[Sq("d2")]);
         CheckTargets("", t + ": d2 picked up out of turn instead");
         Redraw();
-        view.OnPiecePickedUp(knight);
+        view._OnPiecePickedUp(knight);
         CheckTargets("f6 h6", t + ": g8 held again");
         CheckInt(board.ResignAs(ChessRules.Black, localName), ChessBoard.InputAccepted, t + ": Black resigned");
         Redraw();
         CheckTargets("", t + ": the game ended while g8 was held");
-        if (view.heldObject == knight) view.OnPieceDropped(knight);
+        if (view.heldObject == knight) view._OnPieceDropped(knight);
 
         CastleGame(StandardCastlingFen, t + " (castling)");
         int king = view.squareObject[Sq("e1")];
-        view.OnPiecePickedUp(king);
+        view._OnPiecePickedUp(king);
         CheckTargets("d1 f1 d2 e2 f2 oa1 c1 g1 oh1", t + " (castling): e1 held");
         view.pieces[king].localPosition = Over("h1");
-        view.OnPieceDropped(king);
+        view._OnPieceDropped(king);
         CheckTargets("", t + " (castling): dropped over h1");
         Redraw();
         CheckLastMove("e1", "g1", t + " (castling): O-O by a drop");
@@ -1226,21 +1226,21 @@ public class ViewTest : ChessTest {
         // destination: one full-size yellow mark there.
         CastleGame(CaptureMarksFen, t + " (captures)");
         int capturing = view.squareObject[Sq("e5")];
-        view.OnPiecePickedUp(capturing);
+        view._OnPiecePickedUp(capturing);
         CheckTargets("e6 xd6 xf6", t + " (captures): e5 held");
-        view.OnPieceDropped(capturing);
+        view._OnPieceDropped(capturing);
         Redraw();
         CastleGame(RookOnDestinationFen, t + " (rook on g1)");
         int castlingKing = view.squareObject[Sq("f1")];
-        view.OnPiecePickedUp(castlingKing);
+        view._OnPiecePickedUp(castlingKing);
         CheckTargets("e1 e2 f2 g2 og1", t + " (rook on g1): f1 held");
-        view.OnPieceDropped(castlingKing);
+        view._OnPieceDropped(castlingKing);
         Redraw();
 
         // Target marks of a selected piece.
         string s = "selected targets";
-        view.SetInputStyle(ChessBoardView.InputClicks);
-        board.ClearState();
+        view._SetInputStyle(ChessBoardView.InputClicks);
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, s);
         ClickPiece("g1");
         CheckTargets("f3 h3", s + ": g1 selected");
@@ -1261,7 +1261,7 @@ public class ViewTest : ChessTest {
 
         // The promotion ghosts (step 12.11), for a drop.
         string p = "ghosts";
-        view.SetInputStyle(ChessBoardView.InputPickups);
+        view._SetInputStyle(ChessBoardView.InputPickups);
         CastleGame(PromotionFen, p);
         CheckGhosts(false, "", p + ": set up");
         int promoting = view.squareObject[Sq("e7")];
@@ -1271,7 +1271,7 @@ public class ViewTest : ChessTest {
         Redraw();
         CheckGhosts(true, "e8", p + ": e7 dropped over e8, refreshed");
         CheckPickupable(0, p + ": the ghosts shown");
-        CheckInt(view.ChoosePromotion(ChessRules.NoPieceType), ChessBoard.InputRejected,
+        CheckInt(view._ChoosePromotion(ChessRules.NoPieceType), ChessBoard.InputRejected,
             p + ": no cancel: a choice of no piece refused");
         CheckGhosts(true, "e8", p + ": still waiting after the refused choice");
         ClickGhost(ChessRules.Queen, p + ": the queen clicked");
@@ -1286,7 +1286,7 @@ public class ViewTest : ChessTest {
         CheckGhosts(true, "e8", p + " (change): e7 dropped over e8");
         CheckInt(board.ResignAs(ChessRules.Black, localName), ChessBoard.InputAccepted, p + " (change): Black resigned");
         CheckGhosts(false, "", p + " (change): the game ended meanwhile");
-        CheckInt(view.ChoosePromotion(ChessRules.Queen), ChessBoard.InputRejected,
+        CheckInt(view._ChoosePromotion(ChessRules.Queen), ChessBoard.InputRejected,
             p + " (change): a choice afterwards refused");
 
         CastleGame(BlackPromotionFen, p + " (Black)");
@@ -1299,7 +1299,7 @@ public class ViewTest : ChessTest {
         CheckInt(view.objectType[blackPawn], ChessRules.Knight, p + " (Black): e1=N: the pawn's object is a knight");
 
         // The promotion ghosts, for a placing click.
-        view.SetInputStyle(ChessBoardView.InputClicks);
+        view._SetInputStyle(ChessBoardView.InputClicks);
         CastleGame(PromotionFen, p + " (clicks)");
         int clickPawn = view.squareObject[Sq("e7")];
         ClickPiece("e7");
@@ -1330,8 +1330,8 @@ public class ViewTest : ChessTest {
         CheckDropped(1, ChessBoard.ChangeMove, p + " (Black, h file): h1=Q");
         CheckInt(view.objectType[hPawn], ChessRules.Queen, p + " (Black, h file): h1=Q: the pawn's object is a queen");
 
-        board.ClearState();
-        view.SetInputStyle(savedStyle);
+        board._ClearState();
+        view._SetInputStyle(savedStyle);
         Redraw();
         CheckLastMove("", "", "cleared after the highlight checks");
         CheckTargets("", "cleared after the highlight checks");
@@ -1369,7 +1369,7 @@ public class ViewTest : ChessTest {
         CheckInt(solid, 0, "the promotion ghosts have trigger colliders: solid or missing");
         if (!Utilities.IsValid(blocker)) return;
 
-        board.ClearState();
+        board._ClearState();
         Redraw();
         Check(blocker.enabled, "blocker: enabled on a reset board", "disabled");
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "blocker: Ana joined White");
@@ -1378,7 +1378,7 @@ public class ViewTest : ChessTest {
         Redraw();
         Check(blocker.enabled, "blocker: enabled in others' game", "disabled");
 
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.JoinAs(ChessRules.Black, localName), ChessBoard.InputAccepted, "blocker: joined Black");
         Redraw();
         Check(!blocker.enabled, "blocker: disabled once seated (Black, lobby)", "enabled");
@@ -1390,7 +1390,7 @@ public class ViewTest : ChessTest {
         Redraw();
         Check(!blocker.enabled, "blocker: disabled in own ended game", "enabled");
 
-        board.ClearState();
+        board._ClearState();
         Redraw();
         Check(blocker.enabled, "blocker: enabled again once cleared", "disabled");
         CheckView("cleared after the blocker checks");
@@ -1409,9 +1409,9 @@ public class ViewTest : ChessTest {
     public void RunAnimationChecks() {
         view.animateMoves = true;
         savedAnimationStyle = view.inputStyle;
-        view.SetInputStyle(ChessBoardView.InputPickups);
+        view._SetInputStyle(ChessBoardView.InputPickups);
         string a = "animation";
-        board.ClearState();
+        board._ClearState();
         Redraw();
         StartGame(ChessGame.ModeStandard, a + " game");
         CheckAtRest(a + " game started");
@@ -1465,7 +1465,7 @@ public class ViewTest : ChessTest {
         CheckInt(ViewDrop("d8", Over("d2")), ChessBoard.InputAccepted, a + ": d8 picked up");
         CheckInt(board.lastChange, ChessBoard.ChangeMove, a + ": Qxd2 dropped: played");
         Redraw();
-        Check(!view.animating[queen] && (view.pieces[queen].localPosition - view.SquarePosition(Sq("d2"))).sqrMagnitude
+        Check(!view.animating[queen] && (view.pieces[queen].localPosition - view._SquarePosition(Sq("d2"))).sqrMagnitude
             < 1e-10f, a + ": Qxd2 dropped: the queen in place at once",
             "at " + view.pieces[queen].localPosition.ToString("F3"));
         CheckTravelOff(captured, false, a + ": Qxd2 dropped: the d2 pawn");
@@ -1497,15 +1497,15 @@ public class ViewTest : ChessTest {
         CheckAtRest(a + ": reset");
 
         if (Utilities.IsValid(importer) && chess960Pgn != null) {
-            board.ClearState();
-            importer.StartImport(chess960Pgn.text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
-            CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, a + ": chess960.pgn imported");
-            CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, a + ": chess960.pgn loaded");
+            board._ClearState();
+            importer._StartImport(chess960Pgn.text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
+            CheckInt(importer._ImportFor(float.MaxValue), ChessPgn.ImportDone, a + ": chess960.pgn imported");
+            CheckInt(board._LoadImport(importer), ChessBoard.InputAccepted, a + ": chess960.pgn loaded");
             Redraw();
             CheckAtRest(a + ": chess960.pgn loaded");
         }
 
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, a + " game 2");
         CheckAtRest(a + " game 2 started");
         view.animateMoves = false;
@@ -1523,8 +1523,8 @@ public class ViewTest : ChessTest {
     // Once the last move has had time to land: everything in place, nothing travelling.
     public void RunAnimationEndChecks() {
         CheckAtRest("animation: d5 landed");
-        board.ClearState();
-        view.SetInputStyle(savedAnimationStyle);
+        board._ClearState();
+        view._SetInputStyle(savedAnimationStyle);
         view.animateMoves = savedAnimate;
         Redraw();
         CheckView("cleared after the animation checks");
@@ -1538,7 +1538,7 @@ public class ViewTest : ChessTest {
         + "b8c8 f7g6 c8e6";
     const string FoolsMate = "f2f3 e7e5 g2g4 d8h4";
 
-    // The twelfth frame: the status panels wired; ClockDisplay; the players' and status texts (and the panels showing
+    // The twelfth frame: the status panels wired; _ClockDisplay; the players' and status texts (and the panels showing
     // them) on a reset board, in a lobby, in a game of two others with a clock (at the turn start, a minute on, the
     // flag fallen), in check, with a draw offer, in replay with a takeback request and after a free move, resigned;
     // every ending's text; a stalemate and a checkmate played, the mate in replay; a loaded game at its last ply, its
@@ -1554,17 +1554,17 @@ public class ViewTest : ChessTest {
             if (i < ui.statusPlayerLabels.Length && !Utilities.IsValid(ui.statusPlayerLabels[i])) missing++;
         }
         CheckInt(missing, 0, s + ": every panel's texts assigned: missing");
-        CheckString(ChessBoardUI.ClockDisplay(300000), "5:00", s + ": clock 5:00");
-        CheckString(ChessBoardUI.ClockDisplay(299999), "4:59", s + ": clock 4:59.999");
-        CheckString(ChessBoardUI.ClockDisplay(61000), "1:01", s + ": clock 1:01");
-        CheckString(ChessBoardUI.ClockDisplay(10000), "0:10", s + ": clock 0:10");
-        CheckString(ChessBoardUI.ClockDisplay(9876), "0:09.8", s + ": clock 0:09.876");
-        CheckString(ChessBoardUI.ClockDisplay(0), "0:00.0", s + ": clock 0");
-        CheckString(ChessBoardUI.ClockDisplay(3600000), "1:00:00", s + ": clock an hour");
-        CheckString(ChessBoardUI.ClockDisplay(3725000), "1:02:05", s + ": clock 1:02:05");
+        CheckString(ChessBoardUI._ClockDisplay(300000), "5:00", s + ": clock 5:00");
+        CheckString(ChessBoardUI._ClockDisplay(299999), "4:59", s + ": clock 4:59.999");
+        CheckString(ChessBoardUI._ClockDisplay(61000), "1:01", s + ": clock 1:01");
+        CheckString(ChessBoardUI._ClockDisplay(10000), "0:10", s + ": clock 0:10");
+        CheckString(ChessBoardUI._ClockDisplay(9876), "0:09.8", s + ": clock 0:09.876");
+        CheckString(ChessBoardUI._ClockDisplay(0), "0:00.0", s + ": clock 0");
+        CheckString(ChessBoardUI._ClockDisplay(3600000), "1:00:00", s + ": clock an hour");
+        CheckString(ChessBoardUI._ClockDisplay(3725000), "1:02:05", s + ": clock 1:02:05");
 
         // Two others' lobby and game, with a clock.
-        board.ClearState();
+        board._ClearState();
         CheckStatus(Players(null, null), Text("status_reset"), s + ": reset board");
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana joined White");
         Unforce();
@@ -1578,13 +1578,13 @@ public class ViewTest : ChessTest {
         string toMove = ColorLine("status_to_move", ChessRules.White);
         CheckStatus(PlayersWithClocks("Ana", "5:00", "Bob", "5:00"), toMove, s + ": game started");
         double start = board.turnStart;
-        CheckString(ui.PlayersTextAt(start + 61.5), PlayersWithClocks("Ana", "3:58", "Bob", "5:00"),
+        CheckString(ui._PlayersTextAt(start + 61.5), PlayersWithClocks("Ana", "3:58", "Bob", "5:00"),
             s + ": a minute on");
-        CheckString(ui.StatusTextAt(start + 295.1), toMove, s + ": 4.9 s left");
-        CheckString(ui.PlayersTextAt(start + 295.1), PlayersWithClocks("Ana", "0:04.9", "Bob", "5:00"),
+        CheckString(ui._StatusTextAt(start + 295.1), toMove, s + ": 4.9 s left");
+        CheckString(ui._PlayersTextAt(start + 295.1), PlayersWithClocks("Ana", "0:04.9", "Bob", "5:00"),
             s + ": 4.9 s left");
-        CheckString(ui.StatusTextAt(start + 301), ColorLine("status_time_up", ChessRules.White), s + ": flag fallen");
-        CheckString(ui.PlayersTextAt(start + 301), PlayersWithClocks("Ana", "0:00.0", "Bob", "5:00"),
+        CheckString(ui._StatusTextAt(start + 301), ColorLine("status_time_up", ChessRules.White), s + ": flag fallen");
+        CheckString(ui._PlayersTextAt(start + 301), PlayersWithClocks("Ana", "0:00.0", "Bob", "5:00"),
             s + ": flag fallen");
         CheckInt(board.PieceDroppedAs("Ana", Sq("e2"), Sq("e4")), ChessBoard.InputAccepted, s + ": e4");
         CheckInt(board.PieceDroppedAs("Bob", Sq("f7"), Sq("f6")), ChessBoard.InputAccepted, s + ": f6");
@@ -1608,8 +1608,8 @@ public class ViewTest : ChessTest {
         CheckInt(board.LeaveReplayAs("Ana", false), ChessBoard.InputAccepted, s + ": back to the game");
         CheckInt(board.ResignAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob resigned");
         CheckStatus(null, Ending("ending_resignation_white", "1-0"), s + ": resigned");
-        CheckString(ui.PlayerTextAt(ChessRules.Black, board.ServerTime() + 60),
-            ui.PlayerTextAt(ChessRules.Black, board.ServerTime()), s + ": the clocks stopped");
+        CheckString(ui._PlayerTextAt(ChessRules.Black, board._ServerTime() + 60),
+            ui._PlayerTextAt(ChessRules.Black, board._ServerTime()), s + ": the clocks stopped");
 
         // Every ending's text, set on the ended game (Black was to move).
         CheckEnding(ChessGame.EndingCheckmate, ChessRules.White, Ending("ending_checkmate_white", "1-0"));
@@ -1644,25 +1644,25 @@ public class ViewTest : ChessTest {
         board.untimedAfterFlagFall = true;
         board.whiteTime = 59000;
         board.blackTime = 0;
-        double later = board.ServerTime() + 100;
+        double later = board._ServerTime() + 100;
         string flagFallen = Text("player_flag_fallen");
-        Check(ui.PlayerTextAt(ChessRules.White, later).EndsWith("  0:59"), s + ": play-on: White's time kept",
-            ui.PlayerTextAt(ChessRules.White, later));
-        Check(ui.PlayerTextAt(ChessRules.Black, later).EndsWith("  " + flagFallen), s + ": play-on: GG for Black",
-            ui.PlayerTextAt(ChessRules.Black, later));
-        Check(ui.StatusTextAt(later).Contains(ColorLine("status_playing_on", ChessRules.Black)),
-            s + ": play-on: the status says so", ui.StatusTextAt(later));
+        Check(ui._PlayerTextAt(ChessRules.White, later).EndsWith("  0:59"), s + ": play-on: White's time kept",
+            ui._PlayerTextAt(ChessRules.White, later));
+        Check(ui._PlayerTextAt(ChessRules.Black, later).EndsWith("  " + flagFallen), s + ": play-on: GG for Black",
+            ui._PlayerTextAt(ChessRules.Black, later));
+        Check(ui._StatusTextAt(later).Contains(ColorLine("status_playing_on", ChessRules.Black)),
+            s + ": play-on: the status says so", ui._StatusTextAt(later));
         board.untimedAfterFlagFall = false;
-        Check(!ui.PlayerTextAt(ChessRules.Black, later).Contains(flagFallen), s + ": no GG without play-on",
-            ui.PlayerTextAt(ChessRules.Black, later));
+        Check(!ui._PlayerTextAt(ChessRules.Black, later).Contains(flagFallen), s + ": no GG without play-on",
+            ui._PlayerTextAt(ChessRules.Black, later));
 
         // A stalemate and a checkmate played on the local player's games, with no clock.
-        board.ClearState();
+        board._ClearState();
         StartUnforced(s + ": stalemate game");
         PlayMoves(LoydStalemate, s + ": stalemate game");
         CheckInt(board.ending, ChessGame.EndingStalemate, s + ": stalemated");
         CheckStatus(Players(localName, localName), Ending("ending_stalemate", "1/2-1/2"), s + ": stalemate");
-        board.ClearState();
+        board._ClearState();
         StartUnforced(s + ": checkmate game");
         PlayMoves(FoolsMate, s + ": checkmate game");
         string mate = Ending("ending_checkmate_black", "0-1");
@@ -1687,7 +1687,7 @@ public class ViewTest : ChessTest {
                 s + ": promotions.pgn at ply 1");
         }
 
-        board.ClearState();
+        board._ClearState();
         CheckStatus(Players(null, null), Text("status_reset"), s + ": cleared");
         Redraw();
         CheckView("cleared after the status checks");
@@ -1708,26 +1708,26 @@ public class ViewTest : ChessTest {
             return;
         }
         Check(ui.pgnField.transform.IsChildOf(ui.pgnBox.transform), s + ": the field in the box", "it isn't");
-        board.ClearState();
+        board._ClearState();
         Redraw();
         CheckPgnBox(false, s + ": reset board");
-        CheckInt(ui.PressButton(ChessBoardUI.ButtonPgn), ChessBoard.InputRejected, s + ": reset board: refused");
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonPgn), ChessBoard.InputRejected, s + ": reset board: refused");
         CheckPgnBox(false, s + ": reset board, refused");
 
         StartUnforced(s);
         CheckButtons(OwnGame, s + ": no moves yet");
-        CheckInt(ui.PressButton(ChessBoardUI.ButtonPgn), ChessBoard.InputRejected, s + ": no moves yet: refused");
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonPgn), ChessBoard.InputRejected, s + ": no moves yet: refused");
         PlayOnBoard("e2", "e4", s);
         PlayOnBoard("e7", "e5", s);
         CheckButtons(OwnGame + " Pgn", s + ": 1. e4 e5");
         CheckLabel(ChessBoardUI.ButtonPgn, Text("button_pgn"), s + ": closed");
-        ui.PressPgn();
+        ui._PressPgn();
         CheckPgnBox(true, s + ": opened");
         CheckLabel(ChessBoardUI.ButtonPgn, Text("button_hide_pgn"), s + ": opened");
         string text = ui.pgnField.text;
         Check(text.Contains("[White \"" + localName + "\"]") && text.EndsWith("\n\n1. e4 e5 *\n"),
             s + ": opened: the tags and 1. e4 e5 *", text);
-        bool white = ui.LocalEnd() == ChessRules.White;
+        bool white = ui._LocalEnd() == ChessRules.White;
         Check(ui.pgnBox.transform.localPosition.z > 0 == white, s + ": opened: beyond the board from the local end ("
             + (white ? "White" : "Black") + ")", "at " + ui.pgnBox.transform.localPosition.ToString("F3"));
         PlayOnBoard("g1", "f3", s);
@@ -1737,14 +1737,14 @@ public class ViewTest : ChessTest {
 
         // Facing either end, over the far edge of the board from it.
         Vector3 placed = ui.pgnBox.transform.localPosition;
-        ui.PlacePgnBox(ChessRules.Black);
+        ui._PlacePgnBox(ChessRules.Black);
         Transform box = ui.pgnBox.transform;
         Check(box.localPosition.z < 0 && Mathf.Abs(box.localPosition.z) == Mathf.Abs(placed.z)
             && box.localPosition.y == placed.y
             && Quaternion.Angle(box.localRotation, Quaternion.Euler(0, 180, 0)) < 0.01f,
             s + ": for Black: on White's side, facing Black", "at " + box.localPosition.ToString("F3") + ", turned "
             + box.localEulerAngles.ToString("F1"));
-        ui.PlacePgnBox(ChessRules.White);
+        ui._PlacePgnBox(ChessRules.White);
         Check(box.localPosition.z > 0 && box.localPosition.y == placed.y
             && Quaternion.Angle(box.localRotation, Quaternion.identity) < 0.01f,
             s + ": for White: on Black's side, facing White", "at " + box.localPosition.ToString("F3") + ", turned "
@@ -1767,12 +1767,12 @@ public class ViewTest : ChessTest {
         CheckString(ui.pgnField.text, board.lastLoggedPgn, s + ": replay at ply 1: the whole game");
 
         // Closed and opened again; a reset closes it, and the next game doesn't open it.
-        ui.PressPgn();
+        ui._PressPgn();
         CheckPgnBox(false, s + ": closed");
         CheckLabel(ChessBoardUI.ButtonPgn, Text("button_pgn"), s + ": closed again");
-        ui.PressPgn();
+        ui._PressPgn();
         CheckPgnBox(true, s + ": opened again");
-        ui.PressReset();
+        ui._PressReset();
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, s + ": reset");
         Redraw();
         CheckPgnBox(false, s + ": reset");
@@ -1783,14 +1783,14 @@ public class ViewTest : ChessTest {
         // A loaded game: its own tags.
         if (LoadPgn(chess960Pgn, s + ": chess960.pgn")) {
             Redraw();
-            ui.PressPgn();
+            ui._PressPgn();
             CheckPgnBox(true, s + ": chess960.pgn loaded");
             text = ui.pgnField.text;
             Check(text.Contains("[Variant \"Chess960\"]") && text.Contains("[SetUp \"1\"]"),
                 s + ": chess960.pgn loaded: a Chess960 PGN", text);
         }
 
-        board.ClearState();
+        board._ClearState();
         Redraw();
         CheckPgnBox(false, s + ": cleared");
         CheckView("cleared after the PGN box checks");
@@ -1834,35 +1834,35 @@ public class ViewTest : ChessTest {
         savedImporter = board.importer;
         board.importer = importer;
 
-        board.ClearState();
+        board._ClearState();
         Redraw();
         CheckButtons("JoinWhite JoinBlack LoadPgn", s + ": reset board");
         CheckLabel(ChessBoardUI.ButtonLoadPgn, Text("button_load_pgn"), s + ": closed");
-        ui.PressLoadPgn();
+        ui._PressLoadPgn();
         CheckPasteBox(true, true, "", s + ": opened");
         CheckLabel(ChessBoardUI.ButtonLoadPgn, Text("button_hide_pgn"), s + ": opened");
-        bool white = ui.LocalEnd() == ChessRules.White;
+        bool white = ui._LocalEnd() == ChessRules.White;
         Check(box.localPosition.z > 0 == white, s + ": opened: beyond the board from the local end",
             "at " + box.localPosition.ToString("F3"));
-        ui.PressLoadPgn();
+        ui._PressLoadPgn();
         CheckPasteBox(false, false, "", s + ": closed by the button");
         CheckLabel(ChessBoardUI.ButtonLoadPgn, Text("button_load_pgn"), s + ": closed again");
-        ui.PressLoadPgn();
-        ui.PressPgnClose();
+        ui._PressLoadPgn();
+        ui._PressPgnClose();
         CheckPasteBox(false, false, "", s + ": closed by Close");
-        CheckInt(ui.ImportPasted(), ChessBoard.InputRejected, s + ": closed: Import refused");
+        CheckInt(ui._ImportPasted(), ChessBoard.InputRejected, s + ": closed: Import refused");
 
         // Nothing pasted: refused, and the box says so.
-        ui.PressLoadPgn();
+        ui._PressLoadPgn();
         ui.pgnPasteField.text = "  \n";
         int status = board.importStatus;
-        CheckInt(ui.ImportPasted(), ChessBoard.InputRejected, s + ": nothing pasted: refused");
+        CheckInt(ui._ImportPasted(), ChessBoard.InputRejected, s + ": nothing pasted: refused");
         CheckPasteBox(true, true, Text("import_paste_first"), s + ": nothing pasted");
         CheckInt(board.importStatus, status, s + ": nothing pasted: no import");
 
         // Siggi-vs-Nuka over the next frames, run by the importer's Update.
         ui.pgnPasteField.text = nuka.text;
-        CheckInt(ui.ImportPasted(), ChessBoard.InputAccepted, s + ": Siggi-vs-Nuka: started");
+        CheckInt(ui._ImportPasted(), ChessBoard.InputAccepted, s + ": Siggi-vs-Nuka: started");
         CheckInt(board.importStatus, ChessBoard.ImportRunning, s + ": Siggi-vs-Nuka: under way");
         CheckPasteBox(true, false, ImportRunning(0), s + ": Siggi-vs-Nuka: started");
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, s + ": Siggi-vs-Nuka: the board still reset");
@@ -1899,7 +1899,7 @@ public class ViewTest : ChessTest {
         CheckPasteBox(false, false, "", n + ": loaded: the box closed");
         CheckString(ui.pgnPasteField.text, "", n + ": loaded: the paste emptied");
         CheckButtons("JoinWhite JoinBlack First Back Reset?", n + ": loaded");
-        ui.PressPgn();
+        ui._PressPgn();
         CheckPgnBox(true, n + ": PGN opens the copy part");
         Check(ui.pgnCopyPart.activeSelf && !ui.pgnPastePart.activeSelf, n + ": PGN: the copy part shown",
             "copy " + ui.pgnCopyPart.activeSelf + ", paste " + ui.pgnPastePart.activeSelf);
@@ -1909,46 +1909,46 @@ public class ViewTest : ChessTest {
 
         // Failed: the move it failed at and why; the board unchanged.
         string f = s + ": failed";
-        board.ClearState();
+        board._ClearState();
         Redraw();
         CheckPgnBox(false, f + ": reset closed the copy part");
-        ui.PressLoadPgn();
+        ui._PressLoadPgn();
         ui.pgnPasteField.text = "1. e4 e5 2. Ke3 *";
-        CheckInt(ui.ImportPasted(), ChessBoard.InputAccepted, f + ": started");
-        importer.ImportFor(float.MaxValue);
+        CheckInt(ui._ImportPasted(), ChessBoard.InputAccepted, f + ": started");
+        importer._ImportFor(float.MaxValue);
         board._ImportFinished();
         CheckPasteBox(true, true, ImportFailed("2.", "import_error_illegal_move"), f);
         CheckInt(board.lifecycle * 1000 + board.moveCount, ChessBoard.LifecycleReset * 1000, f + ": the board reset");
         CheckString(ui.pgnPasteField.text, "1. e4 e5 2. Ke3 *", f + ": the paste kept");
         // Closed while it runs: opened again to say why.
         ui.pgnPasteField.text = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ke3 *";
-        CheckInt(ui.ImportPasted(), ChessBoard.InputAccepted, f + " while closed: started");
-        ui.PressLoadPgn();
+        CheckInt(ui._ImportPasted(), ChessBoard.InputAccepted, f + " while closed: started");
+        ui._PressLoadPgn();
         CheckPasteBox(false, false, "", f + " while closed: closed");
-        importer.ImportFor(float.MaxValue);
+        importer._ImportFor(float.MaxValue);
         board._ImportFinished();
         CheckPasteBox(true, true, ImportFailed("4.", "import_error_illegal_move"), f + " while closed: opened again");
         // Opened afresh, the old outcome is gone.
-        ui.PressLoadPgn();
-        ui.PressLoadPgn();
+        ui._PressLoadPgn();
+        ui._PressLoadPgn();
         CheckPasteBox(true, true, "", f + ": opened afresh");
 
         // Abandoned: someone joins meanwhile.
         string a = s + ": abandoned";
         ui.pgnPasteField.text = boardTest.siggiVsNuka.text;
-        CheckInt(ui.ImportPasted(), ChessBoard.InputAccepted, a + ": started");
-        importer.ImportFor(0f);
+        CheckInt(ui._ImportPasted(), ChessBoard.InputAccepted, a + ": started");
+        importer._ImportFor(0f);
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, a + ": Ana joins");
         CheckInt(board.importStatus, ChessBoard.ImportAbandoned, a);
         Redraw();
         CheckPasteBox(true, false, Text("import_abandoned"), a);
         CheckButtons("JoinBlack Reset?", a + ": Ana's lobby");
-        ui.PressPgnClose();
+        ui._PressPgnClose();
         CheckPasteBox(false, false, "", a + ": closed");
-        CheckInt(ui.PressButton(ChessBoardUI.ButtonLoadPgn), ChessBoard.InputRejected, a + ": Load PGN refused");
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonLoadPgn), ChessBoard.InputRejected, a + ": Load PGN refused");
 
         board.importer = savedImporter;
-        board.ClearState();
+        board._ClearState();
         Redraw();
         CheckPgnBox(false, s + ": cleared");
         CheckView("cleared after the Load PGN checks");
@@ -2000,10 +2000,10 @@ public class ViewTest : ChessTest {
         arbiter.SetPieceSetOverride(black, -1);
         arbiter.pieceSets = new ChessPieceSet[] { defaultSet, testPieceSet };
         view.animateMoves = false;
-        board.ClearState();
+        board._ClearState();
         Redraw();
-        Check(view.AppliedPieceSet(white) == view.CurrentPieceSet(white)
-            && view.AppliedPieceSet(black) == view.CurrentPieceSet(black), s + ": the current sets applied",
+        Check(view._AppliedPieceSet(white) == view.CurrentPieceSet(white)
+            && view._AppliedPieceSet(black) == view.CurrentPieceSet(black), s + ": the current sets applied",
             "they aren't");
         CheckInt(board.PieceSetIndex(white) * 10 + board.PieceSetIndex(black), 0, s + ": both indexes 0 on a reset "
             + "board (White * 10 + Black)");
@@ -2033,11 +2033,11 @@ public class ViewTest : ChessTest {
         Material ghostMaterial = MaterialOf(defaultSet.whitePromotionKnight.gameObject);
         int ghostWrong = 0;
         for (int type = ChessRules.Knight; type <= ChessRules.Queen; type++) {
-            Transform template = defaultSet.PromotionTemplate(white, type);
+            Transform template = defaultSet._PromotionTemplate(white, type);
             if (MaterialOf(template.gameObject) != ghostMaterial
                 || template.GetComponent<MeshFilter>().sharedMesh
-                    != defaultSet.Template(white, type).GetComponent<MeshFilter>().sharedMesh
-                || ChessPieceSet.HasMesh(defaultSet.PromotionTemplate(black, type))) {
+                    != defaultSet._Template(white, type).GetComponent<MeshFilter>().sharedMesh
+                || ChessPieceSet._HasMesh(defaultSet._PromotionTemplate(black, type))) {
                 ghostWrong++;
             }
         }
@@ -2049,9 +2049,9 @@ public class ViewTest : ChessTest {
         Material whiteMaterial = MaterialOf(defaultSet.whitePawn.gameObject);
         int blackWrong = 0;
         for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) {
-            Transform template = defaultSet.Template(black, type);
+            Transform template = defaultSet._Template(black, type);
             Material material = Utilities.IsValid(template) ? MaterialOf(template.gameObject) : null;
-            if (ChessPieceSet.HasMesh(template) || !Utilities.IsValid(material) || material == whiteMaterial) {
+            if (ChessPieceSet._HasMesh(template) || !Utilities.IsValid(material) || material == whiteMaterial) {
                 blackWrong++;
             }
         }
@@ -2107,34 +2107,34 @@ public class ViewTest : ChessTest {
         // A game: drops (pickups) and clicks, captures and a promotion.
         int savedStyle = view.inputStyle;
         StartGame(ChessGame.ModeStandard, t + " game");
-        view.SetInputStyle(ChessBoardView.InputPickups);
+        view._SetInputStyle(ChessBoardView.InputPickups);
         CheckInt(view.piecePickups[view.squareObject[Sq("e2")]].pickupable ? 1 : 0, 1, t + ": e2 a pickup");
         DropOver("e2", "e4", t + ": e4 dropped");
         CheckDropped(1, ChessBoard.ChangeMove, t + ": e4");
-        view.SetInputStyle(ChessBoardView.InputClicks);
+        view._SetInputStyle(ChessBoardView.InputClicks);
         ClickPiece("d7");
         Check(view.selectedObject != ChessBoardView.NoObject, t + ": d7 clicked: selected", "nothing selected");
         Redraw();
         CheckLifted(view.selectedObject, "d7", t + ": d7 selected");
         ClickSquare("d5");
         CheckUnselected(2, t + ": d5 placed by a click");
-        view.SetInputStyle(ChessBoardView.InputPickups);
+        view._SetInputStyle(ChessBoardView.InputPickups);
         int blackPawn = view.squareObject[Sq("d5")];
         DropOver("e4", "d5", t + ": exd5 dropped");
         CheckDropped(3, ChessBoard.ChangeMove, t + ": exd5");
         Check(view.objectSquare[blackPawn] == ChessRules.NoSquare && (view.pieces[blackPawn].localPosition
-            - view.CapturedPlacePosition(ChessRules.Black, 0) - view.PieceOffset(blackPawn)).sqrMagnitude < 1e-8f,
+            - view._CapturedPlacePosition(ChessRules.Black, 0) - view._PieceOffset(blackPawn)).sqrMagnitude < 1e-8f,
             t + ": the captured pawn in its place, offset as on a square", "at "
             + view.pieces[blackPawn].localPosition.ToString("F3"));
         Play("c7", "c6", "c6", t + ": c6");
-        view.SetInputStyle(ChessBoardView.InputClicks);
+        view._SetInputStyle(ChessBoardView.InputClicks);
         ClickPiece("d5");
         ClickPiece("c6");
         CheckUnselected(5, t + ": dxc6 by clicking the pawn");
         Play("g8", "f6", "f6", t + ": Nf6");
         Play("c6", "b7", "b7", t + ": cxb7");
         Play("b8", "d7", "d7", t + ": Nbd7");
-        view.SetInputStyle(ChessBoardView.InputPickups);
+        view._SetInputStyle(ChessBoardView.InputPickups);
         int promoting = view.squareObject[Sq("b7")];
         DropOver("b7", "a8", t + ": bxa8 dropped");
         CheckInt(view.promotionObject, promoting, t + ": bxa8 waits for its piece");
@@ -2152,7 +2152,7 @@ public class ViewTest : ChessTest {
         CheckDropped(9, ChessBoard.ChangeMove, t + ": bxa8=Q");
         CheckInt(view.objectType[promoting], ChessRules.Queen, t + ": bxa8=Q: the pawn's object a queen");
         CheckPieceSets(testPieceSet, testPieceSet, t + ": after the game");
-        view.SetInputStyle(savedStyle);
+        view._SetInputStyle(savedStyle);
         fallStanding = LowestPoint(view.squareObject[Sq("e8")]);
         CheckInt(board.ResignAs(ChessRules.Black, localName), ChessBoard.InputAccepted, t + ": Black resigned");
         Redraw();
@@ -2173,14 +2173,14 @@ public class ViewTest : ChessTest {
 
         // The arbiter's overrides: the view a listener of the arbiter's, once; out of range refused; an override worn
         // at once by its side alone, whatever the board has synced, and the board's back when it's cleared.
-        int listeners = arbiter.PieceSetListenerCount();
+        int listeners = arbiter._PieceSetListenerCount();
         int found = 0;
         for (int i = 0; i < arbiter.pieceSetListeners.Length; i++) {
             if (arbiter.pieceSetListeners[i] == view) found++;
         }
         CheckInt(found, 1, s + ": the view among the arbiter's piece set listeners");
-        arbiter.AddPieceSetListener(view);
-        CheckInt(arbiter.PieceSetListenerCount(), listeners, s + ": the view added again: no change");
+        arbiter._AddPieceSetListener(view);
+        CheckInt(arbiter._PieceSetListenerCount(), listeners, s + ": the view added again: no change");
         string o = s + ": SetPieceSetOverride";
         Check(!arbiter.SetPieceSetOverride(white, 2), o + "(White, 2) refused", "accepted");
         Check(!arbiter.SetPieceSetOverride(black, -2), o + "(Black, -2) refused", "accepted");
@@ -2204,13 +2204,13 @@ public class ViewTest : ChessTest {
         SetPieceSet(black, 0, o + ": the board's Black 0");
 
         // A listener removed isn't told.
-        arbiter.RemovePieceSetListener(view);
-        CheckInt(arbiter.PieceSetListenerCount(), listeners - 1, s + ": the view removed as a listener");
+        arbiter._RemovePieceSetListener(view);
+        CheckInt(arbiter._PieceSetListenerCount(), listeners - 1, s + ": the view removed as a listener");
         arbiter.SetPieceSetOverride(white, 1);
         CheckPieceSets(defaultSet, defaultSet, s + ": the view removed: not told of the override");
         arbiter.SetPieceSetOverride(white, -1);
-        arbiter.AddPieceSetListener(view);
-        CheckInt(arbiter.PieceSetListenerCount(), listeners, s + ": the view added back");
+        arbiter._AddPieceSetListener(view);
+        CheckInt(arbiter._PieceSetListenerCount(), listeners, s + ": the view added back");
 
         // A synced index the list doesn't have (as from a client whose list is longer) shows the first set.
         board.whitePieceSet = 5;
@@ -2222,10 +2222,10 @@ public class ViewTest : ChessTest {
         arbiter.pieceSets = savedPieceSets;
         arbiter.SetPieceSetOverride(white, savedOverrideWhite);
         arbiter.SetPieceSetOverride(black, savedOverrideBlack);
-        board.ClearState();
+        board._ClearState();
         Redraw();
-        Check(view.AppliedPieceSet(white) == view.CurrentPieceSet(white)
-            && view.AppliedPieceSet(black) == view.CurrentPieceSet(black) && arbiter.PieceSet(0) == defaultSet,
+        Check(view._AppliedPieceSet(white) == view.CurrentPieceSet(white)
+            && view._AppliedPieceSet(black) == view.CurrentPieceSet(black) && arbiter.PieceSet(0) == defaultSet,
             s + ": put back", "they aren't");
         CheckView(s + ": cleared");
         SendCustomEventDelayedFrames(nameof(RunCapturedPlaceChecks), 1);
@@ -2248,10 +2248,10 @@ public class ViewTest : ChessTest {
         string details = "";
         Vector3 axis = view.transform.up;
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
-            if (view.ObjectColor(obj) != ChessRules.Black || view.objectSquare[obj] == ChessRules.NoSquare) continue;
+            if (view._ObjectColor(obj) != ChessRules.Black || view.objectSquare[obj] == ChessRules.NoSquare) continue;
             int match = -1;
             for (int other = 0; other < ChessBoardView.PieceCount && match < 0; other++) {
-                if (view.ObjectColor(other) == ChessRules.White && view.objectType[other] == view.objectType[obj]
+                if (view._ObjectColor(other) == ChessRules.White && view.objectType[other] == view.objectType[obj]
                     && view.objectSquare[other] != ChessRules.NoSquare) {
                     match = other;
                 }
@@ -2307,7 +2307,7 @@ public class ViewTest : ChessTest {
             && view.blackCapturedPlaces.Length == ChessBoardView.PiecesPerColor, c + ": 16 places per colour built",
             view.whiteCapturedPlaces.Length + " and " + view.blackCapturedPlaces.Length);
 
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, c);
         int blackD = view.squareObject[Sq("d7")];
         int whiteE = view.squareObject[Sq("e2")];
@@ -2317,8 +2317,8 @@ public class ViewTest : ChessTest {
         Play("d7", "d5", "d5", c + ": d5");
         Play("e4", "d5", "d5", c + ": exd5");
         CheckPlaces("", "P", c + ": exd5");
-        Check(Mathf.Abs(view.CapturedPlacePosition(ChessRules.Black, 0).y) > 0.001f, c + ": the places at another "
-            + "height than the board", "at " + view.CapturedPlacePosition(ChessRules.Black, 0).ToString("F3"));
+        Check(Mathf.Abs(view._CapturedPlacePosition(ChessRules.Black, 0).y) > 0.001f, c + ": the places at another "
+            + "height than the board", "at " + view._CapturedPlacePosition(ChessRules.Black, 0).ToString("F3"));
         Play("d8", "d5", "d5", c + ": Qxd5");
         Play("b1", "c3", "c3", c + ": Nc3");
         Play("d5", "a2", "a2", c + ": Qxa2");
@@ -2374,7 +2374,7 @@ public class ViewTest : ChessTest {
         view.blackCapturedPlaces = oneTarget;
         Play("a1", "a2", "a2", f + ": Rxa2");
         CheckPlaces("PP", "PQ", f + ": Rxa2");
-        Check(!view.IsObjectShown(blackQ) && !view.pieces[blackQ].gameObject.activeSelf, f + ": the queen hidden",
+        Check(!view._IsObjectShown(blackQ) && !view.pieces[blackQ].gameObject.activeSelf, f + ": the queen hidden",
             "shown");
         CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, f + ": replay");
         CheckInt(board.StepToAs(localName, true, 6), ChessBoard.InputAccepted, f + ": stepped to Qxa2");
@@ -2412,7 +2412,7 @@ public class ViewTest : ChessTest {
 
         // A promoted pawn captured goes to its place as a pawn.
         string p = c + ": promotion";
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, p);
         int aPawn = view.squareObject[Sq("a2")];
         PlayMoves("a2a4 b7b5 a4b5 a7a6 b5a6 c8b7 a6b7 b8c6", p);
@@ -2450,7 +2450,7 @@ public class ViewTest : ChessTest {
 
         CheckPutBack(c + ": put back");
 
-        board.ClearState();
+        board._ClearState();
         Redraw();
         CheckView(c + ": cleared");
         CheckPlaces("", "", c + ": cleared");
@@ -2463,8 +2463,8 @@ public class ViewTest : ChessTest {
     // square.
     void CheckPutBack(string b) {
         int savedStyle = view.inputStyle;
-        view.SetInputStyle(ChessBoardView.InputPickups);
-        board.ClearState();
+        view._SetInputStyle(ChessBoardView.InputPickups);
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, b);
         PlayMoves("e2e4 d7d5 e4d5 d8d5", b);
         CheckPlaces("P", "P", b + ": exd5 Qxd5");
@@ -2475,10 +2475,10 @@ public class ViewTest : ChessTest {
 
         // Dropped over an empty square.
         int whitePawn = PlaceObject(ChessRules.White, 0);
-        view.OnPiecePickedUp(whitePawn);
+        view._OnPiecePickedUp(whitePawn);
         CheckInt(view.heldObject, whitePawn, b + ": the white pawn picked up from its place");
-        view.pieces[whitePawn].localPosition = Over("e3") + view.PieceOffset(whitePawn);
-        view.OnPieceDropped(whitePawn);
+        view.pieces[whitePawn].localPosition = Over("e3") + view._PieceOffset(whitePawn);
+        view._OnPieceDropped(whitePawn);
         CheckInt(board.lastChange, ChessBoard.ChangeFreeMove, b + ": dropped over e3: a free move");
         CheckInt(board.replayBoard[Sq("e3")], ChessRules.WhitePawn, b + ": dropped over e3: a white pawn on e3");
         Redraw();
@@ -2489,10 +2489,10 @@ public class ViewTest : ChessTest {
 
         // Dropped over the queen: she goes to Black's places.
         int blackPawn = PlaceObject(ChessRules.Black, 0);
-        view.OnPiecePickedUp(blackPawn);
+        view._OnPiecePickedUp(blackPawn);
         CheckInt(view.heldObject, blackPawn, b + ": the black pawn picked up from its place");
-        view.pieces[blackPawn].localPosition = Over("d5") + view.PieceOffset(blackPawn);
-        view.OnPieceDropped(blackPawn);
+        view.pieces[blackPawn].localPosition = Over("d5") + view._PieceOffset(blackPawn);
+        view._OnPieceDropped(blackPawn);
         CheckInt(board.replayBoard[Sq("d5")], ChessRules.PieceOf(ChessRules.Black, ChessRules.Pawn),
             b + ": dropped over d5: a black pawn on d5");
         Redraw();
@@ -2502,37 +2502,38 @@ public class ViewTest : ChessTest {
 
         // Dropped off the board: back in its place.
         int blackQueen = PlaceObject(ChessRules.Black, 0);
-        view.OnPiecePickedUp(blackQueen);
+        view._OnPiecePickedUp(blackQueen);
         CheckInt(view.heldObject, blackQueen, b + ": the queen picked up from her place");
         view.pieces[blackQueen].localPosition = OffBoard();
-        view.OnPieceDropped(blackQueen);
+        view._OnPieceDropped(blackQueen);
         CheckInt(board.lastChange, ChessBoard.ChangeRejected, b + ": dropped off the board: rejected");
         Redraw();
         CheckView(b + ": dropped off the board");
         CheckInt(view.objectPlace[blackQueen], 0, b + ": dropped off the board: the queen in her place again");
 
         // Clicks: selected in its place (lifted), put back by a second click, then placed on a square.
-        view.SetInputStyle(ChessBoardView.InputClicks);
+        view._SetInputStyle(ChessBoardView.InputClicks);
         Redraw();
         CheckPickupable(0, b + ": clicks: no pickups");
-        Check(view.IsPieceClickable(blackQueen), b + ": clicks: the queen in her place clickable", "not clickable");
-        view.OnPieceClicked(blackQueen);
+        Check(view._IsPieceClickable(blackQueen), b + ": clicks: the queen in her place clickable", "not clickable");
+        view._OnPieceClicked(blackQueen);
         CheckInt(view.selectedObject, blackQueen, b + ": clicks: the queen selected");
         Redraw();
-        Vector3 lifted = view.CapturedPlacePosition(ChessRules.Black, 0) + view.PieceOffset(blackQueen)
+        Vector3 lifted = view._CapturedPlacePosition(ChessRules.Black, 0) + view._PieceOffset(blackQueen)
             + new Vector3(0, ChessBoardView.SelectLift * view.squareSize, 0);
         Check((view.pieces[blackQueen].localPosition - lifted).sqrMagnitude < 1e-8f, b + ": clicks: the queen lifted "
             + "over her place", "at " + view.pieces[blackQueen].localPosition.ToString("F3"));
-        Check(view.IsSquareClickable(Sq("d8")) && view.IsSquareClickable(Sq("e3")) && view.IsPieceClickable(blackQueen),
+        Check(view._IsSquareClickable(Sq("d8")) && view._IsSquareClickable(Sq("e3"))
+                && view._IsPieceClickable(blackQueen),
             b + ": clicks: the squares and the queen clickable", "not clickable");
-        view.OnPieceClicked(blackQueen);
+        view._OnPieceClicked(blackQueen);
         CheckInt(view.selectedObject, ChessBoardView.NoObject, b + ": clicks: a second click puts her back");
-        Check(!view.IsSquareClickable(Sq("d8")), b + ": clicks: put back: no square clickable", "d8 clickable");
+        Check(!view._IsSquareClickable(Sq("d8")), b + ": clicks: put back: no square clickable", "d8 clickable");
         Redraw();
         CheckView(b + ": clicks: put back");
-        view.OnPieceClicked(blackQueen);
+        view._OnPieceClicked(blackQueen);
         CheckInt(view.selectedObject, blackQueen, b + ": clicks: the queen selected again");
-        view.OnSquareClicked(Sq("d8"));
+        view._OnSquareClicked(Sq("d8"));
         CheckInt(view.selectedObject, ChessBoardView.NoObject, b + ": clicks: placed, unselected");
         CheckInt(board.replayBoard[Sq("d8")], ChessRules.PieceOf(ChessRules.Black, ChessRules.Queen),
             b + ": clicks: the queen on d8");
@@ -2545,12 +2546,12 @@ public class ViewTest : ChessTest {
         CheckInt(board.LeaveReplayAs(localName, true), ChessBoard.InputAccepted, b + ": left replay");
         Redraw();
         CheckPlaces("P", "P", b + ": left replay");
-        Check(!view.IsPieceClickable(PlaceObject(ChessRules.White, 0))
-            && !view.IsPieceClickable(PlaceObject(ChessRules.Black, 0)), b + ": left replay: captured pieces not "
+        Check(!view._IsPieceClickable(PlaceObject(ChessRules.White, 0))
+            && !view._IsPieceClickable(PlaceObject(ChessRules.Black, 0)), b + ": left replay: captured pieces not "
             + "clickable", "clickable");
-        view.SetInputStyle(ChessBoardView.InputPickups);
+        view._SetInputStyle(ChessBoardView.InputPickups);
         CheckPickupable(30, b + ": left replay: pickups");
-        view.SetInputStyle(savedStyle);
+        view._SetInputStyle(savedStyle);
     }
 
     // ---- 12.8: the checkmated king falls over ----
@@ -2567,7 +2568,7 @@ public class ViewTest : ChessTest {
     public void RunFallChecks() {
         string f = "fall";
         view.animateMoves = false;
-        board.ClearState();
+        board._ClearState();
         Redraw();
         CheckFalls(f + ": a cleared board");
         fallKing = view.squareObject[Sq("e1")];
@@ -2587,7 +2588,7 @@ public class ViewTest : ChessTest {
         CheckInt(board.StepToAs(localName, false, 3), ChessBoard.InputAccepted, f + ": stepped to ply 3");
         Redraw();
         CheckInt(board.FallenKingSquare(), ChessRules.NoSquare, f + ": ply 3: no king mated");
-        Check(view.fallTarget[fallKing] == 0 && view.fallAmount[fallKing] == 1 && view.IsFalling(fallKing)
+        Check(view.fallTarget[fallKing] == 0 && view.fallAmount[fallKing] == 1 && view._IsFalling(fallKing)
             && view.fallStart[fallKing] <= Time.time, f + ": ply 3: the king starts standing up at once",
             FallText(fallKing));
         SendCustomEventDelayedSeconds(nameof(RunFallStoodChecks), view.fallSeconds + 0.5f);
@@ -2611,11 +2612,11 @@ public class ViewTest : ChessTest {
     public void RunFallMidChecks() {
         string f = "fall: halfway";
         float amount = view.fallAmount[fallKing];
-        Check(amount > 0 && amount < 1 && view.IsFalling(fallKing), f + ": partly over", FallText(fallKing));
-        Check((view.pieces[fallKing].localPosition - view.ObjectPlace(fallKing)).sqrMagnitude < 1e-8f,
+        Check(amount > 0 && amount < 1 && view._IsFalling(fallKing), f + ": partly over", FallText(fallKing));
+        Check((view.pieces[fallKing].localPosition - view._ObjectPlace(fallKing)).sqrMagnitude < 1e-8f,
             f + ": in its place", "at " + view.pieces[fallKing].localPosition.ToString("F3") + ", its place "
-            + view.ObjectPlace(fallKing).ToString("F3"));
-        CheckInt(view.DropSquare(view.PieceBase(fallKing)), Sq("e1"), f + ": its base over e1");
+            + view._ObjectPlace(fallKing).ToString("F3"));
+        CheckInt(view._DropSquare(view._PieceBase(fallKing)), Sq("e1"), f + ": its base over e1");
         float lowest = LowestPoint(fallKing);
         Check(lowest > fallStanding - 1e-5f, f + ": not through the board",
             "lowest " + lowest.ToString("F5") + ", standing " + fallStanding.ToString("F5"));
@@ -2653,10 +2654,10 @@ public class ViewTest : ChessTest {
         view.animateMoves = false;
 
         if (Utilities.IsValid(importer)) {
-            board.ClearState();
-            importer.StartImport(MatePgn, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
-            CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, f + ": loaded mate: imported");
-            CheckInt(board.LoadImport(importer), ChessBoard.InputAccepted, f + ": loaded mate: loaded");
+            board._ClearState();
+            importer._StartImport(MatePgn, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
+            CheckInt(importer._ImportFor(float.MaxValue), ChessPgn.ImportDone, f + ": loaded mate: imported");
+            CheckInt(board._LoadImport(importer), ChessBoard.InputAccepted, f + ": loaded mate: loaded");
             view.animateMoves = true;
             Redraw();
             view.animateMoves = false;
@@ -2669,7 +2670,7 @@ public class ViewTest : ChessTest {
             Check(false, f + ": importer assigned", "assign ViewTest's Importer in the Inspector");
         }
 
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, f + " (Black)");
         PlayMoves("e2e4 e7e5 d1h5 b8c6 f1c4 g8f6 h5f7", f + " (Black)");
         CheckInt(board.FallenKingSquare(), Sq("e8"), f + " (Black): Qxf7#: Black's king mated");
@@ -2681,7 +2682,7 @@ public class ViewTest : ChessTest {
 
         // A resignation lays the resigning side's king down, at once with nothing travelling.
         string r = "fall: resigned";
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, r);
         PlayMoves("e2e4 e7e5", r);
         view.animateMoves = true;
@@ -2689,7 +2690,7 @@ public class ViewTest : ChessTest {
         Redraw();
         CheckInt(board.FallenKingSquare(), Sq("e1"), r + ": White's king fallen");
         int resigned = view.squareObject[Sq("e1")];
-        Check(view.fallTarget[resigned] == 1 && view.IsFalling(resigned) && view.fallStart[resigned] <= Time.time,
+        Check(view.fallTarget[resigned] == 1 && view._IsFalling(resigned) && view.fallStart[resigned] <= Time.time,
             r + ": the king starts falling at once", FallText(resigned));
         view.animateMoves = false;
         Redraw();
@@ -2702,7 +2703,7 @@ public class ViewTest : ChessTest {
         Redraw();
         CheckFalls(r + ": ply 1");
 
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, r + " (Black)");
         PlayMoves("e2e4", r + " (Black)");
         CheckInt(board.ResignAs(ChessRules.Black, localName), ChessBoard.InputAccepted, r + " (Black): Black resigns");
@@ -2711,7 +2712,7 @@ public class ViewTest : ChessTest {
         CheckFallen("e8", Vector3.back, r + " (Black)");
 
         // A draw lays nobody down.
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, f + " (draw)");
         SetRequestRules(true);
         PlayMoves("e2e4", f + " (draw)");
@@ -2721,7 +2722,7 @@ public class ViewTest : ChessTest {
         CheckInt(board.ending, ChessGame.EndingDrawAgreement, f + " (draw): drawn");
         CheckFalls(f + " (draw)");
 
-        board.ClearState();
+        board._ClearState();
         Redraw();
         CheckFalls(f + ": cleared");
         CheckView(f + ": cleared");
@@ -2756,13 +2757,13 @@ public class ViewTest : ChessTest {
         CheckClip(ui.timeOutSound, "time-out", s + ": UI: timeOutSound");
         CheckClip(ui.checkSound, "move-check", s + ": UI: checkSound (the view's)");
         savedSoundStyle = view.inputStyle;
-        view.SetInputStyle(ChessBoardView.InputPickups);
+        view._SetInputStyle(ChessBoardView.InputPickups);
 
-        board.ClearState();
+        board._ClearState();
         Redraw();
         MarkSounds();
         // A press clicks at once, refused or not; the change's own sound follows on the next Refresh.
-        ui.PressButton(ChessBoardUI.ButtonResignWhite);
+        ui._PressButton(ChessBoardUI.ButtonResignWhite);
         CheckSounds(null, ui.clickSound, s + ": a refused press clicks");
         Redraw();
         CheckSounds(null, null, s + ": nothing follows a refused press");
@@ -2867,7 +2868,7 @@ public class ViewTest : ChessTest {
 
         // The time warning, sampled at chosen times in a 3+0 game: at each of 1:00, 0:30 and 0:10 once, nothing
         // between, once for two passed at one sample; then a flag fall's time-out in place of game over.
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.JoinAs(ChessRules.White, localName), ChessBoard.InputAccepted, s + ": timed: joined White");
         CheckInt(board.JoinAs(ChessRules.Black, localName), ChessBoard.InputAccepted, s + ": timed: joined Black");
         Redraw();
@@ -2888,12 +2889,12 @@ public class ViewTest : ChessTest {
         WarningSound(start + 175, false, s + ": timed: 0:05 left");
         WarningSound(start + 1, false, s + ": timed: a new look from 2:59");
         WarningSound(start + 171, true, s + ": timed: all three passed at once: one warning");
-        Check(board.CheckFlagFallAt(start + 181), s + ": timed: the flag falls", "the game didn't end on time");
+        Check(board._CheckFlagFallAt(start + 181), s + ": timed: the flag falls", "the game didn't end on time");
         Redraw();
         CheckSounds(null, ui.timeOutSound, s + ": timed: flag fall");
 
         // A game ended by its last move: the view's sound, then game over once the check sound has finished.
-        board.ClearState();
+        board._ClearState();
         StartUnforced(s + ": mate");
         PlayMoves("f2f3 e7e5 g2g4", s + ": mate");
         MarkSounds();
@@ -2921,7 +2922,7 @@ public class ViewTest : ChessTest {
         StepSound(3, view.moveSound, s + ": mate: stepped back");
         Check(ui.gameEndAt < 0, s + ": mate: stepped back: game over no longer waits", "at " + ui.gameEndAt);
 
-        board.ClearState();
+        board._ClearState();
         StartUnforced(s + ": stalemate");
         PlayMoves(LoydStalemate.Substring(0, LoydStalemate.Length - 5), s + ": stalemate");
         MoveSound("c8e6", view.moveSound, null, s + ": Qe6 stalemates");
@@ -2932,10 +2933,10 @@ public class ViewTest : ChessTest {
         CheckSounds(null, ui.resetSound, s + ": stalemate: reset");
         Check(ui.gameEndAt < 0, s + ": stalemate: the reset drops the waiting game over", "at " + ui.gameEndAt);
 
-        board.ClearState();
+        board._ClearState();
         Redraw();
         SetRequestRules(false);
-        view.SetInputStyle(savedSoundStyle);
+        view._SetInputStyle(savedSoundStyle);
         view.animateMoves = savedAnimate;
         view.muted = false;
         ui.muted = false;
@@ -2945,7 +2946,7 @@ public class ViewTest : ChessTest {
 
     // ---- 13.5: the UI's text in a language file ----
 
-    // The game texts' keys (ChessBoardUI.GameTextKeys, one per index before TextEndings, and every ending's
+    // The game texts' keys (ChessBoardUI._GameTextKeys, one per index before TextEndings, and every ending's
     // ChessGame.EndingKey) are in en.json (any other key missing logs an I18n error as it's read); the view and the UI share one I18n, English
     // here; the fixed texts and the hover texts the view sets; and a test pack (View/test-language.json, its code
     // x-chess-test, added to the Chess Language by Tools > Chess Board > Create View Test) overriding a few keys
@@ -2967,7 +2968,7 @@ public class ViewTest : ChessTest {
         Check(read, s + ": en.json read", "not a JSON object");
         if (!read) return;
         DataDictionary pack = parsed.DataDictionary;
-        string[] keys = ChessBoardUI.GameTextKeys();
+        string[] keys = ChessBoardUI._GameTextKeys();
         CheckInt(keys.Length, ChessBoardUI.TextEndings, s + ": a game text key for each index before the endings");
         string missing = "";
         for (int i = 0; i < keys.Length; i++) {
@@ -2995,17 +2996,17 @@ public class ViewTest : ChessTest {
             s + ": the promotion ghosts");
 
         Check(i18n.SetLanguage("x-chess-test"), s + ": the test pack chosen", "no pack x-chess-test");
-        CheckString(ui.ButtonText(ChessBoardUI.ButtonStart), "Begin (test)", s + ": test pack: Start overridden");
-        CheckString(ui.ButtonText(ChessBoardUI.ButtonReset), "Reset", s + ": test pack: Reset left English");
-        CheckString(I18n.Format(ui.GameTexts()[ChessBoardUI.TextPlayerLine], new string[] {
-            "color", ChessBoardUI.ColorText(ui.GameTexts(), ChessRules.White), "name", "Ana" }), "Light: Ana",
+        CheckString(ui._ButtonText(ChessBoardUI.ButtonStart), "Begin (test)", s + ": test pack: Start overridden");
+        CheckString(ui._ButtonText(ChessBoardUI.ButtonReset), "Reset", s + ": test pack: Reset left English");
+        CheckString(I18n.Format(ui._GameTexts()[ChessBoardUI.TextPlayerLine], new string[] {
+            "color", ChessBoardUI._ColorText(ui._GameTexts(), ChessRules.White), "name", "Ana" }), "Light: Ana",
             s + ": test pack: White overridden in a line left English");
         CheckString(PickupTexts(), "Shift (test)", s + ": test pack: the pieces' pickups");
         CheckString(ui.pgnImportText.text + "|" + ui.pgnCloseText.text, "Bring in (test)|Close",
             s + ": test pack: the PGN box's buttons");
         i18n.SetLanguage("en");
         CheckString(i18n.GetCurrentLanguage(), "en", s + ": English again");
-        CheckString(ui.ButtonText(ChessBoardUI.ButtonStart), "Start", s + ": English again: Start");
+        CheckString(ui._ButtonText(ChessBoardUI.ButtonStart), "Start", s + ": English again: Start");
         CheckString(PickupTexts(), "Move", s + ": English again: the pieces' pickups");
         CheckString(ui.pgnImportText.text, "Import", s + ": English again: the PGN box's Import");
     }
@@ -3077,7 +3078,7 @@ public class ViewTest : ChessTest {
     // no click).
     void PressStepSound(int action, int ply, AudioClip viewClip, string name) {
         MarkSounds();
-        CheckInt(ui.PressButton(action), ChessBoard.InputAccepted, name + ": pressed");
+        CheckInt(ui._PressButton(action), ChessBoard.InputAccepted, name + ": pressed");
         CheckInt(board.replayIndex, ply, name + ": at ply " + ply);
         Redraw();
         CheckSounds(viewClip, null, name);
@@ -3099,7 +3100,7 @@ public class ViewTest : ChessTest {
         MarkSounds();
         DropOver("b7", square, name + ": dropped");
         CheckSounds(landing, null, name + ": landed");
-        CheckInt(view.ChoosePromotion(type), ChessBoard.InputAccepted, name + ": chosen");
+        CheckInt(view._ChoosePromotion(type), ChessBoard.InputAccepted, name + ": chosen");
         Redraw();
         CheckSounds(chosen, null, name + ": chosen");
     }
@@ -3107,7 +3108,7 @@ public class ViewTest : ChessTest {
     // Samples the time warning at server time now: whether it played.
     void WarningSound(double now, bool warns, string name) {
         MarkSounds();
-        ui.CheckTimeWarningAt(now);
+        ui._CheckTimeWarningAt(now);
         CheckSounds(null, warns ? ui.timeWarningSound : null, name);
     }
 
@@ -3131,16 +3132,16 @@ public class ViewTest : ChessTest {
             Check(false, name + ": the king on " + square + " fallen", "no object there");
             return;
         }
-        Check(view.fallTarget[obj] == 1 && view.fallAmount[obj] == 1 && !view.IsFalling(obj),
+        Check(view.fallTarget[obj] == 1 && view.fallAmount[obj] == 1 && !view._IsFalling(obj),
             name + ": the king on " + square + " fallen", FallText(obj));
         Vector3 up = PieceUp(obj);
         Check((up - direction).sqrMagnitude < 1e-6f, name + ": lying towards " + direction.ToString("F0"),
             "its top towards " + up.ToString("F3"));
-        CheckInt(view.DropSquare(view.PieceBase(obj)), Sq(square), name + ": its base over " + square);
+        CheckInt(view._DropSquare(view._PieceBase(obj)), Sq(square), name + ": its base over " + square);
         float lowest = LowestPoint(obj);
         Check(Mathf.Abs(lowest - fallStanding) < 1e-5f, name + ": lying on the board",
             "lowest " + lowest.ToString("F5") + ", standing " + fallStanding.ToString("F5"));
-        Check((view.pieces[obj].localPosition - view.ObjectPlace(obj)).sqrMagnitude < 1e-8f, name + ": in its place",
+        Check((view.pieces[obj].localPosition - view._ObjectPlace(obj)).sqrMagnitude < 1e-8f, name + ": in its place",
             "at " + view.pieces[obj].localPosition.ToString("F3"));
     }
 
@@ -3152,8 +3153,8 @@ public class ViewTest : ChessTest {
     // Which way obj's top points (view space), its template's turn taken out: up when it stands.
     Vector3 PieceUp(int obj) {
         Quaternion template = Quaternion.identity;
-        int color = view.ObjectColor(obj);
-        ChessPieceSet set = view.AppliedPieceSet(color);
+        int color = view._ObjectColor(obj);
+        ChessPieceSet set = view._AppliedPieceSet(color);
         int type = view.objectType[obj];
         if (Utilities.IsValid(set) && type != ChessRules.NoPieceType
             && Utilities.IsValid(WornTemplate(set, color, type, false))) {
@@ -3166,14 +3167,14 @@ public class ViewTest : ChessTest {
     // 13.6): a Black one without a mesh.
     bool FallsBack(ChessPieceSet set, int color, int type, bool promotion) {
         if (color != ChessRules.Black) return false;
-        return !ChessPieceSet.HasMesh(promotion ? set.PromotionTemplate(color, type) : set.Template(color, type));
+        return !ChessPieceSet._HasMesh(promotion ? set._PromotionTemplate(color, type) : set._Template(color, type));
     }
 
     // The template whose mesh and transform a colour's piece of type wears in set: its own, or White's when it falls
     // back (null for none).
     Transform WornTemplate(ChessPieceSet set, int color, int type, bool promotion) {
         int from = FallsBack(set, color, type, promotion) ? ChessRules.White : color;
-        return promotion ? set.PromotionTemplate(from, type) : set.Template(from, type);
+        return promotion ? set._PromotionTemplate(from, type) : set._Template(from, type);
     }
 
     // How it stands turned: as the template is, half round more when Black falls back on White's.
@@ -3192,7 +3193,7 @@ public class ViewTest : ChessTest {
     // otherwise White's.
     Material[] WornMaterials(ChessPieceSet set, int color, int type, bool promotion) {
         if (FallsBack(set, color, type, promotion)) {
-            Transform own = promotion ? set.PromotionTemplate(color, type) : set.Template(color, type);
+            Transform own = promotion ? set._PromotionTemplate(color, type) : set._Template(color, type);
             MeshRenderer ownRenderer = Utilities.IsValid(own) ? own.GetComponent<MeshRenderer>() : null;
             if (Utilities.IsValid(ownRenderer)) {
                 Material[] list = ownRenderer.sharedMaterials;
@@ -3224,8 +3225,8 @@ public class ViewTest : ChessTest {
 
     // Loads fen as a game with no moves (the board then in replay, loaded).
     void LoadFen(string fen, string name) {
-        board.ClearState();
-        CheckInt(board.LoadGame(fen, new int[0], new string[0], new int[0], 0, ChessGame.ModeStandard, "", "", "*",
+        board._ClearState();
+        CheckInt(board._LoadGame(fen, new int[0], new string[0], new int[0], 0, ChessGame.ModeStandard, "", "", "*",
             "", ChessArbiter.NoClock, 0), ChessBoard.InputAccepted, name + ": loaded");
         Redraw();
     }
@@ -3280,15 +3281,15 @@ public class ViewTest : ChessTest {
             Check(false, name, "no piece on " + from);
             return;
         }
-        view.OnPiecePickedUp(obj);
+        view._OnPiecePickedUp(obj);
         Check(view.heldObject == obj, name + ": picked up", "not held");
-        view.pieces[obj].localPosition = Over(to) + view.PieceOffset(obj);
-        view.OnPieceDropped(obj);
+        view.pieces[obj].localPosition = Over(to) + view._PieceOffset(obj);
+        view._OnPieceDropped(obj);
     }
 
     // The centre of a square on the playing surface, in the world.
     Vector3 SquareWorld(int square) {
-        return view.transform.TransformPoint(view.SquarePosition(square));
+        return view.transform.TransformPoint(view._SquarePosition(square));
     }
 
     // The mesh the current set of its side gives piece (null for none).
@@ -3307,14 +3308,14 @@ public class ViewTest : ChessTest {
     // mesh, every material slot, the turn (a fallen king's left to CheckFallen) and the size, with its collider fitted
     // to the mesh.
     void CheckPieceSets(ChessPieceSet whiteSet, ChessPieceSet blackSet, string name) {
-        Check(view.AppliedPieceSet(ChessRules.White) == whiteSet, name + ": White's set applied", "another set is");
-        Check(view.AppliedPieceSet(ChessRules.Black) == blackSet, name + ": Black's set applied", "another set is");
+        Check(view._AppliedPieceSet(ChessRules.White) == whiteSet, name + ": White's set applied", "another set is");
+        Check(view._AppliedPieceSet(ChessRules.Black) == blackSet, name + ": Black's set applied", "another set is");
         int wrong = 0;
         string details = "";
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
             int type = view.objectType[obj];
             if (type == ChessRules.NoPieceType) continue;
-            int color = view.ObjectColor(obj);
+            int color = view._ObjectColor(obj);
             ChessPieceSet set = color == ChessRules.White ? whiteSet : blackSet;
             Transform template = WornTemplate(set, color, type, false);
             Transform piece = view.pieces[obj];
@@ -3381,16 +3382,16 @@ public class ViewTest : ChessTest {
     // every panel shows the view's texts for the moment it drew them. The server time can tick within a frame, so a
     // panel may show the texts from just before or just after the Refresh (a clock at 5:00 there and 4:59 here).
     void CheckStatus(string players, string status, string name) {
-        double before = board.ServerTime();
+        double before = board._ServerTime();
         Redraw();
-        double after = board.ServerTime();
+        double after = board._ServerTime();
         double now = board.turnStart;
-        if (players != null) CheckString(ui.PlayersTextAt(now), players, name + ": players");
-        CheckString(ui.StatusTextAt(now), status, name + ": status");
-        string playersBefore = ui.PlayersTextAt(before);
-        string playersAfter = ui.PlayersTextAt(after);
-        string statusBefore = ui.StatusTextAt(before);
-        string statusAfter = ui.StatusTextAt(after);
+        if (players != null) CheckString(ui._PlayersTextAt(now), players, name + ": players");
+        CheckString(ui._StatusTextAt(now), status, name + ": status");
+        string playersBefore = ui._PlayersTextAt(before);
+        string playersAfter = ui._PlayersTextAt(after);
+        string statusBefore = ui._StatusTextAt(before);
+        string statusAfter = ui._StatusTextAt(after);
         string errors = "";
         for (int i = 0; i < ui.statusLabels.Length; i++) {
             TextMeshProUGUI label = ui.statusLabels[i];
@@ -3410,7 +3411,7 @@ public class ViewTest : ChessTest {
     void CheckEnding(int ending, int winner, string expected) {
         board.ending = ending;
         board.winner = winner;
-        CheckString(ui.EndingText(), expected, "status: ending " + ending + ", winner " + winner);
+        CheckString(ui._EndingText(), expected, "status: ending " + ending + ", winner " + winner);
     }
 
     // ---- The expected texts, by key (PLAN.md 13.5a) ----
@@ -3515,10 +3516,10 @@ public class ViewTest : ChessTest {
         Check(Utilities.IsValid(importer) && pgn != null, name + ": importer and PGN assigned",
             "assign ViewTest's Importer and PGNs in the Inspector");
         if (!Utilities.IsValid(importer) || pgn == null) return false;
-        board.ClearState();
-        importer.StartImport(pgn.text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
-        CheckInt(importer.ImportFor(float.MaxValue), ChessPgn.ImportDone, name + ": imported");
-        return board.LoadImport(importer) == ChessBoard.InputAccepted;
+        board._ClearState();
+        importer._StartImport(pgn.text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
+        CheckInt(importer._ImportFor(float.MaxValue), ChessPgn.ImportDone, name + ": imported");
+        return board._LoadImport(importer) == ChessBoard.InputAccepted;
     }
 
     // Records where every object stands and returns the object on square, about to move.
@@ -3549,7 +3550,7 @@ public class ViewTest : ChessTest {
     // Whether obj travels from where it stood (RecordPositions) to square, still standing there, starting now or
     // (waits) once the others have landed.
     void CheckTravel(int obj, string square, bool waits, string name) {
-        CheckTravelTo(obj, view.SquarePosition(Sq(square)), waits, name + ": travels to " + square);
+        CheckTravelTo(obj, view._SquarePosition(Sq(square)), waits, name + ": travels to " + square);
     }
 
     // The same for a captured piece, to its captured place (step 12.4): once the mover has landed (waits), or at once
@@ -3559,7 +3560,7 @@ public class ViewTest : ChessTest {
             Check(false, name + ": travels off the board", "no object");
             return;
         }
-        CheckTravelTo(obj, view.ObjectPlace(obj), waits,
+        CheckTravelTo(obj, view._ObjectPlace(obj), waits,
             name + ": travels off the board, " + (waits ? "once the mover has landed" : "without waiting"));
     }
 
@@ -3605,8 +3606,8 @@ public class ViewTest : ChessTest {
 
     // Brings the view and the UI up to the board now, as each does by itself on the frame after a change.
     void Redraw() {
-        view.Refresh();
-        ui.Refresh();
+        view._Refresh();
+        ui._Refresh();
     }
 
     // Whether the object has a collider and it's a trigger.
@@ -3628,7 +3629,7 @@ public class ViewTest : ChessTest {
             if (padded.Contains(" " + text + " ")) want = ChessBoardView.MarkMove;
             else if (padded.Contains(" x" + text + " ")) want = ChessBoardView.MarkCapture;
             else if (padded.Contains(" o" + text + " ")) want = ChessBoardView.MarkCastle;
-            int shown = view.TargetMarkShown(square);
+            int shown = view._TargetMarkShown(square);
             if (shown != want) wrong += text + " (" + MarkText(shown) + ") ";
         }
         Check(wrong.Length == 0, name + ": target marks [" + expected + "]", "wrong on " + wrong);
@@ -3653,7 +3654,7 @@ public class ViewTest : ChessTest {
             Transform t = mark.transform;
             if (mark.activeSelf != want) {
                 errors += "mark " + (want ? "hidden; " : "shown; ");
-            } else if (want && (t.localPosition - view.SquarePosition(Sq(from))).sqrMagnitude > 1e-8f) {
+            } else if (want && (t.localPosition - view._SquarePosition(Sq(from))).sqrMagnitude > 1e-8f) {
                 errors += "mark at " + t.localPosition.ToString("F3") + "; ";
             } else if (want && Mathf.Abs(t.localScale.x - ChessBoardView.SmallMarkScale) > 0.001f) {
                 errors += "mark scaled " + t.localScale.ToString("F2") + "; ";
@@ -3664,9 +3665,9 @@ public class ViewTest : ChessTest {
             Vector3 end = t.localPosition + t.localRotation * new Vector3(0, 0, t.localScale.z);
             if (line.activeSelf != want) {
                 errors += "line " + (want ? "hidden; " : "shown; ");
-            } else if (want && (t.localPosition - view.SquarePosition(Sq(from))).sqrMagnitude > 1e-8f) {
+            } else if (want && (t.localPosition - view._SquarePosition(Sq(from))).sqrMagnitude > 1e-8f) {
                 errors += "line starting at " + t.localPosition.ToString("F3") + "; ";
-            } else if (want && (end - view.SquarePosition(Sq(to))).sqrMagnitude > 1e-8f) {
+            } else if (want && (end - view._SquarePosition(Sq(to))).sqrMagnitude > 1e-8f) {
                 errors += "line ending at " + end.ToString("F3") + "; ";
             } else if (want && Mathf.Abs(t.localScale.x - 1) > 0.001f) {
                 errors += "line widened " + t.localScale.ToString("F2") + "; ";
@@ -3700,7 +3701,7 @@ public class ViewTest : ChessTest {
     // The name of the square whose centre is at position (the view's local space), "?" for none.
     string SquareAt(Vector3 position) {
         for (int square = 0; square < 64; square++) {
-            if ((position - view.SquarePosition(square)).sqrMagnitude < 1e-8f) return SquareText(square);
+            if ((position - view._SquarePosition(square)).sqrMagnitude < 1e-8f) return SquareText(square);
         }
         return "?";
     }
@@ -3724,21 +3725,21 @@ public class ViewTest : ChessTest {
             if (Utilities.IsValid(view.promotionGhosts[i]) && view.promotionGhosts[i].gameObject.activeSelf) active++;
         }
         bool waiting = view.promotionObject != ChessBoardView.NoObject;
-        Check(active == (shown ? ChessBoardView.GhostCount : 0) && waiting == shown && view.AreGhostsShown() == shown,
+        Check(active == (shown ? ChessBoardView.GhostCount : 0) && waiting == shown && view._AreGhostsShown() == shown,
             name + ": the ghosts " + (shown ? "shown" : "hidden"),
             active + " active, waiting object " + view.promotionObject);
         if (!shown || active != ChessBoardView.GhostCount || !waiting) return;
-        int color = view.ObjectColor(view.promotionObject);
+        int color = view._ObjectColor(view.promotionObject);
         bool white = color == ChessRules.White;
         ChessPieceSet set = view.CurrentPieceSet(color);
-        Vector3 middle = view.SquarePosition(Sq(square));
+        Vector3 middle = view._SquarePosition(Sq(square));
         float limit = ChessBoardView.GhostMaxOffset * view.squareSize;
         middle.x = Mathf.Clamp(middle.x, -limit, limit);
         int wrong = 0;
         string details = "";
         float lastAcross = float.MinValue;
         for (int ghost = 0; ghost < ChessBoardView.GhostCount; ghost++) {
-            int type = ChessBoardView.GhostType(ghost);
+            int type = ChessBoardView._GhostType(ghost);
             Transform template = Utilities.IsValid(set) ? WornTemplate(set, color, type, true) : null;
             Transform t = view.promotionGhosts[ghost].transform;
             string error = "";
@@ -3778,7 +3779,7 @@ public class ViewTest : ChessTest {
                 lastAcross = across;
             }
             if (error.Length > 0 && wrong++ < 3) {
-                details += ChessPieceSet.TypeName(ChessBoardView.GhostType(ghost)) + ": " + error + "; ";
+                details += ChessPieceSet._TypeName(ChessBoardView._GhostType(ghost)) + ": " + error + "; ";
             }
         }
         Check(wrong == 0, name + ": each ghost in its place over " + square + ", wearing its promotion template",
@@ -3794,7 +3795,7 @@ public class ViewTest : ChessTest {
             if (Utilities.IsValid(ghost) && ghost.pieceType == type) found = ghost;
         }
         if (!Utilities.IsValid(found)) {
-            Check(false, name, "no ghost for " + ChessPieceSet.TypeName(type));
+            Check(false, name, "no ghost for " + ChessPieceSet._TypeName(type));
             return;
         }
         found.Interact();
@@ -3841,12 +3842,12 @@ public class ViewTest : ChessTest {
 
     // Pressing the button for action is refused.
     void CheckRefused(int action, string name) {
-        CheckInt(ui.PressButton(action), ChessBoard.InputRejected, name + ": " + buttonNames[action] + " refused");
+        CheckInt(ui._PressButton(action), ChessBoard.InputRejected, name + ": " + buttonNames[action] + " refused");
     }
 
     // After a Refresh, the buttons shown are exactly the actions in expected (names from buttonNames, separated by
     // spaces), each shown one labelled as the view says; a name followed by "?" is shown as OptionalShown says, and
-    // Mode and Clock are hidden when the snapshot forces them. The view's ButtonApplies agrees.
+    // Mode and Clock are hidden when the snapshot forces them. The view's _ButtonApplies agrees.
     void CheckButtons(string expected, string name) {
         Redraw();
         string padded = " " + expected + " ";
@@ -3867,10 +3868,10 @@ public class ViewTest : ChessTest {
             if (action == ChessBoardUI.ButtonClock && board.IsClockForced()) want = false;
             if (button.activeSelf != want) {
                 errors += actionName + (want ? " hidden; " : " shown; ");
-            } else if (ui.ButtonApplies(action) != want) {
-                errors += actionName + " applies " + ui.ButtonApplies(action) + "; ";
+            } else if (ui._ButtonApplies(action) != want) {
+                errors += actionName + " applies " + ui._ButtonApplies(action) + "; ";
             } else if (want && i < ui.buttonLabels.Length && Utilities.IsValid(ui.buttonLabels[i])
-                && ui.buttonLabels[i].text != ui.ButtonText(action)) {
+                && ui.buttonLabels[i].text != ui._ButtonText(action)) {
                 errors += actionName + " labelled " + ui.buttonLabels[i].text + "; ";
             }
         }
@@ -3939,7 +3940,7 @@ public class ViewTest : ChessTest {
 
     // Whether obj stands lifted over square.
     void CheckLifted(int obj, string square, string name) {
-        Vector3 expected = view.SquarePosition(Sq(square)) + view.PieceOffset(obj)
+        Vector3 expected = view._SquarePosition(Sq(square)) + view._PieceOffset(obj)
             + new Vector3(0, ChessBoardView.SelectLift * view.squareSize, 0);
         Check((view.pieces[obj].localPosition - expected).sqrMagnitude < 1e-8f, name + ": lifted over " + square,
             "at " + view.pieces[obj].localPosition.ToString("F3"));
@@ -3953,15 +3954,15 @@ public class ViewTest : ChessTest {
         for (int square = 0; square < 64; square++) {
             string text = " " + SquareText(square) + " ";
             int obj = view.squareObject[square];
-            bool piece = obj != ChessBoardView.NoObject && view.IsPieceClickable(obj);
+            bool piece = obj != ChessBoardView.NoObject && view._IsPieceClickable(obj);
             if (piece != (" " + pieceSquares + " ").Contains(text)) wrongPieces += SquareText(square) + " ";
-            if (view.IsSquareClickable(square) != (" " + targetSquares + " ").Contains(text)) {
+            if (view._IsSquareClickable(square) != (" " + targetSquares + " ").Contains(text)) {
                 wrongSquares += SquareText(square) + " ";
             }
         }
         int offBoard = 0;
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
-            if (view.objectSquare[obj] == ChessRules.NoSquare && view.IsPieceClickable(obj)) offBoard++;
+            if (view.objectSquare[obj] == ChessRules.NoSquare && view._IsPieceClickable(obj)) offBoard++;
         }
         Check(wrongPieces.Length == 0 && wrongSquares.Length == 0 && offBoard == 0, name + ": clickable pieces ["
             + pieceSquares + "], squares [" + targetSquares + "]", "pieces wrong on " + wrongPieces
@@ -3982,14 +3983,14 @@ public class ViewTest : ChessTest {
         string text = Text(key);
         ChessSquare target = view.squareTargets[Sq(square)];
         string actual = Utilities.IsValid(target) ? target.InteractionText : "(no target)";
-        Check(view.IsSquareClickable(Sq(square)) && actual == text, name + ": the square " + square + " labelled "
-            + text, "clickable " + view.IsSquareClickable(Sq(square)) + ", labelled " + actual);
+        Check(view._IsSquareClickable(Sq(square)) && actual == text, name + ": the square " + square + " labelled "
+            + text, "clickable " + view._IsSquareClickable(Sq(square)) + ", labelled " + actual);
     }
 
     int ClickableCount() {
         int count = 0;
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
-            if (view.IsPieceClickable(obj)) count++;
+            if (view._IsPieceClickable(obj)) count++;
         }
         return count;
     }
@@ -3997,14 +3998,14 @@ public class ViewTest : ChessTest {
     int SquareTargetCount() {
         int count = 0;
         for (int square = 0; square < 64; square++) {
-            if (view.IsSquareClickable(square)) count++;
+            if (view._IsSquareClickable(square)) count++;
         }
         return count;
     }
 
     // A game of the local player against themselves, from fen.
     void CastleGame(string fen, string name) {
-        board.ClearState();
+        board._ClearState();
         StartGame(ChessGame.ModeStandard, name);
         int clock;
         int number;
@@ -4020,10 +4021,10 @@ public class ViewTest : ChessTest {
     int ViewDrop(string from, Vector3 position) {
         int obj = view.squareObject[Sq(from)];
         if (obj == ChessBoardView.NoObject) return -1;
-        view.OnPiecePickedUp(obj);
+        view._OnPiecePickedUp(obj);
         int result = view.heldObject == obj ? ChessBoard.InputAccepted : ChessBoard.InputRejected;
         view.pieces[obj].localPosition = position;
-        view.OnPieceDropped(obj);
+        view._OnPieceDropped(obj);
         return result;
     }
 
@@ -4037,7 +4038,7 @@ public class ViewTest : ChessTest {
 
     // Over a square, off its centre and above the surface, as a hand lets go of a piece.
     Vector3 Over(string square) {
-        return view.SquarePosition(Sq(square)) + new Vector3(0.3f, 0.8f, -0.4f) * view.squareSize;
+        return view._SquarePosition(Sq(square)) + new Vector3(0.3f, 0.8f, -0.4f) * view.squareSize;
     }
 
     Vector3 OffBoard() {
@@ -4136,8 +4137,8 @@ public class ViewTest : ChessTest {
                 if (obj != ChessBoardView.NoObject) error = "object " + obj + " on the empty square";
             } else if (obj == ChessBoardView.NoObject) {
                 error = "no object for " + PieceText(piece);
-            } else if (view.ObjectPiece(obj) != piece) {
-                error = "object " + obj + " stands for " + PieceText(view.ObjectPiece(obj)) + ", not " + PieceText(piece);
+            } else if (view._ObjectPiece(obj) != piece) {
+                error = "object " + obj + " stands for " + PieceText(view._ObjectPiece(obj)) + ", not " + PieceText(piece);
             } else if (view.objectSquare[obj] != square) {
                 error = "object " + obj + " thinks it's on " + SquareText(view.objectSquare[obj]);
             } else if (view.pieceFilters[obj].sharedMesh != SetMesh(piece)) {
@@ -4147,14 +4148,14 @@ public class ViewTest : ChessTest {
                 error = "object " + obj + (square == mated ? " isn't falling, mated" : " is falling, not mated");
             } else if (square != mated && (view.fallAmount[obj] != 0 || (PieceUp(obj) - Vector3.up).sqrMagnitude > 1e-6f)) {
                 error = "object " + obj + " isn't upright (fallen " + view.fallAmount[obj] + ")";
-            } else if (square == mated && (view.pieces[obj].localPosition - view.ObjectPlace(obj)).sqrMagnitude > 1e-8f) {
+            } else if (square == mated && (view.pieces[obj].localPosition - view._ObjectPlace(obj)).sqrMagnitude > 1e-8f) {
                 error = "the mated king's object " + obj + " is at " + view.pieces[obj].localPosition.ToString("F3");
-            } else if (square != mated && (view.pieces[obj].localPosition - view.SquarePosition(square)
-                - view.PieceOffset(obj)).sqrMagnitude > 1e-8f) {
+            } else if (square != mated && (view.pieces[obj].localPosition - view._SquarePosition(square)
+                - view._PieceOffset(obj)).sqrMagnitude > 1e-8f) {
                 error = "object " + obj + " is at " + view.pieces[obj].localPosition.ToString("F3");
-            } else if (view.DropSquare(view.PieceBase(obj)) != square) {
+            } else if (view._DropSquare(view._PieceBase(obj)) != square) {
                 // In the world too, whatever the view's scale (step 12.2), from its base (step 12.3).
-                error = "object " + obj + " stands over " + SquareText(view.DropSquare(view.PieceBase(obj)))
+                error = "object " + obj + " stands over " + SquareText(view._DropSquare(view._PieceBase(obj)))
                     + " in the world";
             }
             if (error.Length > 0 && count++ < 3) errors += SquareText(square) + ": " + error + "; ";
@@ -4162,19 +4163,19 @@ public class ViewTest : ChessTest {
         // Off the board (step 12.4): shown in a captured place with a target, standing on it; otherwise hidden.
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
             if (view.objectSquare[obj] != ChessRules.NoSquare || obj == view.promotionObject) continue;
-            int color = view.ObjectColor(obj);
+            int color = view._ObjectColor(obj);
             int place = view.objectPlace[obj];
             bool active = view.pieces[obj].gameObject.activeSelf;
             string error = "";
-            if (!view.IsObjectShown(obj)) {
+            if (!view._IsObjectShown(obj)) {
                 if (active) error = "is shown, with no place to stand in";
             } else if (!active) {
                 error = "is hidden in place " + place;
             } else if (place >= view.capturedCounts[color]
                 || view.capturedTypes[color * ChessBoardView.MaxCaptured + place] != view.objectType[obj]) {
                 error = "stands in place " + place + ", which isn't its";
-            } else if ((view.pieces[obj].localPosition - view.CapturedPlacePosition(color, place)
-                - view.PieceOffset(obj)).sqrMagnitude > 1e-8f) {
+            } else if ((view.pieces[obj].localPosition - view._CapturedPlacePosition(color, place)
+                - view._PieceOffset(obj)).sqrMagnitude > 1e-8f) {
                 error = "isn't on place " + place + " but at " + view.pieces[obj].localPosition.ToString("F3");
             }
             if (error.Length > 0 && count++ < 3) errors += "object " + obj + " " + error + "; ";

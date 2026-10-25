@@ -9,7 +9,7 @@ using VRC.SDKBase;
 namespace SiggiChessBoard {
     // A flat 2D view of one board at a time (docs/board-2d.md; PLAN.md 12.13, 12.14): a UI canvas with the 8x8 board,
     // which board it is ("Board N"), and its players and status lines as the board's UI writes them
-    // (ChessBoardUI.PlayersTextFor, GameStatusTextFor). Left and right step through the boards in use; nothing on it
+    // (ChessBoardUI._PlayersTextFor, _GameStatusTextFor). Left and right step through the boards in use; nothing on it
     // acts on a board. It listens to the board it shows, switching listener as it steps. Built in the scene by
     // Tools > Chess Board > Create 2D Board View (Editor/ChessBoard2DViewBuilder.cs).
     //
@@ -116,7 +116,7 @@ namespace SiggiChessBoard {
         int listFirstRow;
         ChessBoard listBoard;
         int listPly = -1;
-        // The game texts the view writes its status lines with (ChessBoardUI.LoadGameTexts), from i18n: read on first
+        // The game texts the view writes its status lines with (ChessBoardUI._LoadGameTexts), from i18n: read on first
         // use and again on a language change.
         string[] gameTexts;
 
@@ -130,12 +130,12 @@ namespace SiggiChessBoard {
             LogShown(index, "on start");
             Listen(index);
             if (synced) ApplyPly(syncedPly);
-            Refresh();
+            _Refresh();
         }
 
         void Update() {
-            if (dirty) Refresh();
-            else if (Time.time >= nextStatusUpdate) UpdateStatus();
+            if (dirty) _Refresh();
+            else if (Time.time >= nextStatusUpdate) _UpdateStatus();
         }
 
         public override void OnBoardChanged() {
@@ -149,53 +149,53 @@ namespace SiggiChessBoard {
         // Only the move list's text changed: the list and the replay line may name moves they didn't know before.
         public override void OnNotationFilled() {
             DrawMoveList();
-            UpdateStatus();
+            _UpdateStatus();
         }
 
         // The game texts in the language now. Public for tests.
-        public string[] GameTexts() {
+        public string[] _GameTexts() {
             if (gameTexts == null) LoadTexts();
             return gameTexts;
         }
 
         void LoadTexts() {
-            ChessUtil.CheckI18n(i18n, "[ChessBoard2DView] " + gameObject.name);
-            gameTexts = ChessBoardUI.LoadGameTexts(i18n);
+            ChessUtil._CheckI18n(i18n, "[ChessBoard2DView] " + gameObject.name);
+            gameTexts = ChessBoardUI._LoadGameTexts(i18n);
         }
 
         // The I18n's language changed (its AddLanguageChangeListener): every text is written again.
         public void OnLanguageChange() {
             LoadTexts();
-            Refresh();
+            _Refresh();
         }
 
         public override void OnDeserialization() {
             if (!synced) return;
             if (!IsLocked() && syncedIndex != shown) {
-                LogShown(syncedIndex, "chosen by " + ChessUtil.OwnerName(gameObject, "nobody"));
+                LogShown(syncedIndex, "chosen by " + ChessUtil._OwnerName(gameObject, "nobody"));
             }
             Listen(syncedIndex);
             int before = viewPly;
             ApplyPly(syncedPly);
-            if (viewPly != before) LogPly("chosen by " + ChessUtil.OwnerName(gameObject, "nobody"));
-            Refresh();
+            if (viewPly != before) LogPly("chosen by " + ChessUtil._OwnerName(gameObject, "nobody"));
+            _Refresh();
         }
 
         // ---- Choosing the board ----
 
         // The selector's buttons: the previous or next board in use, wrapping round.
         public void PressLeft() {
-            Step(-1);
+            _Step(-1);
         }
 
         public void PressRight() {
-            Step(1);
+            _Step(1);
         }
 
         // Steps to the next board in use in direction (1 right, -1 left), skipping reset ones; nothing when no other
         // board is in use, or on a locked view. The new board starts on its latest position. Synced, the choice is
         // sent to everyone.
-        public void Step(int direction) {
+        public void _Step(int direction) {
             if (IsLocked()) return;
             int count = boards == null ? 0 : boards.Length;
             if (count == 0) return;
@@ -203,7 +203,7 @@ namespace SiggiChessBoard {
             for (int i = 0; i < count; i++) {
                 inUse[i] = Utilities.IsValid(boards[i]) && boards[i].lifecycle != ChessBoard.LifecycleReset;
             }
-            int target = StepTarget(inUse, shown, direction);
+            int target = _StepTarget(inUse, shown, direction);
             if (target < 0 || target == shown) return;
             if (synced) {
                 TakeView();
@@ -217,7 +217,7 @@ namespace SiggiChessBoard {
 
         // The board to step to from current in direction (1 or -1): the first one in use after it that way, wrapping
         // round, or -1 when no other board is in use (the board shown isn't left for itself, in use or not).
-        public static int StepTarget(bool[] inUse, int current, int direction) {
+        public static int _StepTarget(bool[] inUse, int current, int direction) {
             int count = inUse == null ? 0 : inUse.Length;
             if (count == 0) return -1;
             int step = direction < 0 ? -1 : 1;
@@ -234,7 +234,7 @@ namespace SiggiChessBoard {
         // instead of the last one. A board not shown before starts on its latest position. Public for tests.
         public void Show(int index) {
             Listen(index);
-            Refresh();
+            _Refresh();
         }
 
         void Listen(int index) {
@@ -362,7 +362,7 @@ namespace SiggiChessBoard {
                 RequestSerialization();
             }
             LogPly(synced ? "chosen here, sent" : "chosen here");
-            Refresh();
+            _Refresh();
             return true;
         }
 
@@ -386,9 +386,9 @@ namespace SiggiChessBoard {
         }
 
         // Takes ply as OnDeserialization takes a synced one, then redraws. For tests.
-        public void ReceivePly(int ply) {
+        public void _ReceivePly(int ply) {
             ApplyPly(ply);
-            Refresh();
+            _Refresh();
         }
 
         // Logs the ply shown and why, as LogShown does the board.
@@ -428,7 +428,7 @@ namespace SiggiChessBoard {
         // Puts the position before move ply of board's game in position and positionState: the game's position with
         // the moves from ply on undone, as ChessBoard.StepTo builds its replay board. Rebuilt from the latest each
         // time (decided in 12.14). Public static for tests.
-        public static void BuildPosition(ChessBoard board, int ply, byte[] position, int[] positionState) {
+        public static void _BuildPosition(ChessBoard board, int ply, byte[] position, int[] positionState) {
             Array.Copy(board.board, position, 64);
             Array.Copy(board.state, positionState, ChessPosition.StateLength);
             int[] history = board.moveHistory;
@@ -438,7 +438,7 @@ namespace SiggiChessBoard {
         }
 
         // The piece on square in the position shown (Empty for none). Public for tests.
-        public int ShownPieceAt(int square) {
+        public int _ShownPieceAt(int square) {
             if (square < 0 || square >= 64) return ChessRules.Empty;
             return position[square];
         }
@@ -446,18 +446,18 @@ namespace SiggiChessBoard {
         // ---- The move list (12.15) ----
 
         // A move list cell pressed (its ChessMoveListCell): the position after its move, as a step button would.
-        public void PressMoveCell(int cell) {
-            int ply = MoveCellPly(cell);
+        public void _PressMoveCell(int cell) {
+            int ply = _MoveCellPly(cell);
             if (ply >= 0) ShowPly(ply + 1);
         }
 
         // The scroll rect moved (its onValueChanged): the rows it now shows.
-        public void OnMoveListScrolled() {
+        public void _OnMoveListScrolled() {
             DrawMoveList();
         }
 
         // The move (index in the history) in the pool's cell at cell as drawn, -1 for none. For tests too.
-        public int MoveCellPly(int cell) {
+        public int _MoveCellPly(int cell) {
             ChessBoard board = ShownBoard();
             if (!Utilities.IsValid(board) || moveCells == null || cell < 0 || cell >= moveCells.Length) return -1;
             int ply = listFirstRow * 2 + cell - LeadCells(board);
@@ -465,7 +465,7 @@ namespace SiggiChessBoard {
         }
 
         // The pool's cell drawing move ply (index in the history), -1 when it's scrolled out of the pool. For tests.
-        public int MoveCellOf(int ply) {
+        public int _MoveCellOf(int ply) {
             ChessBoard board = ShownBoard();
             if (!Utilities.IsValid(board) || ply < 0 || ply >= board.moveCount || moveCells == null) return -1;
             int cell = ply + LeadCells(board) - listFirstRow * 2;
@@ -473,7 +473,7 @@ namespace SiggiChessBoard {
         }
 
         // Whether move ply's row is wholly inside the list's visible part. For tests.
-        public bool IsMoveInView(int ply) {
+        public bool _IsMoveInView(int ply) {
             ChessBoard board = ShownBoard();
             if (!Utilities.IsValid(board) || !Utilities.IsValid(moveListContent) || ply < 0 || ply >= board.moveCount) {
                 return false;
@@ -484,18 +484,18 @@ namespace SiggiChessBoard {
         }
 
         // How far the list is scrolled down, in canvas pixels (0 at the top), and how far it can be. For tests.
-        public float MoveListScroll() {
+        public float _MoveListScroll() {
             return Utilities.IsValid(moveListContent) ? moveListContent.anchoredPosition.y : 0;
         }
 
-        public float MoveListMaxScroll() {
+        public float _MoveListMaxScroll() {
             ChessBoard board = ShownBoard();
             return Mathf.Max(0, MoveRows(board) * moveRowHeight - ViewportHeight());
         }
 
         // Scrolls the list to offset (clamped to the rows there are) and draws it, as a player's scrolling would.
         // For tests.
-        public void ScrollMoveList(float offset) {
+        public void _ScrollMoveList(float offset) {
             SetScroll(offset);
             DrawMoveList();
         }
@@ -520,7 +520,7 @@ namespace SiggiChessBoard {
 
         void SetScroll(float offset) {
             if (!Utilities.IsValid(moveListContent)) return;
-            offset = Mathf.Clamp(offset, 0, MoveListMaxScroll());
+            offset = Mathf.Clamp(offset, 0, _MoveListMaxScroll());
             Vector2 position = moveListContent.anchoredPosition;
             if (position.y != offset) moveListContent.anchoredPosition = new Vector2(position.x, offset);
         }
@@ -565,7 +565,7 @@ namespace SiggiChessBoard {
             int count = valid ? board.moveCount : 0;
             int lead = valid ? LeadCells(board) : 0;
             int rows = MoveRows(board);
-            float offset = Mathf.Clamp(moveListContent.anchoredPosition.y, 0, MoveListMaxScroll());
+            float offset = Mathf.Clamp(moveListContent.anchoredPosition.y, 0, _MoveListMaxScroll());
             int first = moveRowHeight > 0 ? Mathf.FloorToInt(offset / moveRowHeight) : 0;
             listFirstRow = first;
             if (Utilities.IsValid(moveListRows)) {
@@ -576,7 +576,7 @@ namespace SiggiChessBoard {
             int poolRows = moveNumbers == null ? 0 : moveNumbers.Length;
             for (int r = 0; r < poolRows; r++) {
                 int row = first + r;
-                ChessUtil.SetText(moveNumbers[r], valid && row < rows ?(board.startMoveNumber + row) + "." : "");
+                ChessUtil._SetText(moveNumbers[r], valid && row < rows ?(board.startMoveNumber + row) + "." : "");
                 for (int c = 0; c < 2; c++) {
                     int cell = 2 * r + c;
                     int ply = 2 * row + c - lead;
@@ -585,7 +585,7 @@ namespace SiggiChessBoard {
                     bool isCurrent = has && ply == current;
                     if (moveCellLabels != null && cell < moveCellLabels.Length) {
                         TextMeshProUGUI label = moveCellLabels[cell];
-                        ChessUtil.SetText(label, san == null ? "" : san);
+                        ChessUtil._SetText(label, san == null ? "" : san);
                         if (Utilities.IsValid(label)) {
                             Color textColor = isCurrent ? currentMoveTextColor : moveTextColor;
                             if (label.color != textColor) label.color = textColor;
@@ -605,7 +605,7 @@ namespace SiggiChessBoard {
         }
 
         // Whether the pool's cell at cell is drawn as the current move (yellow). For tests.
-        public bool IsMoveCellCurrent(int cell) {
+        public bool _IsMoveCellCurrent(int cell) {
             return moveCellImages != null && cell >= 0 && cell < moveCellImages.Length
                 && Utilities.IsValid(moveCellImages[cell]) && moveCellImages[cell].color == currentMoveColor;
         }
@@ -613,7 +613,7 @@ namespace SiggiChessBoard {
         // ---- Drawing ----
 
         // Brings the view up to the board shown now. Called on the frame after a change; public for tests.
-        public void Refresh() {
+        public void _Refresh() {
             dirty = false;
             ChessBoard board = ShownBoard();
             bool valid = Utilities.IsValid(board);
@@ -621,17 +621,17 @@ namespace SiggiChessBoard {
             if (valid) {
                 count = board.moveCount;
                 FollowGame(board, count);
-                BuildPosition(board, viewPly, position, positionState);
+                _BuildPosition(board, viewPly, position, positionState);
             } else {
                 viewPly = 0;
                 onLatest = true;
                 for (int square = 0; square < 64; square++) position[square] = ChessRules.Empty;
             }
-            ChessUtil.SetText(boardLabel, valid ? ChessBoardUI.BoardText(GameTexts(), board.boardNumber) : "");
+            ChessUtil._SetText(boardLabel, valid ? ChessBoardUI._BoardText(_GameTexts(), board.boardNumber) : "");
             DrawSquares(valid && viewPly > 0 ? board.moveHistory[viewPly - 1] : 0);
             UpdateStepButtons(valid, count);
             UpdateMoveList(board, valid);
-            UpdateStatus();
+            _UpdateStatus();
         }
 
         void DrawSquares(int last) {
@@ -643,7 +643,7 @@ namespace SiggiChessBoard {
                 if (pieceImages != null && square < pieceImages.Length) {
                     Image image = pieceImages[square];
                     if (Utilities.IsValid(image)) {
-                        Sprite sprite = PieceSprite(piece);
+                        Sprite sprite = _PieceSprite(piece);
                         image.sprite = sprite;
                         image.enabled = sprite != null;
                     }
@@ -669,8 +669,8 @@ namespace SiggiChessBoard {
                 int piece = position[square];
                 if (piece == ChessRules.Empty || (piece & 7) != ChessRules.King) continue;
                 int start = count;
-                count = Mathf.Min(ChessMoves.SquareAttackers(position, square, ((piece >> 3) & 1) ^ 1, checkers, count),
-                    limit);
+                count = Mathf.Min(
+                    ChessMoves._SquareAttackers(position, square, ((piece >> 3) & 1) ^ 1, checkers, count), limit);
                 for (int i = start; i < count; i++) kings[i] = square;
             }
             return count;
@@ -694,13 +694,13 @@ namespace SiggiChessBoard {
         }
 
         // Whether the step button at index (StepFirst to StepLast) is pressable. For tests.
-        public bool IsStepEnabled(int index) {
+        public bool _IsStepEnabled(int index) {
             return stepButtons != null && index >= 0 && index < stepButtons.Length
                 && Utilities.IsValid(stepButtons[index]) && stepButtons[index].interactable;
         }
 
         // The sprite for a piece (ChessRules encoding), null for an empty square or a sprite left out.
-        public Sprite PieceSprite(int piece) {
+        public Sprite _PieceSprite(int piece) {
             if (piece == ChessRules.Empty) return null;
             Sprite[] sprites = ChessRules.PieceColorOf(piece) == ChessRules.White ? whiteSprites : blackSprites;
             int index = ChessRules.PieceTypeOf(piece) - ChessRules.Pawn;
@@ -710,30 +710,30 @@ namespace SiggiChessBoard {
 
         // The players and status lines at the server time now; soon again while a clock runs, once a second otherwise.
         // Public for tests.
-        public void UpdateStatus() {
+        public void _UpdateStatus() {
             ChessBoard board = ShownBoard();
             bool valid = Utilities.IsValid(board);
             nextStatusUpdate = Time.time + (valid && board.IsClockRunning() ? ChessBoardUI.StatusInterval : 1);
-            double now = valid ? board.ServerTime() : 0;
-            string players = valid ? ChessBoardUI.PlayersTextFor(board, now, GameTexts()) : "";
-            string status = valid ? StatusTextFor(board, now, viewPly, GameTexts()) : "";
+            double now = valid ? board._ServerTime() : 0;
+            string players = valid ? ChessBoardUI._PlayersTextFor(board, now, _GameTexts()) : "";
+            string status = valid ? _StatusTextFor(board, now, viewPly, _GameTexts()) : "";
             if (Utilities.IsValid(playersLabel) && playersLabel.text != players) playersLabel.text = players;
             if (Utilities.IsValid(statusLabel) && statusLabel.text != status) statusLabel.text = status;
         }
 
         // The view's status lines for board at server time now, showing ply: the board's own (ChessBoardUI's
-        // GameStatusTextFor, without the lines about the board's replay position, since the view's replay is its own),
+        // _GameStatusTextFor, without the lines about the board's replay position, since the view's replay is its own),
         // a pending takeback request ("White asks for a takeback": "to here" would be the board's replay position), then
-        // the position shown when it isn't the latest ("Replay: 2. Nf3 (3 of 4)", ChessBoardUI.PlyTextFor).
-        public static string StatusTextFor(ChessBoard board, double now, int ply, string[] texts) {
+        // the position shown when it isn't the latest ("Replay: 2. Nf3 (3 of 4)", ChessBoardUI._PlyTextFor).
+        public static string _StatusTextFor(ChessBoard board, double now, int ply, string[] texts) {
             if (!Utilities.IsValid(board)) return "";
-            string text = ChessBoardUI.GameStatusTextFor(board, now, texts);
+            string text = ChessBoardUI._GameStatusTextFor(board, now, texts);
             if (board.takebackColor != ChessRules.NoColor) {
-                text = ChessUtil.AddLine(text, I18n.Format(texts[ChessBoardUI.TextStatusTakeback],
-                    new string[] { "color", ChessBoardUI.ColorText(texts, board.takebackColor) }));
+                text = ChessUtil._AddLine(text, I18n.Format(texts[ChessBoardUI.TextStatusTakeback],
+                    new string[] { "color", ChessBoardUI._ColorText(texts, board.takebackColor) }));
             }
             if (ply >= 0 && ply < board.moveCount) {
-                text = ChessUtil.AddLine(text, ChessBoardUI.PlyTextFor(board, ply, texts));
+                text = ChessUtil._AddLine(text, ChessBoardUI._PlyTextFor(board, ply, texts));
             }
             return text;
         }

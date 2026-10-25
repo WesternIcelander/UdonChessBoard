@@ -214,10 +214,10 @@ public class PgnTest : ChessTest {
             ChessPgn.TimeControlText(0, 5) + " " + ChessPgn.TimeControlText(600, 0) + " "
             + ChessPgn.TimeControlText(300, 3) + " " + ChessPgn.TimeControlText(-1, -1));
 
-        Check(ChessPgn.EscapeTagValue(null) == "" && ChessPgn.EscapeTagValue("") == ""
-            && ChessPgn.EscapeTagValue("\\\"") == "\\\\\\\"" && ChessPgn.EscapeTagValue("a\u0000b\u007f\u009f ")
+        Check(ChessPgn._EscapeTagValue(null) == "" && ChessPgn._EscapeTagValue("") == ""
+            && ChessPgn._EscapeTagValue("\\\"") == "\\\\\\\"" && ChessPgn._EscapeTagValue("a\u0000b\u007f\u009f ")
             == "a b   ",
-            "EscapeTagValue edge cases", ChessPgn.EscapeTagValue("\\\""));
+            "EscapeTagValue edge cases", ChessPgn._EscapeTagValue("\\\""));
     }
 
     // ---- 5.1b ----
@@ -355,17 +355,17 @@ public class PgnTest : ChessTest {
         return null;
     }
 
-    // Reads a whole PGN with ChessPgn.ReadNext, as an import does (5.2b also plays each move as it comes). Returns
+    // Reads a whole PGN with ChessPgn._ReadNext, as an import does (5.2b also plays each move as it comes). Returns
     // ReadEnd or ReadError; sans and clocks get one entry per main-line move (clock -1 when it has none), moveCount
     // the number of moves (the failing ply for ReadError).
     int ReadAll(string pgn, string[] tags, string[] sans, int[] clocks, out int moveCount) {
         int[] cursor = new int[ChessPgn.CursorLength];
-        ChessPgn.StartReading(cursor, tags);
+        ChessPgn._StartReading(cursor, tags);
         moveCount = 0;
         while (true) {
             string san;
             int clock;
-            int read = ChessPgn.ReadNext(tokenRegex, clockRegex, pgn, cursor, tags, out san, out clock);
+            int read = ChessPgn._ReadNext(tokenRegex, clockRegex, pgn, cursor, tags, out san, out clock);
             if (read == ChessPgn.ReadMove) {
                 if (moveCount == sans.Length) return ChessPgn.ReadError;
                 sans[moveCount] = san;
@@ -408,7 +408,7 @@ public class PgnTest : ChessTest {
         if (expectedTags != null) {
             for (int tag = 0; tag < ChessPgn.TagCount; tag++) {
                 if (tags[tag] != expectedTags[tag]) {
-                    errors += " " + ChessPgn.TagName(tag) + " \"" + tags[tag] + "\" not \"" + expectedTags[tag] + "\"";
+                    errors += " " + ChessPgn._TagName(tag) + " \"" + tags[tag] + "\" not \"" + expectedTags[tag] + "\"";
                 }
             }
         }
@@ -438,17 +438,17 @@ public class PgnTest : ChessTest {
             597600, 299000, 3723456, 5070, 600000, 0, 1234, 62000, -1, -1, -1, 300000, int.MaxValue, -1, -1, -1, -1
         };
         for (int i = 0; i < comments.Length; i++) {
-            int clock = ChessPgn.ClockFromComment(clockRegex, comments[i]);
+            int clock = ChessPgn._ClockFromComment(clockRegex, comments[i]);
             if (clock != milliseconds[i]) errors += " \"" + comments[i] + "\"=" + clock;
         }
         Check(errors == "", "import: [%clk] values", errors);
 
-        Check(ChessPgn.UnescapeTagValue("") == "" && ChessPgn.UnescapeTagValue("plain") == "plain"
-            && ChessPgn.UnescapeTagValue("a\\\\b\\\"c\\]") == "a\\b\"c]"
-            && ChessPgn.UnescapeTagValue("end\\") == "end\\"
-            && ChessPgn.UnescapeTagValue(ChessPgn.EscapeTagValue("Ana \"The Rook\" \\ Ñandú 🐴"))
+        Check(ChessPgn._UnescapeTagValue("") == "" && ChessPgn._UnescapeTagValue("plain") == "plain"
+            && ChessPgn._UnescapeTagValue("a\\\\b\\\"c\\]") == "a\\b\"c]"
+            && ChessPgn._UnescapeTagValue("end\\") == "end\\"
+            && ChessPgn._UnescapeTagValue(ChessPgn._EscapeTagValue("Ana \"The Rook\" \\ Ñandú 🐴"))
                 == "Ana \"The Rook\" \\ Ñandú 🐴",
-            "import: UnescapeTagValue", ChessPgn.UnescapeTagValue("a\\\\b\\\"c\\]"));
+            "import: UnescapeTagValue", ChessPgn._UnescapeTagValue("a\\\\b\\\"c\\]"));
 
         errors = "";
         string[] timeControls = new string[] {
@@ -461,7 +461,7 @@ public class PgnTest : ChessTest {
         for (int i = 0; i < timeControls.Length; i++) {
             int baseSeconds;
             int incrementSeconds;
-            bool known = ChessPgn.ParseTimeControl(timeControls[i], out baseSeconds, out incrementSeconds);
+            bool known = ChessPgn._ParseTimeControl(timeControls[i], out baseSeconds, out incrementSeconds);
             string text = known ? baseSeconds + " " + incrementSeconds : "";
             if (text != parsed[i] || (!known && (baseSeconds != -1 || incrementSeconds != -1))) {
                 errors += " \"" + timeControls[i] + "\"=" + known + " " + baseSeconds + " " + incrementSeconds;
@@ -469,21 +469,21 @@ public class PgnTest : ChessTest {
         }
         Check(errors == "", "import: TimeControl values", errors);
 
-        Check(ChessPgn.ModeFromVariant("Chess960") == ChessGame.ModeChess960
-            && ChessPgn.ModeFromVariant("Standard") == ChessGame.ModeStandard
-            && ChessPgn.ModeFromVariant("") == ChessGame.ModeStandard
-            && ChessPgn.ModeFromVariant("From Position") == ChessGame.ModeStandard,
+        Check(ChessPgn._ModeFromVariant("Chess960") == ChessGame.ModeChess960
+            && ChessPgn._ModeFromVariant("Standard") == ChessGame.ModeStandard
+            && ChessPgn._ModeFromVariant("") == ChessGame.ModeStandard
+            && ChessPgn._ModeFromVariant("From Position") == ChessGame.ModeStandard,
             "import: mode from Variant", "");
 
         errors = "";
         for (int tag = 0; tag < ChessPgn.TagCount; tag++) {
-            if (ChessPgn.TagIndex(ChessPgn.TagName(tag)) != tag) errors += " " + tag;
+            if (ChessPgn._TagIndex(ChessPgn._TagName(tag)) != tag) errors += " " + tag;
         }
-        if (ChessPgn.TagIndex("GameId") != -1 || ChessPgn.TagIndex("white") != -1 || ChessPgn.TagIndex("Event") != -1
-            || ChessPgn.TagIndex("") != -1) {
+        if (ChessPgn._TagIndex("GameId") != -1 || ChessPgn._TagIndex("white") != -1 || ChessPgn._TagIndex("Event") != -1
+            || ChessPgn._TagIndex("") != -1) {
             errors += " other names";
         }
-        Check(errors == "" && ChessPgn.TagName(ChessPgn.TagFen) == "FEN" && ChessPgn.TagName(ChessPgn.TagGameId)
+        Check(errors == "" && ChessPgn._TagName(ChessPgn.TagFen) == "FEN" && ChessPgn._TagName(ChessPgn.TagGameId)
             == "GameID", "import: tag names", errors);
     }
 
@@ -738,8 +738,8 @@ public class PgnTest : ChessTest {
             "Qd4>ambiguous Qcd4>ambiguous Q5d4>ambiguous Qc5d4>Qc5d4 Qed4>Qed4 Q3d4>Q3d4 Qe3>ambiguous Qc5e3>Qc5e3");
     }
 
-    // Imports pgn with ChessPgn.ImportNext into the given history arrays, as the importing behaviour will (one step
-    // at a time, all in one go here). Returns the last ImportNext result; cursor, tags and the arrays are the
+    // Imports pgn with ChessPgn._ImportNext into the given history arrays, as the importing behaviour will (one step
+    // at a time, all in one go here). Returns the last _ImportNext result; cursor, tags and the arrays are the
     // import's. fen is the position reached (halfmove clock and move number worked out from the history), "" if the
     // position was never set up.
     int ImportAll(string pgn, int[] cursor, string[] tags, int[] moves, string[] sans, int[] clocks, out string fen) {
@@ -747,16 +747,16 @@ public class PgnTest : ChessTest {
         int[] state = new int[ChessPosition.StateLength];
         int[] legalMoves = new int[ChessMoves.MaxMoves];
         int[] scratch = new int[ChessMoves.MaxMoves];
-        ChessPgn.StartReading(cursor, tags);
+        ChessPgn._StartReading(cursor, tags);
         int result = ChessPgn.ImportMore;
         int steps = 0;
         while (result == ChessPgn.ImportMore && steps < 10000) {
-            result = ChessPgn.ImportNext(tokenRegex, clockRegex, pgn, cursor, tags, board, state, moves, sans, clocks,
+            result = ChessPgn._ImportNext(tokenRegex, clockRegex, pgn, cursor, tags, board, state, moves, sans, clocks,
                 legalMoves, scratch, true);
             steps++;
         }
         int moveCount = cursor[ChessPgn.CursorMoves];
-        int halfmoveClock = ChessDraws.BuildHalfmoveClocks(moves, moveCount,
+        int halfmoveClock = ChessDraws._BuildHalfmoveClocks(moves, moveCount,
             cursor[ChessPgn.CursorFirstHalfmoveClock], new int[moveCount]);
         int fullmoveNumber = cursor[ChessPgn.CursorFirstMoveNumber]
             + (cursor[ChessPgn.CursorFirstSideToMove] + moveCount) / 2;
@@ -766,7 +766,7 @@ public class PgnTest : ChessTest {
 
     // Imports pgn into a history of capacity moves and checks the result (expectedResult, and for a failure the
     // move it failed at), the number of plies played and the position reached. The SAN, clock and tags must be
-    // what ReadNext reads from the text, except that expectedSans (space-separated, null for none) replaces the SAN
+    // what _ReadNext reads from the text, except that expectedSans (space-separated, null for none) replaces the SAN
     // where the board records it differently (+/# added, no extra disambiguation).
     void CheckImport(string name, string pgn, int expectedResult, string expectedFailedAt, int expectedPlies,
         string expectedFen, string expectedSans, int capacity) {
@@ -782,10 +782,10 @@ public class PgnTest : ChessTest {
         string fen;
         int result = ImportAll(pgn, cursor, tags, moves, sans, clocks, out fen);
         int plies = cursor[ChessPgn.CursorMoves];
-        string failedAt = ChessPgn.ImportFailedAt(cursor);
+        string failedAt = ChessPgn._ImportFailedAt(cursor);
         string errors = "";
         if (result != expectedResult) {
-            errors += " result " + result + " (" + ChessPgn.ImportErrorText(result) + ") at " + failedAt;
+            errors += " result " + result + " (" + ChessPgn._ImportErrorText(result) + ") at " + failedAt;
         }
         if (expectedResult != ChessPgn.ImportDone && failedAt != expectedFailedAt) {
             errors += " failed at " + failedAt + " (expected " + expectedFailedAt + ")";
@@ -804,7 +804,7 @@ public class PgnTest : ChessTest {
             if (i >= readCount || clocks[i] != readClocks[i]) errors += " ply " + (i + 1) + " clock " + clocks[i];
         }
         for (int tag = 0; tag < ChessPgn.TagCount; tag++) {
-            if (tags[tag] != readTags[tag]) errors += " tag " + ChessPgn.TagName(tag) + " \"" + tags[tag] + "\"";
+            if (tags[tag] != readTags[tag]) errors += " tag " + ChessPgn._TagName(tag) + " \"" + tags[tag] + "\"";
         }
         Check(errors == "", name + " (" + plies + " plies"
             + (expectedResult == ChessPgn.ImportDone ? "" : ", failed at " + expectedFailedAt) + ")", errors);
@@ -969,7 +969,7 @@ public class PgnTest : ChessTest {
         string[] expectedTags = Tags("qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w GBgb - 0 1", "Chess960",
             "Ana \"The Rook\" \\ Ñandú 🐴", "\\\"\\", "1-0", "20261011120000-000001", "5400+30");
         for (int tag = 0; tag < ChessPgn.TagCount; tag++) {
-            if (tags[tag] != expectedTags[tag]) errors += " " + ChessPgn.TagName(tag) + " \"" + tags[tag] + "\"";
+            if (tags[tag] != expectedTags[tag]) errors += " " + ChessPgn._TagName(tag) + " \"" + tags[tag] + "\"";
         }
         Check(errors == "", "round trip: hand-written Chess960 game with clocks and escaped names", errors + "\n" + pgn);
     }
@@ -980,9 +980,9 @@ public class PgnTest : ChessTest {
     string ExportImported(int[] cursor, string[] tags, string[] sans, int[] clocks, int ending, int winner) {
         int baseSeconds;
         int incrementSeconds;
-        ChessPgn.ParseTimeControl(tags[ChessPgn.TagTimeControl], out baseSeconds, out incrementSeconds);
+        ChessPgn._ParseTimeControl(tags[ChessPgn.TagTimeControl], out baseSeconds, out incrementSeconds);
         return ChessPgn.WriteTags("", "", "", tags[ChessPgn.TagWhite], tags[ChessPgn.TagBlack], ending, winner,
-                ChessPgn.ModeFromVariant(tags[ChessPgn.TagVariant]), tags[ChessPgn.TagFen], baseSeconds,
+                ChessPgn._ModeFromVariant(tags[ChessPgn.TagVariant]), tags[ChessPgn.TagFen], baseSeconds,
                 incrementSeconds, tags[ChessPgn.TagGameId], "")
             + "\n" + ChessPgn.WriteMoveText(sans, clocks, cursor[ChessPgn.CursorMoves],
                 cursor[ChessPgn.CursorFirstMoveNumber], cursor[ChessPgn.CursorFirstSideToMove], ending, winner,
@@ -1057,7 +1057,7 @@ public class PgnTest : ChessTest {
         int plies = cursor[ChessPgn.CursorMoves];
         string export = ExportImported(cursor, tags, sans, clocks, ending, winner);
         string errors = "";
-        if (result != ChessPgn.ImportDone) errors += " source import " + ChessPgn.ImportErrorText(result);
+        if (result != ChessPgn.ImportDone) errors += " source import " + ChessPgn._ImportErrorText(result);
         if (ChessPgn.ResultText(ending, winner) != tags[ChessPgn.TagResult]) {
             errors += " Result " + tags[ChessPgn.TagResult];
         }
@@ -1119,7 +1119,7 @@ public class PgnTest : ChessTest {
         int[] clocks2 = new int[600];
         string fen2;
         int result2 = ImportAll(export, cursor2, tags2, moves2, sans2, clocks2, out fen2);
-        if (result2 != ChessPgn.ImportDone) errors += " re-import " + ChessPgn.ImportErrorText(result2);
+        if (result2 != ChessPgn.ImportDone) errors += " re-import " + ChessPgn._ImportErrorText(result2);
         for (int i = ChessPgn.CursorMoves; i < ChessPgn.CursorLength; i++) {
             if (i != ChessPgn.CursorInMoveText && cursor2[i] != cursor[i]) errors += " re-import cursor " + i;
         }
@@ -1134,19 +1134,19 @@ public class PgnTest : ChessTest {
         };
         for (int i = 0; i < sameTags.Length; i++) {
             if (tags2[sameTags[i]] != tags[sameTags[i]]) {
-                errors += " re-import " + ChessPgn.TagName(sameTags[i]) + " \"" + tags2[sameTags[i]] + "\"";
+                errors += " re-import " + ChessPgn._TagName(sameTags[i]) + " \"" + tags2[sameTags[i]] + "\"";
             }
         }
-        if (ChessPgn.ModeFromVariant(tags2[ChessPgn.TagVariant])
-            != ChessPgn.ModeFromVariant(tags[ChessPgn.TagVariant])) {
+        if (ChessPgn._ModeFromVariant(tags2[ChessPgn.TagVariant])
+            != ChessPgn._ModeFromVariant(tags[ChessPgn.TagVariant])) {
             errors += " re-import mode";
         }
         int base1;
         int increment1;
         int base2;
         int increment2;
-        ChessPgn.ParseTimeControl(tags[ChessPgn.TagTimeControl], out base1, out increment1);
-        ChessPgn.ParseTimeControl(tags2[ChessPgn.TagTimeControl], out base2, out increment2);
+        ChessPgn._ParseTimeControl(tags[ChessPgn.TagTimeControl], out base1, out increment1);
+        ChessPgn._ParseTimeControl(tags2[ChessPgn.TagTimeControl], out base2, out increment2);
         if (base1 != base2 || increment1 != increment2) {
             errors += " re-import TimeControl " + tags2[ChessPgn.TagTimeControl];
         }
@@ -1202,8 +1202,8 @@ public class PgnTest : ChessTest {
                 Check(false, "importer: " + frameFiles[frameIndex], "PGN file not assigned in PgnTest's pgnFiles");
                 continue;
             }
-            importer.StartImport(pgn, 600, frameBudgets[frameIndex], null, "");
-            importer.ImportFor(float.MaxValue);
+            importer._StartImport(pgn, 600, frameBudgets[frameIndex], null, "");
+            importer._ImportFor(float.MaxValue);
             frameOneGo = ImporterSummary();
             frameOneGoMs = importer.totalMs;
             Check(importer.result == frameResults[frameIndex] && importer.MoveCount() == framePlies[frameIndex]
@@ -1211,7 +1211,7 @@ public class PgnTest : ChessTest {
                 "importer: " + frameFiles[frameIndex] + " in one go",
                 "result " + importer.result + ", " + importer.MoveCount() + " plies, " + importer.frames
                 + " frames, importing " + importer.importing);
-            importer.StartImport(pgn, 600, frameBudgets[frameIndex], this, nameof(OnFrameImportDone));
+            importer._StartImport(pgn, 600, frameBudgets[frameIndex], this, nameof(OnFrameImportDone));
             return;
         }
     }
@@ -1239,13 +1239,13 @@ public class PgnTest : ChessTest {
     string ImporterSummary() {
         int moveCount = importer.MoveCount();
         int[] cursor = importer.cursor;
-        int halfmoveClock = ChessDraws.BuildHalfmoveClocks(importer.moves, moveCount,
+        int halfmoveClock = ChessDraws._BuildHalfmoveClocks(importer.moves, moveCount,
             cursor[ChessPgn.CursorFirstHalfmoveClock], new int[moveCount]);
         int fullmoveNumber = cursor[ChessPgn.CursorFirstMoveNumber]
             + (cursor[ChessPgn.CursorFirstSideToMove] + moveCount) / 2;
-        string summary = importer.result + " " + (importer.result == ChessPgn.ImportDone ? "" : importer.FailedAt())
+        string summary = importer.result + " " + (importer.result == ChessPgn.ImportDone ? "" : importer._FailedAt())
             + " " + moveCount + " " + ChessFen.WriteFen(importer.board, importer.state, halfmoveClock, fullmoveNumber)
-            + " " + importer.StartFen();
+            + " " + importer._StartFen();
         for (int i = 0; i < moveCount; i++) {
             summary += " " + importer.moves[i] + "/" + importer.sans[i] + "/" + importer.clocks[i];
         }
@@ -1256,9 +1256,9 @@ public class PgnTest : ChessTest {
     // An abandoned import stops where it is and sends no event.
     void StartAbandonCheck() {
         abandonedEventSent = false;
-        importer.StartImport(PgnText("lichess-long-draw.pgn"), 600, 0f, this, nameof(OnAbandonedImportDone));
-        importer.ImportFor(0f);
-        importer.Abandon();
+        importer._StartImport(PgnText("lichess-long-draw.pgn"), 600, 0f, this, nameof(OnAbandonedImportDone));
+        importer._ImportFor(0f);
+        importer._Abandon();
         SendCustomEventDelayedFrames(nameof(FinishAbandonCheck), 3);
     }
 

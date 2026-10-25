@@ -50,7 +50,7 @@ namespace SiggiChessBoard {
                     file += c - '0';
                     if (file > 8) return false;
                 } else {
-                    byte piece = PieceFromFenChar(c);
+                    byte piece = _PieceFromFenChar(c);
                     if (piece == ChessRules.Empty || file > 7) return false;
                     b[(rank << 3) | file] = piece;
                     file++;
@@ -162,8 +162,8 @@ namespace SiggiChessBoard {
             int halfmoves = 0;
             int fullmoves = 1;
             if (fieldCount == 6) {
-                halfmoves = ParseCount(fields[4]);
-                fullmoves = ParseCount(fields[5]);
+                halfmoves = _ParseCount(fields[4]);
+                fullmoves = _ParseCount(fields[5]);
                 if (halfmoves < 0 || fullmoves < 1) return false;
             }
 
@@ -195,7 +195,7 @@ namespace SiggiChessBoard {
                     } else {
                         if (blanks > 0) sb.Append((char)('0' + blanks));
                         blanks = 0;
-                        sb.Append(FenChar(piece));
+                        sb.Append(_FenChar(piece));
                     }
                 }
                 if (blanks > 0) sb.Append((char)('0' + blanks));
@@ -235,14 +235,14 @@ namespace SiggiChessBoard {
         }
 
         // FEN letter for a piece: uppercase for White, lowercase for Black. ' ' for Empty.
-        public static char FenChar(int piece) {
+        public static char _FenChar(int piece) {
             if (piece == ChessRules.Empty) return ' ';
             char letter = ChessRules.PieceTypeLetter(piece & 7)[0];
             return ((piece >> 3) & 1) == ChessRules.White ? letter : (char)(letter - 'A' + 'a');
         }
 
         // The piece for a FEN letter, Empty for anything else.
-        public static byte PieceFromFenChar(char c) {
+        public static byte _PieceFromFenChar(char c) {
             if (c >= 'a' && c <= 'z') {
                 int type = ChessRules.PieceTypeFromLetter((char)(c - 'a' + 'A'));
                 if (type == ChessRules.NoPieceType) return ChessRules.Empty;
@@ -254,7 +254,7 @@ namespace SiggiChessBoard {
         }
 
         // A non-negative decimal number of at most 9 digits; -1 for anything else.
-        public static int ParseCount(string text) {
+        public static int _ParseCount(string text) {
             if (text.Length == 0 || text.Length > 9) return -1;
             int value = 0;
             for (int i = 0; i < text.Length; i++) {

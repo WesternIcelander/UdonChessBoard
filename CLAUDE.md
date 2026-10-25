@@ -41,6 +41,7 @@ UdonSharp compiles only part of C#. Details and reasons: [docs/udon-constraints.
 
 - Where the port has an equivalent of a Java name (field, option, concept), keep the Java name, e.g. `prohibitSelfCheck`.
 - Moves are packed `int`s, not objects (layout: [docs/move-encoding.md](docs/move-encoding.md)). Always mask after shifting: `(move >> shift) & mask`.
+- **Public methods that aren't public API start with `_`** (`_UpdateClickables`, `_PressReset`), since UdonSharp needs `public` for any call from another behaviour, a test, a UI event or `SendCustomEvent`. The API is the public methods without one (what step 15 documents); a Java-named internal method keeps its Java name after the underscore. Unity's and Udon's events, `ChessBoardListener`'s virtual methods and `OnLanguageChange` keep their names. A UI event or `SendCustomEvent` naming a renamed method uses the new name (`nameof` where the code already does). Fields and constants keep plain names.
 - No regex in normal play. Regex is only for parsing PGN and FEN, and the Java patterns need adapting for .NET (atomic groups instead of possessive quantifiers, `^...$` anchors).
 - `Square`, `Piece`, `PieceType` etc. are enums or ints, with `-1`/`None` in place of `null`.
 

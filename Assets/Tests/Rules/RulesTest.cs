@@ -843,7 +843,7 @@ public class RulesTest : ChessTest {
         int[] moves = new int[ChessMoves.MaxMoves];
         byte[] b = CopyBoard(board);
         int[] s = CopyState(state);
-        int count = ChessMoves.GeneratePieceMoves(b, s, from, moves, 0);
+        int count = ChessMoves._GeneratePieceMoves(b, s, from, moves, 0);
         string errors = BoardDiff(b, board) + StateDiff(s, state);
         if (errors != "") errors = " changed the position:" + errors;
         errors += CompareMoves(board, state, moves, count, expected);
@@ -916,7 +916,7 @@ public class RulesTest : ChessTest {
         int[] state = NewState(sideToMove, castlingRights, enPassantFile,
             FindPiece(board, ChessRules.WhiteKing), FindPiece(board, ChessRules.BlackKing));
         int[] moves = new int[ChessMoves.MaxMoves];
-        int count = ChessMoves.GenerateMoves(board, state, moves);
+        int count = ChessMoves._GenerateMoves(board, state, moves);
         string errors = count == expected ? "" : " count " + count + " (expected " + expected + ")";
         byte[] b = CopyBoard(board);
         int[] s = CopyState(state);
@@ -1266,13 +1266,13 @@ public class RulesTest : ChessTest {
 
     // ---- 12.7 ----
 
-    // Compares the pieces of byColor attacking square (ChessMoves.SquareAttackers) with expected: their squares
+    // Compares the pieces of byColor attacking square (ChessMoves._SquareAttackers) with expected: their squares
     // separated by spaces, in any order, "" for none.
     void CheckAttackers(string name, string placement, string square, int byColor, string expected) {
         byte[] board = Placement(placement);
         byte[] b = CopyBoard(board);
         int[] attackers = new int[16];
-        int count = ChessMoves.SquareAttackers(b, ChessRules.ParseSquare(square), byColor, attackers, 0);
+        int count = ChessMoves._SquareAttackers(b, ChessRules.ParseSquare(square), byColor, attackers, 0);
         bool[] wanted = new bool[64];
         int wantedCount = 0;
         if (expected != "") {
@@ -1308,11 +1308,11 @@ public class RulesTest : ChessTest {
         int[] attackers = new int[18];
         attackers[0] = 99;
         attackers[1] = 98;
-        int count = ChessMoves.SquareAttackers(b, ChessRules.D4, white, attackers, 2);
+        int count = ChessMoves._SquareAttackers(b, ChessRules.D4, white, attackers, 2);
         Check(count == 18 && attackers[0] == 99 && attackers[1] == 98, "attackers: appended after count",
             "count " + count + ", first " + attackers[0] + " " + attackers[1]);
         int[] small = new int[3];
-        count = ChessMoves.SquareAttackers(b, ChessRules.D4, white, small, 0);
+        count = ChessMoves._SquareAttackers(b, ChessRules.D4, white, small, 0);
         Check(count == 3, "attackers: no more than the array holds", "count " + count);
 
         // Some attacker for exactly the squares IsSquareAttacked finds attacked.
@@ -1327,7 +1327,7 @@ public class RulesTest : ChessTest {
             b = Placement(placements[p]);
             for (int color = 0; color < 2; color++) {
                 for (int sq = 0; sq < 64; sq++) {
-                    bool some = ChessMoves.SquareAttackers(b, sq, color, attackers, 0) > 0;
+                    bool some = ChessMoves._SquareAttackers(b, sq, color, attackers, 0) > 0;
                     if (some != ChessMoves.IsSquareAttacked(b, sq, color)) {
                         wrong += " " + p + ":" + ChessRules.SquareName(sq) + (color == white ? "w" : "b");
                     }
@@ -1378,7 +1378,7 @@ public class RulesTest : ChessTest {
         if (errors != "") errors = " changed the position:" + errors;
         errors += CompareMoves(board, state, moves, count, expected);
         int all = ChessMoves.GenerateLegalMoves(b, s, moves, false);
-        int pseudo = ChessMoves.GenerateMoves(b, s, moves);
+        int pseudo = ChessMoves._GenerateMoves(b, s, moves);
         if (all != pseudo) errors += " prohibitSelfCheck off gave " + all + " moves, pseudo-legal " + pseudo;
         Check(errors == "", "legal moves: " + name, errors);
     }
@@ -2492,14 +2492,14 @@ public class RulesTest : ChessTest {
         for (int i = 0; i < texts.Length; i++) {
             int candidate = FindLegal(board, state, texts[i]);
             if (candidate == -1) errors += " " + texts[i] + ":not legal";
-            else if (!ChessDraws.ResetsHalfmoveClock(candidate) || ChessDraws.HalfmoveClockAfter(12, candidate) != 0)
+            else if (!ChessDraws._ResetsHalfmoveClock(candidate) || ChessDraws.HalfmoveClockAfter(12, candidate) != 0)
                 errors += " " + texts[i] + ":kept";
         }
         texts = "e1h1c e1a1c e1d1 d2f3 a1b1 h1h2".Split(new char[] { ' ' });
         for (int i = 0; i < texts.Length; i++) {
             int candidate = FindLegal(board, state, texts[i]);
             if (candidate == -1) errors += " " + texts[i] + ":not legal";
-            else if (ChessDraws.ResetsHalfmoveClock(candidate) || ChessDraws.HalfmoveClockAfter(12, candidate) != 13)
+            else if (ChessDraws._ResetsHalfmoveClock(candidate) || ChessDraws.HalfmoveClockAfter(12, candidate) != 13)
                 errors += " " + texts[i] + ":reset";
         }
         Check(errors == "", "halfmove clock resets on pawn moves and captures only", errors);
@@ -2525,13 +2525,13 @@ public class RulesTest : ChessTest {
 
         // Rebuilding from the move history gives the values recorded while playing.
         int[] rebuilt = new int[64];
-        int rebuiltClock = ChessDraws.BuildHalfmoveClocks(history, count, h, rebuilt);
+        int rebuiltClock = ChessDraws._BuildHalfmoveClocks(history, count, h, rebuilt);
         errors = "";
         if (ClocksText(rebuilt, count) != ClocksText(clocks, count))
             errors += " got " + ClocksText(rebuilt, count) + " (expected " + ClocksText(clocks, count) + ")";
         if (rebuiltClock != clock) errors += " current " + rebuiltClock + " (expected " + clock + ")";
         Check(errors == "", "halfmove clock rebuilt from the move history", errors);
-        Check(ChessDraws.BuildHalfmoveClocks(history, 0, 7, rebuilt) == 7, "halfmove clock rebuilt with no moves",
+        Check(ChessDraws._BuildHalfmoveClocks(history, 0, 7, rebuilt) == 7, "halfmove clock rebuilt with no moves",
             "");
 
         // Undo restores each ply's clock and, at the start, the starting clock.
@@ -2560,7 +2560,7 @@ public class RulesTest : ChessTest {
             clocks[12] = clock;
             clock = ChessDraws.HalfmoveClockAfter(clock, move);
             ChessPosition.MakeMove(board, state, move);
-            rebuiltClock = ChessDraws.BuildHalfmoveClocks(history, 13, h, rebuilt);
+            rebuiltClock = ChessDraws._BuildHalfmoveClocks(history, 13, h, rebuilt);
             if (clocks[12] != 1 || clock != 2) errors += " clocks " + clocks[12] + " -> " + clock + " (expected 1 -> 2)";
             if (ClocksText(rebuilt, 13) != ClocksText(clocks, 13) || rebuiltClock != clock)
                 errors += " rebuilt " + ClocksText(rebuilt, 13) + " / " + rebuiltClock;
@@ -2723,7 +2723,7 @@ public class RulesTest : ChessTest {
         int[] expected = new int[] { 3, 3, -1, -1, 3, 3, -1, -1 };
         for (int i = 0; i < fens.Length; i++) {
             ChessFen.ParseFen(fens[i], board, state, out h, out f);
-            int file = ChessDraws.EffectiveEnPassantFile(board, state, scratchMoves, true);
+            int file = ChessDraws._EffectiveEnPassantFile(board, state, scratchMoves, true);
             if (file != expected[i]) errors += " " + fens[i] + ": " + file + " (expected " + expected[i] + ")";
         }
         Check(errors == "", "en passant file for repetition", errors);

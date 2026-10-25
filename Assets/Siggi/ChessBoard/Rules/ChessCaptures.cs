@@ -17,7 +17,7 @@ namespace SiggiChessBoard {
         // game's board and history, which every client has, so every client, a late joiner too, shows the same
         // places; no history is made up for a position without one. In order:
         // - The pieces the starting position lacks (from a FEN), short of the standard set, in the fixed order
-        //   (PlaceOrderType); each piece beyond a type's standard count (a promotion the FEN doesn't record) counts
+        //   (_PlaceOrderType); each piece beyond a type's standard count (a promotion the FEN doesn't record) counts
         //   against the missing pawns. The starting counts are the game's board's with its moves undone.
         // - The captures of the moves before ply. A promoted pawn is captured as a pawn; a piece whose promotion the
         //   history can't show (an extra queen in the starting FEN) keeps its type.
@@ -25,7 +25,7 @@ namespace SiggiChessBoard {
         //   the free moves took them, whatever they were. A type it has more of than the ply's position had pieces
         //   put back from the places (step 13.4), each taken out of the last place of that type.
         // gameBoard and sideToMove are the game's after its moveCount moves (whatever replay shows).
-        public static void CaptureOrder(byte[] gameBoard, int sideToMove, int[] moves, int moveCount, int ply,
+        public static void _CaptureOrder(byte[] gameBoard, int sideToMove, int[] moves, int moveCount, int ply,
             byte[] custom, int[] captured, int[] counts) {
             counts[ChessRules.White] = 0;
             counts[ChessRules.Black] = 0;
@@ -53,12 +53,12 @@ namespace SiggiChessBoard {
             for (int color = ChessRules.White; color <= ChessRules.Black; color++) {
                 int extra = 0;
                 for (int type = ChessRules.Knight; type <= ChessRules.Queen; type++) {
-                    int over = pieceCounts[color * 8 + type] - StandardCount(type);
+                    int over = pieceCounts[color * 8 + type] - _StandardCount(type);
                     if (over > 0) extra += over;
                 }
                 for (int i = 0; i < 5; i++) {
-                    int type = PlaceOrderType(i);
-                    int missing = StandardCount(type) - pieceCounts[color * 8 + type];
+                    int type = _PlaceOrderType(i);
+                    int missing = _StandardCount(type) - pieceCounts[color * 8 + type];
                     if (type == ChessRules.Pawn) missing -= extra;
                     for (int n = 0; n < missing; n++) AddCaptured(captured, counts, color, type);
                 }
@@ -102,7 +102,7 @@ namespace SiggiChessBoard {
             }
             for (int color = ChessRules.White; color <= ChessRules.Black; color++) {
                 for (int i = 0; i < 6; i++) {
-                    int type = PlaceOrderType(i);
+                    int type = _PlaceOrderType(i);
                     int missing = pieceCounts[color * 8 + type] - customCounts[color * 8 + type];
                     for (int n = 0; n < missing; n++) AddCaptured(captured, counts, color, type);
                     for (int n = 0; n < -missing; n++) RemoveCaptured(captured, counts, color, type);
@@ -117,20 +117,20 @@ namespace SiggiChessBoard {
 
         // The fixed order of pieces put in places without a capture to order them: queen, rook, bishop, knight, pawn,
         // then king (only a free move takes one).
-        public static int PlaceOrderType(int i) {
+        public static int _PlaceOrderType(int i) {
             if (i < 4) return ChessRules.Queen - i;
             return i == 4 ? ChessRules.Pawn : ChessRules.King;
         }
 
         // How many of a piece type a side starts a standard game with.
-        public static int StandardCount(int type) {
+        public static int _StandardCount(int type) {
             if (type == ChessRules.Pawn) return 8;
             if (type == ChessRules.Queen || type == ChessRules.King) return 1;
             return 2;
         }
 
-        // Whether color has a piece of type in its captured places (CaptureOrder's captured and counts).
-        public static bool HasCaptured(int[] captured, int[] counts, int color, int type) {
+        // Whether color has a piece of type in its captured places (_CaptureOrder's captured and counts).
+        public static bool _HasCaptured(int[] captured, int[] counts, int color, int type) {
             if (color != ChessRules.White && color != ChessRules.Black) return false;
             for (int place = 0; place < counts[color]; place++) {
                 if (captured[color * MaxCaptured + place] == type) return true;

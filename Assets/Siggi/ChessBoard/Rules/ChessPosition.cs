@@ -32,7 +32,7 @@ namespace SiggiChessBoard {
         // The castling rights that are lost when a piece moves from or to this square: both of a side's rights for
         // its king's starting square, one right for each rook's starting square. While a right is held, its king and
         // rook are still on these squares, so any move from one is that piece moving and any move to one captures it.
-        public static int CastlingRightsAt(int[] state, int square) {
+        public static int _CastlingRightsAt(int[] state, int square) {
             int file = square & 7;
             int rank = square >> 3;
             // The black rights are the white ones shifted up by two bits.
@@ -83,7 +83,7 @@ namespace SiggiChessBoard {
             // moves from the king's starting square, so it loses both of the mover's rights.
             int rights = state[StateCastlingRights];
             if (rights != 0) {
-                state[StateCastlingRights] = rights & ~(CastlingRightsAt(state, from) | CastlingRightsAt(state, to));
+                state[StateCastlingRights] = rights & ~(_CastlingRightsAt(state, from) | _CastlingRightsAt(state, to));
             }
             state[StateEnPassantFile] = ChessRules.IsDoublePush(move) ? from & 7 : -1;
             state[StateSideToMove] = opponent;

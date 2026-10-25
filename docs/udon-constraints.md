@@ -26,4 +26,5 @@ UdonSharp compiles only part of C#. The ones that matter here:
 - No I/O: PGN and FEN are string in, string out.
 - No static lookup tables: use `const`s, computed lookups, or instance fields.
 - No lambdas: `removeIf`, `Predicate<Move>` and `Lazy` become plain loops and flags.
+- `public` doesn't mean API: a method must be public for another behaviour, a test, a UI event (`SendCustomEvent`) or a delayed event to call it, so public methods that aren't public API start with `_` (step 13.7). The API is exactly the public methods without one, besides Unity's and Udon's events, `ChessBoardListener`'s virtual methods and `I18n`'s `OnLanguageChange`. VRChat also refuses a network event (`SendCustomNetworkEvent`) for a method starting with `_`, so no client can call an internal method on another.
 - `Square`, `Piece`, `PieceType`, `PieceColor`, `File`, `Rank` become plain C# enums or ints, with `-1`/`None` in place of `null`. Their Java fields (`Square.x`, `Piece.color`, ...) become static helper methods.

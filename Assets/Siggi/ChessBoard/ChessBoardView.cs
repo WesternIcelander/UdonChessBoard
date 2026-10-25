@@ -46,7 +46,7 @@ namespace SiggiChessBoard {
         // it, so it isn't for resizing: scale the view's transform instead (step 12.2, docs/customizing.md).
         [Tooltip("The builder's square size, in the view's units. Don't change it to resize the board: scale the view.")]
         public float squareSize = 0.05f;
-        // InputAuto, InputPickups or InputClicks, the same for every client of a build; CycleInputStyle changes it on
+        // InputAuto, InputPickups or InputClicks, the same for every client of a build; _CycleInputStyle changes it on
         // one client.
         [Tooltip("Auto: pickups in VR, clicks on desktop and mobile. Pickups or Clicks: that for everyone, for testing.")]
         public int inputStyle = InputAuto;
@@ -56,10 +56,10 @@ namespace SiggiChessBoard {
         public ChessSquare[] squareTargets = new ChessSquare[64];
         // How far a selected piece is lifted above its square, in squares.
         public const float SelectLift = 0.5f;
-        // The promotion ghosts (step 12.11): see-through pieces, a knight, bishop, rook and queen (GhostType), children of
+        // The promotion ghosts (step 12.11): see-through pieces, a knight, bishop, rook and queen (_GhostType), children of
         // this view, shown only to the local player while their pawn waits on the last rank, floating in a row above
         // it; clicking one (Interact) promotes to its piece. Each wears the promoting side's promotion template
-        // (ChessPieceSet.PromotionTemplate), Black's falling back on White's as its pieces do.
+        // (ChessPieceSet._PromotionTemplate), Black's falling back on White's as its pieces do.
         public ChessPromotionGhost[] promotionGhosts = new ChessPromotionGhost[GhostCount];
         public const int GhostCount = 4;
         // Where the row floats, in squares: its ghosts' bases GhostHeight above the playing surface over the promotion
@@ -94,7 +94,7 @@ namespace SiggiChessBoard {
         public const int MarkCapture = 3;
         // The table, the board and the buttons have no solid colliders, so the players can walk up to and into the
         // board. The blocker, a solid box filling the table up to its top, keeps everyone else out: enabled on each
-        // client unless the local player has a seat (UpdateBlocker). Players collide only on their own client, so
+        // client unless the local player has a seat (_UpdateBlocker). Players collide only on their own client, so
         // each client's blocker stops only its own player. Below the surface, so it doesn't catch pointing or clicks.
         public Collider blocker;
         // Captured-piece places (step 12.4, docs/customizing.md): where each colour's captured pieces stand, in the
@@ -158,7 +158,7 @@ namespace SiggiChessBoard {
         // When sounds may start (Time.time), whether this client has caught up with the board (a change seen after
         // the silence: made here, or a received one, the first of which is silent), the change whose sound the next
         // Refresh plays (ChangeNone for none) and how many changes have come since the last Refresh, and the number of
-        // pieces in the position shown at the last Refresh (a free move that leaves fewer captured one).
+        // pieces in the position shown at the last _Refresh (a free move that leaves fewer captured one).
         float soundsFrom;
         bool caughtUp;
         int soundChange = ChessBoard.ChangeNone;
@@ -191,7 +191,7 @@ namespace SiggiChessBoard {
         int[] placeTargetCounts = new int[2];
 
         // The piece set applied to each side (null for none) and the arbiter whose list and overrides choose it, and
-        // the sets' templates copied by TemplateIndex (colour * 6 + type - 1): mesh, materials, offset from the
+        // the sets' templates copied by _TemplateIndex (colour * 6 + type - 1): mesh, materials, offset from the
         // square's centre, rotation, scale (a Black template falling back on White's turned half round), and the
         // point under the square's centre in the piece's own space (where a drop is read from).
         public const int TemplateCount = 12;
@@ -208,7 +208,7 @@ namespace SiggiChessBoard {
         Quaternion[] setRotations = new Quaternion[TemplateCount];
         Vector3[] setScales = new Vector3[TemplateCount];
         Vector3[] setBases = new Vector3[TemplateCount];
-        // The promotion templates copied the same way, by GhostIndex (colour * GhostCount + ghost), and the colour the
+        // The promotion templates copied the same way, by _GhostIndex (colour * GhostCount + ghost), and the colour the
         // ghosts were last dressed for (-1 to dress them again when next shown, as after a set change).
         Mesh[] ghostMeshes = new Mesh[2 * GhostCount];
         Material[][] ghostMaterials = new Material[2 * GhostCount][];
@@ -253,7 +253,7 @@ namespace SiggiChessBoard {
         [NonSerialized] public int heldFrom = ChessRules.NoSquare;
         [NonSerialized] public int heldPlace = NoPlace;
         // A promotion waiting for its piece: the pawn's object, its from and to squares (NoObject when none). The pawn
-        // stands on to meanwhile; ChoosePromotion plays it, and any change to the board (but activity) cancels it.
+        // stands on to meanwhile; _ChoosePromotion plays it, and any change to the board (but activity) cancels it.
         [NonSerialized] public int promotionObject = NoObject;
         [NonSerialized] public int promotionFrom = ChessRules.NoSquare;
         [NonSerialized] public int promotionTo = ChessRules.NoSquare;
@@ -308,13 +308,13 @@ namespace SiggiChessBoard {
             }
             string problem = LocalSpaceProblem();
             if (problem.Length > 0) Debug.LogWarning("[ChessBoardView] " + gameObject.name + ": " + problem);
-            // Told when the arbiter's piece set override changes (OnPieceSetOverrideChanged).
+            // Told when the arbiter's piece set override changes (_OnPieceSetOverrideChanged).
             arbiter = board.arbiter;
-            if (Utilities.IsValid(arbiter)) arbiter.AddPieceSetListener(this);
+            if (Utilities.IsValid(arbiter)) arbiter._AddPieceSetListener(this);
             ApplyPieceSet(ChessRules.White);
             ApplyPieceSet(ChessRules.Black);
             board.AddListener(this);
-            Refresh();
+            _Refresh();
         }
 
         // ---- Local space (step 12.2, docs/customizing.md) ----
@@ -394,7 +394,7 @@ namespace SiggiChessBoard {
         }
 
         // The set applied to a ChessRules colour's pieces now, for tests.
-        public ChessPieceSet AppliedPieceSet(int color) {
+        public ChessPieceSet _AppliedPieceSet(int color) {
             if (color == ChessRules.White) return appliedWhiteSet;
             if (color == ChessRules.Black) return appliedBlackSet;
             return null;
@@ -402,13 +402,13 @@ namespace SiggiChessBoard {
 
         // The arbiter's override for a side changed (ChessArbiter.SetPieceSetOverride tells its piece set listeners):
         // the side's set worn at once if it's another.
-        public void OnPieceSetOverrideChanged(int color) {
+        public void _OnPieceSetOverrideChanged(int color) {
             if (color == ChessRules.White || color == ChessRules.Black) ApplyChangedPieceSet(color);
         }
 
         // Applies a colour's current set at once if it isn't the one applied (the board's change, an override).
         void ApplyChangedPieceSet(int color) {
-            if (CurrentPieceSet(color) != AppliedPieceSet(color)) ApplyPieceSet(color);
+            if (CurrentPieceSet(color) != _AppliedPieceSet(color)) ApplyPieceSet(color);
         }
 
         // Copies a colour's current set's templates (a Black one without a mesh falling back on White's,
@@ -436,8 +436,8 @@ namespace SiggiChessBoard {
                     + problem + ".");
             }
             for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) {
-                int index = TemplateIndex(color, type);
-                CopyTemplate(set.Template(color, type), set.Template(ChessRules.White, type), !white, index,
+                int index = _TemplateIndex(color, type);
+                CopyTemplate(set._Template(color, type), set._Template(ChessRules.White, type), !white, index,
                     setMeshes, setMaterials, setOffsets, setRotations, setScales);
                 // The square's centre, -offset from the piece's origin, in the piece's own (turned, scaled) space.
                 Vector3 scale = setScales[index];
@@ -446,15 +446,15 @@ namespace SiggiChessBoard {
                     SafeDivide(local.z, scale.z));
             }
             for (int ghost = 0; ghost < GhostCount; ghost++) {
-                int type = GhostType(ghost);
-                CopyTemplate(set.PromotionTemplate(color, type), set.PromotionTemplate(ChessRules.White, type), !white,
-                    GhostIndex(color, ghost), ghostMeshes, ghostMaterials, ghostOffsets, ghostRotations, ghostScales);
+                int type = _GhostType(ghost);
+                CopyTemplate(set._PromotionTemplate(color, type), set._PromotionTemplate(ChessRules.White, type),
+                    !white, _GhostIndex(color, ghost), ghostMeshes, ghostMaterials, ghostOffsets, ghostRotations, ghostScales);
             }
             // Ghosts showing for this side change at once.
             if (ghostsDressed == color) ghostsDressed = -1;
-            UpdatePromotionGhosts();
+            _UpdatePromotionGhosts();
             for (int obj = 0; obj < PieceCount; obj++) {
-                if (ObjectColor(obj) != color) continue;
+                if (_ObjectColor(obj) != color) continue;
                 objectMeshType[obj] = -1;
                 if (!Utilities.IsValid(pieces[obj]) || objectType[obj] == ChessRules.NoPieceType) continue;
                 Vector3 target = PrepareObject(obj);
@@ -473,7 +473,7 @@ namespace SiggiChessBoard {
             Transform source = own;
             Quaternion turn = Quaternion.identity;
             Material[] ownMaterials = null;
-            if (black && !ChessPieceSet.HasMesh(own)) {
+            if (black && !ChessPieceSet._HasMesh(own)) {
                 ownMaterials = MaterialsOf(own);
                 source = white;
                 turn = Quaternion.Euler(0, 180, 0);
@@ -514,38 +514,38 @@ namespace SiggiChessBoard {
         }
 
         // The index of a colour's piece type in the copied templates.
-        public static int TemplateIndex(int color, int type) {
+        public static int _TemplateIndex(int color, int type) {
             return color * 6 + type - 1;
         }
 
         // The mesh obj wears for the piece it stands for, from the applied set (null for none).
-        public Mesh ObjectMesh(int obj) {
+        public Mesh _ObjectMesh(int obj) {
             int type = objectType[obj];
-            return type == ChessRules.NoPieceType ? null : setMeshes[TemplateIndex(ObjectColor(obj), type)];
+            return type == ChessRules.NoPieceType ? null : setMeshes[_TemplateIndex(_ObjectColor(obj), type)];
         }
 
         // How far obj's origin stands from its square's centre (or its place beside the board), in the view's local
         // space: its template's position.
-        public Vector3 PieceOffset(int obj) {
+        public Vector3 _PieceOffset(int obj) {
             int type = objectType[obj];
-            if (type == ChessRules.NoPieceType || !hasSet[ObjectColor(obj)]) return Vector3.zero;
-            return setOffsets[TemplateIndex(ObjectColor(obj), type)];
+            if (type == ChessRules.NoPieceType || !hasSet[_ObjectColor(obj)]) return Vector3.zero;
+            return setOffsets[_TemplateIndex(_ObjectColor(obj), type)];
         }
 
         // The point of obj that stands on its square's centre (world space): where a drop is read from, following the
         // piece as a hand turns it.
-        public Vector3 PieceBase(int obj) {
+        public Vector3 _PieceBase(int obj) {
             Transform piece = pieces[obj];
             int type = objectType[obj];
-            if (type == ChessRules.NoPieceType || !hasSet[ObjectColor(obj)]) return piece.position;
-            return piece.TransformPoint(setBases[TemplateIndex(ObjectColor(obj), type)]);
+            if (type == ChessRules.NoPieceType || !hasSet[_ObjectColor(obj)]) return piece.position;
+            return piece.TransformPoint(setBases[_TemplateIndex(_ObjectColor(obj), type)]);
         }
 
         void Update() {
             if (dirty) {
-                Refresh();
+                _Refresh();
             } else if (Time.time >= nextPickupCheck) {
-                UpdatePickupable();
+                _UpdatePickupable();
             }
             if (animatingCount > 0) StepAnimations();
             if (falling) StepFalls();
@@ -559,8 +559,8 @@ namespace SiggiChessBoard {
             int change = board.lastChange;
             if (changesSinceRefresh == 0) changesAnimate = true;
             changesSinceRefresh++;
-            if (!ChangeAnimates(change)) changesAnimate = false;
-            ChessUtil.NoteSound(change, MakesSound(change), board, soundsFrom, ref caughtUp, ref soundChanges,
+            if (!_ChangeAnimates(change)) changesAnimate = false;
+            ChessUtil._NoteSound(change, MakesSound(change), board, soundsFrom, ref caughtUp, ref soundChanges,
                 ref soundChange);
             // A side whose synced set changed (step 13.6: ChangePieceSet, a join with a preferred set, a reset, an
             // update from another client) wears it at once.
@@ -592,7 +592,7 @@ namespace SiggiChessBoard {
 
         // Brings the objects up to the board now: the mapping checked against the position shown (rebuilt where it
         // differs), the meshes swapped and every object placed. Called on the frame after a change; public for tests.
-        public void Refresh() {
+        public void _Refresh() {
             dirty = false;
             int change = soundChange;
             soundChange = ChessBoard.ChangeNone;
@@ -624,22 +624,22 @@ namespace SiggiChessBoard {
             bool animate = PlacingAnimates();
             UpdateFalls(animate);
             PlaceObjects(animate);
-            UpdatePickupable();
+            _UpdatePickupable();
             // A held piece's targets may have changed (or the game ended, or replay began).
             if (heldObject != NoObject) FindTargets(heldFrom, replay, heldTargets, heldMarks);
-            UpdateLiftedMarks();
-            UpdateLastMoveHighlight();
-            UpdateCheckLines();
-            UpdatePromotionGhosts();
-            UpdateBlocker();
+            _UpdateLiftedMarks();
+            _UpdateLastMoveHighlight();
+            _UpdateCheckLines();
+            _UpdatePromotionGhosts();
+            _UpdateBlocker();
             int pieceCount = CountPieces(shown);
-            PlaySound(ChangeSound(change, pieceCount));
+            PlaySound(_ChangeSound(change, pieceCount));
             shownPieceCount = pieceCount;
         }
 
         // ---- Sound effects (step 12.12) ----
 
-        // Whether a change has a sound (ChessUtil.NoteSound): a move, a replay step or a free move.
+        // Whether a change has a sound (ChessUtil._NoteSound): a move, a replay step or a free move.
         static bool MakesSound(int change) {
             return change == ChessBoard.ChangeMove || change == ChessBoard.ChangeReplayStep
                 || change == ChessBoard.ChangeFreeMove;
@@ -650,7 +650,7 @@ namespace SiggiChessBoard {
         // checks, then promoteSound for a promotion, captureSound, moveSound), none at the start; for a free move,
         // checkSound when a king is in check, captureSound when it took a piece, moveSound otherwise. None for any
         // other change. Public for tests.
-        public AudioClip ChangeSound(int change, int pieceCount) {
+        public AudioClip _ChangeSound(int change, int pieceCount) {
             if (change == ChessBoard.ChangeFreeMove) {
                 if (shownChecks > 0) return checkSound;
                 return pieceCount < shownPieceCount ? captureSound : moveSound;
@@ -666,7 +666,7 @@ namespace SiggiChessBoard {
 
         // Plays clip from audioSource (nothing for none) unless muted; lastSound and soundsPlayed follow it either way.
         void PlaySound(AudioClip clip) {
-            if (!ChessUtil.PlaySound(clip, audioSource, muted)) return;
+            if (!ChessUtil._PlaySound(clip, audioSource, muted)) return;
             lastSound = clip;
             soundsPlayed++;
         }
@@ -681,7 +681,7 @@ namespace SiggiChessBoard {
 
         // Enables the blocker unless the local player has a seat (either colour), so only the seated players can walk
         // into the table. Called on every Refresh: seats change only with the board.
-        public void UpdateBlocker() {
+        public void _UpdateBlocker() {
             if (!Utilities.IsValid(blocker)) return;
             VRCPlayerApi local = Networking.LocalPlayer;
             bool seated = Utilities.IsValid(board) && Utilities.IsValid(local) && board.IsPlayer(local.displayName);
@@ -693,7 +693,7 @@ namespace SiggiChessBoard {
         // A piece picked up by the local player (its ChessPiece's OnPickup): asks the board, and lets go of the piece
         // when it says no; the board's rejection then puts it back. A promotion waiting for its piece is dropped. A
         // captured piece (a pickup only in replay, step 13.4) is asked about by its colour and type.
-        public void OnPiecePickedUp(int obj) {
+        public void _OnPiecePickedUp(int obj) {
             if (obj < 0 || obj >= PieceCount) return;
             // The hand has it now, wherever it was going.
             StopAnimation(obj);
@@ -704,34 +704,34 @@ namespace SiggiChessBoard {
                 heldFrom = objectSquare[obj];
                 heldPlace = heldFrom == ChessRules.NoSquare ? objectPlace[obj] : NoPlace;
                 FindTargets(heldFrom, board.replayMode, heldTargets, heldMarks);
-                UpdateLiftedMarks();
+                _UpdateLiftedMarks();
                 return;
             }
             // A piece the board refused (or hidden, never a pickup) is just put back; the board told its rejection
             // itself.
             dirty = true;
-            UpdateLiftedMarks();
+            _UpdateLiftedMarks();
             LetGoOf(obj);
         }
 
         // A piece let go by the local player (its ChessPiece's OnDrop): forwards the drop on the square under its base
         // (off the board too, which the board rejects) if the board accepted its pickup; a king castles by being dropped
-        // on its rook. A promotion waits for ChoosePromotion with the pawn standing on its square; anything else is placed
+        // on its rook. A promotion waits for _ChoosePromotion with the pawn standing on its square; anything else is placed
         // from the board after its change, so a rejected drop goes back where it was. A captured piece is put back on
         // the square (PlaceCapturedObject), and goes back to its place dropped anywhere else.
-        public void OnPieceDropped(int obj) {
+        public void _OnPieceDropped(int obj) {
             if (obj < 0 || obj >= PieceCount) return;
             dirty = true;
             snapNext[obj] = true;
             if (obj != heldObject) return;
             if (!Utilities.IsValid(board) || !Utilities.IsValid(pieces[obj])) {
                 heldObject = NoObject;
-                UpdateLiftedMarks();
+                _UpdateLiftedMarks();
                 return;
             }
             heldObject = NoObject;
-            UpdateLiftedMarks();
-            int to = DropSquare(PieceBase(obj));
+            _UpdateLiftedMarks();
+            int to = _DropSquare(_PieceBase(obj));
             int from = heldFrom;
             if (from == ChessRules.NoSquare) {
                 PlaceCapturedObject(obj, to);
@@ -746,7 +746,7 @@ namespace SiggiChessBoard {
             int square = objectSquare[obj];
             if (square != ChessRules.NoSquare) return board.PiecePickedUp(square) == ChessBoard.InputAccepted;
             if (!CapturedLiftable(obj)) return false;
-            return board.CapturedPickedUp(ObjectColor(obj), objectType[obj]) == ChessBoard.InputAccepted;
+            return board.CapturedPickedUp(_ObjectColor(obj), objectType[obj]) == ChessBoard.InputAccepted;
         }
 
         // Puts the captured piece obj back on square in replay (ChessBoard.PlaceCaptured; NoSquare, off the board, is
@@ -754,7 +754,7 @@ namespace SiggiChessBoard {
         // whichever free one the mapping would pick: the places are worked out from the position alone, so the place
         // that empties is the last of its type, not necessarily obj's.
         void PlaceCapturedObject(int obj, int square) {
-            if (board.PlaceCaptured(ObjectColor(obj), objectType[obj], square) != ChessBoard.InputAccepted) return;
+            if (board.PlaceCaptured(_ObjectColor(obj), objectType[obj], square) != ChessBoard.InputAccepted) return;
             Unmap(square);
             Map(obj, square);
         }
@@ -763,7 +763,7 @@ namespace SiggiChessBoard {
         // pieces: standing, shown, in a captured place it keeps, in the replay the mapping was last brought up to.
         bool CapturedLiftable(int obj) {
             return shownReplay && objectSquare[obj] == ChessRules.NoSquare && obj != promotionObject && KeepsPlace(obj)
-                && IsObjectShown(obj);
+                && _IsObjectShown(obj);
         }
 
         // Whether obj still stands where it was lifted from: on square from, or (from NoSquare) in the captured place
@@ -777,7 +777,7 @@ namespace SiggiChessBoard {
         // A promotion ghost's answer (step 12.11): plays the waiting promotion with pieceType (ChessRules.Knight,
         // Bishop, Rook or Queen). There's no cancel: any other type is refused (InputRejected) and the pawn goes on
         // waiting. InputRejected with no promotion waiting.
-        public int ChoosePromotion(int pieceType) {
+        public int _ChoosePromotion(int pieceType) {
             if (promotionObject == NoObject || !Utilities.IsValid(board)) return ChessBoard.InputRejected;
             if (pieceType < ChessRules.Knight || pieceType > ChessRules.Queen) return ChessBoard.InputRejected;
             ClearPromotion();
@@ -797,8 +797,8 @@ namespace SiggiChessBoard {
             promotionFrom = from;
             promotionTo = to;
             dirty = true;
-            UpdatePromotionGhosts();
-            UpdatePickupable();
+            _UpdatePromotionGhosts();
+            _UpdatePickupable();
         }
 
         // No promotion waits any more (chosen, or dropped by a change to the board); the pawn is placed from the board
@@ -807,17 +807,17 @@ namespace SiggiChessBoard {
             if (promotionObject == NoObject) return;
             promotionObject = NoObject;
             dirty = true;
-            UpdatePromotionGhosts();
-            UpdatePickupable();
+            _UpdatePromotionGhosts();
+            _UpdatePickupable();
         }
 
         // The ChessRules piece type of a ghost: knight, bishop, rook, queen.
-        public static int GhostType(int ghost) {
+        public static int _GhostType(int ghost) {
             return ChessRules.Knight + ghost;
         }
 
         // The index of a colour's ghost in the copied promotion templates.
-        public static int GhostIndex(int color, int ghost) {
+        public static int _GhostIndex(int color, int ghost) {
             return color * GhostCount + ghost;
         }
 
@@ -825,23 +825,23 @@ namespace SiggiChessBoard {
         // rank, GhostHeight squares up, GhostSpacing squares apart, its middle over the promotion square but no further
         // off the board's centre than GhostMaxOffset; knight to queen from left to right as the promoting side sees it
         // (from White's end along +x, from Black's along -x). Its template's offset is added to this.
-        public Vector3 GhostPosition(int ghost) {
+        public Vector3 _GhostPosition(int ghost) {
             if (promotionObject == NoObject || promotionTo == ChessRules.NoSquare) return Vector3.zero;
-            Vector3 position = SquarePosition(promotionTo);
+            Vector3 position = _SquarePosition(promotionTo);
             float limit = GhostMaxOffset * squareSize;
             position.x = Mathf.Clamp(position.x, -limit, limit);
             float along = (ghost - (GhostCount - 1) * 0.5f) * GhostSpacing * squareSize;
-            position.x += ObjectColor(promotionObject) == ChessRules.White ? along : -along;
+            position.x += _ObjectColor(promotionObject) == ChessRules.White ? along : -along;
             position.y = GhostHeight * squareSize;
             return position;
         }
 
         // Shows the ghosts while a promotion waits, each dressed in the promoting side's promotion template (mesh,
-        // materials, turn, size and a collider fitted to the mesh) and floating in its place (GhostPosition); hides
+        // materials, turn, size and a collider fitted to the mesh) and floating in its place (_GhostPosition); hides
         // them otherwise. Called on every Refresh, when a promotion starts or stops waiting, and on a set change.
-        public void UpdatePromotionGhosts() {
+        public void _UpdatePromotionGhosts() {
             bool shown = promotionObject != NoObject && promotionTo != ChessRules.NoSquare;
-            int color = shown ? ObjectColor(promotionObject) : -1;
+            int color = shown ? _ObjectColor(promotionObject) : -1;
             bool dress = shown && ghostsDressed != color;
             if (dress) ghostsDressed = color;
             for (int ghost = 0; ghost < promotionGhosts.Length && ghost < GhostCount; ghost++) {
@@ -849,10 +849,10 @@ namespace SiggiChessBoard {
                 if (!Utilities.IsValid(behaviour)) continue;
                 GameObject ghostObject = behaviour.gameObject;
                 if (shown) {
-                    int index = GhostIndex(color, ghost);
+                    int index = _GhostIndex(color, ghost);
                     Transform t = ghostObject.transform;
                     if (dress) DressGhost(ghostObject, index);
-                    t.localPosition = GhostPosition(ghost) + ghostOffsets[index];
+                    t.localPosition = _GhostPosition(ghost) + ghostOffsets[index];
                     t.localRotation = ghostRotations[index];
                 }
                 if (ghostObject.activeSelf != shown) ghostObject.SetActive(shown);
@@ -876,7 +876,7 @@ namespace SiggiChessBoard {
         }
 
         // Whether the ghosts show (every one of them active), for tests.
-        public bool AreGhostsShown() {
+        public bool _AreGhostsShown() {
             if (promotionGhosts.Length < GhostCount) return false;
             for (int ghost = 0; ghost < GhostCount; ghost++) {
                 if (!Utilities.IsValid(promotionGhosts[ghost]) || !promotionGhosts[ghost].gameObject.activeSelf) {
@@ -891,7 +891,7 @@ namespace SiggiChessBoard {
         // The two squares the last-move line joins for move (which 0 for its start, 1 for its end; NoSquare for none):
         // where the piece came from and where it stands now. A castle shows the king's path to its destination; when
         // the king doesn't move (Chess960), its rook's path instead (from its square to the f or d file).
-        public static int LastMoveSquare(int move, int which) {
+        public static int _LastMoveSquare(int move, int which) {
             if (move == 0) return ChessRules.NoSquare;
             int from = ChessRules.MoveFrom(move);
             int to = ChessRules.MoveTo(move);
@@ -907,25 +907,25 @@ namespace SiggiChessBoard {
         // Shows the move that led to the position shown (in replay too): the line from its start to its end and the
         // mark on its start; both hidden when there's none, and the line when it starts and ends on one square (a
         // Chess960 castle moving neither piece). Called on every Refresh.
-        public void UpdateLastMoveHighlight() {
+        public void _UpdateLastMoveHighlight() {
             int move = Utilities.IsValid(board) ? board.LastMove() : 0;
-            int from = LastMoveSquare(move, 0);
-            int to = LastMoveSquare(move, 1);
+            int from = _LastMoveSquare(move, 0);
+            int to = _LastMoveSquare(move, 1);
             if (Utilities.IsValid(lastMoveMark)) {
                 bool shown = from != ChessRules.NoSquare;
-                if (shown) lastMoveMark.transform.localPosition = SquarePosition(from);
+                if (shown) lastMoveMark.transform.localPosition = _SquarePosition(from);
                 if (lastMoveMark.activeSelf != shown) lastMoveMark.SetActive(shown);
             }
-            if (Utilities.IsValid(lastMoveLine)) PlaceLine(lastMoveLine, from, to);
+            if (Utilities.IsValid(lastMoveLine)) _PlaceLine(lastMoveLine, from, to);
         }
 
         // Shows a line (a bar one local unit long along its +z, as lastMoveLine) from square from to square to: stood
         // on from, turned towards to and stretched to reach it. Hidden for NoSquare, or when both are one square.
-        public void PlaceLine(GameObject lineObject, int from, int to) {
+        public void _PlaceLine(GameObject lineObject, int from, int to) {
             bool shown = from != ChessRules.NoSquare && to != ChessRules.NoSquare && to != from;
             if (shown) {
-                Vector3 start = SquarePosition(from);
-                Vector3 path = SquarePosition(to) - start;
+                Vector3 start = _SquarePosition(from);
+                Vector3 path = _SquarePosition(to) - start;
                 Transform line = lineObject.transform;
                 line.localPosition = start;
                 line.localRotation = Quaternion.LookRotation(path, Vector3.up);
@@ -936,19 +936,19 @@ namespace SiggiChessBoard {
 
         // Shows a check line from each piece giving check to the king it attacks in the position shown (in replay
         // too, and once a game ends in checkmate), hiding the rest. Called on every Refresh.
-        public void UpdateCheckLines() {
+        public void _UpdateCheckLines() {
             int count = Utilities.IsValid(board) ? board.Checks(checkers, checkedKings) : 0;
             shownChecks = count;
             for (int i = 0; i < checkLines.Length; i++) {
                 if (!Utilities.IsValid(checkLines[i])) continue;
-                if (i < count) PlaceLine(checkLines[i], checkers[i], checkedKings[i]);
+                if (i < count) _PlaceLine(checkLines[i], checkers[i], checkedKings[i]);
                 else if (checkLines[i].activeSelf) checkLines[i].SetActive(false);
             }
         }
 
         // Marks the held or selected piece's legal targets (heldMarks or selectedMarks), each with its look; none in
         // replay, where every square is one, and none with nothing lifted. Called on every lift change.
-        public void UpdateTargetHighlights() {
+        public void _UpdateTargetHighlights() {
             int[] marks = null;
             if (heldObject != NoObject) marks = heldMarks;
             else if (selectedObject != NoObject) marks = selectedMarks;
@@ -975,7 +975,7 @@ namespace SiggiChessBoard {
         }
 
         // Whether square's legal-target mark is shown, for tests.
-        public bool IsTargetHighlighted(int square) {
+        public bool _IsTargetHighlighted(int square) {
             GameObject highlight = targetHighlights[square];
             return Utilities.IsValid(highlight) && highlight.activeSelf;
         }
@@ -983,8 +983,8 @@ namespace SiggiChessBoard {
         // The kind of legal-target mark square shows (MarkNone when hidden), read from how it looks, for tests:
         // MarkMove when scaled down, otherwise MarkCapture with captureMaterial and MarkCastle with targetMaterial
         // (-1 for a look that's none of these).
-        public int TargetMarkShown(int square) {
-            if (!IsTargetHighlighted(square)) return MarkNone;
+        public int _TargetMarkShown(int square) {
+            if (!_IsTargetHighlighted(square)) return MarkNone;
             GameObject highlight = targetHighlights[square];
             MeshRenderer renderer = highlight.GetComponent<MeshRenderer>();
             Material material = Utilities.IsValid(renderer) ? renderer.sharedMaterial : null;
@@ -998,13 +998,13 @@ namespace SiggiChessBoard {
         }
 
         // Everything shown for the piece the local player has lifted (held or selected): the legal-target marks.
-        public void UpdateLiftedMarks() {
-            UpdateTargetHighlights();
+        public void _UpdateLiftedMarks() {
+            _UpdateTargetHighlights();
         }
 
         // The square under a point (world space) on the playing surface, by where it is over the board whatever its
         // height; NoSquare outside the board.
-        public int DropSquare(Vector3 position) {
+        public int _DropSquare(Vector3 position) {
             Vector3 local = transform.InverseTransformPoint(position);
             int file = Mathf.FloorToInt(local.x / squareSize + 4);
             int rank = Mathf.FloorToInt(local.z / squareSize + 4);
@@ -1021,8 +1021,8 @@ namespace SiggiChessBoard {
         // its own rook; in replay, a free move onto the other colour); on another piece the board would let the player
         // pick up it selects that one instead; anything else is a placing the board rejects, which puts it back. A
         // captured piece in replay (step 13.4) is selected in its place, and put back there by a second click.
-        public void OnPieceClicked(int obj) {
-            if (obj < 0 || obj >= PieceCount || UsesPickups() || !Utilities.IsValid(board)) return;
+        public void _OnPieceClicked(int obj) {
+            if (obj < 0 || obj >= PieceCount || _UsesPickups() || !Utilities.IsValid(board)) return;
             int square = objectSquare[obj];
             if (square == ChessRules.NoSquare) {
                 if (obj == selectedObject) Unselect();
@@ -1044,8 +1044,8 @@ namespace SiggiChessBoard {
 
         // A click on a square's target (only active while a piece is selected): on the square the selected piece came
         // from it puts it back, anywhere else it places it there.
-        public void OnSquareClicked(int square) {
-            if (square < 0 || square >= 64 || selectedObject == NoObject || UsesPickups()) return;
+        public void _OnSquareClicked(int square) {
+            if (square < 0 || square >= 64 || selectedObject == NoObject || _UsesPickups()) return;
             if (!Utilities.IsValid(board)) return;
             if (square == selectedFrom) {
                 Unselect();
@@ -1073,31 +1073,31 @@ namespace SiggiChessBoard {
                     Networking.SetOwner(local, piece);
                 }
             }
-            UpdateLiftedMarks();
-            UpdateClickables();
+            _UpdateLiftedMarks();
+            _UpdateClickables();
         }
 
         // Puts the selected piece back down where it was, unselected; the board isn't asked.
         void Unselect() {
             ClearSelection();
-            UpdateLiftedMarks();
-            UpdateClickables();
+            _UpdateLiftedMarks();
+            _UpdateClickables();
         }
 
-        // Plays the selected piece's move to square: a promotion waits for ChoosePromotion as a dropped one does, with
+        // Plays the selected piece's move to square: a promotion waits for _ChoosePromotion as a dropped one does, with
         // the pawn standing on square; anything else is placed from the board after its change, so a rejected placing
         // puts the piece back, unselected. A captured piece is put back on square (PlaceCapturedObject).
         void Place(int square) {
             int obj = selectedObject;
             int from = selectedFrom;
             ClearSelection();
-            UpdateLiftedMarks();
+            _UpdateLiftedMarks();
             if (from == ChessRules.NoSquare) {
                 PlaceCapturedObject(obj, square);
             } else if (board.PieceDropped(from, square) == ChessBoard.InputPromotionNeeded) {
                 WaitForPromotion(obj, from, square);
             }
-            UpdateClickables();
+            _UpdateClickables();
         }
 
         // Nothing selected any more; the piece is placed back down on the next frame.
@@ -1119,13 +1119,13 @@ namespace SiggiChessBoard {
         // pickups.
         void CheckSelection() {
             if (selectedObject == NoObject) return;
-            if (!UsesPickups() && Utilities.IsValid(board) && board.replayMode == selectedInReplay
+            if (!_UsesPickups() && Utilities.IsValid(board) && board.replayMode == selectedInReplay
                 && StillOn(selectedObject, selectedFrom, selectedPlace)
                 && (selectedFrom != ChessRules.NoSquare ? board.CanPickUp(selectedFrom) : board.MayTouchPieces())) {
                 return;
             }
             ClearSelection();
-            UpdateLiftedMarks();
+            _UpdateLiftedMarks();
         }
 
         // Whether a click on obj places the selected piece on its square rather than selecting obj: the square is a
@@ -1134,7 +1134,7 @@ namespace SiggiChessBoard {
         bool PlacesOn(int obj) {
             int square = objectSquare[obj];
             if (selectedObject == NoObject || square == ChessRules.NoSquare || !selectedTargets[square]) return false;
-            return !selectedInReplay || ObjectColor(obj) != ObjectColor(selectedObject);
+            return !selectedInReplay || _ObjectColor(obj) != _ObjectColor(selectedObject);
         }
 
         // Works out targets (selectedTargets or heldTargets) for the piece lifted from from, from the board's legal
@@ -1172,13 +1172,13 @@ namespace SiggiChessBoard {
         // The I18n's language changed (its AddLanguageChangeListener): the hover texts are set again.
         public void OnLanguageChange() {
             SetHoverTexts();
-            UpdateClickables();
+            _UpdateClickables();
         }
 
         // Reads the hover texts in the language now and puts the fixed ones on: "Move" on every piece's pickup, and
         // each promotion ghost's "Promote to queen". The click targets' are put on as they become clickable.
         void SetHoverTexts() {
-            ChessUtil.CheckI18n(i18n, "[ChessBoardView] " + gameObject.name);
+            ChessUtil._CheckI18n(i18n, "[ChessBoardView] " + gameObject.name);
             hoverSelect = ChessUtil.Text(i18n, "hover_select");
             hoverPutBack = ChessUtil.Text(i18n, "hover_put_back");
             hoverPlace = ChessUtil.Text(i18n, "hover_place");
@@ -1191,7 +1191,7 @@ namespace SiggiChessBoard {
             for (int ghost = 0; ghost < promotionGhosts.Length; ghost++) {
                 ChessPromotionGhost behaviour = promotionGhosts[ghost];
                 if (!Utilities.IsValid(behaviour)) continue;
-                string type = ChessPieceSet.TypeName(behaviour.pieceType);
+                string type = ChessPieceSet._TypeName(behaviour.pieceType);
                 behaviour.InteractionText = ChessUtil.Text(i18n, "hover_promote_" + type);
             }
         }
@@ -1203,8 +1203,8 @@ namespace SiggiChessBoard {
         // too (step 13.4: "Select", or "Put back" for the selected one). Players using pickups get none, and nobody
         // does while the promotion ghosts show.
         // Called after every change, once a second and on every click.
-        public void UpdateClickables() {
-            bool clicks = !UsesPickups() && Utilities.IsValid(board) && promotionObject == NoObject;
+        public void _UpdateClickables() {
+            bool clicks = !_UsesPickups() && Utilities.IsValid(board) && promotionObject == NoObject;
             bool capturedClicks = clicks && shownReplay && board.MayTouchPieces();
             for (int obj = 0; obj < PieceCount; obj++) {
                 ChessPiece behaviour = pieceBehaviours[obj];
@@ -1215,7 +1215,7 @@ namespace SiggiChessBoard {
                     if (obj == selectedObject) {
                         text = hoverPutBack;
                     } else if (PlacesOn(obj)) {
-                        text = ObjectColor(obj) == ObjectColor(selectedObject) ? hoverCastle : hoverCapture;
+                        text = _ObjectColor(obj) == _ObjectColor(selectedObject) ? hoverCastle : hoverCapture;
                     } else if (board.CanPickUp(square)) {
                         text = hoverSelect;
                     }
@@ -1238,12 +1238,12 @@ namespace SiggiChessBoard {
         }
 
         // Whether obj can be clicked now (desktop mode), for tests.
-        public bool IsPieceClickable(int obj) {
+        public bool _IsPieceClickable(int obj) {
             ChessPiece behaviour = pieceBehaviours[obj];
             return Utilities.IsValid(behaviour) && !behaviour.DisableInteractive;
         }
 
-        public bool IsSquareClickable(int square) {
+        public bool _IsSquareClickable(int square) {
             ChessSquare target = squareTargets[square];
             return Utilities.IsValid(target) && target.gameObject.activeSelf;
         }
@@ -1252,7 +1252,7 @@ namespace SiggiChessBoard {
         void LetGo() {
             int obj = heldObject;
             heldObject = NoObject;
-            UpdateLiftedMarks();
+            _UpdateLiftedMarks();
             LetGoOf(obj);
         }
 
@@ -1266,7 +1266,7 @@ namespace SiggiChessBoard {
         // ---- Pickups (docs/physical-pieces.md) ----
 
         // Whether the local player handles the pieces as pickups (otherwise by clicking, step 9.3c).
-        public bool UsesPickups() {
+        public bool _UsesPickups() {
             if (inputStyle == InputPickups) return true;
             if (inputStyle == InputClicks) return false;
             VRCPlayerApi local = Networking.LocalPlayer;
@@ -1274,7 +1274,7 @@ namespace SiggiChessBoard {
         }
 
         // Whether player may touch the pieces (the board decides); asked by each piece's OnOwnershipRequest.
-        public bool PlayerMayTouchPieces(VRCPlayerApi player) {
+        public bool _PlayerMayTouchPieces(VRCPlayerApi player) {
             return Utilities.IsValid(board) && board.PlayerMayTouchPieces(player);
         }
 
@@ -1282,9 +1282,9 @@ namespace SiggiChessBoard {
         // pieces off the board only in replay, standing in their captured places (step 13.4: put back as free moves),
         // and none while the promotion ghosts show. Called after every change, once a second and when a promotion
         // starts or stops waiting.
-        public void UpdatePickupable() {
+        public void _UpdatePickupable() {
             nextPickupCheck = Time.time + PickupCheckInterval;
-            bool allowed = UsesPickups() && Utilities.IsValid(board) && board.MayTouchPieces()
+            bool allowed = _UsesPickups() && Utilities.IsValid(board) && board.MayTouchPieces()
                 && promotionObject == NoObject;
             // A piece the local player may no longer touch leaves their hand.
             if (!allowed && heldObject != NoObject) {
@@ -1299,20 +1299,20 @@ namespace SiggiChessBoard {
             }
             // Desktop mode's selection and click targets depend on the same things (and on whose turn it is).
             CheckSelection();
-            UpdateClickables();
+            _UpdateClickables();
         }
 
         // The debug view's button: Auto, then Pickups, then Clicks, on this client only.
-        public void CycleInputStyle() {
-            SetInputStyle((inputStyle + 1) % 3);
+        public void _CycleInputStyle() {
+            _SetInputStyle((inputStyle + 1) % 3);
         }
 
-        public void SetInputStyle(int style) {
+        public void _SetInputStyle(int style) {
             inputStyle = style;
-            UpdatePickupable();
+            _UpdatePickupable();
         }
 
-        public string InputStyleName() {
+        public string _InputStyleName() {
             if (inputStyle == InputPickups) return "Pickups";
             if (inputStyle == InputClicks) return "Clicks";
             return "Auto";
@@ -1361,7 +1361,7 @@ namespace SiggiChessBoard {
         void Reconcile(byte[] shown) {
             for (int square = 0; square < 64; square++) {
                 int obj = squareObject[square];
-                if (obj != NoObject && ObjectPiece(obj) != shown[square]) Unmap(square);
+                if (obj != NoObject && _ObjectPiece(obj) != shown[square]) Unmap(square);
             }
             for (int square = 0; square < 64; square++) {
                 int piece = shown[square];
@@ -1420,7 +1420,7 @@ namespace SiggiChessBoard {
         bool KeepsPlace(int obj) {
             int place = objectPlace[obj];
             if (place == NoPlace || objectSquare[obj] != ChessRules.NoSquare) return false;
-            int color = ObjectColor(obj);
+            int color = _ObjectColor(obj);
             return place < capturedCounts[color] && capturedTypes[color * MaxCaptured + place] == objectType[obj];
         }
 
@@ -1462,15 +1462,15 @@ namespace SiggiChessBoard {
 
         // Whether obj is shown: on the board (or waiting for its promotion piece), or in a captured place with a
         // target. Objects not needed by the position and captured pieces beyond the last target are hidden.
-        public bool IsObjectShown(int obj) {
+        public bool _IsObjectShown(int obj) {
             if (objectType[obj] == ChessRules.NoPieceType) return false;
             if (objectSquare[obj] != ChessRules.NoSquare || obj == promotionObject) return true;
             int place = objectPlace[obj];
-            return place != NoPlace && place < placeTargetCounts[ObjectColor(obj)];
+            return place != NoPlace && place < placeTargetCounts[_ObjectColor(obj)];
         }
 
         // Where a captured place stands in the view's local space (its target's world position brought into it).
-        public Vector3 CapturedPlacePosition(int color, int place) {
+        public Vector3 _CapturedPlacePosition(int color, int place) {
             Transform target = placeTargets[color * MaxCaptured + place];
             if (!Utilities.IsValid(target)) return Vector3.zero;
             return transform.InverseTransformPoint(target.position);
@@ -1484,12 +1484,12 @@ namespace SiggiChessBoard {
         }
 
         // The piece object obj stands for (ChessRules piece encoding), whether on the board or not.
-        public int ObjectPiece(int obj) {
+        public int _ObjectPiece(int obj) {
             if (objectType[obj] == ChessRules.NoPieceType) return ChessRules.Empty;
-            return ChessRules.PieceOf(ObjectColor(obj), objectType[obj]);
+            return ChessRules.PieceOf(_ObjectColor(obj), objectType[obj]);
         }
 
-        public int ObjectColor(int obj) {
+        public int _ObjectColor(int obj) {
             return obj < PiecesPerColor ? ChessRules.White : ChessRules.Black;
         }
 
@@ -1506,7 +1506,7 @@ namespace SiggiChessBoard {
         // ---- Placing ----
 
         // Whether this Refresh's placing animates: the board's changes since the last Refresh may animate
-        // (ChangeAnimates) and moved at most MaxAnimatedObjects objects between squares. Counts the changes as placed.
+        // (_ChangeAnimates) and moved at most MaxAnimatedObjects objects between squares. Counts the changes as placed.
         bool PlacingAnimates() {
             bool animate = animateMoves && moveSeconds > 0 && changesSinceRefresh > 0 && changesAnimate;
             if (animate) {
@@ -1535,7 +1535,7 @@ namespace SiggiChessBoard {
                     Transform piece = pieces[obj];
                     GameObject pieceObject = piece.gameObject;
                     // Not needed by the position, or captured beyond the last place: hidden until it is.
-                    if (!IsObjectShown(obj)) {
+                    if (!_IsObjectShown(obj)) {
                         StopAnimation(obj);
                         placedSquare[obj] = objectSquare[obj];
                         if (pieceObject.activeSelf) pieceObject.SetActive(false);
@@ -1562,7 +1562,7 @@ namespace SiggiChessBoard {
 
         // Whether a change may animate the pieces it moves: anything but a reset, a load, entering, leaving or
         // continuing replay (whose pieces jump to another position), and nothing yet.
-        public static bool ChangeAnimates(int change) {
+        public static bool _ChangeAnimates(int change) {
             return change != ChessBoard.ChangeNone && change != ChessBoard.ChangeReset
                 && change != ChessBoard.ChangeLoaded && change != ChessBoard.ChangeContinued
                 && change != ChessBoard.ChangeEnteredReplay && change != ChessBoard.ChangeLeftReplay;
@@ -1658,8 +1658,8 @@ namespace SiggiChessBoard {
                     fallAmount[obj] = amount;
                     Transform piece = pieces[obj];
                     if (obj != heldObject && !animating[obj] && Utilities.IsValid(piece)) {
-                        piece.localPosition = ObjectPlace(obj);
-                        piece.localRotation = ObjectRotation(obj);
+                        piece.localPosition = _ObjectPlace(obj);
+                        piece.localRotation = _ObjectRotation(obj);
                     }
                 }
                 if (amount != target) falling = true;
@@ -1667,25 +1667,25 @@ namespace SiggiChessBoard {
         }
 
         // Whether obj is falling over or standing up now (or waiting to), for tests. A falling object always stands
-        // where ObjectPlace says, so the debug view's placement check needs no exception for it.
-        public bool IsFalling(int obj) {
+        // where _ObjectPlace says, so the debug view's placement check needs no exception for it.
+        public bool _IsFalling(int obj) {
             return fallAmount[obj] != fallTarget[obj];
         }
 
         // The turn obj's fall adds to its template's, about its base, in the view's local space: none standing, a
-        // quarter turn towards FallDirection lying, eased in as a falling piece speeds up.
-        public Quaternion FallTip(int obj) {
+        // quarter turn towards _FallDirection lying, eased in as a falling piece speeds up.
+        public Quaternion _FallTip(int obj) {
             float amount = fallAmount[obj];
             int square = objectSquare[obj];
             if (amount <= 0 || square == ChessRules.NoSquare) return Quaternion.identity;
-            Quaternion lying = Quaternion.FromToRotation(Vector3.up, FallDirection(square));
+            Quaternion lying = Quaternion.FromToRotation(Vector3.up, _FallDirection(square));
             return Quaternion.Slerp(Quaternion.identity, lying, amount * amount);
         }
 
         // Which way a king on square falls (local space): towards the board's centre along the files (x) or the
         // ranks (z), whichever it stands further from it along (the ranks when as far), so it lies on the board. Along
         // an axis rather than straight at the centre, so the mesh's bounds give its lowest point (FallLift).
-        public static Vector3 FallDirection(int square) {
+        public static Vector3 _FallDirection(int square) {
             float file = ChessRules.FileOf(square) - 3.5f;
             float rank = ChessRules.RankOf(square) - 3.5f;
             if (Mathf.Abs(file) > Mathf.Abs(rank)) return new Vector3(file > 0 ? -1 : 1, 0, 0);
@@ -1696,8 +1696,8 @@ namespace SiggiChessBoard {
         // template turns and sizes it) is as high as when it stands: it rolls over the edge of its base as it falls.
         float FallLift(int obj, Quaternion tip) {
             int type = objectType[obj];
-            if (type == ChessRules.NoPieceType || !hasSet[ObjectColor(obj)]) return 0;
-            int index = TemplateIndex(ObjectColor(obj), type);
+            if (type == ChessRules.NoPieceType || !hasSet[_ObjectColor(obj)]) return 0;
+            int index = _TemplateIndex(_ObjectColor(obj), type);
             Mesh mesh = setMeshes[index];
             if (!Utilities.IsValid(mesh)) return 0;
             Bounds bounds = mesh.bounds;
@@ -1719,12 +1719,12 @@ namespace SiggiChessBoard {
         }
 
         // How obj is turned (local space): as its template is, tipped over by its fall; as it is without a template.
-        public Quaternion ObjectRotation(int obj) {
+        public Quaternion _ObjectRotation(int obj) {
             int type = objectType[obj];
-            if (type == ChessRules.NoPieceType || !hasSet[ObjectColor(obj)]) {
+            if (type == ChessRules.NoPieceType || !hasSet[_ObjectColor(obj)]) {
                 return Utilities.IsValid(pieces[obj]) ? pieces[obj].localRotation : Quaternion.identity;
             }
-            return FallTip(obj) * setRotations[TemplateIndex(ObjectColor(obj), type)];
+            return _FallTip(obj) * setRotations[_TemplateIndex(_ObjectColor(obj), type)];
         }
 
         // Brings obj's model (mesh, materials, size and collider) and turn up to the mapping and the applied set, and
@@ -1733,8 +1733,8 @@ namespace SiggiChessBoard {
         Vector3 PrepareObject(int obj) {
             Transform piece = pieces[obj];
             int type = objectType[obj];
-            if (type == ChessRules.NoPieceType || !hasSet[ObjectColor(obj)]) return ObjectPlace(obj);
-            int index = TemplateIndex(ObjectColor(obj), type);
+            if (type == ChessRules.NoPieceType || !hasSet[_ObjectColor(obj)]) return _ObjectPlace(obj);
+            int index = _TemplateIndex(_ObjectColor(obj), type);
             if (type != objectMeshType[obj]) {
                 objectMeshType[obj] = type;
                 Mesh mesh = setMeshes[index];
@@ -1750,35 +1750,35 @@ namespace SiggiChessBoard {
                     box.size = mesh.bounds.size;
                 }
             }
-            piece.localRotation = FallTip(obj) * setRotations[index];
-            return ObjectPlace(obj);
+            piece.localRotation = _FallTip(obj) * setRotations[index];
+            return _ObjectPlace(obj);
         }
 
         // Where obj's origin belongs now (local space), changing nothing: on its square, or in its captured place when
         // it's off the board, moved by its template's offset; where it is when it's hidden. Public for the debug view's
         // placement check (step 9.6).
-        public Vector3 ObjectPlace(int obj) {
+        public Vector3 _ObjectPlace(int obj) {
             int square = objectSquare[obj];
             // A pawn waiting for its promotion piece stands where it was dropped.
             if (obj == promotionObject) square = promotionTo;
-            if (square == ChessRules.NoSquare && !IsObjectShown(obj)) {
+            if (square == ChessRules.NoSquare && !_IsObjectShown(obj)) {
                 return Utilities.IsValid(pieces[obj]) ? pieces[obj].localPosition : Vector3.zero;
             }
-            Vector3 position = (square != ChessRules.NoSquare ? SquarePosition(square)
-                : CapturedPlacePosition(ObjectColor(obj), objectPlace[obj])) + PieceOffset(obj);
+            Vector3 position = (square != ChessRules.NoSquare ? _SquarePosition(square)
+                : _CapturedPlacePosition(_ObjectColor(obj), objectPlace[obj])) + _PieceOffset(obj);
             // A selected piece (desktop mode) stands lifted over its square.
             if (obj == selectedObject) position += new Vector3(0, SelectLift * squareSize, 0);
             // A falling or fallen king (step 12.8) is tipped over about its base and lifted to keep its lowest point.
             if (objectSquare[obj] != ChessRules.NoSquare && fallAmount[obj] > 0) {
-                Quaternion tip = FallTip(obj);
-                Vector3 offset = PieceOffset(obj);
+                Quaternion tip = _FallTip(obj);
+                Vector3 offset = _PieceOffset(obj);
                 position += tip * offset - offset + new Vector3(0, FallLift(obj, tip), 0);
             }
             return position;
         }
 
         // The centre of a square on the playing surface, in the view's local space.
-        public Vector3 SquarePosition(int square) {
+        public Vector3 _SquarePosition(int square) {
             return new Vector3((ChessRules.FileOf(square) - 3.5f) * squareSize, 0,
                 (ChessRules.RankOf(square) - 3.5f) * squareSize);
         }

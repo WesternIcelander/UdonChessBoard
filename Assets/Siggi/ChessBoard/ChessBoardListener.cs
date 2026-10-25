@@ -11,7 +11,7 @@ namespace SiggiChessBoard {
         public virtual void OnBoardChanged() {
         }
 
-        // Called after the board has filled in missing notation by itself (ChessBoard.FillNotationFor), which changes
+        // Called after the board has filled in missing notation by itself (ChessBoard._FillNotationFor), which changes
         // nothing but the move list's text, so lastChange stays as it was.
         public virtual void OnNotationFilled() {
         }

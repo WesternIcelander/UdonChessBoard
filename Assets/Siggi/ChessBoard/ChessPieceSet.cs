@@ -56,7 +56,7 @@ namespace SiggiChessBoard {
         }
 
         // The template for a ChessRules colour and piece type; null for none.
-        public Transform Template(int color, int type) {
+        public Transform _Template(int color, int type) {
             if (color == ChessRules.White) {
                 switch (type) {
                     case ChessRules.Pawn: return whitePawn;
@@ -81,7 +81,7 @@ namespace SiggiChessBoard {
 
         // The promotion template for a ChessRules colour and a piece type a pawn can become (knight, bishop, rook or
         // queen); null for none.
-        public Transform PromotionTemplate(int color, int type) {
+        public Transform _PromotionTemplate(int color, int type) {
             if (color == ChessRules.White) {
                 switch (type) {
                     case ChessRules.Knight: return whitePromotionKnight;
@@ -104,12 +104,12 @@ namespace SiggiChessBoard {
         // Black's are optional.
         public string Problem() {
             for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) {
-                string problem = TemplateProblem(Template(ChessRules.White, type), "White " + TypeName(type));
+                string problem = TemplateProblem(_Template(ChessRules.White, type), "White " + _TypeName(type));
                 if (problem.Length > 0) return problem;
             }
             for (int type = ChessRules.Knight; type <= ChessRules.Queen; type++) {
-                string problem = TemplateProblem(PromotionTemplate(ChessRules.White, type),
-                    "White promotion " + TypeName(type));
+                string problem = TemplateProblem(_PromotionTemplate(ChessRules.White, type),
+                    "White promotion " + _TypeName(type));
                 if (problem.Length > 0) return problem;
             }
             return "";
@@ -117,7 +117,7 @@ namespace SiggiChessBoard {
 
         string TemplateProblem(Transform template, string name) {
             if (!Utilities.IsValid(template)) return "no " + name + " template";
-            if (!HasMesh(template)) return "the " + name + " template has no mesh";
+            if (!_HasMesh(template)) return "the " + name + " template has no mesh";
             if (!Utilities.IsValid(template.GetComponent<MeshRenderer>())) {
                 return "the " + name + " template has no MeshRenderer";
             }
@@ -125,13 +125,13 @@ namespace SiggiChessBoard {
         }
 
         // Whether template is there with a mesh in its MeshFilter: a Black one without falls back on White's.
-        public static bool HasMesh(Transform template) {
+        public static bool _HasMesh(Transform template) {
             if (!Utilities.IsValid(template)) return false;
             MeshFilter filter = template.GetComponent<MeshFilter>();
             return Utilities.IsValid(filter) && Utilities.IsValid(filter.sharedMesh);
         }
 
-        public static string TypeName(int type) {
+        public static string _TypeName(int type) {
             switch (type) {
                 case ChessRules.Pawn: return "pawn";
                 case ChessRules.Knight: return "knight";

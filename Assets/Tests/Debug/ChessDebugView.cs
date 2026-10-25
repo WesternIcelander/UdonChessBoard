@@ -99,7 +99,7 @@ public class ChessDebugView : ChessBoardListener {
                 + (sent == null ? "no array" : nulls + " null entries"));
         }
         // Missing entries are filled in by the board over the next frames (OnNotationFilled).
-        int missing = board.FirstMissingNotation();
+        int missing = board._FirstMissingNotation();
         if (missing >= 0) Debug.Log("[ChessDebugView] received notation missing from ply " + missing);
     }
 
@@ -144,13 +144,13 @@ public class ChessDebugView : ChessBoardListener {
             + ", " + board.moveCount + " moves" + last + ", "
             + ChessFen.WriteFen(board.board, board.state, board.halfmoveClock, board.moveNumber) + result + clocks
             + ", game " + (board.gameId.Length > 0 ? board.gameId : "none")
-            + ", owner " + ChessUtil.OwnerName(board.gameObject, "nobody");
+            + ", owner " + ChessUtil._OwnerName(board.gameObject, "nobody");
     }
 
     // Logs the board's owner when it changes (polled on each redraw), so a client's log shows ownership passing on,
     // including VRChat's handover when the owner leaves.
     void LogBoardOwner() {
-        string owner = ChessUtil.OwnerName(board.gameObject, "nobody");
+        string owner = ChessUtil._OwnerName(board.gameObject, "nobody");
         if (owner == lastBoardOwner) return;
         Debug.Log("[ChessDebugView] board owner now " + owner + (lastBoardOwner.Length > 0 ? " (was " + lastBoardOwner
             + ")" : "") + ", " + VRCPlayerApi.GetPlayerCount() + " players here");
@@ -413,13 +413,13 @@ public class ChessDebugView : ChessBoardListener {
     public void TakeArbiter() {
         if (!HasArbiter("Take arbiter")) return;
         Networking.SetOwner(Networking.LocalPlayer, board.arbiter.gameObject);
-        ReportDone("Take arbiter (owner now " + ChessUtil.OwnerName(board.arbiter.gameObject, "nobody") + ")",
+        ReportDone("Take arbiter (owner now " + ChessUtil._OwnerName(board.arbiter.gameObject, "nobody") + ")",
             Networking.IsOwner(board.arbiter.gameObject));
         SendCustomEventDelayedSeconds(nameof(ReportArbiterOwner), 3);
     }
 
     public void ReportArbiterOwner() {
-        ReportDone("Take arbiter, 3 s later (owner " + ChessUtil.OwnerName(board.arbiter.gameObject, "nobody") + ")",
+        ReportDone("Take arbiter, 3 s later (owner " + ChessUtil._OwnerName(board.arbiter.gameObject, "nobody") + ")",
             Networking.IsOwner(board.arbiter.gameObject));
     }
 
@@ -428,13 +428,13 @@ public class ChessDebugView : ChessBoardListener {
     // owner is reported now and again after a few seconds, once the current owner has answered.
     public void TakeBoard() {
         Networking.SetOwner(Networking.LocalPlayer, board.gameObject);
-        ReportDone("Take board (owner now " + ChessUtil.OwnerName(board.gameObject, "nobody") + ")",
+        ReportDone("Take board (owner now " + ChessUtil._OwnerName(board.gameObject, "nobody") + ")",
             Networking.IsOwner(board.gameObject));
         SendCustomEventDelayedSeconds(nameof(ReportBoardOwner), 3);
     }
 
     public void ReportBoardOwner() {
-        ReportDone("Take board, 3 s later (owner " + ChessUtil.OwnerName(board.gameObject, "nobody") + ")",
+        ReportDone("Take board, 3 s later (owner " + ChessUtil._OwnerName(board.gameObject, "nobody") + ")",
             Networking.IsOwner(board.gameObject));
     }
 
@@ -447,14 +447,14 @@ public class ChessDebugView : ChessBoardListener {
         if (!HasArchive("Take holder")) return;
         GameArchiveHolder holder = board.archive.holders[0];
         Networking.SetOwner(Networking.LocalPlayer, holder.gameObject);
-        ReportDone("Take holder (owner now " + ChessUtil.OwnerName(holder.gameObject, "nobody") + ")",
+        ReportDone("Take holder (owner now " + ChessUtil._OwnerName(holder.gameObject, "nobody") + ")",
             Networking.IsOwner(holder.gameObject));
         SendCustomEventDelayedSeconds(nameof(ReportHolderOwner), 3);
     }
 
     public void ReportHolderOwner() {
         GameArchiveHolder holder = board.archive.holders[0];
-        ReportDone("Take holder, 3 s later (owner " + ChessUtil.OwnerName(holder.gameObject, "nobody") + ")",
+        ReportDone("Take holder, 3 s later (owner " + ChessUtil._OwnerName(holder.gameObject, "nobody") + ")",
             Networking.IsOwner(holder.gameObject));
     }
 
@@ -469,7 +469,7 @@ public class ChessDebugView : ChessBoardListener {
             ReportDone("Hold archive: held, games logged here wait in the recent games", true);
             return;
         }
-        int added = archive.Flush();
+        int added = archive._Flush();
         ReportDone("Hold archive: let go, " + added + " recent game(s) added"
             + (Networking.IsOwner(archive.gameObject) ? "" : " (not the archive's owner)"), true);
     }
@@ -479,7 +479,7 @@ public class ChessDebugView : ChessBoardListener {
     // two presses a couple of seconds apart too often fell either side of the 3 s cutoff, 10.3.) A game with no moves
     // isn't logged, so it says when there's none yet.
     public void ResignAtMinute() {
-        double now = board.ServerTime();
+        double now = board._ServerTime();
         double at = System.Math.Floor(now / 60) * 60 + 60;
         if (at - now < 3) at += 60;
         ReportDone("Resign at server time " + at.ToString("F0") + " (in " + (at - now).ToString("F1") + " s)"
@@ -489,7 +489,7 @@ public class ChessDebugView : ChessBoardListener {
 
     public void ResignNow() {
         int color = ChooseColor(board.SideToMove(), board.CanResign(board.SideToMove()));
-        Report("Resign " + ColorName(color) + " at server time " + board.ServerTime().ToString("F3"),
+        Report("Resign " + ColorName(color) + " at server time " + board._ServerTime().ToString("F3"),
             board.Resign(color));
     }
 
@@ -504,7 +504,7 @@ public class ChessDebugView : ChessBoardListener {
         text += "\n  recent here:";
         for (int i = 0; Utilities.IsValid(recent) && i < GameArchiveHolder.Capacity; i++) {
             if (recent.sequences[i] <= 0) continue;
-            text += " " + recent.gameIds[i] + (archive.IsRecentWaiting(i) ? " (WAITING)" : "");
+            text += " " + recent.gameIds[i] + (archive._IsRecentWaiting(i) ? " (WAITING)" : "");
         }
         Debug.Log(text);
         ReportDone("Check archive: " + ArchiveText(), true);
@@ -543,10 +543,10 @@ public class ChessDebugView : ChessBoardListener {
         int ending;
         int winner;
         int count = RandomGame(out ending, out winner);
-        string gameId = board.NewGameIdAt(board.NetworkDateTime());
+        string gameId = board._NewGameIdAt(board._NetworkDateTime());
         string white = "Fill White " + fillNumber;
         string black = "Fill Black " + fillNumber;
-        bool added = board.archive.AddGame(gameId, "", white, black, ChessGame.ModeStandard, ending, winner,
+        bool added = board.archive._AddGame(gameId, "", white, black, ChessGame.ModeStandard, ending, winner,
             ChessFen.StartFen, ChessArbiter.NoClock, 0, fillMoves, fillClocks, count);
         Debug.Log("[ChessDebugView] Add 10 games: " + gameId + " (" + white + " vs " + black + ", "
             + ChessPgn.ResultText(ending, winner) + ", " + count + " plies) " + (added ? "added" : "REFUSED")
@@ -597,7 +597,7 @@ public class ChessDebugView : ChessBoardListener {
     void LogArchive() {
         GameArchive archive = board.archive;
         if (!Utilities.IsValid(archive)) return;
-        string owner = ChessUtil.OwnerName(archive.gameObject, "nobody");
+        string owner = ChessUtil._OwnerName(archive.gameObject, "nobody");
         if (archive.changes == lastArchiveChanges && owner == lastArchiveOwner) return;
         lastArchiveChanges = archive.changes;
         lastArchiveOwner = owner;
@@ -622,7 +622,7 @@ public class ChessDebugView : ChessBoardListener {
             GameArchiveHolder holder = archive.holders[i];
             if (!Utilities.IsValid(holder)) continue;
             if (holder.ready) ready++;
-            string name = ChessUtil.OwnerName(holder.gameObject, "nobody");
+            string name = ChessUtil._OwnerName(holder.gameObject, "nobody");
             int at = 0;
             while (at < ownerKinds && owners[at] != name) at++;
             if (at == ownerKinds) {
@@ -639,10 +639,10 @@ public class ChessDebugView : ChessBoardListener {
         for (int i = 0; Utilities.IsValid(recent) && i < GameArchiveHolder.Capacity; i++) {
             if (recent.sequences[i] <= 0) continue;
             recentCount++;
-            if (archive.IsRecentWaiting(i)) waiting++;
+            if (archive._IsRecentWaiting(i)) waiting++;
         }
         return archive.GameCount() + "/" + archive.Capacity() + " games, owner "
-            + ChessUtil.OwnerName(archive.gameObject, "nobody")
+            + ChessUtil._OwnerName(archive.gameObject, "nobody")
             + ", holders ready " + ready + "/" + archive.holders.Length + " (owners: " + ownersText + "), recent "
             + recentCount + (waiting > 0 ? " (" + waiting + " WAITING)" : "") + (archive.held ? ", HELD" : "");
     }
@@ -650,7 +650,7 @@ public class ChessDebugView : ChessBoardListener {
     // The index-th archived game (0 the oldest): its sequence, ID, players, result, move count and ContinuedFrom.
     string ArchivedGameText(int index) {
         GameArchive archive = board.archive;
-        return "#" + archive.SequenceAt(index) + " " + archive.GameIdAt(index) + " (" + archive.WhiteAt(index) + " vs "
+        return "#" + archive._SequenceAt(index) + " " + archive.GameIdAt(index) + " (" + archive.WhiteAt(index) + " vs "
             + archive.BlackAt(index) + ", " + ChessPgn.ResultText(archive.EndingAt(index), archive.WinnerAt(index))
             + ", " + archive.MoveCountAt(index) + " plies"
             + (archive.ContinuedFromAt(index) == "" ? "" : ", continued from " + archive.ContinuedFromAt(index)) + ")";
@@ -684,7 +684,7 @@ public class ChessDebugView : ChessBoardListener {
             forgot++;
         }
         forgottenCount = count;
-        board.RecheckNotation();
+        board._RecheckNotation();
         ReportDone("Forget notation: " + forgot + " of " + count + " entries forgotten", true);
     }
 
@@ -727,7 +727,7 @@ public class ChessDebugView : ChessBoardListener {
         string text = ImportStatusName(board.importStatus);
         if (board.importStatus == ChessBoard.ImportFailed) {
             text += board.importResult == ChessPgn.ImportDone ? " (the game couldn't be loaded)"
-                : " (at move " + board.importFailedAt + ": " + ChessPgn.ImportErrorText(board.importResult) + ")";
+                : " (at move " + board.importFailedAt + ": " + ChessPgn._ImportErrorText(board.importResult) + ")";
         } else if (board.importStatus == ChessBoard.ImportAbandoned) {
             text += " (the board changed before the import finished)";
         }
@@ -745,7 +745,7 @@ public class ChessDebugView : ChessBoardListener {
     int ChooseColor(int preferred, bool preferredApplies) {
         if (preferredApplies) return preferred;
         int other = ChessRules.OtherColor(preferred);
-        string name = ChessUtil.LocalName("");
+        string name = ChessUtil._LocalName("");
         return board.IsSeated(other, name) && !board.IsSeated(preferred, name) ? other : preferred;
     }
 
@@ -864,8 +864,8 @@ public class ChessDebugView : ChessBoardListener {
             ReportDone("Input style (the Board View field is empty)", false);
             return;
         }
-        boardView.CycleInputStyle();
-        ReportDone("Input style: " + boardView.InputStyleName(), true);
+        boardView._CycleInputStyle();
+        ReportDone("Input style: " + boardView._InputStyleName(), true);
     }
 
     // Asks VRChat for ownership of a piece on the board directly, as a grab does but past pickupable, to see the
@@ -878,7 +878,7 @@ public class ChessDebugView : ChessBoardListener {
             return;
         }
         Networking.SetOwner(Networking.LocalPlayer, piece);
-        ReportDone("Take piece " + piece.name + " (owner now " + ChessUtil.OwnerName(piece, "nobody")
+        ReportDone("Take piece " + piece.name + " (owner now " + ChessUtil._OwnerName(piece, "nobody")
             + "; the board says you may touch pieces: " + YesNo(board.MayTouchPieces()) + ")",
             Networking.IsOwner(piece));
         SendCustomEventDelayedSeconds(nameof(ReportPieceOwner), 3);
@@ -887,7 +887,7 @@ public class ChessDebugView : ChessBoardListener {
     public void ReportPieceOwner() {
         GameObject piece = PieceToTake();
         if (piece == null) return;
-        ReportDone("Take piece " + piece.name + ", 3 s later (owner " + ChessUtil.OwnerName(piece, "nobody") + ")",
+        ReportDone("Take piece " + piece.name + ", 3 s later (owner " + ChessUtil._OwnerName(piece, "nobody") + ")",
             Networking.IsOwner(piece));
     }
 
@@ -912,8 +912,8 @@ public class ChessDebugView : ChessBoardListener {
             if (Utilities.IsValid(pickup) && pickup.pickupable) pickupable++;
         }
         VRCPlayerApi local = Networking.LocalPlayer;
-        return "input style " + boardView.InputStyleName() + ", in VR " + YesNo(Utilities.IsValid(local)
-            && local.IsUserInVR()) + ", pickups " + YesNo(boardView.UsesPickups()) + ", may touch "
+        return "input style " + boardView._InputStyleName() + ", in VR " + YesNo(Utilities.IsValid(local)
+            && local.IsUserInVR()) + ", pickups " + YesNo(boardView._UsesPickups()) + ", may touch "
             + YesNo(board.MayTouchPieces()) + ", " + pickupable + " pickupable";
     }
 
@@ -931,7 +931,7 @@ public class ChessDebugView : ChessBoardListener {
 
     // ---- Piece watch (9.6) ----
 
-    // Each piece object's distance from where this client's view puts it (ChessBoardView.ObjectPlace), so a piece
+    // Each piece object's distance from where this client's view puts it (ChessBoardView._ObjectPlace), so a piece
     // held here, and one that doesn't end up where the board puts it (moved by anything but the view: the pieces have
     // no VRCObjectSync since step 9.6), show in the log. Objects still travelling are left alone until they land.
     const float AwaySquares = 0.05f;
@@ -964,14 +964,14 @@ public class ChessDebugView : ChessBoardListener {
                 Debug.Log("[ChessDebugView] piece " + piece.name + " in place (" + PlaceName(obj) + ") after "
                     + (Time.time - awaySince[obj]).ToString("F1") + " s away, furthest "
                     + awayFurthest[obj].ToString("F2") + " squares; owner "
-                    + ChessUtil.OwnerName(piece.gameObject, "nobody"));
+                    + ChessUtil._OwnerName(piece.gameObject, "nobody"));
             }
         }
     }
 
     // How far obj stands from its place, in squares (view space).
     Vector3 AwayBy(int obj) {
-        Vector3 offset = boardView.pieces[obj].localPosition - boardView.ObjectPlace(obj);
+        Vector3 offset = boardView.pieces[obj].localPosition - boardView._ObjectPlace(obj);
         return offset / boardView.squareSize;
     }
 
@@ -979,7 +979,7 @@ public class ChessDebugView : ChessBoardListener {
         int square = boardView.objectSquare[obj];
         if (obj == boardView.promotionObject) return "promoting on " + ChessRules.SquareName(boardView.promotionTo);
         if (square != ChessRules.NoSquare) return ChessRules.SquareName(square);
-        if (!boardView.IsObjectShown(obj)) return "hidden";
+        if (!boardView._IsObjectShown(obj)) return "hidden";
         return "captured place " + (boardView.objectPlace[obj] + 1);
     }
 
@@ -987,7 +987,7 @@ public class ChessDebugView : ChessBoardListener {
     string PieceState(int obj) {
         Vector3 away = AwayBy(obj);
         string text = "off by (" + away.x.ToString("F2") + ", " + away.y.ToString("F2") + ", " + away.z.ToString("F2")
-            + ") squares, owner " + ChessUtil.OwnerName(boardView.pieces[obj].gameObject, "nobody");
+            + ") squares, owner " + ChessUtil._OwnerName(boardView.pieces[obj].gameObject, "nobody");
         if (obj == boardView.heldObject) text += ", held here";
         if (obj == boardView.selectedObject) text += ", selected here";
         if (boardView.animating[obj]) text += ", travelling";
@@ -1007,7 +1007,7 @@ public class ChessDebugView : ChessBoardListener {
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
             Transform piece = boardView.pieces[obj];
             if (!Utilities.IsValid(piece)) continue;
-            string owner = ChessUtil.OwnerName(piece.gameObject, "nobody");
+            string owner = ChessUtil._OwnerName(piece.gameObject, "nobody");
             int found = -1;
             for (int i = 0; i < ownerCount; i++) {
                 if (owners[i] == owner) found = i;
@@ -1045,7 +1045,7 @@ public class ChessDebugView : ChessBoardListener {
             for (int obj = first; obj < first + ChessBoardView.PiecesPerColor; obj++) {
                 if (boardView.objectSquare[obj] != ChessRules.NoSquare || boardView.objectPlace[obj] != place) continue;
                 letter = ChessRules.PieceTypeLetter(boardView.objectType[obj]);
-                if (!boardView.IsObjectShown(obj)) letter = letter.ToLower();
+                if (!boardView._IsObjectShown(obj)) letter = letter.ToLower();
             }
             text += letter;
         }
@@ -1084,11 +1084,11 @@ public class ChessDebugView : ChessBoardListener {
         int[] numbers = new int[ChessArbiter.NumberCount];
         board.arbiter.EffectiveNumbers(board.boardNumber, numbers);
         string text = "board " + board.boardNumber + ": "
-            + ChessArbiter.SettingsToString(board.arbiter.EffectiveSettings(board.boardNumber)) + " | "
-            + ChessArbiter.NumbersToString(numbers) + "; defaults: "
-            + ChessArbiter.SettingsToString(board.arbiter.defaultSettings) + " | "
-            + ChessArbiter.NumbersToString(board.arbiter.defaultNumbers)
-            + "; owner " + ChessUtil.OwnerName(board.arbiter.gameObject, "nobody");
+            + ChessArbiter._SettingsToString(board.arbiter.EffectiveSettings(board.boardNumber)) + " | "
+            + ChessArbiter._NumbersToString(numbers) + "; defaults: "
+            + ChessArbiter._SettingsToString(board.arbiter.defaultSettings) + " | "
+            + ChessArbiter._NumbersToString(board.arbiter.defaultNumbers)
+            + "; owner " + ChessUtil._OwnerName(board.arbiter.gameObject, "nobody");
         if (text == lastArbiterSettings) return;
         lastArbiterSettings = text;
         Debug.Log("[ChessDebugView] arbiter settings: " + text);
@@ -1126,13 +1126,13 @@ public class ChessDebugView : ChessBoardListener {
     }
 
     string StatusText() {
-        string name = ChessUtil.LocalName("");
+        string name = ChessUtil._LocalName("");
         string text = "<b>" + board.gameObject.name + "</b> (board " + board.boardNumber + ")   you: " + name
             + (IsLocalOrganizer() ? " [organizer]" : "") + "\n";
         text += "Lifecycle: <b>" + LifecycleName(board.lifecycle) + "</b>   last change: " + ChangeName(board.lastChange)
             + (board.lastChangeReceived ? " (received)" : "") + "   logged games: " + board.loggedGames
-            + "   board owner: " + ChessUtil.OwnerName(board.gameObject, "nobody") + "\n";
-        double now = board.ServerTime();
+            + "   board owner: " + ChessUtil._OwnerName(board.gameObject, "nobody") + "\n";
+        double now = board._ServerTime();
         string idle = "-";
         if (board.lifecycle != ChessBoard.LifecycleReset) {
             double idleSeconds = now - board.lastActivity;
@@ -1140,8 +1140,8 @@ public class ChessDebugView : ChessBoardListener {
                 + IdleDeadline(board.GameNumber(ChessArbiter.NumberResetAvailableTime), idleSeconds) + ", auto-reset "
                 + IdleDeadline(board.GameNumber(ChessArbiter.NumberAutoResetTime), idleSeconds) + ")";
         }
-        text += "Ownership: both players here: " + (board.BothPlayersPresent() ? "yes" : "no") + "   idle: " + idle
-            + "   you may take it: " + (board.MayOwn(Networking.LocalPlayer) ? "yes" : "no") + "   sends: "
+        text += "Ownership: both players here: " + (board._BothPlayersPresent() ? "yes" : "no") + "   idle: " + idle
+            + "   you may take it: " + (board._MayOwn(Networking.LocalPlayer) ? "yes" : "no") + "   sends: "
             + board.serializations + "\n";
         text += "Pieces: " + PiecesText() + "\n";
         text += "White: " + SeatText(board.whitePlayer) + ClockSuffix(ChessRules.White) + "   Black: "
@@ -1167,16 +1167,16 @@ public class ChessDebugView : ChessBoardListener {
         text += "Game ID: " + (board.gameId.Length > 0 ? board.gameId : "none")
             + (board.continuedFrom.Length > 0 ? "   continued from " + board.continuedFrom : "") + "\n";
         text += "Snapshot:" + (board.lifecycle == ChessBoard.LifecycleReset ? " none"
-            : ChessArbiter.SettingsToString(board.gameSettings) + " | " + ChessArbiter.NumbersToString(board.gameNumbers))
+            : ChessArbiter._SettingsToString(board.gameSettings) + " | " + ChessArbiter._NumbersToString(board.gameNumbers))
             + "\n";
         if (Utilities.IsValid(board.arbiter)) {
             int[] numbers = new int[ChessArbiter.NumberCount];
             board.arbiter.EffectiveNumbers(board.boardNumber, numbers);
-            text += "Arbiter now:" + ChessArbiter.SettingsToString(board.arbiter.EffectiveSettings(board.boardNumber))
-                + " | " + ChessArbiter.NumbersToString(numbers) + "\n";
-            text += "Arbiter defaults: " + ChessArbiter.SettingsToString(board.arbiter.defaultSettings) + " | "
-                + ChessArbiter.NumbersToString(board.arbiter.defaultNumbers) + "\n";
-            text += "Arbiter owner: " + ChessUtil.OwnerName(board.arbiter.gameObject, "nobody")
+            text += "Arbiter now:" + ChessArbiter._SettingsToString(board.arbiter.EffectiveSettings(board.boardNumber))
+                + " | " + ChessArbiter._NumbersToString(numbers) + "\n";
+            text += "Arbiter defaults: " + ChessArbiter._SettingsToString(board.arbiter.defaultSettings) + " | "
+                + ChessArbiter._NumbersToString(board.arbiter.defaultNumbers) + "\n";
+            text += "Arbiter owner: " + ChessUtil._OwnerName(board.arbiter.gameObject, "nobody")
                 + "   first joiner: " + FirstJoinerText() + "\n";
         } else {
             text += "Arbiter: none\n";
@@ -1200,7 +1200,7 @@ public class ChessDebugView : ChessBoardListener {
         string text = start > 0 ? "... " : "";
         for (int ply = start; ply < count; ply++) {
             bool white = (firstSide + ply) % 2 == 0;
-            if (white || ply == start) text += ChessPgn.MoveLabel(board.startMoveNumber, firstSide, ply) + " ";
+            if (white || ply == start) text += ChessPgn._MoveLabel(board.startMoveNumber, firstSide, ply) + " ";
             string san = board.notation[ply];
             text += (san.Length > 0 ? san : "?") + " ";
         }

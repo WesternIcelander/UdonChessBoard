@@ -7,8 +7,8 @@ namespace SiggiChessBoard {
     // The logical board (docs/architecture.md): one board's game state, its lifecycle (docs/board-lifecycle.md) and
     // the rules applied to it. It never touches the world; ChessBoardView (step 9) owns the world objects and forwards
     // input here. Its state fields are the synced fields of docs/networking.md: each change made here takes ownership
-    // and sends them, packed into the synced* fields (PackState), and a client receiving them unpacks them
-    // (ReceiveState) and tells its listeners.
+    // and sends them, packed into the synced* fields (_PackState), and a client receiving them unpacks them
+    // (_ReceiveState) and tells its listeners.
     [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
     public class ChessBoard : UdonSharpBehaviour {
         // Lifecycle states (docs/board-lifecycle.md).
@@ -165,7 +165,7 @@ namespace SiggiChessBoard {
         [NonSerialized] public int blackPieceSet;
 
         // Server time of the last activity (docs/inactivity.md): every change sent stamps it, and so does a touch that
-        // changes nothing (TouchAsAt), throttled.
+        // changes nothing (_TouchAsAt), throttled.
         [NonSerialized] public double lastActivity;
 
         // How the game ended (a ChessGame.Ending* value, EndingNone while in progress) and who won (ChessRules.White
@@ -196,7 +196,7 @@ namespace SiggiChessBoard {
         [NonSerialized] public int[] gameNumbers = new int[ChessArbiter.NumberCount];
 
         // What the last change was, a Change* value, for listeners, and whether it arrived from another client
-        // (ReceiveState) rather than being made here: a view animates a received move, but a local drop has already
+        // (_ReceiveState) rather than being made here: a view animates a received move, but a local drop has already
         // put the piece there. ChangeRejected is local: a rejection changes nothing to send, so the change sent is
         // lastSentChange, the last one that wasn't a rejection.
         [NonSerialized] public int lastChange = ChangeNone;
@@ -204,8 +204,8 @@ namespace SiggiChessBoard {
         [NonSerialized] public int lastSentChange = ChangeNone;
 
         // ---- Synced (docs/networking.md, Synced fields) ----
-        // The state fields above, packed just before each serialization (PackState, from OnPreSerialization) and
-        // unpacked when one arrives (ReceiveState, from OnDeserialization). Keeping them apart from the state lets a
+        // The state fields above, packed just before each serialization (_PackState, from OnPreSerialization) and
+        // unpacked when one arrives (_ReceiveState, from OnDeserialization). Keeping them apart from the state lets a
         // receiver compare the old state with the new one (a game is logged on its transition), sends only the moves
         // of the game rather than the history arrays' spare room, and leaves the state untouched by an update that
         // isn't valid. The ints are laid out by the Sync* indices below.
@@ -245,7 +245,7 @@ namespace SiggiChessBoard {
         [UdonSynced] [NonSerialized] public byte[] syncedReplayBoard = new byte[64];
         [UdonSynced] [NonSerialized] public int[] syncedInts = new int[SyncLength];
         // The first moveCount entries of the history arrays. A synced string[] must never hold null: one null element
-        // makes the whole serialization fail, so PackState writes "" for one.
+        // makes the whole serialization fail, so _PackState writes "" for one.
         [UdonSynced] [NonSerialized] public int[] syncedMoves = new int[0];
         [UdonSynced] [NonSerialized] public int[] syncedClocks = new int[0];
         [UdonSynced] [NonSerialized] public string[] syncedNotation = new string[0];
@@ -279,18 +279,18 @@ namespace SiggiChessBoard {
                     + "draws, nothing forced, never reset for inactivity.");
             }
             if (received) return;
-            ClearState();
+            _ClearState();
             // A late joiner gets the owner's synced fields even if the owner has never sent a change, so they must
             // hold the reset state from the start, not the empty arrays they're declared with.
-            PackState();
+            _PackState();
             TellListeners(ChangeReset, false);
         }
 
         // ---- Listeners (docs/architecture.md, Logical → physical) ----
         // Every public method that changes the board tells the listeners once, after the change, with lastChange
         // saying what it was; a rejected piece input tells them too (ChangeRejected), so the view puts the piece back.
-        // Methods that only answer a question, and refusals of anything else, tell nobody. ClearState and TakeSnapshot
-        // are the exceptions: they're the steps of other changes, public for tests.
+        // Methods that only answer a question, and refusals of anything else, tell nobody. _ClearState and
+        // _TakeSnapshot are the exceptions: they're the steps of other changes, public for tests.
 
         // Adds a listener at run time (one set in the Inspector needn't be); adding one twice changes nothing.
         public void AddListener(ChessBoardListener listener) {
@@ -327,7 +327,7 @@ namespace SiggiChessBoard {
         void NotifyChanged(int change) {
             if (change != ChangeRejected) {
                 lastSentChange = change;
-                lastActivity = ServerTime();
+                lastActivity = _ServerTime();
                 SendState();
             }
             TellListeners(change, false);
@@ -365,11 +365,11 @@ namespace SiggiChessBoard {
 
         public override void OnPreSerialization() {
             serializations++;
-            PackState();
+            _PackState();
         }
 
         public override void OnDeserialization() {
-            ReceiveState();
+            _ReceiveState();
         }
 
         // ---- Ownership (docs/ownership.md) ----
@@ -381,29 +381,29 @@ namespace SiggiChessBoard {
         // isn't sent, and the next update from the owner replaces it.
 
         public override bool OnOwnershipRequest(VRCPlayerApi requestingPlayer, VRCPlayerApi requestedOwner) {
-            return MayOwn(requestedOwner);
+            return _MayOwn(requestedOwner);
         }
 
-        // Whether a player may own the board now (MayOwnAs).
-        public bool MayOwn(VRCPlayerApi who) {
+        // Whether a player may own the board now (_MayOwnAs).
+        public bool _MayOwn(VRCPlayerApi who) {
             if (!Utilities.IsValid(who)) return false;
             bool organizer = Utilities.IsValid(arbiter) && arbiter.IsOrganizer(who);
-            return MayOwnAs(who.displayName, organizer, BothPlayersPresent(), ServerTime());
+            return _MayOwnAs(who.displayName, organizer, _BothPlayersPresent(), _ServerTime());
         }
 
         // Whether name may own the board at server time now: an organizer, a seated player, anyone while a seat is
         // empty or its player isn't in the instance (playersPresent false), and anyone once the board is idle enough
         // to reset. While the board is locked to its loader (step 13.2) only the loader and organizers may, and anyone
         // once it's idle enough to reset, whether or not the loader is still in the instance.
-        public bool MayOwnAs(string name, bool organizer, bool playersPresent, double now) {
-            if (IsLockedToLoader()) return organizer || IsLoader(name) || IsIdleForResetAt(now);
+        public bool _MayOwnAs(string name, bool organizer, bool playersPresent, double now) {
+            if (IsLockedToLoader()) return organizer || IsLoader(name) || _IsIdleForResetAt(now);
             if (organizer || IsPlayer(name) || !playersPresent) return true;
             if (whitePlayer.Length == 0 || blackPlayer.Length == 0) return true;
-            return IsIdleForResetAt(now);
+            return _IsIdleForResetAt(now);
         }
 
         // Whether both seats are filled by players in the instance (by display name; one player may hold both).
-        public bool BothPlayersPresent() {
+        public bool _BothPlayersPresent() {
             if (whitePlayer.Length == 0 || blackPlayer.Length == 0) return false;
             VRCPlayerApi[] players = new VRCPlayerApi[VRCPlayerApi.GetPlayerCount()];
             VRCPlayerApi.GetPlayers(players);
@@ -421,18 +421,18 @@ namespace SiggiChessBoard {
         // Whether the board has been idle long enough at server time now for anyone to reset it (docs/inactivity.md):
         // not reset already, and the snapshot's reset-available time (seconds, or Never) passed since the last
         // activity.
-        public bool IsIdleForResetAt(double now) {
+        public bool _IsIdleForResetAt(double now) {
             return IsIdleForAt(ChessArbiter.NumberResetAvailableTime, now);
         }
 
         // ---- Inactivity (docs/inactivity.md) ----
         // Every client measures idleness against the synced lastActivity (server time), so they agree on it without a
-        // timer being sent. After the reset-available time anyone may reset the board (CanResetAs, MayOwnAs); after the
-        // auto-reset time the owner resets it (Update), so it happens once. Either time can be Never.
+        // timer being sent. After the reset-available time anyone may reset the board (CanResetAs, _MayOwnAs); after
+        // the auto-reset time the owner resets it (Update), so it happens once. Either time can be Never.
 
         // Whether the board has been idle long enough at server time now to reset itself: not reset already, and the
         // snapshot's auto-reset time (seconds, or Never) passed since the last activity.
-        public bool IsIdleForAutoResetAt(double now) {
+        public bool _IsIdleForAutoResetAt(double now) {
             return IsIdleForAt(ChessArbiter.NumberAutoResetTime, now);
         }
 
@@ -445,8 +445,8 @@ namespace SiggiChessBoard {
         // Resets the board if it has been idle for the auto-reset time at server time now, as the reset button does
         // (a game in progress is logged, as unfinished or on time), and returns whether it did. Update calls it on the
         // owner only; public for tests.
-        public bool CheckAutoResetAt(double now) {
-            if (!IsIdleForAutoResetAt(now)) return false;
+        public bool _CheckAutoResetAt(double now) {
+            if (!_IsIdleForAutoResetAt(now)) return false;
             Debug.Log("[ChessBoard] " + gameObject.name + ": reset after " + Math.Floor(now - lastActivity)
                 + " s idle (auto-reset time " + GameNumber(ChessArbiter.NumberAutoResetTime) + " s)");
             ClearGameAt(now);
@@ -461,7 +461,7 @@ namespace SiggiChessBoard {
         // position from before it. A touch that counts stamps lastActivity and sends it (ChangeActivity, taking
         // ownership), unless the last activity was less than ActivityThrottle seconds ago. Returns whether it was
         // sent. The local player's listeners aren't told: nothing they show has changed.
-        public bool TouchAsAt(string name, bool organizer, double now) {
+        public bool _TouchAsAt(string name, bool organizer, double now) {
             if (!TouchCounts(name, organizer)) return false;
             if (now - lastActivity < ActivityThrottle) return false;
             lastActivity = now;
@@ -471,7 +471,7 @@ namespace SiggiChessBoard {
         }
 
         void TouchAs(string name, bool organizer) {
-            TouchAsAt(name, organizer, ServerTime());
+            _TouchAsAt(name, organizer, _ServerTime());
         }
 
         bool TouchCounts(string name, bool organizer) {
@@ -480,7 +480,7 @@ namespace SiggiChessBoard {
         }
 
         // Copies the state into the synced fields. Public for tests.
-        public void PackState() {
+        public void _PackState() {
             Array.Copy(board, syncedBoard, 64);
             Array.Copy(replayBoard, syncedReplayBoard, 64);
             int[] ints = new int[SyncLength];
@@ -548,7 +548,7 @@ namespace SiggiChessBoard {
         // joiner's first update logs nothing. Any update but a touch (ChangeActivity) or a piece set change
         // (ChangePieceSet) abandons an import under way here.
         // Public for tests.
-        public void ReceiveState() {
+        public void _ReceiveState() {
             if (!IsSyncedStateValid()) return;
             received = true;
             int newLifecycle = syncedInts[SyncLifecycle];
@@ -557,7 +557,7 @@ namespace SiggiChessBoard {
                 && (newLifecycle == LifecycleInGame || newLifecycle == LifecycleEnded);
             if (wasInGame && !sameGame) {
                 if (IsPlayOnOfThisGame()) LogGame(ChessGame.EndingTimeForfeit, FlagFallWinner(SideToMove()));
-                else LogGoneGameAt(ServerTime());
+                else LogGoneGameAt(_ServerTime());
             }
             UnpackState();
             if (wasInGame && sameGame && lifecycle == LifecycleEnded) LogGame(ending, winner);
@@ -566,7 +566,7 @@ namespace SiggiChessBoard {
             if (lastSentChange != ChangeActivity && lastSentChange != ChangePieceSet) AbandonImport();
         }
 
-        // Whether the synced fields hold a state PackState could have written: the arrays there and of the right
+        // Whether the synced fields hold a state _PackState could have written: the arrays there and of the right
         // lengths, and the strings there. Anything else would leave the board half updated.
         bool IsSyncedStateValid() {
             if (syncedBoard == null || syncedBoard.Length != 64) return false;
@@ -588,13 +588,13 @@ namespace SiggiChessBoard {
         // too, whatever this client's clock says.
         bool IsPlayOnOfThisGame() {
             return syncedInts[SyncFlagFallPly] == moveCount && gameId.Length > 0
-                && syncedContinuedFrom == ChessGame.ContinuedFromText(gameId, moveCount);
+                && syncedContinuedFrom == ChessGame._ContinuedFromText(gameId, moveCount);
         }
 
         // Logs the game in progress that an update has replaced, as the client replacing it did: on time if the side
         // to move's flag has fallen (as a reset does), otherwise as unfinished. A game with no moves isn't logged.
         void LogGoneGameAt(double now) {
-            int flagged = FlaggedColorAt(now);
+            int flagged = _FlaggedColorAt(now);
             if (flagged == ChessRules.NoColor) LogGame(ChessGame.EndingUnterminated, ChessRules.NoColor);
             else LogGame(ChessGame.EndingTimeForfeit, FlagFallWinner(flagged));
         }
@@ -632,7 +632,7 @@ namespace SiggiChessBoard {
                 }
             }
             moveCount = count;
-            RecheckNotation();
+            _RecheckNotation();
 
             replayMode = ints[SyncReplayMode] != 0;
             replayIndex = ints[SyncReplayIndex];
@@ -713,7 +713,7 @@ namespace SiggiChessBoard {
                 int piece = shown[square];
                 if (piece == ChessRules.Empty || (piece & 7) != ChessRules.King) continue;
                 int start = count;
-                count = Mathf.Min(ChessMoves.SquareAttackers(shown, square, ((piece >> 3) & 1) ^ 1, checkers, count),
+                count = Mathf.Min(ChessMoves._SquareAttackers(shown, square, ((piece >> 3) & 1) ^ 1, checkers, count),
                     limit);
                 for (int i = start; i < count; i++) kings[i] = square;
             }
@@ -762,7 +762,7 @@ namespace SiggiChessBoard {
 
         // Puts every state field back to the reset state: the standard starting position, no game, empty seats.
         // The reset button (who may, logging an unfinished game) is ResetBoardAs.
-        public void ClearState() {
+        public void _ClearState() {
             int clock;
             int number;
             ChessFen.ParseFen(ChessFen.StartFen, board, state, out clock, out number);
@@ -777,7 +777,7 @@ namespace SiggiChessBoard {
                 clockHistory[i] = -1;
             }
             moveCount = 0;
-            RecheckNotation();
+            _RecheckNotation();
 
             replayMode = false;
             replayIndex = 0;
@@ -846,7 +846,7 @@ namespace SiggiChessBoard {
         // Joins as the local player, with the arbiter's preferredPieceSet (step 13.6), which lives on this client.
         public int Join(int color) {
             int preferred = Utilities.IsValid(arbiter) ? arbiter.preferredPieceSet : -1;
-            return JoinAs(color, ChessUtil.LocalName(""), preferred);
+            return JoinAs(color, ChessUtil._LocalName(""), preferred);
         }
 
         // JoinAs with no preferred piece set.
@@ -873,14 +873,14 @@ namespace SiggiChessBoard {
             else blackPlayer = name;
             if (lifecycle == LifecycleReset) {
                 lifecycle = LifecycleLobby;
-                TakeSnapshot();
+                _TakeSnapshot();
             }
             NotifyChanged(ChangeJoined);
             return InputAccepted;
         }
 
         public bool CanJoin(int color) {
-            return CanJoinAs(color, ChessUtil.LocalName(""));
+            return CanJoinAs(color, ChessUtil._LocalName(""));
         }
 
         // Whether the Join button of color applies to name: the seats are open (a reset board, the lobby or a loaded
@@ -900,7 +900,7 @@ namespace SiggiChessBoard {
         // The Leave buttons (step 13.1), for the local player: one per seat, so a player in both seats leaves one at
         // a time.
         public int LeaveSeat(int color) {
-            return LeaveSeatAs(color, ChessUtil.LocalName(""));
+            return LeaveSeatAs(color, ChessUtil._LocalName(""));
         }
 
         // Empties the seat of color held by the player with this display name, before a game has started: in the
@@ -911,13 +911,13 @@ namespace SiggiChessBoard {
             if (!CanLeaveSeatAs(color, name)) return InputRejected;
             if (color == ChessRules.White) whitePlayer = "";
             else blackPlayer = "";
-            if (lifecycle == LifecycleLobby && whitePlayer.Length == 0 && blackPlayer.Length == 0) ClearState();
+            if (lifecycle == LifecycleLobby && whitePlayer.Length == 0 && blackPlayer.Length == 0) _ClearState();
             NotifyChanged(ChangeLeft);
             return InputAccepted;
         }
 
         public bool CanLeaveSeat(int color) {
-            return CanLeaveSeatAs(color, ChessUtil.LocalName(""));
+            return CanLeaveSeatAs(color, ChessUtil._LocalName(""));
         }
 
         // Whether the Leave button of color applies to name: name holds that seat, and no game has started (the lobby
@@ -946,7 +946,7 @@ namespace SiggiChessBoard {
 
         // Changes a side's set as the local player (SetPieceSetAs).
         public int SetPieceSet(int color, int index) {
-            return SetPieceSetAs(ChessUtil.LocalName(""), LocalIsOrganizer(), color, index);
+            return SetPieceSetAs(ChessUtil._LocalName(""), LocalIsOrganizer(), color, index);
         }
 
         // Makes the set at index in the arbiter's pieceSets the one color wears on this board, by name, told as
@@ -961,16 +961,16 @@ namespace SiggiChessBoard {
         }
 
         public bool CanSetPieceSet(int color, int index) {
-            return CanSetPieceSetAs(ChessUtil.LocalName(""), LocalIsOrganizer(), color, index);
+            return CanSetPieceSetAs(ChessUtil._LocalName(""), LocalIsOrganizer(), color, index);
         }
 
         // Whether name may make color wear the set at index: White or Black, an index in the arbiter's list, and name
-        // may own the board (MayOwnAs, so the loader's lock and organizers apply as they do there).
+        // may own the board (_MayOwnAs, so the loader's lock and organizers apply as they do there).
         public bool CanSetPieceSetAs(string name, bool organizer, int color, int index) {
             if (color != ChessRules.White && color != ChessRules.Black) return false;
             if (!Utilities.IsValid(arbiter) || !arbiter.IsPieceSetIndex(index)) return false;
             if (name == null || name.Length == 0) return false;
-            return MayOwnAs(name, organizer, BothPlayersPresent(), ServerTime());
+            return _MayOwnAs(name, organizer, _BothPlayersPresent(), _ServerTime());
         }
 
         // The index of the set a ChessRules colour wears on this board as synced (-1 for an unknown colour).
@@ -1011,7 +1011,7 @@ namespace SiggiChessBoard {
         // forced lobby settings so the lobby shows them: the mode and clock in the lobby, the clock on a loaded board
         // (its mode is the loaded game's). A game already started keeps its mode and clock. With no arbiter, every
         // setting is off and the numbers are Never, Standard and NoClock.
-        public void TakeSnapshot() {
+        public void _TakeSnapshot() {
             int[] numbers = new int[ChessArbiter.NumberCount];
             if (Utilities.IsValid(arbiter)) {
                 gameSettings = arbiter.EffectiveSettings(boardNumber);
@@ -1052,7 +1052,7 @@ namespace SiggiChessBoard {
             if (!Utilities.IsValid(who) || !Utilities.IsValid(arbiter) || !arbiter.IsOrganizer(who)) {
                 return InputRejected;
             }
-            TakeSnapshot();
+            _TakeSnapshot();
             NotifyChanged(ChangeSettings);
             return InputAccepted;
         }
@@ -1075,11 +1075,11 @@ namespace SiggiChessBoard {
         }
 
         public int SetMode(int newMode) {
-            return SetModeAs(ChessUtil.LocalName(""), newMode);
+            return SetModeAs(ChessUtil._LocalName(""), newMode);
         }
 
         public bool CanSetMode() {
-            return CanSetModeAs(ChessUtil.LocalName(""));
+            return CanSetModeAs(ChessUtil._LocalName(""));
         }
 
         // Whether name may choose the mode: a seated player in the lobby (a loaded game's mode is the game's own),
@@ -1098,11 +1098,11 @@ namespace SiggiChessBoard {
         }
 
         public int SetClock(int newBaseTime, int newIncrement) {
-            return SetClockAs(ChessUtil.LocalName(""), newBaseTime, newIncrement);
+            return SetClockAs(ChessUtil._LocalName(""), newBaseTime, newIncrement);
         }
 
         public bool CanSetClock() {
-            return CanSetClockAs(ChessUtil.LocalName(""));
+            return CanSetClockAs(ChessUtil._LocalName(""));
         }
 
         // Whether name may choose the clock: a seated player in the lobby or on a loaded board (which continues with
@@ -1131,11 +1131,11 @@ namespace SiggiChessBoard {
         }
 
         public int StartGame() {
-            return StartGameAs(ChessUtil.LocalName(""));
+            return StartGameAs(ChessUtil._LocalName(""));
         }
 
         public bool CanStartGame() {
-            return CanStartGameAs(ChessUtil.LocalName(""));
+            return CanStartGameAs(ChessUtil._LocalName(""));
         }
 
         // Whether the Start button applies to name: a seated player in the lobby with both seats filled (a loaded
@@ -1152,7 +1152,7 @@ namespace SiggiChessBoard {
 
             ApplyForcedSettings();
             if (mode == ChessGame.ModeChess960) {
-                ChessGame.Chess960Position(RandomChess960Index(), board, state);
+                ChessGame.Chess960Position(_RandomChess960Index(), board, state);
                 SetStartPosition(0, 1);
             } else {
                 int clock;
@@ -1164,7 +1164,7 @@ namespace SiggiChessBoard {
             whiteTime = startTime;
             blackTime = startTime;
             turnStart = Networking.GetServerTimeInSeconds();
-            gameId = NewGameIdAt(NetworkDateTime());
+            gameId = _NewGameIdAt(_NetworkDateTime());
             continuedFrom = "";
             lifecycle = LifecycleInGame;
             NotifyChanged(ChangeStarted);
@@ -1185,7 +1185,7 @@ namespace SiggiChessBoard {
         }
 
         // One of the 960 Chess960 starting positions at random (ChessGame.Chess960Position numbering).
-        public int RandomChess960Index() {
+        public int _RandomChess960Index() {
             return UnityEngine.Random.Range(0, ChessGame.Chess960Count);
         }
 
@@ -1195,21 +1195,21 @@ namespace SiggiChessBoard {
 
         // The UTC date and time now as the network has it (VRChat's network time, so every client agrees on it to
         // within a moment, whatever its own clock says).
-        public DateTime NetworkDateTime() {
+        public DateTime _NetworkDateTime() {
             return Networking.GetNetworkDateTime();
         }
 
         // A new Game ID for a game started at utc, with a random suffix.
-        public string NewGameIdAt(DateTime utc) {
-            return ChessGame.GameId(utc, UnityEngine.Random.Range(0, ChessGame.GameIdSuffixCount));
+        public string _NewGameIdAt(DateTime utc) {
+            return ChessGame._GameId(utc, UnityEngine.Random.Range(0, ChessGame.GameIdSuffixCount));
         }
 
         // The current game is continued from ply (half-moves from its starting position) as a new game started at
         // utc: continuedFrom becomes "<gameId>/<ply>" ("" when the current game has no ID, as with a PGN import
         // without a GameID tag) and the game gets a new ID. Truncating the history and the clocks is the caller's.
-        public void ContinueGameIdAt(int ply, DateTime utc) {
-            continuedFrom = ChessGame.ContinuedFromText(gameId, ply);
-            gameId = NewGameIdAt(utc);
+        public void _ContinueGameIdAt(int ply, DateTime utc) {
+            continuedFrom = ChessGame._ContinuedFromText(gameId, ply);
+            gameId = _NewGameIdAt(utc);
         }
 
         // ---- Moves and clocks (docs/clocks.md) ----
@@ -1217,11 +1217,11 @@ namespace SiggiChessBoard {
         // every client works out the running clock from them, so nothing is sent while a player thinks. The *At
         // methods take the server time to use, for tests; the others use the server time now.
 
-        // Scratch for PlayMoveAt: the legal moves, and what MoveToSan needs for the check suffix.
+        // Scratch for _PlayMoveAt: the legal moves, and what MoveToSan needs for the check suffix.
         int[] legalMoves = new int[ChessMoves.MaxMoves];
         int[] sanScratch = new int[ChessMoves.MaxMoves];
 
-        public double ServerTime() {
+        public double _ServerTime() {
             return Networking.GetServerTimeInSeconds();
         }
 
@@ -1243,12 +1243,12 @@ namespace SiggiChessBoard {
         }
 
         public int RemainingTime(int color) {
-            return RemainingTimeAt(color, ServerTime());
+            return _RemainingTimeAt(color, _ServerTime());
         }
 
         // A side's remaining time in milliseconds at server time now, never below 0. While the clock runs, the side
         // to move's is its time at the turn start less the time since; otherwise both are as stored (0 with no clock).
-        public int RemainingTimeAt(int color, double now) {
+        public int _RemainingTimeAt(int color, double now) {
             int stored = color == ChessRules.White ? whiteTime : color == ChessRules.Black ? blackTime : 0;
             if (!IsClockRunning() || color != state[ChessPosition.StateSideToMove]) return stored;
             double left = stored - ElapsedMs(now);
@@ -1263,20 +1263,20 @@ namespace SiggiChessBoard {
         }
 
         public int FlaggedColor() {
-            return FlaggedColorAt(ServerTime());
+            return _FlaggedColorAt(_ServerTime());
         }
 
         // The side whose time has run out at server time now (flag fall), ChessRules.NoColor if none. Only the side to
         // move's clock runs, and a move is refused once it has run out, so that's the only side that can flag. Every
-        // client sees it; the owner ends the game on it (CheckFlagFallAt).
-        public int FlaggedColorAt(double now) {
+        // client sees it; the owner ends the game on it (_CheckFlagFallAt).
+        public int _FlaggedColorAt(double now) {
             if (!IsClockRunning()) return ChessRules.NoColor;
             int mover = state[ChessPosition.StateSideToMove];
-            return RemainingTimeAt(mover, now) == 0 ? mover : ChessRules.NoColor;
+            return _RemainingTimeAt(mover, now) == 0 ? mover : ChessRules.NoColor;
         }
 
-        public int PlayMove(int move) {
-            return PlayMoveAt(move, ServerTime());
+        public int _PlayMove(int move) {
+            return _PlayMoveAt(move, _ServerTime());
         }
 
         // Plays move, which must be one of the position's legal moves, as the next move of the game at server time
@@ -1286,9 +1286,9 @@ namespace SiggiChessBoard {
         // board isn't in replay, if the mover's time has run out, and for a move that isn't legal. Who may move, and
         // matching a drop to a move, are the input API's (step 7.4a). A move that checkmates or stalemates ends the
         // game.
-        public int PlayMoveAt(int move, double now) {
+        public int _PlayMoveAt(int move, double now) {
             if (lifecycle != LifecycleInGame || replayMode) return InputRejected;
-            if (FlaggedColorAt(now) != ChessRules.NoColor) return InputRejected;
+            if (_FlaggedColorAt(now) != ChessRules.NoColor) return InputRejected;
             int legalCount = ChessMoves.GenerateLegalMoves(board, state, legalMoves, true);
             bool legal = false;
             for (int i = 0; i < legalCount; i++) {
@@ -1331,7 +1331,7 @@ namespace SiggiChessBoard {
             else if (status == ChessMoves.StatusStalemate) {
                 EndGameAt(ChessGame.EndingStalemate, ChessRules.NoColor, now);
             } else {
-                int automatic = AutomaticDraw();
+                int automatic = _AutomaticDraw();
                 if (automatic != ChessGame.EndingNone) EndGameAt(automatic, ChessRules.NoColor, now);
             }
             NotifyChanged(ChangeMove);
@@ -1343,11 +1343,11 @@ namespace SiggiChessBoard {
         // occurred five times, EndingSeventyFiveMoveRule when seventy-five moves each have passed without a capture or
         // pawn move, EndingInsufficientMaterial when neither side can checkmate, each only while the snapshot has that
         // rule on; otherwise EndingNone (always under "No draws").
-        public int AutomaticDraw() {
+        public int _AutomaticDraw() {
             return AutomaticDrawOf(board, state, moveCount, halfmoveClock);
         }
 
-        // AutomaticDraw for the position in squares and positionState, reached by the first count moves of the
+        // _AutomaticDraw for the position in squares and positionState, reached by the first count moves of the
         // history, with this halfmove clock (an earlier position of the game, for CanContinueAs).
         int AutomaticDrawOf(byte[] squares, int[] positionState, int count, int clock) {
             if (IsGameSettingOn(ChessArbiter.SettingFivefoldRepetition)) {
@@ -1369,11 +1369,11 @@ namespace SiggiChessBoard {
         // Every client fills in missing notation (below). The owner watches for flag fall and the auto-reset time, so
         // the game ends on time once and the board resets itself once; every other client sees the update.
         void Update() {
-            FillNotationFrame();
+            _FillNotationFrame();
             if (lifecycle == LifecycleReset || !Networking.IsOwner(gameObject)) return;
-            double now = ServerTime();
-            if (lifecycle == LifecycleInGame) CheckFlagFallAt(now);
-            CheckAutoResetAt(now);
+            double now = _ServerTime();
+            if (lifecycle == LifecycleInGame) _CheckFlagFallAt(now);
+            _CheckAutoResetAt(now);
         }
 
         // Ends the game in progress at server time now: how it ended, who won (ChessRules.NoColor for a draw), and
@@ -1384,7 +1384,7 @@ namespace SiggiChessBoard {
             bool wasInGame = lifecycle == LifecycleInGame;
             if (IsClockRunning()) {
                 int mover = state[ChessPosition.StateSideToMove];
-                int left = RemainingTimeAt(mover, now);
+                int left = _RemainingTimeAt(mover, now);
                 if (mover == ChessRules.White) whiteTime = left;
                 else blackTime = left;
             }
@@ -1401,13 +1401,13 @@ namespace SiggiChessBoard {
         // before the first gap through the rest of the history computes each missing SAN as the mover's client would
         // have (ChessNotation.MoveToSan). That costs a legal-move list per entry, so Update walks for about
         // fillBudgetMs each frame and a long gap takes several frames. A change to the history drops the walk and
-        // starts a new one (RecheckNotation). A game's PGN (logging, export) fills every gap first, in one go.
+        // starts a new one (_RecheckNotation). A game's PGN (logging, export) fills every gap first, in one go.
 
         // The default walking time per frame in milliseconds, as the PGN import's (docs/pgn.md). At least one entry is
         // filled in per frame, whatever the budget.
         public const float DefaultFillBudgetMs = ChessPgnImporter.DefaultBudgetMs;
         [NonSerialized] public float fillBudgetMs = DefaultFillBudgetMs;
-        // How many entries this client has filled in, and the frames (calls to FillNotationFor) the last walk took
+        // How many entries this client has filled in, and the frames (calls to _FillNotationFor) the last walk took
         // from finding a gap to the end of the history, for tests and the debug view.
         [NonSerialized] public int filledNotation;
         [NonSerialized] public int lastFillFrames;
@@ -1428,13 +1428,13 @@ namespace SiggiChessBoard {
         // The history or its notation has changed: a walk under way is dropped, and the next Update looks for gaps
         // again. The board calls it on every change to the history; public for code that edits the notation itself
         // (tests, the debug view).
-        public void RecheckNotation() {
+        public void _RecheckNotation() {
             fillPly = -1;
             fillPending = true;
         }
 
         // The first ply of the game whose notation is missing, -1 if none is.
-        public int FirstMissingNotation() {
+        public int _FirstMissingNotation() {
             for (int i = 0; i < moveCount; i++) {
                 if (IsMissing(notation[i])) return i;
             }
@@ -1447,10 +1447,10 @@ namespace SiggiChessBoard {
 
         // Fills in missing notation for about budgetMs milliseconds (at least one entry, and float.MaxValue for all of
         // it), counting it as one frame, and returns whether none is missing now. The listeners are told by the next
-        // FillNotationFrame once none is.
-        public bool FillNotationFor(float budgetMs) {
+        // _FillNotationFrame once none is.
+        public bool _FillNotationFor(float budgetMs) {
             if (fillPly < 0) {
-                int first = FirstMissingNotation();
+                int first = _FirstMissingNotation();
                 if (first < 0) {
                     fillPending = false;
                     return true;
@@ -1498,8 +1498,8 @@ namespace SiggiChessBoard {
         // One frame of filling in, as Update does it: a walk for about fillBudgetMs while the notation may have gaps,
         // then, once none is missing, telling the listeners (OnNotationFilled) if entries were filled in (by walks or by
         // a PGN) since they were last told. A walk over several frames is told once, at its end. Public for tests.
-        public void FillNotationFrame() {
-            if (fillPending) FillNotationFor(fillBudgetMs);
+        public void _FillNotationFrame() {
+            if (fillPending) _FillNotationFor(fillBudgetMs);
             if (!fillTell || fillPending) return;
             fillTell = false;
             if (listeners == null) return;
@@ -1521,14 +1521,14 @@ namespace SiggiChessBoard {
         // game is written with its own players and time control, not the seats and the clock chosen for continuing.
         // Missing notation is filled in first.
         string PgnWith(int pgnEnding, int pgnWinner) {
-            FillNotationFor(float.MaxValue);
+            _FillNotationFor(float.MaxValue);
             int firstSide = state[ChessPosition.StateSideToMove];
             if (moveCount % 2 == 1) firstSide = ChessRules.OtherColor(firstSide);
             bool loaded = lifecycle == LifecycleLoaded;
             int pgnBase = loaded ? replaySourceBaseTime : baseTime;
             // ChessPgn's convention: 0 for no clock, below 0 for unknown.
             int pgnBaseSeconds = pgnBase == ChessArbiter.NoClock ? 0 : pgnBase == UnknownClock ? -1 : pgnBase;
-            string tags = ChessPgn.WriteTags(pgnEvent, pgnSite, ChessGame.DateFromGameId(gameId),
+            string tags = ChessPgn.WriteTags(pgnEvent, pgnSite, ChessGame._DateFromGameId(gameId),
                 loaded ? replaySourceWhite : whitePlayer, loaded ? replaySourceBlack : blackPlayer, pgnEnding,
                 pgnWinner, mode, startFen, pgnBaseSeconds, loaded ? replaySourceIncrement : increment, gameId,
                 continuedFrom);
@@ -1546,25 +1546,25 @@ namespace SiggiChessBoard {
             loggedGames++;
             Debug.Log("[ChessPGN]\n" + lastLoggedPgn);
             if (Utilities.IsValid(archive)) {
-                archive.AddGame(gameId, continuedFrom, whitePlayer, blackPlayer, mode, logEnding, logWinner, startFen,
+                archive._AddGame(gameId, continuedFrom, whitePlayer, blackPlayer, mode, logEnding, logWinner, startFen,
                     baseTime, increment, moveHistory, clockHistory, moveCount);
             }
         }
 
         public int Resign(int color) {
-            return ResignAs(color, ChessUtil.LocalName(""));
+            return ResignAs(color, ChessUtil._LocalName(""));
         }
 
         // The resign button: name resigns for color (CanResignAs), and the other side wins.
         public int ResignAs(int color, string name) {
             if (!CanResignAs(color, name)) return InputRejected;
-            EndGameAt(ChessGame.EndingResignation, ChessRules.OtherColor(color), ServerTime());
+            EndGameAt(ChessGame.EndingResignation, ChessRules.OtherColor(color), _ServerTime());
             NotifyChanged(ChangeEnded);
             return InputAccepted;
         }
 
-        public bool CheckFlagFall() {
-            return CheckFlagFallAt(ServerTime());
+        public bool _CheckFlagFall() {
+            return _CheckFlagFallAt(_ServerTime());
         }
 
         // Ends the game on time forfeit if the side to move's flag has fallen at server time now, and returns whether
@@ -1572,7 +1572,7 @@ namespace SiggiChessBoard {
         // the snapshot's dead-position rule is on, which makes it a draw; under "No draws" it always loses. The game is
         // logged as it ends; then, while the snapshot has SettingPlayOnAfterFlagFall on, it plays on untimed at once
         // (PlayOnUntimedAt). Either way the listeners are told once, as ChangeEnded.
-        public bool CheckFlagFallAt(double now) {
+        public bool _CheckFlagFallAt(double now) {
             if (!EndOnFlagFallAt(now)) return false;
             if (MayPlayOnAfterFlagFall()) PlayOnUntimedAt(now);
             NotifyChanged(ChangeEnded);
@@ -1583,7 +1583,7 @@ namespace SiggiChessBoard {
         // automatic draws the snapshot has on (a dead position, with that rule on), which the untimed game would be
         // over in before a move. A drawn time forfeit plays on too: the side out of time may still mate.
         bool MayPlayOnAfterFlagFall() {
-            return IsGameSettingOn(ChessArbiter.SettingPlayOnAfterFlagFall) && AutomaticDraw() == ChessGame.EndingNone;
+            return IsGameSettingOn(ChessArbiter.SettingPlayOnAfterFlagFall) && _AutomaticDraw() == ChessGame.EndingNone;
         }
 
         // The game that has just ended on time (and been logged) plays on at once as an untimed continuation game at
@@ -1593,7 +1593,7 @@ namespace SiggiChessBoard {
         // side's time stays as the timed game ended (the flagged side's 0), for ClocksFromPreviousGame. A pending
         // takeback request was for the ended game and is cleared; replay is left as it is.
         void PlayOnUntimedAt(double now) {
-            ContinueGameIdAt(moveCount, NetworkDateTime());
+            _ContinueGameIdAt(moveCount, _NetworkDateTime());
             for (int i = 0; i < moveCount; i++) clockHistory[i] = -1;
             baseTime = ChessArbiter.NoClock;
             increment = 0;
@@ -1607,9 +1607,9 @@ namespace SiggiChessBoard {
             takebackPly = 0;
         }
 
-        // CheckFlagFallAt without telling the listeners, for a change that ends the game on time on its way (a reset).
+        // _CheckFlagFallAt without telling the listeners, for a change that ends the game on time on its way (a reset).
         bool EndOnFlagFallAt(double now) {
-            int flagged = FlaggedColorAt(now);
+            int flagged = _FlaggedColorAt(now);
             if (flagged == ChessRules.NoColor) return false;
             EndGameAt(ChessGame.EndingTimeForfeit, FlagFallWinner(flagged), now);
             return true;
@@ -1630,14 +1630,14 @@ namespace SiggiChessBoard {
         // InputPromotionNeeded, and the view calls PromotionChosen with the same squares and the chosen piece. Nothing
         // is remembered in between, so there's nothing to sync or clear. A king castles by being dropped on its own
         // rook (always unambiguous, so every castle can be made that way), or on its castling destination when no other
-        // king move ends there. In replay, pickups and drops are free moves on the replay board instead (ReplayPiecePickedUpAs, ReplayPieceDroppedAs). Every piece input is a touch (TouchAsAt), so
+        // king move ends there. In replay, pickups and drops are free moves on the replay board instead (_ReplayPiecePickedUpAs, _ReplayPieceDroppedAs). Every piece input is a touch (_TouchAsAt), so
         // even one that changes nothing keeps the board from going idle. The *As methods take any name, for tests and
         // the debug view; in replay they don't count name as an organizer.
 
         // Whether the local player may touch the pieces (docs/physical-pieces.md): the view makes the pieces pickups
         // for them only while this holds, and the pieces' OnOwnershipRequest asks PlayerMayTouchPieces.
         public bool MayTouchPieces() {
-            return MayTouchPiecesAs(ChessUtil.LocalName(""), LocalIsOrganizer());
+            return MayTouchPiecesAs(ChessUtil._LocalName(""), LocalIsOrganizer());
         }
 
         public bool PlayerMayTouchPieces(VRCPlayerApi who) {
@@ -1658,21 +1658,21 @@ namespace SiggiChessBoard {
         }
 
         public int PiecePickedUp(int square) {
-            if (replayMode) return ReplayPiecePickedUpAs(ChessUtil.LocalName(""), LocalIsOrganizer(), square);
-            return PiecePickedUpAs(ChessUtil.LocalName(""), square);
+            if (replayMode) return _ReplayPiecePickedUpAs(ChessUtil._LocalName(""), LocalIsOrganizer(), square);
+            return PiecePickedUpAs(ChessUtil._LocalName(""), square);
         }
 
         // Whether name may pick up the piece on square: a game is in progress and not in replay, the side to move
         // has time left, name holds that side's seat and the piece is that side's. Rejected, the view puts it back.
-        // In replay, a free move's pickup (ReplayPiecePickedUpAs).
+        // In replay, a free move's pickup (_ReplayPiecePickedUpAs).
         public int PiecePickedUpAs(string name, int square) {
-            if (replayMode) return ReplayPiecePickedUpAs(name, false, square);
+            if (replayMode) return _ReplayPiecePickedUpAs(name, false, square);
             TouchAs(name, false);
             return NotifyIfRejected(MayPickUp(name, square) ? InputAccepted : InputRejected);
         }
 
         public bool CanPickUp(int square) {
-            return CanPickUpAs(ChessUtil.LocalName(""), LocalIsOrganizer(), square);
+            return CanPickUpAs(ChessUtil._LocalName(""), LocalIsOrganizer(), square);
         }
 
         // Whether PiecePickedUp would accept name's pickup of the piece on square (in replay, a free move's pickup,
@@ -1691,23 +1691,23 @@ namespace SiggiChessBoard {
         }
 
         public int PieceDropped(int from, int to) {
-            if (replayMode) return ReplayPieceDroppedAs(ChessUtil.LocalName(""), LocalIsOrganizer(), from, to);
-            return PieceDroppedAs(ChessUtil.LocalName(""), from, to);
+            if (replayMode) return _ReplayPieceDroppedAs(ChessUtil._LocalName(""), LocalIsOrganizer(), from, to);
+            return PieceDroppedAs(ChessUtil._LocalName(""), from, to);
         }
 
         // name dropped the piece from from on to. Plays the legal move it matches, answers InputPromotionNeeded for a
         // promotion (nothing played), and rejects anything else, including a drop back on its own square. A king
         // dropped on its own rook castles with it; dropped on its castling destination it castles unless a normal king
         // move ends there too (Chess960 castles moving the king one square), which is then played instead. In replay,
-        // a free move (ReplayPieceDroppedAs).
+        // a free move (_ReplayPieceDroppedAs).
         public int PieceDroppedAs(string name, int from, int to) {
-            if (replayMode) return ReplayPieceDroppedAs(name, false, from, to);
+            if (replayMode) return _ReplayPieceDroppedAs(name, false, from, to);
             TouchAs(name, false);
             return NotifyIfRejected(DropAs(name, from, to, ChessRules.NoPieceType));
         }
 
         public int PromotionChosen(int from, int to, int pieceType) {
-            return PromotionChosenAs(ChessUtil.LocalName(""), from, to, pieceType);
+            return PromotionChosenAs(ChessUtil._LocalName(""), from, to, pieceType);
         }
 
         // The follow-up to InputPromotionNeeded: plays the promotion from-to to pieceType (ChessRules.Queen, Rook,
@@ -1747,7 +1747,7 @@ namespace SiggiChessBoard {
                     // No other move goes to a castle's rook square (the king's own rook stands there), but one can
                     // end on its destination.
                     if (promotion != ChessRules.NoPieceType) continue;
-                    if (((move >> ChessRules.MoveToShift) & ChessRules.MoveSquareMask) == to) return PlayMove(move);
+                    if (((move >> ChessRules.MoveToShift) & ChessRules.MoveSquareMask) == to) return _PlayMove(move);
                     if (CastleDestination(move) == to) castle = move;
                     continue;
                 }
@@ -1757,9 +1757,9 @@ namespace SiggiChessBoard {
                 found = move;
                 matches++;
             }
-            if (matches == 0) return castle != 0 ? PlayMove(castle) : InputRejected;
+            if (matches == 0) return castle != 0 ? _PlayMove(castle) : InputRejected;
             if (matches > 1) return InputPromotionNeeded;
-            return PlayMove(found);
+            return _PlayMove(found);
         }
 
         // The square a castle puts the king on: g or c on its back rank, by the side of its rook.
@@ -1776,7 +1776,7 @@ namespace SiggiChessBoard {
         // checks are for the local player; the *As ones take any name, and an organizer flag where organizers count,
         // for tests and the debug view. Who may take ownership is under Ownership (8.4); idleness under Inactivity.
 
-        // Scratch for the repetition counts of ClaimableDraw and AutomaticDraw.
+        // Scratch for the repetition counts of ClaimableDraw and _AutomaticDraw.
         byte[] repetitionBoard = new byte[64];
         int[] repetitionState = new int[ChessPosition.StateLength];
 
@@ -1793,7 +1793,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanResign(int color) {
-            return CanResignAs(color, ChessUtil.LocalName(""));
+            return CanResignAs(color, ChessUtil._LocalName(""));
         }
 
         // Whether name may resign for color: the game is running and name has that seat (a player in both seats
@@ -1803,7 +1803,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanOfferDraw(int color) {
-            return CanOfferDrawAs(color, ChessUtil.LocalName(""));
+            return CanOfferDrawAs(color, ChessUtil._LocalName(""));
         }
 
         // Whether name may offer a draw for color: the snapshot allows draws by agreement, the game is running, name
@@ -1814,7 +1814,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanAcceptDraw(int color) {
-            return CanAnswerDrawAs(color, ChessUtil.LocalName(""));
+            return CanAnswerDrawAs(color, ChessUtil._LocalName(""));
         }
 
         public bool CanAcceptDrawAs(int color, string name) {
@@ -1822,7 +1822,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanDeclineDraw(int color) {
-            return CanAnswerDrawAs(color, ChessUtil.LocalName(""));
+            return CanAnswerDrawAs(color, ChessUtil._LocalName(""));
         }
 
         public bool CanDeclineDrawAs(int color, string name) {
@@ -1855,7 +1855,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanClaimDraw() {
-            return CanClaimDrawAs(ChessUtil.LocalName(""));
+            return CanClaimDrawAs(ChessUtil._LocalName(""));
         }
 
         // Whether name may claim a draw: the game is running, name has the side to move's seat and ClaimableDraw has
@@ -1867,10 +1867,10 @@ namespace SiggiChessBoard {
 
         // ---- Draws (docs/game-endings.md, Draw rules) ----
         // Offers and claims aren't moves, so like resigning they work in replay too. The automatic draws are checked
-        // after each move (AutomaticDraw).
+        // after each move (_AutomaticDraw).
 
         public int OfferDraw(int color) {
-            return OfferDrawAs(color, ChessUtil.LocalName(""));
+            return OfferDrawAs(color, ChessUtil._LocalName(""));
         }
 
         // The offer draw button: name offers a draw for color (CanOfferDrawAs). The offer stands until the other side
@@ -1883,20 +1883,20 @@ namespace SiggiChessBoard {
         }
 
         public int AcceptDraw(int color) {
-            return AcceptDrawAs(color, ChessUtil.LocalName(""));
+            return AcceptDrawAs(color, ChessUtil._LocalName(""));
         }
 
         // The accept draw button: name accepts, for color, the other side's offer (CanAcceptDrawAs), and the game is
         // drawn by agreement.
         public int AcceptDrawAs(int color, string name) {
             if (!CanAcceptDrawAs(color, name)) return InputRejected;
-            EndGameAt(ChessGame.EndingDrawAgreement, ChessRules.NoColor, ServerTime());
+            EndGameAt(ChessGame.EndingDrawAgreement, ChessRules.NoColor, _ServerTime());
             NotifyChanged(ChangeEnded);
             return InputAccepted;
         }
 
         public int DeclineDraw(int color) {
-            return DeclineDrawAs(color, ChessUtil.LocalName(""));
+            return DeclineDrawAs(color, ChessUtil._LocalName(""));
         }
 
         // The decline draw button: name declines, for color, the other side's offer (CanDeclineDrawAs), and the game
@@ -1909,14 +1909,14 @@ namespace SiggiChessBoard {
         }
 
         public int ClaimDraw() {
-            return ClaimDrawAs(ChessUtil.LocalName(""));
+            return ClaimDrawAs(ChessUtil._LocalName(""));
         }
 
         // The claim draw button: name, seated as the side to move, claims the draw ClaimableDraw has
         // (CanClaimDrawAs), threefold repetition before the fifty-move rule, and the game is drawn.
         public int ClaimDrawAs(string name) {
             if (!CanClaimDrawAs(name)) return InputRejected;
-            EndGameAt(ClaimableDraw(), ChessRules.NoColor, ServerTime());
+            EndGameAt(ClaimableDraw(), ChessRules.NoColor, _ServerTime());
             NotifyChanged(ChangeEnded);
             return InputAccepted;
         }
@@ -1931,7 +1931,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanEnterReplay() {
-            return CanEnterReplayAs(ChessUtil.LocalName(""), LocalIsOrganizer());
+            return CanEnterReplayAs(ChessUtil._LocalName(""), LocalIsOrganizer());
         }
 
         // Whether name may enter replay: a game in progress or ended, not already in replay, and name may work the
@@ -1942,7 +1942,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanLeaveReplay() {
-            return CanLeaveReplayAs(ChessUtil.LocalName(""), LocalIsOrganizer());
+            return CanLeaveReplayAs(ChessUtil._LocalName(""), LocalIsOrganizer());
         }
 
         // Whether name may leave replay: in replay of a game in progress or ended (a loaded board has no game to go
@@ -1953,7 +1953,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanStepTo(int ply) {
-            return CanStepToAs(ChessUtil.LocalName(""), LocalIsOrganizer(), ply);
+            return CanStepToAs(ChessUtil._LocalName(""), LocalIsOrganizer(), ply);
         }
 
         // Whether name may step the replay to ply (0 before the first move to moveCount after the last): in replay,
@@ -1973,7 +1973,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanRequestTakeback(int color) {
-            return CanRequestTakebackAs(color, ChessUtil.LocalName(""));
+            return CanRequestTakebackAs(color, ChessUtil._LocalName(""));
         }
 
         // Whether name may ask, for color, to continue from the replay position (docs/replay.md): the snapshot allows
@@ -1985,7 +1985,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanAcceptTakeback(int color) {
-            return CanAnswerTakebackAs(color, ChessUtil.LocalName(""));
+            return CanAnswerTakebackAs(color, ChessUtil._LocalName(""));
         }
 
         public bool CanAcceptTakebackAs(int color, string name) {
@@ -1993,7 +1993,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanDeclineTakeback(int color) {
-            return CanAnswerTakebackAs(color, ChessUtil.LocalName(""));
+            return CanAnswerTakebackAs(color, ChessUtil._LocalName(""));
         }
 
         public bool CanDeclineTakebackAs(int color, string name) {
@@ -2011,7 +2011,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanContinue() {
-            return CanContinueAs(ChessUtil.LocalName(""));
+            return CanContinueAs(ChessUtil._LocalName(""));
         }
 
         // Whether name may press "Continue from here" (docs/replay.md). On a loaded game: both seats filled, name
@@ -2047,7 +2047,7 @@ namespace SiggiChessBoard {
         }
 
         public bool CanReset() {
-            return CanResetAs(ChessUtil.LocalName(""), LocalIsOrganizer());
+            return CanResetAs(ChessUtil._LocalName(""), LocalIsOrganizer());
         }
 
         // Whether name may reset the board (docs/board-lifecycle.md, Reset): a board that isn't reset already, by a
@@ -2056,21 +2056,21 @@ namespace SiggiChessBoard {
         // players' place.
         public bool CanResetAs(string name, bool organizer) {
             if (lifecycle == LifecycleReset) return false;
-            if (organizer || IsIdleForResetAt(ServerTime())) return true;
+            if (organizer || _IsIdleForResetAt(_ServerTime())) return true;
             return IsLockedToLoader() ? IsLoader(name) : IsPlayer(name);
         }
 
         public int ResetBoard() {
-            return ResetBoardAs(ChessUtil.LocalName(""), LocalIsOrganizer());
+            return ResetBoardAs(ChessUtil._LocalName(""), LocalIsOrganizer());
         }
 
         // The reset button (CanResetAs; named ResetBoard since Reset is a Unity message): clears the board and both
         // seats. A game in progress is logged as unfinished (*) if it had moves, after a fallen flag has ended it on
-        // time (as CheckFlagFall does), since that game is already over, not unfinished. An ended game was logged when
+        // time (as _CheckFlagFall does), since that game is already over, not unfinished. An ended game was logged when
         // it ended and a loaded one wasn't played here, so neither is logged. Listeners hear of the reset only.
         public int ResetBoardAs(string name, bool organizer) {
             if (!CanResetAs(name, organizer)) return InputRejected;
-            ClearGameAt(ServerTime());
+            ClearGameAt(_ServerTime());
             NotifyChanged(ChangeReset);
             return InputAccepted;
         }
@@ -2081,7 +2081,7 @@ namespace SiggiChessBoard {
             if (lifecycle == LifecycleInGame && !EndOnFlagFallAt(now)) {
                 LogGame(ChessGame.EndingUnterminated, ChessRules.NoColor);
             }
-            ClearState();
+            _ClearState();
         }
 
         // Whether a game can be loaded (a PGN import, or from the archive): only onto a reset board, by anyone.
@@ -2099,7 +2099,7 @@ namespace SiggiChessBoard {
         int[] replayState = new int[ChessPosition.StateLength];
 
         public int EnterReplay() {
-            return EnterReplayAs(ChessUtil.LocalName(""), LocalIsOrganizer());
+            return EnterReplayAs(ChessUtil._LocalName(""), LocalIsOrganizer());
         }
 
         // The enter replay button (CanEnterReplayAs): the replay shows the game's current position.
@@ -2112,7 +2112,7 @@ namespace SiggiChessBoard {
         }
 
         public int LeaveReplay() {
-            return LeaveReplayAs(ChessUtil.LocalName(""), LocalIsOrganizer());
+            return LeaveReplayAs(ChessUtil._LocalName(""), LocalIsOrganizer());
         }
 
         // The leave replay button (CanLeaveReplayAs): back to the game, which replay never changed. The replay fields
@@ -2126,7 +2126,7 @@ namespace SiggiChessBoard {
         }
 
         public int StepTo(int ply) {
-            return StepToAs(ChessUtil.LocalName(""), LocalIsOrganizer(), ply);
+            return StepToAs(ChessUtil._LocalName(""), LocalIsOrganizer(), ply);
         }
 
         // The replay's step buttons (CanStepToAs): shows the position before ply of the game's moves (0 the starting
@@ -2156,7 +2156,7 @@ namespace SiggiChessBoard {
 
         // Whether name may pick up the piece on square of the replay board for a free move: in replay, name may work
         // the replay controls, and there's a piece there (either colour).
-        public int ReplayPiecePickedUpAs(string name, bool organizer, int square) {
+        public int _ReplayPiecePickedUpAs(string name, bool organizer, int square) {
             TouchAs(name, organizer);
             return NotifyIfRejected(MayPickUpInReplay(name, organizer, square) ? InputAccepted : InputRejected);
         }
@@ -2169,7 +2169,7 @@ namespace SiggiChessBoard {
         // A free move in replay: the piece on from goes to to, replacing whatever stood there (any piece, kings too),
         // with no legality, promotion or castling, and the position becomes custom, which cancels a pending takeback
         // request. Rejected unless name may pick the piece up, and for a drop back on its own square or off the board.
-        public int ReplayPieceDroppedAs(string name, bool organizer, int from, int to) {
+        public int _ReplayPieceDroppedAs(string name, bool organizer, int from, int to) {
             TouchAs(name, organizer);
             if (!MayPickUpInReplay(name, organizer, from) || to < 0 || to >= 64 || to == from) {
                 return NotifyIfRejected(InputRejected);
@@ -2188,15 +2188,15 @@ namespace SiggiChessBoard {
         // move. The places are worked out from the position shown (CapturedPieces), so nothing about them is synced.
 
         // Fills captured (colour * ChessCaptures.MaxCaptured + place) and counts with the piece types standing in each
-        // colour's captured places for the position shown (ChessCaptures.CaptureOrder): the game's, or in replay the
+        // colour's captured places for the position shown (ChessCaptures._CaptureOrder): the game's, or in replay the
         // ply shown, custom positions included.
         public void CapturedPieces(int[] captured, int[] counts) {
-            ChessCaptures.CaptureOrder(board, state[ChessPosition.StateSideToMove], moveHistory, moveCount,
+            ChessCaptures._CaptureOrder(board, state[ChessPosition.StateSideToMove], moveHistory, moveCount,
                 replayMode ? replayIndex : moveCount, replayMode && replayCustom ? replayBoard : null, captured, counts);
         }
 
         public bool CanPlaceCaptured(int color, int type) {
-            return CanPlaceCapturedAs(ChessUtil.LocalName(""), LocalIsOrganizer(), color, type);
+            return CanPlaceCapturedAs(ChessUtil._LocalName(""), LocalIsOrganizer(), color, type);
         }
 
         // Whether name may pick up color's captured piece of type to put it back: in replay, name may touch the
@@ -2206,11 +2206,11 @@ namespace SiggiChessBoard {
             if (!replayMode || !MayTouchPiecesAs(name, organizer)) return false;
             if (color != ChessRules.White && color != ChessRules.Black) return false;
             CapturedPieces(capturedScratch, capturedCountScratch);
-            return ChessCaptures.HasCaptured(capturedScratch, capturedCountScratch, color, type);
+            return ChessCaptures._HasCaptured(capturedScratch, capturedCountScratch, color, type);
         }
 
         public int CapturedPickedUp(int color, int type) {
-            return CapturedPickedUpAs(ChessUtil.LocalName(""), LocalIsOrganizer(), color, type);
+            return CapturedPickedUpAs(ChessUtil._LocalName(""), LocalIsOrganizer(), color, type);
         }
 
         // name picked up color's captured piece of type from its place: accepted when CanPlaceCapturedAs holds.
@@ -2221,12 +2221,12 @@ namespace SiggiChessBoard {
         }
 
         public int PlaceCaptured(int color, int type, int square) {
-            return PlaceCapturedAs(ChessUtil.LocalName(""), LocalIsOrganizer(), color, type, square);
+            return PlaceCapturedAs(ChessUtil._LocalName(""), LocalIsOrganizer(), color, type, square);
         }
 
         // Puts color's captured piece of type on square of the replay board, replacing whatever stands there (it then
         // goes to its own colour's places), as a free move: the position becomes custom, which cancels a pending
-        // takeback request, and the piece leaves its place (CaptureOrder takes it out of the last place of its type).
+        // takeback request, and the piece leaves its place (_CaptureOrder takes it out of the last place of its type).
         // Rejected unless CanPlaceCapturedAs holds, and for a square off the board (the view puts it back in its
         // place).
         public int PlaceCapturedAs(string name, bool organizer, int color, int type, int square) {
@@ -2244,10 +2244,10 @@ namespace SiggiChessBoard {
 
         // ---- Takebacks (docs/replay.md, Continuing from an earlier position) ----
         // A seated player asks to continue the game from the replay position; the other side accepts or declines. The
-        // request is for the ply shown, and changing the replay position cancels it (ShowPly, ReplayPieceDroppedAs).
+        // request is for the ply shown, and changing the replay position cancels it (ShowPly, _ReplayPieceDroppedAs).
 
         public int RequestTakeback(int color) {
-            return RequestTakebackAs(color, ChessUtil.LocalName(""));
+            return RequestTakebackAs(color, ChessUtil._LocalName(""));
         }
 
         // The takeback button: name asks, for color, to continue from the position the replay shows
@@ -2261,7 +2261,7 @@ namespace SiggiChessBoard {
         }
 
         public int DeclineTakeback(int color) {
-            return DeclineTakebackAs(color, ChessUtil.LocalName(""));
+            return DeclineTakebackAs(color, ChessUtil._LocalName(""));
         }
 
         // The decline takeback button: name declines, for color, the other side's request (CanDeclineTakebackAs).
@@ -2274,13 +2274,13 @@ namespace SiggiChessBoard {
         }
 
         public int AcceptTakeback(int color) {
-            return AcceptTakebackAs(color, ChessUtil.LocalName(""));
+            return AcceptTakebackAs(color, ChessUtil._LocalName(""));
         }
 
         // The accept takeback button: name accepts, for color, the other side's request (CanAcceptTakebackAs), and the
         // game continues from the requested ply as a new game. A game still in progress is first logged as unfinished
         // (*) with its whole history; an ended one was logged when it ended. The continued game gets a new ID
-        // referencing this one at that ply (ContinueGameIdAt), the history is cut there, the clocks are put back to
+        // referencing this one at that ply (_ContinueGameIdAt), the history is cut there, the clocks are put back to
         // what they were at that ply with the turn starting now, and the game is in progress again, out of replay,
         // with no result and nothing pending.
         public int AcceptTakebackAs(int color, string name) {
@@ -2294,9 +2294,9 @@ namespace SiggiChessBoard {
         // progress out of replay with nothing pending.
         void ContinueFromTakeback(int ply) {
             if (lifecycle == LifecycleInGame) LogGame(ChessGame.EndingUnterminated, ChessRules.NoColor);
-            ContinueGameIdAt(ply, NetworkDateTime());
+            _ContinueGameIdAt(ply, _NetworkDateTime());
             TruncateHistory(ply);
-            RestoreClocks(ServerTime());
+            RestoreClocks(_ServerTime());
             flagFallPly = -1;
             ending = ChessGame.EndingNone;
             winner = ChessRules.NoColor;
@@ -2321,7 +2321,7 @@ namespace SiggiChessBoard {
                 halfmoveClocks[i] = 0;
             }
             moveCount = ply;
-            RecheckNotation();
+            _RecheckNotation();
         }
 
         // Puts both clocks back to what they were after the last move each side made (the clock history), or the base
@@ -2349,7 +2349,7 @@ namespace SiggiChessBoard {
         // ---- PGN import (docs/pgn.md, Import; docs/networking.md, Imported games) ----
         // The importing player's board runs the import over frames on its importer, locally: nothing is sent, the
         // board isn't locked and nobody takes ownership meanwhile. When the import finishes the game is loaded
-        // (LoadImport) and sent in one update. Any change to the board before then, made here or arriving from another
+        // (_LoadImport) and sent in one update. Any change to the board before then, made here or arriving from another
         // client, abandons the import: it could only be loaded onto the reset board it started on, and a lock could
         // get stuck if the importing player left. Only the importing client knows of the import; its listeners hear
         // of it through OnImportChanged.
@@ -2368,7 +2368,7 @@ namespace SiggiChessBoard {
         // The last import's status on this client and, once it has failed, why, as codes: the board keeps no player
         // text (PLAN.md 13.5; ChessBoardUI writes the message). importResult is the importer's ChessPgn.Import* result
         // (ImportDone for a game read whole that couldn't be loaded; ImportMore while none has failed) and
-        // importFailedAt the move it failed at ("2...", ChessPgn.ImportFailedAt; "" otherwise).
+        // importFailedAt the move it failed at ("2...", ChessPgn._ImportFailedAt; "" otherwise).
         [NonSerialized] public int importStatus = ImportNone;
         [NonSerialized] public int importResult = ChessPgn.ImportMore;
         [NonSerialized] public string importFailedAt = "";
@@ -2384,7 +2384,7 @@ namespace SiggiChessBoard {
         // already under way. Nothing changes on the board until it finishes.
         public int StartImport(string text) {
             if (!CanImport()) return InputRejected;
-            importer.StartImport(text, ImportCapacity, importBudgetMs, this, nameof(_ImportFinished));
+            importer._StartImport(text, ImportCapacity, importBudgetMs, this, nameof(_ImportFinished));
             SetImportStatus(ImportRunning, ChessPgn.ImportMore, "");
             return InputAccepted;
         }
@@ -2397,19 +2397,19 @@ namespace SiggiChessBoard {
             int result = importer.result;
             if (result == ChessPgn.ImportMore) return;
             if (result != ChessPgn.ImportDone) {
-                SetImportStatus(ImportFailed, result, importer.FailedAt());
+                SetImportStatus(ImportFailed, result, importer._FailedAt());
                 return;
             }
             // Not running any more, so the load's own change doesn't abandon it.
             importStatus = ImportLoaded;
-            if (LoadImport(importer) == InputAccepted) SetImportStatus(ImportLoaded, ChessPgn.ImportDone, "");
+            if (_LoadImport(importer) == InputAccepted) SetImportStatus(ImportLoaded, ChessPgn.ImportDone, "");
             else SetImportStatus(ImportFailed, ChessPgn.ImportDone, "");
         }
 
         // Stops an import under way because the board changed, and tells the listeners.
         void AbandonImport() {
             if (importStatus != ImportRunning) return;
-            if (Utilities.IsValid(importer)) importer.Abandon();
+            if (Utilities.IsValid(importer)) importer._Abandon();
             SetImportStatus(ImportAbandoned, ChessPgn.ImportMore, "");
         }
 
@@ -2424,19 +2424,20 @@ namespace SiggiChessBoard {
         }
 
         // ---- Loading a game (docs/replay.md, Continuing a loaded game) ----
-        // A finished PGN import (LoadImport) or a game from the archive (step 10) is put on a reset board, which
+        // A finished PGN import (_LoadImport) or a game from the archive (step 10) is put on a reset board, which
         // enters the loaded state showing it in replay. Players can then join and continue it (step 7.9b).
 
         // Loads a finished import from importer (ChessPgnImporter.result ImportDone): its starting position, moves,
         // SAN and clocks, the mode from Variant, the White, Black, Result and GameID tags, and the time control from
         // TimeControl ("-" no clock, a value it can't read unknown). Refused while it's still importing (its result
-        // is ImportMore) or after a failed import, and as LoadGame refuses. Loaded by the local player (LoadImportAs).
-        public int LoadImport(ChessPgnImporter importer) {
-            return LoadImportAs(ChessUtil.LocalName(""), importer);
+        // is ImportMore) or after a failed import, and as _LoadGame refuses. Loaded by the local player
+        // (_LoadImportAs).
+        public int _LoadImport(ChessPgnImporter importer) {
+            return _LoadImportAs(ChessUtil._LocalName(""), importer);
         }
 
-        // LoadImport, by the player with this display name, who keeps the board (LoadGameAs). Public for tests.
-        public int LoadImportAs(string name, ChessPgnImporter importer) {
+        // _LoadImport, by the player with this display name, who keeps the board (_LoadGameAs). Public for tests.
+        public int _LoadImportAs(string name, ChessPgnImporter importer) {
             if (!Utilities.IsValid(importer) || importer.result != ChessPgn.ImportDone) return InputRejected;
             string[] tags = importer.tags;
             if (tags == null) return InputRejected;
@@ -2444,15 +2445,15 @@ namespace SiggiChessBoard {
             int incrementSeconds;
             int loadedBase = UnknownClock;
             int loadedIncrement = 0;
-            if (ChessPgn.ParseTimeControl(tags[ChessPgn.TagTimeControl], out baseSeconds, out incrementSeconds)
+            if (ChessPgn._ParseTimeControl(tags[ChessPgn.TagTimeControl], out baseSeconds, out incrementSeconds)
                 && baseSeconds != 0) {
                 loadedBase = baseSeconds;
                 loadedIncrement = incrementSeconds;
             } else if (baseSeconds == 0) {
                 loadedBase = ChessArbiter.NoClock;
             }
-            return LoadGameAs(name, importer.StartFen(), importer.moves, importer.sans, importer.clocks,
-                importer.MoveCount(), ChessPgn.ModeFromVariant(tags[ChessPgn.TagVariant]), tags[ChessPgn.TagWhite], tags[ChessPgn.TagBlack],
+            return _LoadGameAs(name, importer._StartFen(), importer.moves, importer.sans, importer.clocks,
+                importer.MoveCount(), ChessPgn._ModeFromVariant(tags[ChessPgn.TagVariant]), tags[ChessPgn.TagWhite], tags[ChessPgn.TagBlack],
                 tags[ChessPgn.TagResult], tags[ChessPgn.TagGameId], loadedBase, loadedIncrement);
         }
 
@@ -2466,18 +2467,18 @@ namespace SiggiChessBoard {
         // ChessGame.EndingUnknown with the Result tag's winner, or none for "*" or no tag. The clock for continuing
         // starts as the game's own time control when a player could choose it, no clock otherwise. Then the settings
         // snapshot is taken (which applies a forced clock). Refused for anything invalid, which leaves the board
-        // reset. Loaded by the local player (LoadGameAs).
-        public int LoadGame(string fen, int[] moves, string[] sans, int[] clocks, int count, int loadedMode,
+        // reset. Loaded by the local player (_LoadGameAs).
+        public int _LoadGame(string fen, int[] moves, string[] sans, int[] clocks, int count, int loadedMode,
             string white, string black, string result, string loadedGameId, int loadedBaseTime, int loadedIncrement) {
-            return LoadGameAs(ChessUtil.LocalName(""), fen, moves, sans, clocks, count, loadedMode, white, black,
+            return _LoadGameAs(ChessUtil._LocalName(""), fen, moves, sans, clocks, count, loadedMode, white, black,
                 result, loadedGameId, loadedBaseTime, loadedIncrement);
         }
 
-        // LoadGame, by the player with this display name, who takes the board (it's sent from their client) and is
+        // _LoadGame, by the player with this display name, who takes the board (it's sent from their client) and is
         // recorded in loadedBy: the board is locked to them while they hold no seat (step 13.2). "" records nobody and
         // leaves the board open to everyone, as a loaded board was before 13.2 (for tests whose loads aren't about
         // the lock). Public for tests.
-        public int LoadGameAs(string name, string fen, int[] moves, string[] sans, int[] clocks, int count,
+        public int _LoadGameAs(string name, string fen, int[] moves, string[] sans, int[] clocks, int count,
             int loadedMode, string white, string black, string result, string loadedGameId, int loadedBaseTime,
             int loadedIncrement) {
             if (!CanLoadGame()) return InputRejected;
@@ -2512,7 +2513,7 @@ namespace SiggiChessBoard {
                 if (mover == ChessRules.Black) moveNumber++;
             }
             moveCount = count;
-            RecheckNotation();
+            _RecheckNotation();
 
             mode = loadedMode;
             replaySourceWhite = white == null ? "" : white;
@@ -2533,7 +2534,7 @@ namespace SiggiChessBoard {
             } else if (status == ChessMoves.StatusStalemate) {
                 ending = ChessGame.EndingStalemate;
                 winner = ChessRules.NoColor;
-            } else if (ChessPgn.ParseResult(replaySourceResult, out resultWinner)) {
+            } else if (ChessPgn._ParseResult(replaySourceResult, out resultWinner)) {
                 ending = ChessGame.EndingUnknown;
                 winner = resultWinner;
             } else {
@@ -2555,21 +2556,21 @@ namespace SiggiChessBoard {
             lifecycle = LifecycleLoaded;
             replayMode = true;
             ShowPly(moveCount);
-            TakeSnapshot();
+            _TakeSnapshot();
             NotifyChanged(ChangeLoaded);
             return InputAccepted;
         }
 
         // The "Load it here" button (step 10.2b, docs/archive.md): loads the game with this ID from the board's
-        // archive (LoadGame), its moves and clocks copied straight from it, its ending as its PGN result. The archive
+        // archive (_LoadGame), its moves and clocks copied straight from it, its ending as its PGN result. The archive
         // keeps no notation: every entry starts empty and the fill-in works it out over the next frames, on this
         // client and on each one receiving the load. Refused unless CanLoadGame, and for a game not in the archive.
         // Loaded by the local player (LoadArchivedGameAs).
         public int LoadArchivedGame(string archivedGameId) {
-            return LoadArchivedGameAs(ChessUtil.LocalName(""), archivedGameId);
+            return LoadArchivedGameAs(ChessUtil._LocalName(""), archivedGameId);
         }
 
-        // LoadArchivedGame, by the player with this display name, who keeps the board (LoadGameAs). Public for tests.
+        // LoadArchivedGame, by the player with this display name, who keeps the board (_LoadGameAs). Public for tests.
         public int LoadArchivedGameAs(string name, string archivedGameId) {
             if (!CanLoadGame() || !Utilities.IsValid(archive)) return InputRejected;
             int index = archive.IndexOf(archivedGameId);
@@ -2581,14 +2582,14 @@ namespace SiggiChessBoard {
             for (int i = 0; i < count; i++) sans[i] = "";
             archive.CopyMovesAt(index, moves);
             archive.CopyClocksAt(index, clocks);
-            return LoadGameAs(name, archive.StartFenAt(index), moves, sans, clocks, count, archive.ModeAt(index),
+            return _LoadGameAs(name, archive.StartFenAt(index), moves, sans, clocks, count, archive.ModeAt(index),
                 archive.WhiteAt(index), archive.BlackAt(index),
                 ChessPgn.ResultText(archive.EndingAt(index), archive.WinnerAt(index)), archive.GameIdAt(index),
                 archive.BaseTimeAt(index), archive.IncrementAt(index));
         }
 
         public int ContinueGame() {
-            return ContinueGameAs(ChessUtil.LocalName(""));
+            return ContinueGameAs(ChessUtil._LocalName(""));
         }
 
         // The "Continue from here" button (CanContinueAs): the seated players play the loaded game on from the ply the
@@ -2609,13 +2610,13 @@ namespace SiggiChessBoard {
                 ContinueFromTakeback(ply);
                 return InputAccepted;
             }
-            ContinueGameIdAt(ply, NetworkDateTime());
+            _ContinueGameIdAt(ply, _NetworkDateTime());
             TruncateHistory(ply);
             for (int i = 0; i < ply; i++) clockHistory[i] = -1;
             int startTime = baseTime == ChessArbiter.NoClock ? 0 : baseTime * 1000;
             whiteTime = startTime;
             blackTime = startTime;
-            turnStart = ServerTime();
+            turnStart = _ServerTime();
             ending = ChessGame.EndingNone;
             winner = ChessRules.NoColor;
             replaySourceWhite = "";

@@ -109,7 +109,7 @@ namespace SiggiChessBoard {
         [UdonSynced] [NonSerialized] public int[] defaultNumbers = new int[NumberCount];
 
         // Per-board overrides, indexed by board number (docs/settings.md, Per-board overrides). overrideMask says what
-        // the board overrides (setting bits, plus OverrideNumberBit per numeric setting); overrideSettings holds the
+        // the board overrides (setting bits, plus _OverrideNumberBit per numeric setting); overrideSettings holds the
         // overriding setting bits and overrideNumbers the overriding numbers, NumberCount per board.
         [UdonSynced] [NonSerialized] public int[] overrideMask = new int[0];
         [UdonSynced] [NonSerialized] public int[] overrideSettings = new int[0];
@@ -135,11 +135,11 @@ namespace SiggiChessBoard {
                     + "an organizer.");
             }
             if (received) return;
-            defaultSettings = EditorSettings();
-            defaultNumbers = EditorNumbers();
-            if (FixNumbers(defaultNumbers)) {
+            defaultSettings = _EditorSettings();
+            defaultNumbers = _EditorNumbers();
+            if (_FixNumbers(defaultNumbers)) {
                 Debug.LogWarning("[ChessArbiter] " + gameObject.name + ": invalid numeric settings in the editor were "
-                    + "corrected: " + NumbersToString(defaultNumbers));
+                    + "corrected: " + _NumbersToString(defaultNumbers));
             }
             int boards = boardCount;
             if (boards < 0) {
@@ -189,7 +189,7 @@ namespace SiggiChessBoard {
 
         // Makes this client show the set at index (in pieceSets, or -1 for none) for a ChessRules colour on every
         // board, whatever the board has synced, and tells each piece set listener (the board views,
-        // OnPieceSetOverrideChanged) when it changes. Refuses another index or an unknown colour (false).
+        // _OnPieceSetOverrideChanged) when it changes. Refuses another index or an unknown colour (false).
         public bool SetPieceSetOverride(int color, int index) {
             if (color != ChessRules.White && color != ChessRules.Black) return false;
             if (index != -1 && !IsPieceSetIndex(index)) return false;
@@ -197,7 +197,7 @@ namespace SiggiChessBoard {
             if (color == ChessRules.White) overrideWhitePieceSet = index;
             else overrideBlackPieceSet = index;
             for (int i = 0; i < pieceSetListeners.Length; i++) {
-                if (Utilities.IsValid(pieceSetListeners[i])) pieceSetListeners[i].OnPieceSetOverrideChanged(color);
+                if (Utilities.IsValid(pieceSetListeners[i])) pieceSetListeners[i]._OnPieceSetOverrideChanged(color);
             }
             return true;
         }
@@ -211,7 +211,7 @@ namespace SiggiChessBoard {
 
         // Tells view of every change to an override from now on (each board view adds itself on Start); adding one
         // twice changes nothing.
-        public void AddPieceSetListener(ChessBoardView view) {
+        public void _AddPieceSetListener(ChessBoardView view) {
             if (!Utilities.IsValid(view)) return;
             int count = pieceSetListeners.Length;
             for (int i = 0; i < count; i++) {
@@ -224,7 +224,7 @@ namespace SiggiChessBoard {
         }
 
         // Stops telling view of changes to the overrides.
-        public void RemovePieceSetListener(ChessBoardView view) {
+        public void _RemovePieceSetListener(ChessBoardView view) {
             int count = pieceSetListeners.Length;
             int index = -1;
             for (int i = 0; i < count && index < 0; i++) {
@@ -239,12 +239,12 @@ namespace SiggiChessBoard {
         }
 
         // How many piece set listeners there are, for tests.
-        public int PieceSetListenerCount() {
+        public int _PieceSetListenerCount() {
             return pieceSetListeners.Length;
         }
 
         // The setting bits from the editor fields.
-        public int EditorSettings() {
+        public int _EditorSettings() {
             int bits = 0;
             if (takebacksAllowed) bits |= SettingTakebacks;
             if (drawAgreement) bits |= SettingDrawAgreement;
@@ -259,8 +259,8 @@ namespace SiggiChessBoard {
             return bits;
         }
 
-        // The numeric settings from the editor fields, as entered (not yet corrected by FixNumbers).
-        public int[] EditorNumbers() {
+        // The numeric settings from the editor fields, as entered (not yet corrected by _FixNumbers).
+        public int[] _EditorNumbers() {
             int[] numbers = new int[NumberCount];
             numbers[NumberResetAvailableTime] = resetAvailableTime;
             numbers[NumberAutoResetTime] = autoResetTime;
@@ -316,11 +316,11 @@ namespace SiggiChessBoard {
         // client and on the owner. VRChat doesn't ask when the owner leaves: the next owner can be anyone, who then
         // owns the settings but can't change them (BeginChange refuses), and an organizer can still take it.
         public override bool OnOwnershipRequest(VRCPlayerApi requestingPlayer, VRCPlayerApi requestedOwner) {
-            return MayOwn(requestedOwner);
+            return _MayOwn(requestedOwner);
         }
 
         // Whether a player may own the arbiter: organizers only.
-        public bool MayOwn(VRCPlayerApi who) {
+        public bool _MayOwn(VRCPlayerApi who) {
             return IsOrganizer(who);
         }
 
@@ -332,12 +332,12 @@ namespace SiggiChessBoard {
             changes++;
         }
 
-        // Sets a numeric setting's instance default, corrected by FixNumbers (which can change another one: an
+        // Sets a numeric setting's instance default, corrected by _FixNumbers (which can change another one: an
         // auto-reset time below the reset-available time clamps the latter). False for an unknown number.
         public bool SetDefaultNumber(int number, int value) {
             if (number < 0 || number >= NumberCount) return false;
             defaultNumbers[number] = value;
-            FixNumbers(defaultNumbers);
+            _FixNumbers(defaultNumbers);
             changes++;
             return true;
         }
@@ -356,12 +356,12 @@ namespace SiggiChessBoard {
         }
 
         // The override mask bit for a numeric setting.
-        public static int OverrideNumberBit(int number) {
+        public static int _OverrideNumberBit(int number) {
             return 1 << (SettingCount + number);
         }
 
         // Setting bits combined from defaults and overrides: the masked bits from values, the rest from defaults.
-        public static int CombineSettings(int defaults, int mask, int values) {
+        public static int _CombineSettings(int defaults, int mask, int values) {
             return ((defaults & ~mask) | (values & mask)) & OverrideSettingsMask;
         }
 
@@ -389,7 +389,7 @@ namespace SiggiChessBoard {
         // Overrides a numeric setting on a board. The value is kept as given; EffectiveNumbers corrects the result.
         public bool SetNumberOverride(int board, int number, int value) {
             if (!HasBoard(board) || number < 0 || number >= NumberCount) return false;
-            overrideMask[board] |= OverrideNumberBit(number);
+            overrideMask[board] |= _OverrideNumberBit(number);
             overrideNumbers[board * NumberCount + number] = value;
             changes++;
             return true;
@@ -398,7 +398,7 @@ namespace SiggiChessBoard {
         // Makes a numeric setting use the default again on a board.
         public bool ClearNumberOverride(int board, int number) {
             if (!HasBoard(board) || number < 0 || number >= NumberCount) return false;
-            overrideMask[board] &= ~OverrideNumberBit(number);
+            overrideMask[board] &= ~_OverrideNumberBit(number);
             overrideNumbers[board * NumberCount + number] = 0;
             changes++;
             return true;
@@ -425,7 +425,7 @@ namespace SiggiChessBoard {
 
         // Whether a board overrides a numeric setting, and the value it overrides it with (0 if not overridden).
         public bool IsNumberOverridden(int board, int number) {
-            return HasBoard(board) && (overrideMask[board] & OverrideNumberBit(number)) != 0;
+            return HasBoard(board) && (overrideMask[board] & _OverrideNumberBit(number)) != 0;
         }
 
         public int NumberOverrideValue(int board, int number) {
@@ -437,7 +437,7 @@ namespace SiggiChessBoard {
         // A board's effective setting bits: its overrides, the instance defaults for the rest.
         public int EffectiveSettings(int board) {
             if (!HasBoard(board)) return defaultSettings;
-            return CombineSettings(defaultSettings, overrideMask[board], overrideSettings[board]);
+            return _CombineSettings(defaultSettings, overrideMask[board], overrideSettings[board]);
         }
 
         public bool IsEffectiveOn(int board, int setting) {
@@ -445,16 +445,16 @@ namespace SiggiChessBoard {
         }
 
         // Fills numbers (NumberCount long) with a board's effective numeric settings: its overrides, the instance
-        // defaults for the rest, then corrected by FixNumbers, since an overridden time can conflict with a default
+        // defaults for the rest, then corrected by _FixNumbers, since an overridden time can conflict with a default
         // one (e.g. an auto-reset time overridden below the default reset-available time clamps the latter).
         public void EffectiveNumbers(int board, int[] numbers) {
             bool has = HasBoard(board);
             int mask = has ? overrideMask[board] : 0;
             for (int i = 0; i < NumberCount; i++) {
-                numbers[i] = (mask & OverrideNumberBit(i)) != 0 ? overrideNumbers[board * NumberCount + i]
+                numbers[i] = (mask & _OverrideNumberBit(i)) != 0 ? overrideNumbers[board * NumberCount + i]
                     : defaultNumbers[i];
             }
-            FixNumbers(numbers);
+            _FixNumbers(numbers);
         }
 
         public int EffectiveNumber(int board, int number) {
@@ -466,7 +466,7 @@ namespace SiggiChessBoard {
         // Makes numeric settings valid, returning whether anything changed: any negative time becomes Never (or
         // NoClock), the reset-available time is at most the auto-reset time when both are times (docs/inactivity.md),
         // an unknown forced mode becomes Standard, and a negative increment becomes 0.
-        public static bool FixNumbers(int[] numbers) {
+        public static bool _FixNumbers(int[] numbers) {
             bool changed = false;
             if (numbers[NumberResetAvailableTime] < Never) {
                 numbers[NumberResetAvailableTime] = Never;
@@ -497,7 +497,7 @@ namespace SiggiChessBoard {
         }
 
         // Setting bits as text, e.g. "takebacks threefold", or "none".
-        public static string SettingsToString(int bits) {
+        public static string _SettingsToString(int bits) {
             string text = "";
             if ((bits & SettingTakebacks) != 0) text += " takebacks";
             if ((bits & SettingDrawAgreement) != 0) text += " agreement";
@@ -513,7 +513,7 @@ namespace SiggiChessBoard {
         }
 
         // Numeric settings as text, e.g. "resetAvailable=120 autoReset=600 forcedMode=0 forcedClock=600+0".
-        public static string NumbersToString(int[] numbers) {
+        public static string _NumbersToString(int[] numbers) {
             return "resetAvailable=" + numbers[NumberResetAvailableTime]
                 + " autoReset=" + numbers[NumberAutoResetTime]
                 + " forcedMode=" + numbers[NumberForcedMode]

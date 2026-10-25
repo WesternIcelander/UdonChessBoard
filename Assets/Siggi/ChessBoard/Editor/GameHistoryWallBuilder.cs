@@ -118,7 +118,7 @@ public static class GameHistoryWallBuilder {
     }
 
     // A row: a button over the row's area (clear until pointed at) with a GameHistoryRow calling the wall's
-    // SelectRow, and the row's text inside it.
+    // _SelectRow, and the row's text inside it.
     static void AddRow(GameObject root, GameHistoryWall wall, int index, TMP_FontAsset font, Vector2 topLeft, Vector2 extent) {
         GameObject rowObject = new GameObject("Row " + (index + 1), typeof(RectTransform));
         rowObject.layer = root.layer;
@@ -150,7 +150,7 @@ public static class GameHistoryWallBuilder {
         UdonSharpEditorUtility.CopyProxyToUdon(target);
         UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(target);
         UnityEventTools.AddStringPersistentListener(button.onClick, new UnityAction<string>(udon.SendCustomEvent),
-            "Press");
+            "_Press");
 
         TextMeshProUGUI text = NewText(rowObject, "Label", font, RowFontSize, new Vector2(RowInset, 0),
             new Vector2(extent.x - 2 * RowInset, extent.y));

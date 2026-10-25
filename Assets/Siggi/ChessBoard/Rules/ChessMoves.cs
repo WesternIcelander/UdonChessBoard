@@ -22,13 +22,13 @@ namespace SiggiChessBoard {
 
         // All pseudo-legal moves for the side to move, written to moves from index 0. Returns the count.
         // moves must hold at least MaxMoves.
-        public static int GenerateMoves(byte[] board, int[] state, int[] moves) {
+        public static int _GenerateMoves(byte[] board, int[] state, int[] moves) {
             int side = state[ChessPosition.StateSideToMove];
             int count = 0;
             for (int sq = 0; sq < 64; sq++) {
                 int piece = board[sq];
                 if (piece == ChessRules.Empty || ((piece >> 3) & 1) != side) continue;
-                count = GeneratePieceMoves(board, state, sq, moves, count);
+                count = _GeneratePieceMoves(board, state, sq, moves, count);
             }
             return count;
         }
@@ -36,14 +36,14 @@ namespace SiggiChessBoard {
         // The pseudo-legal moves of the piece on from, appended to moves at index count. Returns the new count.
         // The piece should belong to the side to move: the moves carry the state's castling rights and en passant,
         // which MakeMove expects to be the side to move's. Nothing for an empty square.
-        public static int GeneratePieceMoves(byte[] board, int[] state, int from, int[] moves, int count) {
+        public static int _GeneratePieceMoves(byte[] board, int[] state, int from, int[] moves, int count) {
             switch (board[from] & 7) {
-                case ChessRules.Pawn: return GeneratePawnMoves(board, state, from, moves, count);
-                case ChessRules.Knight: return GenerateKnightMoves(board, state, from, moves, count);
-                case ChessRules.Bishop: return GenerateSliderMoves(board, state, from, 4, 8, moves, count);
-                case ChessRules.Rook: return GenerateSliderMoves(board, state, from, 0, 4, moves, count);
-                case ChessRules.Queen: return GenerateSliderMoves(board, state, from, 0, 8, moves, count);
-                case ChessRules.King: return GenerateKingMoves(board, state, from, moves, count);
+                case ChessRules.Pawn: return _GeneratePawnMoves(board, state, from, moves, count);
+                case ChessRules.Knight: return _GenerateKnightMoves(board, state, from, moves, count);
+                case ChessRules.Bishop: return _GenerateSliderMoves(board, state, from, 4, 8, moves, count);
+                case ChessRules.Rook: return _GenerateSliderMoves(board, state, from, 0, 4, moves, count);
+                case ChessRules.Queen: return _GenerateSliderMoves(board, state, from, 0, 8, moves, count);
+                case ChessRules.King: return _GenerateKingMoves(board, state, from, moves, count);
                 default: return count;
             }
         }
@@ -61,7 +61,7 @@ namespace SiggiChessBoard {
         // Java MoveFinderPawn: one or two squares forward onto empty squares, diagonal captures of the other colour
         // (not of its own pieces, which the Java allowed) and en passant. A move to the last rank becomes four
         // promotions. A pawn on the first or last rank has no moves.
-        public static int GeneratePawnMoves(byte[] board, int[] state, int from, int[] moves, int count) {
+        public static int _GeneratePawnMoves(byte[] board, int[] state, int from, int[] moves, int count) {
             int piece = board[from];
             int color = (piece >> 3) & 1;
             int rank = from >> 3;
@@ -120,7 +120,7 @@ namespace SiggiChessBoard {
         }
 
         // Java MoveFinderKnight.
-        public static int GenerateKnightMoves(byte[] board, int[] state, int from, int[] moves, int count) {
+        public static int _GenerateKnightMoves(byte[] board, int[] state, int from, int[] moves, int count) {
             int color = (board[from] >> 3) & 1;
             int file = from & 7;
             int rank = from >> 3;
@@ -143,7 +143,7 @@ namespace SiggiChessBoard {
         // Java MoveFinderBishop/Rook/Queen: along the directions firstDirection up to (not including) lastDirection
         // of the line tables (0-4 rook, 4-8 bishop, 0-8 queen), up to and including the first piece if it can be
         // captured.
-        public static int GenerateSliderMoves(byte[] board, int[] state, int from, int firstDirection, int lastDirection,
+        public static int _GenerateSliderMoves(byte[] board, int[] state, int from, int firstDirection, int lastDirection,
             int[] moves, int count) {
             int piece = board[from];
             int color = (piece >> 3) & 1;
@@ -175,7 +175,7 @@ namespace SiggiChessBoard {
         }
 
         // Java MoveFinderKing: one step in each direction, then castling.
-        public static int GenerateKingMoves(byte[] board, int[] state, int from, int[] moves, int count) {
+        public static int _GenerateKingMoves(byte[] board, int[] state, int from, int[] moves, int count) {
             int color = (board[from] >> 3) & 1;
             int file = from & 7;
             int rank = from >> 3;
@@ -270,7 +270,7 @@ namespace SiggiChessBoard {
         // The squares of the pieces of byColor attacking square (as IsSquareAttacked, but all of them, for the check
         // lines, step 12.7), appended to attackers at index count while it has room. Returns the new count. At most 16
         // pieces attack one square (eight along the lines, the nearest pawns and king among them, and eight knights).
-        public static int SquareAttackers(byte[] board, int square, int byColor, int[] attackers, int count) {
+        public static int _SquareAttackers(byte[] board, int square, int byColor, int[] attackers, int count) {
             int file = square & 7;
             int rank = square >> 3;
             int colorBits = byColor << 3;
@@ -330,27 +330,27 @@ namespace SiggiChessBoard {
         // Java Board.getAllLegalMoves: all legal moves for the side to move, written to moves from index 0. Returns
         // the count. With prohibitSelfCheck (Java Board.prohibitSelfCheck, normally true) a move is kept only if it
         // doesn't leave the mover's king in check, and castling only if the king isn't in check and doesn't pass
-        // through or land on an attacked square. With it false this is GenerateMoves (for Fog of War, where the king
+        // through or land on an attacked square. With it false this is _GenerateMoves (for Fog of War, where the king
         // can be captured). moves must hold at least MaxMoves. The position is left as it was.
         public static int GenerateLegalMoves(byte[] board, int[] state, int[] moves, bool prohibitSelfCheck) {
-            int count = GenerateMoves(board, state, moves);
+            int count = _GenerateMoves(board, state, moves);
             if (!prohibitSelfCheck) return count;
-            return FilterLegalMoves(board, state, moves, 0, count);
+            return _FilterLegalMoves(board, state, moves, 0, count);
         }
 
         // The legal moves of the piece on from (see GenerateLegalMoves), appended to moves at index count. Returns
         // the new count.
         public static int GenerateLegalPieceMoves(byte[] board, int[] state, int from, int[] moves, int count,
             bool prohibitSelfCheck) {
-            int end = GeneratePieceMoves(board, state, from, moves, count);
+            int end = _GeneratePieceMoves(board, state, from, moves, count);
             if (!prohibitSelfCheck) return end;
-            return FilterLegalMoves(board, state, moves, count, end);
+            return _FilterLegalMoves(board, state, moves, count, end);
         }
 
         // Drops the moves in moves[start..count) that leave the side to move's king in check, or castle out of,
         // through or into check, keeping the others in order (docs/legality-checking.md: play the move, check the
         // king's square, undo). Returns the new count. The position is left as it was.
-        public static int FilterLegalMoves(byte[] board, int[] state, int[] moves, int start, int count) {
+        public static int _FilterLegalMoves(byte[] board, int[] state, int[] moves, int start, int count) {
             int mover = state[ChessPosition.StateSideToMove];
             int opponent = mover ^ 1;
             int kept = start;

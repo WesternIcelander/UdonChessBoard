@@ -525,9 +525,9 @@ public static class ChessBoardViewBuilder {
         Transform[] templates = new Transform[7];
         int added = 0;
         for (int type = ChessRules.Knight; type <= ChessRules.Queen; type++) {
-            templates[type] = set.PromotionTemplate(ChessRules.White, type);
+            templates[type] = set._PromotionTemplate(ChessRules.White, type);
             if (templates[type] != null) continue;
-            Transform piece = set.Template(ChessRules.White, type);
+            Transform piece = set._Template(ChessRules.White, type);
             Vector3 place = new Vector3((type - 1) * SlotSpacing * SquareSize, 0, 0);
             if (piece != null && piece.parent != null && piece.parent.parent == set.transform) {
                 place = piece.parent.localPosition;
@@ -668,15 +668,15 @@ public static class ChessBoardViewBuilder {
     }
 
     // The promotion ghosts (step 12.11), under "Promotion Ghosts": a knight, bishop, rook and queen (ChessBoardView
-    // GhostType order), each with the generated mesh and the Promotion Ghost material, a trigger box collider fitted to
-    // it (so players walk through it and a click still reaches it) and a ChessPromotionGhost promoting to its piece.
+    // _GhostType order), each with the generated mesh and the Promotion Ghost material, a trigger box collider fitted
+    // to it (so players walk through it and a click still reaches it) and a ChessPromotionGhost promoting to its piece.
     // Built hidden; the view dresses them in the promoting side's promotion templates and floats them over the pawn.
     static void AddPromotionGhosts(GameObject root, ChessBoardView view, Mesh[] meshes, Material ghostMaterial) {
         GameObject parent = new GameObject(PromotionGhostsName);
         parent.transform.SetParent(root.transform, false);
         view.promotionGhosts = new ChessPromotionGhost[ChessBoardView.GhostCount];
         for (int ghost = 0; ghost < ChessBoardView.GhostCount; ghost++) {
-            int type = ChessBoardView.GhostType(ghost);
+            int type = ChessBoardView._GhostType(ghost);
             GameObject ghostObject = new GameObject(TypeNames[type]);
             ghostObject.transform.SetParent(parent.transform, false);
             ghostObject.transform.localPosition = new Vector3((ghost - 1.5f) * SquareSize,
@@ -745,8 +745,8 @@ public static class ChessBoardViewBuilder {
         TextMeshProUGUI status = AddText(statusObject, font, 12, TextAlignmentOptions.Left, PaleText);
         status.richText = false;
         status.text = "";
-        GameObject importButton = AddBarButton(bar, font, udon, "Import", "PressImport", 1, out ui.pgnImportText);
-        AddBarButton(bar, font, udon, "Close", "PressPgnClose", 0, out ui.pgnCloseText);
+        GameObject importButton = AddBarButton(bar, font, udon, "Import", "_PressImport", 1, out ui.pgnImportText);
+        AddBarButton(bar, font, udon, "Close", "_PressPgnClose", 0, out ui.pgnCloseText);
         paste.SetActive(false);
 
         canvasObject.SetActive(false);
@@ -818,15 +818,16 @@ public static class ChessBoardViewBuilder {
         return buttonObject;
     }
 
-    // The UI's Press... event for each ChessBoardUI.Button* action, by action.
+    // The UI's _Press... event for each ChessBoardUI.Button* action, by action.
     static readonly string[] ButtonEvents = {
-        "PressJoinWhite", "PressJoinBlack", "PressMode", "PressClock", "PressStart", "PressContinue", "PressReset",
-        "PressResignWhite", "PressResignBlack", "PressOfferDrawWhite", "PressOfferDrawBlack", "PressAcceptDrawWhite",
-        "PressAcceptDrawBlack", "PressDeclineDrawWhite", "PressDeclineDrawBlack", "PressClaimDraw", "PressEnterReplay",
-        "PressLeaveReplay", "PressStepFirst", "PressStepBack", "PressStepForward", "PressStepLast",
-        "PressRequestTakebackWhite", "PressRequestTakebackBlack", "PressAcceptTakebackWhite",
-        "PressAcceptTakebackBlack", "PressDeclineTakebackWhite", "PressDeclineTakebackBlack", "PressLoadHere",
-        "PressPgn", "PressLoadPgn", "PressLeaveWhite", "PressLeaveBlack",
+        "_PressJoinWhite", "_PressJoinBlack", "_PressMode", "_PressClock", "_PressStart", "_PressContinue",
+        "_PressReset", "_PressResignWhite", "_PressResignBlack", "_PressOfferDrawWhite", "_PressOfferDrawBlack",
+        "_PressAcceptDrawWhite", "_PressAcceptDrawBlack", "_PressDeclineDrawWhite", "_PressDeclineDrawBlack",
+        "_PressClaimDraw", "_PressEnterReplay", "_PressLeaveReplay", "_PressStepFirst", "_PressStepBack",
+        "_PressStepForward", "_PressStepLast", "_PressRequestTakebackWhite", "_PressRequestTakebackBlack",
+        "_PressAcceptTakebackWhite", "_PressAcceptTakebackBlack", "_PressDeclineTakebackWhite",
+        "_PressDeclineTakebackBlack", "_PressLoadHere", "_PressPgn", "_PressLoadPgn", "_PressLeaveWhite",
+        "_PressLeaveBlack",
     };
     // The order of the buttons on a panel (the grid packs the shown ones in this order): the lobby's, replay's and
     // the game's, Reset last. Each panel leaves out the other colour's. Load it here (step 10.2b) and Load PGN (step
@@ -857,7 +858,7 @@ public static class ChessBoardViewBuilder {
     static readonly Vector2 ButtonCell = new Vector2(100, 44);
 
     // The board's buttons (steps 9.4a, 9.4b): a world-space canvas at each end of the table, leaning back towards
-    // that side's player, each with one button per action but the other colour's (ChessBoardUI.ButtonColor), so
+    // that side's player, each with one button per action but the other colour's (ChessBoardUI._ButtonColor), so
     // each end joins, resigns, offers and answers for its own colour. Every button calls the UI's Press... event for
     // its action; the UI shows only those whose action applies, and the grid packs the shown ones together.
     static void AddButtons(GameObject root, ChessBoardUI ui, float tableDepth) {
@@ -865,7 +866,7 @@ public static class ChessBoardViewBuilder {
         TMP_FontAsset font = DefaultFont();
         int perPanel = 0;
         foreach (int action in ButtonOrder) {
-            if (ChessBoardUI.ButtonColor(action) != ChessRules.Black) perPanel++;
+            if (ChessBoardUI._ButtonColor(action) != ChessRules.Black) perPanel++;
         }
         ui.buttons = new GameObject[2 * perPanel];
         ui.buttonActions = new int[2 * perPanel];
@@ -898,9 +899,10 @@ public static class ChessBoardViewBuilder {
             grid.constraintCount = PanelColumns;
             foreach (int action in ButtonOrder) {
                 // Each end acts only for its own colour.
-                if (ChessBoardUI.ButtonColor(action) == (white ? ChessRules.Black : ChessRules.White)) continue;
+                if (ChessBoardUI._ButtonColor(action) == (white ? ChessRules.Black : ChessRules.White)) continue;
                 int index = next++;
-                GameObject buttonObject = new GameObject(ButtonEvents[action].Substring(5), typeof(RectTransform));
+                GameObject buttonObject = new GameObject(ButtonEvents[action].Substring("_Press".Length),
+                    typeof(RectTransform));
                 buttonObject.layer = canvasObject.layer;
                 buttonObject.transform.SetParent(canvasObject.transform, false);
                 Image image = buttonObject.AddComponent<Image>();

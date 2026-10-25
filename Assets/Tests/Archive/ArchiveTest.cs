@@ -91,10 +91,10 @@ public class ArchiveTest : ChessTest {
         if (hasWall) RunWallPickGoneChecks();
         RunSyncChecks();
         RunOverwrittenRecentChecks();
-        archive.ClearArchive();
+        archive._ClearArchive();
         CheckInt(archive.GameCount(), 0, "end: archive emptied");
         if (hasWall) {
-            Check(wall.RefreshIfChanged(), "wall: redrawn once emptied", "not redrawn");
+            Check(wall._RefreshIfChanged(), "wall: redrawn once emptied", "not redrawn");
             CheckWallRows(0, 0, "wall: emptied");
             CheckString(wall.title.text, Text("wall_title_empty"), "wall: emptied, title");
         }
@@ -120,9 +120,9 @@ public class ArchiveTest : ChessTest {
 
         VRCPlayerApi local = Networking.LocalPlayer;
         Check(Networking.IsOwner(archive.gameObject), "ownership: local player owns the archive alone", "not owner");
-        Check(archive.AllReady(), "ownership: every holder ready", "a holder isn't ready");
-        Check(archive.holders[3].MayOwn(local), "ownership: archive owner may own a holder", "refused");
-        Check(!archive.recent.MayOwn(local), "ownership: nobody may own the recent holder", "allowed");
+        Check(archive._AllReady(), "ownership: every holder ready", "a holder isn't ready");
+        Check(archive.holders[3]._MayOwn(local), "ownership: archive owner may own a holder", "refused");
+        Check(!archive.recent._MayOwn(local), "ownership: nobody may own the recent holder", "allowed");
     }
 
     // ---- A game logged by the board ----
@@ -136,10 +136,10 @@ public class ArchiveTest : ChessTest {
             Check(archive.GameCount() > 0, "board: earlier tests' games archived",
                 board.loggedGames + " logged, none archived");
         }
-        Check(archive.ClearArchive(), "clear: accepted for the owner", "refused");
+        Check(archive._ClearArchive(), "clear: accepted for the owner", "refused");
         CheckInt(archive.GameCount(), 0, "clear: no games");
 
-        board.ClearState();
+        board._ClearState();
         string white = "Archive Ana";
         string black = "Archive Bo";
         board.JoinAs(ChessRules.White, white);
@@ -168,13 +168,13 @@ public class ArchiveTest : ChessTest {
         CheckInt(archive.MoveCountAt(0), 2, "board: two moves");
         archive.CopyMovesAt(0, scratch);
         Check(scratch[0] == move0 && scratch[1] == move1, "board: moves", "moves differ");
-        board.ClearState();
+        board._ClearState();
     }
 
     // ---- Adding: holders filled in order, read back, duplicates ----
 
     void RunAddChecks() {
-        archive.ClearArchive();
+        archive._ClearArchive();
         SaveSends();
         for (int n = 1; n <= 7; n++) Check(AddTestGame(n), "add: test-" + n + " accepted", "refused");
         CheckSends(5, 2, "add: holder 0 sent 5 times, holder 1 twice, the rest never");
@@ -189,8 +189,8 @@ public class ArchiveTest : ChessTest {
         }
         Check(inOrder, "add: holders filled in order", "sequences out of place");
         for (int i = 0; i < 7; i++) {
-            CheckInt(archive.SlotAt(i), i, "read: game " + i + " slot");
-            CheckInt(archive.SequenceAt(i), i + 1, "read: game " + i + " sequence");
+            CheckInt(archive._SlotAt(i), i, "read: game " + i + " slot");
+            CheckInt(archive._SequenceAt(i), i + 1, "read: game " + i + " sequence");
             CheckTestGame(i, i + 1);
         }
 
@@ -201,11 +201,11 @@ public class ArchiveTest : ChessTest {
         CheckInt(archive.GameCount(), 7, "duplicate: still 7 games");
         CheckSends(0, 0, "duplicate: nothing sent");
         int[] moves = new int[4];
-        Check(!archive.AddGame("", "", "W", "B", 0, 0, 0, "", -1, 0, moves, moves, 2), "refused: no game ID",
+        Check(!archive._AddGame("", "", "W", "B", 0, 0, 0, "", -1, 0, moves, moves, 2), "refused: no game ID",
             "accepted");
-        Check(!archive.AddGame("bad-1", "", "W", "B", 0, 0, 0, "", -1, 0, moves, moves, 0), "refused: no moves",
+        Check(!archive._AddGame("bad-1", "", "W", "B", 0, 0, 0, "", -1, 0, moves, moves, 0), "refused: no moves",
             "accepted");
-        Check(!archive.AddGame("bad-2", "", "W", "B", 0, 0, 0, "", -1, 0, moves, moves, 5),
+        Check(!archive._AddGame("bad-2", "", "W", "B", 0, 0, 0, "", -1, 0, moves, moves, 5),
             "refused: more moves than given", "accepted");
         CheckInt(archive.GameCount(), 7, "refused: still 7 games");
     }
@@ -221,10 +221,10 @@ public class ArchiveTest : ChessTest {
         CheckSends(1, 0, "wrap: the 51st game sends only holder 0");
         CheckInt(archive.GameCount(), Capacity, "wrap: still 50 games");
         CheckInt(archive.holders[0].sequences[0], Capacity + 1, "wrap: the 51st in holder 0 slot 0");
-        CheckInt(archive.SlotAt(Capacity - 1), 0, "wrap: newest read from slot 0");
+        CheckInt(archive._SlotAt(Capacity - 1), 0, "wrap: newest read from slot 0");
         bool ordered = true;
         for (int i = 0; i < Capacity; i++) {
-            if (archive.GameIdAt(i) != "test-" + (i + 2) || archive.SequenceAt(i) != i + 2) ordered = false;
+            if (archive.GameIdAt(i) != "test-" + (i + 2) || archive._SequenceAt(i) != i + 2) ordered = false;
         }
         Check(ordered, "wrap: read oldest first, test-2 to test-51", "order differs");
         CheckTestGame(0, 2);
@@ -232,7 +232,7 @@ public class ArchiveTest : ChessTest {
         AddTestGame(Capacity + 2);
         AddTestGame(Capacity + 3);
         CheckString(archive.GameIdAt(0), "test-4", "wrap: after two more, oldest test-4");
-        CheckInt(archive.SlotAt(Capacity - 1), 2, "wrap: newest in slot 2");
+        CheckInt(archive._SlotAt(Capacity - 1), 2, "wrap: newest in slot 2");
     }
 
     // ---- Recent games: kept locally, archived when the owner flushes ----
@@ -241,18 +241,18 @@ public class ArchiveTest : ChessTest {
         GameArchiveHolder recent = archive.recent;
         bool lastFive = true;
         for (int n = Capacity - 1; n <= Capacity + 3; n++) {
-            if (recent.SlotOf("test-" + n) < 0) lastFive = false;
+            if (recent._SlotOf("test-" + n) < 0) lastFive = false;
         }
-        Check(lastFive && recent.SlotOf("test-" + (Capacity - 2)) < 0, "recent: the last 5 games kept",
+        Check(lastFive && recent._SlotOf("test-" + (Capacity - 2)) < 0, "recent: the last 5 games kept",
             "the recent games differ");
         SaveSends();
-        Check(archive.StoreRecent("rec-1", "", "R W", "R B", 0, 0, 0, "", -1, 0, new int[] { 11, 12 },
+        Check(archive._StoreRecent("rec-1", "", "R W", "R B", 0, 0, 0, "", -1, 0, new int[] { 11, 12 },
             new int[] { 1, 2 }, 2), "recent: rec-1 stored", "refused");
-        archive.StoreRecent("rec-2", "x/1", "R W", "R B", 0, 0, 0, "", -1, 0, new int[] { 21 }, new int[] { 3 }, 1);
+        archive._StoreRecent("rec-2", "x/1", "R W", "R B", 0, 0, 0, "", -1, 0, new int[] { 21 }, new int[] { 3 }, 1);
         Check(!archive.IsArchived("rec-1") && !archive.IsArchived("rec-2"), "recent: stored only (no flush)",
             "archived");
         CheckSends(0, 0, "recent: nothing sent while only stored");
-        CheckInt(archive.Flush(), 2, "flush: two recent games archived");
+        CheckInt(archive._Flush(), 2, "flush: two recent games archived");
         CheckString(archive.GameIdAt(Capacity - 2), "rec-1", "flush: rec-1 second newest");
         CheckString(archive.GameIdAt(Capacity - 1), "rec-2", "flush: rec-2 newest");
         CheckString(archive.ContinuedFromAt(Capacity - 1), "x/1", "flush: rec-2's ContinuedFrom");
@@ -260,7 +260,7 @@ public class ArchiveTest : ChessTest {
         archive.CopyMovesAt(Capacity - 2, scratch);
         Check(scratch[0] == 11 && scratch[1] == 12, "flush: rec-1's moves read back", "differ");
         CheckString(archive.GameIdAt(0), "test-6", "flush: oldest now test-6");
-        CheckInt(archive.Flush(), 0, "flush: nothing more to add");
+        CheckInt(archive._Flush(), 0, "flush: nothing more to add");
     }
 
     // ---- A holder update arriving ----
@@ -268,29 +268,29 @@ public class ArchiveTest : ChessTest {
     void RunSyncChecks() {
         GameArchiveHolder holder = archive.holders[1];
         // Holder 1 holds test-6 to test-10; test-6 is the oldest game.
-        holder.PackState();
-        holder.Clear();
-        holder.ReceiveState();
+        holder._PackState();
+        holder._Clear();
+        holder._ReceiveState();
         CheckString(archive.GameIdAt(0), "test-6", "sync: holder 1 back from its update");
         CheckTestGame(0, 6);
         CheckTestGame(4, 10);
 
-        holder.PackState();
+        holder._PackState();
         holder.syncedMoves = new int[1];
-        holder.ReceiveState();
+        holder._ReceiveState();
         CheckString(archive.GameIdAt(0), "test-6", "sync: an invalid update ignored");
-        holder.PackState();
+        holder._PackState();
         holder.syncedGameIds = new string[GameArchiveHolder.Capacity];
-        holder.ReceiveState();
+        holder._ReceiveState();
         CheckString(archive.GameIdAt(0), "test-6", "sync: an update with a null string ignored");
         CheckTestGame(0, 6);
 
         GameArchiveHolder recent = archive.recent;
-        int recentSlot = recent.SlotOf("rec-2");
+        int recentSlot = recent._SlotOf("rec-2");
         recent.syncedSequences = new int[GameArchiveHolder.Capacity];
-        recent.ReceiveState();
-        CheckInt(recent.SlotOf("rec-2"), recentSlot, "sync: the recent holder ignores updates");
-        recent.PackState();
+        recent._ReceiveState();
+        CheckInt(recent._SlotOf("rec-2"), recentSlot, "sync: the recent holder ignores updates");
+        recent._PackState();
         CheckInt(recent.syncedMoves.Length, 0, "sync: the recent holder packs nothing");
     }
 
@@ -303,7 +303,7 @@ public class ArchiveTest : ChessTest {
         GameArchiveHolder recent = archive.recent;
         bool noneWaiting = true;
         for (int i = 0; i < GameArchiveHolder.Capacity; i++) {
-            if (archive.IsRecentWaiting(i)) noneWaiting = false;
+            if (archive._IsRecentWaiting(i)) noneWaiting = false;
         }
         Check(noneWaiting, "overwritten: the archived recent games aren't waiting", "one is");
         SaveSends();
@@ -311,33 +311,33 @@ public class ArchiveTest : ChessTest {
         for (int h = 0; h < HolderCount; h++) {
             for (int s = 0; s < GameArchiveHolder.Capacity; s++) {
                 int k = h * GameArchiveHolder.Capacity + s;
-                archive.holders[h].WriteSlot(s, 1001 + k, "other-" + k, "", "Other W", "Other B", 0, 0,
+                archive.holders[h]._WriteSlot(s, 1001 + k, "other-" + k, "", "Other W", "Other B", 0, 0,
                     ChessRules.NoColor, "", ChessArbiter.NoClock, 0, one, one, 1);
             }
-            archive.OnHolderChanged();
+            archive._OnHolderChanged();
         }
         CheckInt(archive.GameCount(), Capacity, "overwritten: 50 other games");
         CheckString(archive.GameIdAt(Capacity - 1), "other-" + (Capacity - 1), "overwritten: the newest is other-49");
         Check(!archive.IsArchived("rec-2") && !archive.IsArchived("test-53"),
             "overwritten: the recent games not archived again", "archived again");
         CheckSends(0, 0, "overwritten: nothing sent");
-        CheckInt(archive.Flush(), 0, "overwritten: a flush adds nothing");
+        CheckInt(archive._Flush(), 0, "overwritten: a flush adds nothing");
         noneWaiting = true;
         for (int i = 0; i < GameArchiveHolder.Capacity; i++) {
-            if (archive.IsRecentWaiting(i)) noneWaiting = false;
+            if (archive._IsRecentWaiting(i)) noneWaiting = false;
         }
         Check(noneWaiting, "overwritten: none waiting", "one is");
 
         // A game stored and never seen archived still waits and goes in; one already archived when stored doesn't.
-        archive.StoreRecent("rec-3", "", "R W", "R B", 0, 0, 0, "", -1, 0, one, one, 1);
-        Check(archive.IsRecentWaiting(recent.SlotOf("rec-3")), "overwritten: rec-3 stored, waiting", "not waiting");
-        CheckInt(archive.Flush(), 1, "overwritten: rec-3 archived");
+        archive._StoreRecent("rec-3", "", "R W", "R B", 0, 0, 0, "", -1, 0, one, one, 1);
+        Check(archive._IsRecentWaiting(recent._SlotOf("rec-3")), "overwritten: rec-3 stored, waiting", "not waiting");
+        CheckInt(archive._Flush(), 1, "overwritten: rec-3 archived");
         CheckString(archive.GameIdAt(Capacity - 1), "rec-3", "overwritten: rec-3 newest");
-        Check(!archive.IsRecentWaiting(recent.SlotOf("rec-3")), "overwritten: rec-3 no longer waiting", "waiting");
-        archive.StoreRecent("other-49", "", "Other W", "Other B", 0, 0, 0, "", -1, 0, one, one, 1);
-        Check(!archive.IsRecentWaiting(recent.SlotOf("other-49")), "overwritten: an archived game stored, not waiting",
-            "waiting");
-        CheckInt(archive.Flush(), 0, "overwritten: nothing more to add");
+        Check(!archive._IsRecentWaiting(recent._SlotOf("rec-3")), "overwritten: rec-3 no longer waiting", "waiting");
+        archive._StoreRecent("other-49", "", "Other W", "Other B", 0, 0, 0, "", -1, 0, one, one, 1);
+        Check(!archive._IsRecentWaiting(recent._SlotOf("other-49")), 
+            "overwritten: an archived game stored, not waiting", "waiting");
+        CheckInt(archive._Flush(), 0, "overwritten: nothing more to add");
     }
 
     // ---- The games archived before the checks, kept and put back, so the wall shows them afterwards ----
@@ -387,7 +387,7 @@ public class ArchiveTest : ChessTest {
             System.Array.Copy(savedMoves, savedOffsets[i], moves, 0, count);
             System.Array.Copy(savedClocks, savedOffsets[i], clocks, 0, count);
             int at = i * InfoLength;
-            archive.AddGame(savedIds[i], savedContinuedFroms[i], savedWhites[i], savedBlacks[i], savedInfos[at],
+            archive._AddGame(savedIds[i], savedContinuedFroms[i], savedWhites[i], savedBlacks[i], savedInfos[at],
                 savedInfos[at + 1], savedInfos[at + 2], savedFens[i], savedInfos[at + 3], savedInfos[at + 4], moves,
                 clocks, count);
         }
@@ -400,7 +400,7 @@ public class ArchiveTest : ChessTest {
         }
         Check(same, "end: the games put back read back oldest first", "a game differs");
         if (!hasWall) return;
-        wall.RefreshIfChanged();
+        wall._RefreshIfChanged();
         bool shown = savedCount == 0 || wall.rows[savedCount - 1].text != "";
         if (savedCount < wall.rows.Length && wall.rows[savedCount].text != "") shown = false;
         Check(shown, "end: the wall shows the " + savedCount + " game(s) put back", "its rows don't");
@@ -429,8 +429,8 @@ public class ArchiveTest : ChessTest {
 
     // After RunBoardChecks: the board's game alone on the wall.
     void RunWallBoardChecks() {
-        Check(wall.RefreshIfChanged(), "wall: redrawn after the board's game", "not redrawn");
-        Check(!wall.RefreshIfChanged(), "wall: not redrawn again without a change", "redrawn");
+        Check(wall._RefreshIfChanged(), "wall: redrawn after the board's game", "not redrawn");
+        Check(!wall._RefreshIfChanged(), "wall: not redrawn again without a change", "redrawn");
         CheckString(wall.title.text, Text("wall_title"), "wall: board's game, title");
         CheckString(wall.rows[0].text, Row("wall_row", 1, "Archive Ana", "Archive Bo", Text("ending_unfinished"), "*",
             1), "wall: board's game, row");
@@ -443,7 +443,7 @@ public class ArchiveTest : ChessTest {
 
     // After RunAddChecks: test-1 to test-7.
     void RunWallAddChecks() {
-        Check(wall.RefreshIfChanged(), "wall: redrawn after adding", "not redrawn");
+        Check(wall._RefreshIfChanged(), "wall: redrawn after adding", "not redrawn");
         CheckString(wall.title.text, Text("wall_title"), "wall: 7 games, title");
         CheckString(wall.rows[0].text, Row("wall_row_chess960", 1, "White 1", "Black 1",
             Text("ending_checkmate_black"), "0-1", 1), "wall: 7 games, test-1's row");
@@ -452,12 +452,12 @@ public class ArchiveTest : ChessTest {
 
     // After RunWrapChecks: full and wrapped, test-4 to test-53, oldest first across every holder.
     void RunWallFullChecks() {
-        Check(wall.RefreshIfChanged(), "wall: redrawn after wrapping", "not redrawn");
+        Check(wall._RefreshIfChanged(), "wall: redrawn after wrapping", "not redrawn");
         CheckString(wall.title.text, Text("wall_title"), "wall: full, title");
         CheckWallRows(4, Capacity, "wall: full, test-4 to test-53");
         CheckString(wall.rows[Capacity - 1].text, ExpectedRow(Capacity + 3), "wall: full, the newest last");
         // Picked for RunWallPickGoneChecks, after RunRecentChecks overwrites it.
-        wall.SelectRow(0);
+        wall._SelectRow(0);
         CheckString(wall.selectedGameId, "test-4", "pick: the oldest game picked");
     }
 
@@ -475,7 +475,7 @@ public class ArchiveTest : ChessTest {
 
     // How a game ended, as the wall writes it (its game texts).
     string WallEndingText(int ending, int winner) {
-        return ChessBoardUI.EndingText(wall.GameTexts(), ending, winner);
+        return ChessBoardUI._EndingText(wall._GameTexts(), ending, winner);
     }
 
     // Test game n's row (AddTestGame): its sequence is n, as each was archived in turn.
@@ -505,7 +505,7 @@ public class ArchiveTest : ChessTest {
             return;
         }
         string firstId = archive.GameIdAt(0);
-        board.ClearState();
+        board._ClearState();
         string white = "Load Ana";
         string black = "Load Bo";
         board.JoinAs(ChessRules.White, white);
@@ -517,10 +517,10 @@ public class ArchiveTest : ChessTest {
         CheckInt(board.PieceDroppedAs(black, Sq("d8"), Sq("h4")), ChessBoard.InputAccepted, "load: Qh4#");
         CheckInt(board.ending, ChessGame.EndingCheckmate, "load: fool's mate ended by checkmate");
         string mateId = board.gameId;
-        board.ClearState();
+        board._ClearState();
         CheckInt(archive.GameCount(), 2, "load: fool's mate archived");
         if (archive.GameCount() != 2 || archive.GameIdAt(1) != mateId) return;
-        wall.RefreshIfChanged();
+        wall._RefreshIfChanged();
 
         // Picking on the wall.
         bool targets = wall.rowTargets.Length == wall.rows.Length;
@@ -529,25 +529,25 @@ public class ArchiveTest : ChessTest {
             if (!Utilities.IsValid(target) || target.wall != wall || target.index != i) targets = false;
         }
         Check(targets, "pick: every row has its target", "a row's target is missing or wrong (Create History Wall)");
-        wall.ClearSelection();
+        wall._ClearSelection();
         int changes = wall.selectionChanges;
-        wall.SelectRow(5);
-        Check(!wall.HasSelection() && wall.selectionChanges == changes, "pick: an empty row picks nothing",
+        wall._SelectRow(5);
+        Check(!wall._HasSelection() && wall.selectionChanges == changes, "pick: an empty row picks nothing",
             "picked " + wall.selectedGameId);
-        if (targets) wall.rowTargets[1].Press();
-        else wall.SelectRow(1);
+        if (targets) wall.rowTargets[1]._Press();
+        else wall._SelectRow(1);
         CheckString(wall.selectedGameId, mateId, "pick: row 2 picks the fool's mate");
-        CheckInt(wall.SelectedIndex(), 1, "pick: its index");
+        CheckInt(wall._SelectedIndex(), 1, "pick: its index");
         Check(wall.selectionChanges == changes + 1, "pick: counted as a change", "changes " + wall.selectionChanges);
         Check(wall.rows[1].color == wall.selectedColor && wall.rows[0].color == wall.rowColor,
             "pick: only the picked row coloured", "row 1 " + wall.rows[0].color + ", row 2 " + wall.rows[1].color);
-        wall.SelectRow(1);
-        Check(!wall.HasSelection() && wall.selectedGameId == "", "pick: pressed again, unpicked",
+        wall._SelectRow(1);
+        Check(!wall._HasSelection() && wall.selectedGameId == "", "pick: pressed again, unpicked",
             "still " + wall.selectedGameId);
         Check(wall.rows[1].color == wall.rowColor, "pick: unpicked, its row uncoloured", "" + wall.rows[1].color);
-        wall.SelectRow(0);
+        wall._SelectRow(0);
         CheckString(wall.selectedGameId, firstId, "pick: row 1 picks the board's first game");
-        wall.SelectRow(1);
+        wall._SelectRow(1);
         CheckString(wall.selectedGameId, mateId, "pick: another row replaces the pick");
         Check(wall.rows[0].color == wall.rowColor, "pick: replaced, the first row uncoloured", "" + wall.rows[0].color);
 
@@ -557,27 +557,27 @@ public class ArchiveTest : ChessTest {
             + "then Create Archive Test again)");
         if (hasUI) {
             CheckLoadButton(true, "Load it here: shown on a reset board with a game picked");
-            CheckString(ui.ButtonText(ChessBoardUI.ButtonLoadHere), Text("button_load_here"), "Load it here: label");
+            CheckString(ui._ButtonText(ChessBoardUI.ButtonLoadHere), Text("button_load_here"), "Load it here: label");
             board.JoinAs(ChessRules.White, white);
             CheckLoadButton(false, "Load it here: hidden in the lobby");
-            CheckInt(ui.PressButton(ChessBoardUI.ButtonLoadHere), ChessBoard.InputRejected,
+            CheckInt(ui._PressButton(ChessBoardUI.ButtonLoadHere), ChessBoard.InputRejected,
                 "Load it here: refused in the lobby");
             CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "Load it here: refused, still in the lobby");
             CheckInt(board.LoadArchivedGame(mateId), ChessBoard.InputRejected, "load: refused in the lobby");
-            board.ClearState();
-            wall.ClearSelection();
+            board._ClearState();
+            wall._ClearSelection();
             CheckLoadButton(false, "Load it here: hidden with nothing picked");
-            CheckInt(ui.PressButton(ChessBoardUI.ButtonLoadHere), ChessBoard.InputRejected,
+            CheckInt(ui._PressButton(ChessBoardUI.ButtonLoadHere), ChessBoard.InputRejected,
                 "Load it here: refused with nothing picked");
             CheckInt(board.lifecycle, ChessBoard.LifecycleReset, "Load it here: refused, the board still reset");
-            wall.SelectRow(1);
+            wall._SelectRow(1);
         }
         CheckInt(board.LoadArchivedGame("no-such-game"), ChessBoard.InputRejected, "load: a game not archived refused");
         CheckInt(board.LoadArchivedGame(""), ChessBoard.InputRejected, "load: no ID refused");
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, "load: refused, the board still reset");
 
         // The fool's mate, loaded through the button.
-        int loaded = hasUI ? ui.PressButton(ChessBoardUI.ButtonLoadHere) : board.LoadArchivedGame(mateId);
+        int loaded = hasUI ? ui._PressButton(ChessBoardUI.ButtonLoadHere) : board.LoadArchivedGame(mateId);
         CheckInt(loaded, ChessBoard.InputAccepted, "load: fool's mate loaded");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "load: the board in its loaded state");
         Check(board.replayMode, "load: in replay", "not in replay");
@@ -596,43 +596,43 @@ public class ArchiveTest : ChessTest {
         CheckString(board.replaySourceResult, "0-1", "load: result 0-1");
         CheckInt(board.ending, ChessGame.EndingCheckmate, "load: ended by checkmate");
         CheckInt(board.winner, ChessRules.Black, "load: Black won");
-        CheckString(board.loadedBy, ChessUtil.LocalName(""), "load: the local player keeps the board (step 13.2)");
+        CheckString(board.loadedBy, ChessUtil._LocalName(""), "load: the local player keeps the board (step 13.2)");
         if (hasUI) {
-            Check(!wall.HasSelection(), "Load it here: the pick cleared once loaded", "still " + wall.selectedGameId);
+            Check(!wall._HasSelection(), "Load it here: the pick cleared once loaded", "still " + wall.selectedGameId);
             CheckLoadButton(false, "Load it here: hidden on the loaded board");
         }
-        CheckInt(board.FirstMissingNotation(), 0, "notation: none on loading (the archive keeps none)");
-        Check(board.FillNotationFor(float.MaxValue), "notation: filled in", "gaps left");
+        CheckInt(board._FirstMissingNotation(), 0, "notation: none on loading (the archive keeps none)");
+        Check(board._FillNotationFor(float.MaxValue), "notation: filled in", "gaps left");
         CheckString(NotationText(board, 4), "f3 e5 g4 Qh4#", "notation: the fool's mate's");
         CheckInt(board.LoadArchivedGame(firstId), ChessBoard.InputRejected, "load: refused on a loaded board");
 
         // The unfinished game: no result.
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.LoadArchivedGame(firstId), ChessBoard.InputAccepted, "load: the unfinished game loaded");
         CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "load: unfinished, the loaded state");
         CheckString(board.replaySourceResult, "*", "load: unfinished, result *");
         CheckInt(board.ending, ChessGame.EndingNone, "load: unfinished, no result");
-        Check(board.FillNotationFor(float.MaxValue), "notation: unfinished, filled in", "gaps left");
+        Check(board._FillNotationFor(float.MaxValue), "notation: unfinished, filled in", "gaps left");
         CheckString(NotationText(board, 2), "e4 c5", "notation: unfinished, the game's");
-        board.ClearState();
+        board._ClearState();
         CheckInt(board.LoadArchivedGameAs("Lena", firstId), ChessBoard.InputAccepted, "load: as Lena");
         CheckString(board.loadedBy, "Lena", "load: as Lena, Lena keeps the board");
         Check(board.IsLockedToLoader(), "load: as Lena, locked to her", "not locked");
-        board.ClearState();
-        if (hasUI) ui.UpdateButtons();
+        board._ClearState();
+        if (hasUI) ui._UpdateButtons();
     }
 
     // After RunWallFullChecks picked the oldest game (test-4) and RunRecentChecks overwrote it: the pick is gone.
     void RunWallPickGoneChecks() {
-        wall.RefreshIfChanged();
-        Check(!wall.HasSelection() && wall.selectedGameId == "", "pick: overwritten in the archive, unpicked",
+        wall._RefreshIfChanged();
+        Check(!wall._HasSelection() && wall.selectedGameId == "", "pick: overwritten in the archive, unpicked",
             "still " + wall.selectedGameId);
     }
 
     // Every Load it here button is shown (or hidden) after the UI brings its buttons up to date, and the UI's
-    // ButtonApplies agrees.
+    // _ButtonApplies agrees.
     void CheckLoadButton(bool shown, string name) {
-        ui.UpdateButtons();
+        ui._UpdateButtons();
         string errors = "";
         int found = 0;
         for (int i = 0; i < ui.buttons.Length && i < ui.buttonActions.Length; i++) {
@@ -641,7 +641,7 @@ public class ArchiveTest : ChessTest {
             if (ui.buttons[i].activeSelf != shown) errors += "button " + i + (shown ? " hidden; " : " shown; ");
         }
         if (found == 0) errors += "no Load it here button (Create Board View); ";
-        if (ui.ButtonApplies(ChessBoardUI.ButtonLoadHere) != shown) errors += "applies " + !shown + "; ";
+        if (ui._ButtonApplies(ChessBoardUI.ButtonLoadHere) != shown) errors += "applies " + !shown + "; ";
         Check(errors.Length == 0, name, errors);
     }
 
@@ -657,7 +657,7 @@ public class ArchiveTest : ChessTest {
             moves[k] = n * 100 + k;
             clocks[k] = n * 1000 + k;
         }
-        return archive.AddGame("test-" + n, n % 3 == 0 ? "prev-" + n + "/4" : "", "White " + n, "Black " + n, n % 2,
+        return archive._AddGame("test-" + n, n % 3 == 0 ? "prev-" + n + "/4" : "", "White " + n, "Black " + n, n % 2,
             n % 11, n % 3 - 1 < 0 ? ChessRules.NoColor : n % 2, "fen " + n, n % 4 == 0 ? ChessArbiter.NoClock : n * 10,
             n % 5, moves, clocks, count);
     }

@@ -6,7 +6,7 @@ using VRC.SDK3.Components;
 using VRC.SDKBase;
 
 // Step 12.13 to 12.16 test behaviour (PLAN.md 12.13 to 12.16, docs/board-2d.md): the 2D board view, ChessBoard2DView.
-// Stepping is checked on its own (StepTarget, with five boards) and on the scene's boards through the view: which
+// Stepping is checked on its own (_StepTarget, with five boards) and on the scene's boards through the view: which
 // board it shows, that it listens to that one only, its pieces, highlights, board label and texts against the board
 // and the board's UI's texts, as moves are played. Then its own replay (12.14): the step buttons, following the game,
 // the board's replay and takebacks, switching board, locking to one board, the move list (12.15) and a long game's
@@ -89,24 +89,24 @@ public class Board2DTest : ChessTest {
     void RunStepTargetChecks() {
         // Boards 1 to 5 with only 2 and 4 in use (indices 1 and 3).
         bool[] inUse = { false, true, false, true, false };
-        CheckInt(ChessBoard2DView.StepTarget(inUse, 1, 1), 3, "step: right from 2 to 4");
-        CheckInt(ChessBoard2DView.StepTarget(inUse, 3, 1), 1, "step: right from 4 wraps to 2");
-        CheckInt(ChessBoard2DView.StepTarget(inUse, 3, -1), 1, "step: left from 4 to 2");
-        CheckInt(ChessBoard2DView.StepTarget(inUse, 1, -1), 3, "step: left from 2 wraps to 4");
-        CheckInt(ChessBoard2DView.StepTarget(inUse, 0, 1), 1, "step: right from reset 1 to 2");
-        CheckInt(ChessBoard2DView.StepTarget(inUse, 0, -1), 3, "step: left from reset 1 wraps to 4");
-        CheckInt(ChessBoard2DView.StepTarget(inUse, 4, 1), 1, "step: right from reset 5 wraps to 2");
-        CheckInt(ChessBoard2DView.StepTarget(inUse, 2, -1), 1, "step: left from reset 3 to 2");
-        CheckInt(ChessBoard2DView.StepTarget(inUse, -1, 1), 1, "step: right from none to 2");
-        CheckInt(ChessBoard2DView.StepTarget(inUse, -1, -1), 3, "step: left from none to 4");
+        CheckInt(ChessBoard2DView._StepTarget(inUse, 1, 1), 3, "step: right from 2 to 4");
+        CheckInt(ChessBoard2DView._StepTarget(inUse, 3, 1), 1, "step: right from 4 wraps to 2");
+        CheckInt(ChessBoard2DView._StepTarget(inUse, 3, -1), 1, "step: left from 4 to 2");
+        CheckInt(ChessBoard2DView._StepTarget(inUse, 1, -1), 3, "step: left from 2 wraps to 4");
+        CheckInt(ChessBoard2DView._StepTarget(inUse, 0, 1), 1, "step: right from reset 1 to 2");
+        CheckInt(ChessBoard2DView._StepTarget(inUse, 0, -1), 3, "step: left from reset 1 wraps to 4");
+        CheckInt(ChessBoard2DView._StepTarget(inUse, 4, 1), 1, "step: right from reset 5 wraps to 2");
+        CheckInt(ChessBoard2DView._StepTarget(inUse, 2, -1), 1, "step: left from reset 3 to 2");
+        CheckInt(ChessBoard2DView._StepTarget(inUse, -1, 1), 1, "step: right from none to 2");
+        CheckInt(ChessBoard2DView._StepTarget(inUse, -1, -1), 3, "step: left from none to 4");
         bool[] none = { false, false, false, false, false };
-        CheckInt(ChessBoard2DView.StepTarget(none, 3, 1), -1, "step: all reset, right does nothing");
-        CheckInt(ChessBoard2DView.StepTarget(none, 3, -1), -1, "step: all reset, left does nothing");
+        CheckInt(ChessBoard2DView._StepTarget(none, 3, 1), -1, "step: all reset, right does nothing");
+        CheckInt(ChessBoard2DView._StepTarget(none, 3, -1), -1, "step: all reset, left does nothing");
         bool[] onlyFour = { false, false, false, true, false };
-        CheckInt(ChessBoard2DView.StepTarget(onlyFour, 3, 1), -1, "step: only the board shown in use, right stays");
-        CheckInt(ChessBoard2DView.StepTarget(onlyFour, 3, -1), -1, "step: only the board shown in use, left stays");
-        CheckInt(ChessBoard2DView.StepTarget(onlyFour, 1, 1), 3, "step: from reset 2 to the only one in use");
-        CheckInt(ChessBoard2DView.StepTarget(new bool[0], 0, 1), -1, "step: no boards");
+        CheckInt(ChessBoard2DView._StepTarget(onlyFour, 3, 1), -1, "step: only the board shown in use, right stays");
+        CheckInt(ChessBoard2DView._StepTarget(onlyFour, 3, -1), -1, "step: only the board shown in use, left stays");
+        CheckInt(ChessBoard2DView._StepTarget(onlyFour, 1, 1), 3, "step: from reset 2 to the only one in use");
+        CheckInt(ChessBoard2DView._StepTarget(new bool[0], 0, 1), -1, "step: no boards");
     }
 
     // ---- Wiring ----
@@ -181,7 +181,7 @@ public class Board2DTest : ChessTest {
         CheckShown(1, s + ": left from the first wraps to the second");
 
         CheckInt(second.ResetBoardAs(Ana, true), ChessBoard.InputAccepted, s + ": the second board reset while shown");
-        view.Refresh();
+        view._Refresh();
         CheckShown(1, s + ": the second board still shown once reset");
         CheckString(view.statusLabel.text, Text("status_reset"), s + ": the reset board's status");
         view.PressRight();
@@ -219,17 +219,17 @@ public class Board2DTest : ChessTest {
         first.SetModeAs(Ana, ChessGame.ModeStandard);
         first.SetClockAs(Ana, ChessArbiter.NoClock, 0);
         CheckInt(first.StartGameAs(Ana), ChessBoard.InputAccepted, s + ": started");
-        view.Refresh();
+        view._Refresh();
         CheckView(s + ": the game started");
         CheckInt(first.PieceDroppedAs(Ana, Sq("e2"), Sq("e4")), ChessBoard.InputAccepted, s + ": e4");
-        view.Refresh();
+        view._Refresh();
         CheckView(s + ": e4");
         CheckSquareColor("e2", true, false, s + ": e4, e2 tinted");
         CheckSquareColor("e4", true, false, s + ": e4, e4 tinted");
         CheckSquareColor("d2", false, false, s + ": e4, d2 not tinted");
         CheckInt(first.PieceDroppedAs(Bo, Sq("f7"), Sq("f6")), ChessBoard.InputAccepted, s + ": f6");
         CheckInt(first.PieceDroppedAs(Ana, Sq("d1"), Sq("h5")), ChessBoard.InputAccepted, s + ": Qh5+");
-        view.Refresh();
+        view._Refresh();
         CheckView(s + ": Qh5+");
         CheckSquareColor("e8", false, true, s + ": Qh5+, Black's king red");
         CheckString(view.statusLabel.text, ColorLine("status_to_move_in_check", ChessRules.Black),
@@ -237,17 +237,17 @@ public class Board2DTest : ChessTest {
         // The board's replay at ply 1 leaves the view on the latest (12.14).
         CheckInt(first.EnterReplayAs(Ana, false), ChessBoard.InputAccepted, s + ": replay entered");
         CheckInt(first.StepToAs(Ana, false, 1), ChessBoard.InputAccepted, s + ": replay at ply 1");
-        view.Refresh();
+        view._Refresh();
         CheckView(s + ": the board's replay at ply 1, the view on the latest");
         Check(view.statusLabel.text == ColorLine("status_to_move_in_check", ChessRules.Black),
             s + ": the board's replay at ply 1, no replay line", "got \"" + view.statusLabel.text + "\"");
         CheckSquareColor("e8", false, true, s + ": the board's replay at ply 1, Black's king still red");
         CheckInt(first.LeaveReplayAs(Ana, false), ChessBoard.InputAccepted, s + ": replay left");
-        view.Refresh();
+        view._Refresh();
         CheckView(s + ": back to the game");
         // A change on the board not shown leaves the view as it is.
         CheckInt(second.JoinAs(ChessRules.White, Bo), ChessBoard.InputAccepted, s + ": Bo joins the second board");
-        view.Refresh();
+        view._Refresh();
         CheckView(s + ": the second board changed, the first still shown");
     }
 
@@ -317,7 +317,7 @@ public class Board2DTest : ChessTest {
         view.PressLast();
         CheckViewAt(FenAfterNc6, 4, s + ": >> to the latest");
         Check(view.IsOnLatest(), s + ": >> on the latest", "not on the latest");
-        CheckString(view.statusLabel.text, ChessBoardUI.StatusTextFor(first, first.ServerTime(), view.GameTexts()),
+        CheckString(view.statusLabel.text, ChessBoardUI._StatusTextFor(first, first._ServerTime(), view._GameTexts()),
             s + ": >> the board's status, no replay line");
         CheckSteps(true, true, false, false, s + ": >> the latest");
         view.PressForward();
@@ -332,22 +332,22 @@ public class Board2DTest : ChessTest {
 
         // Following the game.
         Play(first, "f1", "b5", s);
-        view.Refresh();
+        view._Refresh();
         CheckView(s + ": on the latest, Bb5 moves it on to ply 5");
         view.PressBack();
         CheckInt(view.ViewPly(), 4, s + ": one back, ply 4");
         Play(first, "a7", "a6", s);
-        view.Refresh();
+        view._Refresh();
         CheckViewAt(FenAfterNc6, 4, s + ": one back, a6 leaves it at ply 4");
         CheckStatusEnds(ReplayLine("2...", "Nc6", 4, 6), s + ": a6, still ply 4");
         CheckSteps(true, true, true, true, s + ": ply 4 of 6");
 
         // The board's replay leaves the view where it is, and the view steps through the game meanwhile.
         CheckInt(first.EnterReplayAs(Ana, false), ChessBoard.InputAccepted, s + ": the board enters replay");
-        view.Refresh();
+        view._Refresh();
         CheckViewAt(FenAfterNc6, 4, s + ": the board entering replay, the view at ply 4");
         CheckInt(first.StepToAs(Ana, false, 1), ChessBoard.InputAccepted, s + ": the board steps to ply 1");
-        view.Refresh();
+        view._Refresh();
         CheckViewAt(FenAfterNc6, 4, s + ": the board at ply 1, the view at ply 4");
         CheckStatusEnds(ReplayLine("2...", "Nc6", 4, 6), s + ": the board at ply 1, the view's replay line");
         view.PressFirst();
@@ -355,63 +355,63 @@ public class Board2DTest : ChessTest {
         view.PressLast();
         CheckInt(view.ViewPly(), 6, s + ": the board in replay, >> to the latest");
         CheckGamePosition(s + ": the board in replay, >> shows the game's position");
-        CheckInt(first.ReplayPieceDroppedAs(Ana, false, Sq("d2"), Sq("d4")), ChessBoard.InputAccepted,
+        CheckInt(first._ReplayPieceDroppedAs(Ana, false, Sq("d2"), Sq("d4")), ChessBoard.InputAccepted,
             s + ": a free move on the board");
-        view.Refresh();
+        view._Refresh();
         CheckGamePosition(s + ": a free move, the view still on the game's position");
         view.PressBack();
         CheckInt(view.ViewPly(), 5, s + ": < from the latest during the board's replay");
         CheckInt(first.StepToAs(Ana, false, 2), ChessBoard.InputAccepted, s + ": the board steps to ply 2");
         CheckInt(first.LeaveReplayAs(Ana, false), ChessBoard.InputAccepted, s + ": the board leaves replay");
-        view.Refresh();
+        view._Refresh();
         CheckInt(view.ViewPly(), 5, s + ": the board left replay, the view at ply 5");
 
         // A takeback above the ply shown leaves it; one below it brings the view to the new latest.
         view.ShowPly(2);
         TakeBack(first, 4, s);
-        view.Refresh();
+        view._Refresh();
         CheckInt(view.ViewPly(), 2, s + ": a takeback to ply 4 above the view's 2 leaves it");
         Check(!view.IsOnLatest(), s + ": the takeback above, not on the latest", "on the latest");
         Play(first, "f1", "b5", s);
         view.ShowPly(4);
         TakeBack(first, 2, s);
-        view.Refresh();
+        view._Refresh();
         CheckInt(view.ViewPly(), 2, s + ": a takeback to ply 2 below the view's 4 brings it to the latest");
         Check(view.IsOnLatest(), s + ": the takeback below, on the latest", "not on the latest");
         CheckGamePosition(s + ": the takeback below, the game's position");
         Play(first, "g1", "f3", s);
-        view.Refresh();
+        view._Refresh();
         CheckInt(view.ViewPly(), 3, s + ": after the takeback, following the game");
 
         // A synced ply arriving before the board's moves (a late joiner): the latest meanwhile, then that ply once the
         // game reaches beyond it.
-        view.ReceivePly(5);
+        view._ReceivePly(5);
         CheckInt(view.ViewPly(), 3, s + ": ply 5 received with 3 moves here, the latest meanwhile");
         Play(first, "b8", "c6", s);
-        view.Refresh();
+        view._Refresh();
         CheckInt(view.ViewPly(), 4, s + ": ply 5 waiting, 4 moves here, still the latest");
         Play(first, "f1", "b5", s);
         Play(first, "a7", "a6", s);
-        view.Refresh();
+        view._Refresh();
         CheckInt(view.ViewPly(), 5, s + ": the game reaches beyond ply 5, shown");
         Check(!view.IsOnLatest(), s + ": the received ply 5, not on the latest", "on the latest");
-        view.ReceivePly(ChessBoard2DView.LatestPly);
+        view._ReceivePly(ChessBoard2DView.LatestPly);
         CheckInt(view.ViewPly(), 6, s + ": the latest received");
-        view.ReceivePly(9);
+        view._ReceivePly(9);
         view.PressFirst();
         Play(first, "b5", "a4", s);
         Play(first, "g8", "f6", s);
         Play(first, "e1", "g1", s);
         Play(first, "f8", "e7", s);
-        view.Refresh();
+        view._Refresh();
         CheckInt(view.ViewPly(), 0, s + ": a step here drops a received ply still waiting");
-        view.ReceivePly(1);
+        view._ReceivePly(1);
         CheckInt(view.ViewPly(), 1, s + ": a received ply the game reaches, shown at once");
 
         // A reset brings it to the latest.
         view.ShowPly(1);
         CheckInt(first.ResetBoardAs(Ana, true), ChessBoard.InputAccepted, s + ": reset");
-        view.Refresh();
+        view._Refresh();
         CheckInt(view.ViewPly(), 0, s + ": the reset, ply 0");
         Check(view.IsOnLatest(), s + ": the reset, on the latest", "not on the latest");
         CheckView(s + ": the reset board");
@@ -459,7 +459,7 @@ public class Board2DTest : ChessTest {
         view.PressRight();
         Check(view.ShownBoard() == second, s + ": right refused", "shows " + view.ShownBoard());
         view.PressLeft();
-        view.Step(1);
+        view._Step(1);
         Check(view.ShownBoard() == second, s + ": left and Step refused", "shows " + view.ShownBoard());
         view.Show(0);
         Check(view.ShownBoard() == second && IsListening(second) && !IsListening(first), s + ": Show(0) still the second",
@@ -491,7 +491,7 @@ public class Board2DTest : ChessTest {
         Play(first, "e7", "e5", s);
         Play(first, "g1", "f3", s);
         Play(first, "b8", "c6", s);
-        view.Refresh();
+        view._Refresh();
         string[] moves = { "e4", "e5", "Nf3", "Nc6" };
         CheckMoveCells(moves, 3, s + ": 4 plies, Nc6 current");
         CheckString(view.moveNumbers[0].text + " " + view.moveNumbers[1].text + " [" + view.moveNumbers[2].text + "]",
@@ -500,23 +500,23 @@ public class Board2DTest : ChessTest {
         CheckMoveCells(moves, 2, s + ": < to ply 3, Nf3 current");
         view.PressFirst();
         CheckMoveCells(moves, -1, s + ": << to the start, none current");
-        view.PressMoveCell(1);
+        view._PressMoveCell(1);
         CheckInt(view.ViewPly(), 2, s + ": e5 clicked, the position after it");
         CheckViewAt("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2", 2, s + ": e5 clicked");
         CheckMoveCells(moves, 1, s + ": e5 clicked, e5 current");
-        view.PressMoveCell(3);
+        view._PressMoveCell(3);
         CheckInt(view.ViewPly(), 4, s + ": Nc6 clicked, the latest");
         Check(view.IsOnLatest(), s + ": Nc6 clicked, on the latest", "not on the latest");
-        view.PressMoveCell(0);
+        view._PressMoveCell(0);
         CheckInt(view.ViewPly(), 1, s + ": e4 clicked, ply 1");
-        view.PressMoveCell(4);
+        view._PressMoveCell(4);
         CheckInt(view.ViewPly(), 1, s + ": an empty cell clicked does nothing");
-        view.PressMoveCell(-1);
-        view.PressMoveCell(view.moveCells.Length);
+        view._PressMoveCell(-1);
+        view._PressMoveCell(view.moveCells.Length);
         CheckInt(view.ViewPly(), 1, s + ": cells off the pool do nothing");
         view.PressLast();
         Play(first, "f1", "b5", s);
-        view.Refresh();
+        view._Refresh();
         CheckMoveCells(new string[] { "e4", "e5", "Nf3", "Nc6", "Bb5" }, 4, s + ": on the latest, Bb5 current");
 
         // Scrolling: moves past the list's height, the view on the latest.
@@ -527,56 +527,56 @@ public class Board2DTest : ChessTest {
         bool played = true;
         while (first.moveCount < wanted && played) {
             played = PlayAny(first);
-            view.Refresh();
-            if (!view.IsMoveInView(first.moveCount - 1) && inView) {
+            view._Refresh();
+            if (!view._IsMoveInView(first.moveCount - 1) && inView) {
                 inView = false;
-                lost = "ply " + first.moveCount + " out of view at scroll " + view.MoveListScroll();
+                lost = "ply " + first.moveCount + " out of view at scroll " + view._MoveListScroll();
             }
         }
         CheckInt(first.moveCount, wanted, s + ": " + wanted + " plies played");
         Check(inView, s + ": on the latest, each new move in view", lost);
-        Check(view.MoveListMaxScroll() > 0, s + ": the moves don't fit, it scrolls", "max scroll 0");
-        Check(Mathf.Abs(view.MoveListScroll() - view.MoveListMaxScroll()) < 0.5f, s + ": scrolled to the bottom",
-            view.MoveListScroll() + " of " + view.MoveListMaxScroll());
-        Check(view.IsMoveCellCurrent(view.MoveCellOf(first.moveCount - 1)), s + ": the latest move current",
-            "cell " + view.MoveCellOf(first.moveCount - 1));
+        Check(view._MoveListMaxScroll() > 0, s + ": the moves don't fit, it scrolls", "max scroll 0");
+        Check(Mathf.Abs(view._MoveListScroll() - view._MoveListMaxScroll()) < 0.5f, s + ": scrolled to the bottom",
+            view._MoveListScroll() + " of " + view._MoveListMaxScroll());
+        Check(view._IsMoveCellCurrent(view._MoveCellOf(first.moveCount - 1)), s + ": the latest move current",
+            "cell " + view._MoveCellOf(first.moveCount - 1));
         Check(view.moveList.verticalScrollbar != null, s + ": a scrollbar", "none");
         view.PressFirst();
-        CheckFloat(view.MoveListScroll(), 0, s + ": << scrolls to the top");
+        CheckFloat(view._MoveListScroll(), 0, s + ": << scrolls to the top");
         view.PressForward();
-        Check(view.IsMoveInView(0) && view.IsMoveCellCurrent(view.MoveCellOf(0)), s + ": > to ply 1, e4 in view",
-            "scroll " + view.MoveListScroll());
+        Check(view._IsMoveInView(0) && view._IsMoveCellCurrent(view._MoveCellOf(0)), s + ": > to ply 1, e4 in view",
+            "scroll " + view._MoveListScroll());
         // A player's own scrolling stays while the ply shown doesn't change.
-        view.ScrollMoveList(view.moveRowHeight * 3);
-        view.Refresh();
-        CheckFloat(view.MoveListScroll(), view.moveRowHeight * 3, s + ": scrolled by hand, kept on a redraw");
+        view._ScrollMoveList(view.moveRowHeight * 3);
+        view._Refresh();
+        CheckFloat(view._MoveListScroll(), view.moveRowHeight * 3, s + ": scrolled by hand, kept on a redraw");
         // A step brings the move back into view, scrolling just enough: e5's row (the first) at the top.
         view.PressForward();
-        CheckFloat(view.MoveListScroll(), 0, s + ": > to ply 2, scrolled up just to e5's row");
+        CheckFloat(view._MoveListScroll(), 0, s + ": > to ply 2, scrolled up just to e5's row");
         // Down: a ply below the list, its row at the bottom.
         int row = Mathf.CeilToInt(rowsShown) + 2;
         view.ShowPly(2 * row + 1);
-        CheckFloat(view.MoveListScroll(), (row + 1) * view.moveRowHeight - view.moveListViewport.rect.height,
+        CheckFloat(view._MoveListScroll(), (row + 1) * view.moveRowHeight - view.moveListViewport.rect.height,
             s + ": a ply below the list, its row scrolled just to the bottom");
-        Check(view.IsMoveInView(2 * row), s + ": that move in view", "scroll " + view.MoveListScroll());
+        Check(view._IsMoveInView(2 * row), s + ": that move in view", "scroll " + view._MoveListScroll());
         // Scrolled part of a row: the pool starts on the row at the top, shifted up by the rest.
-        view.ScrollMoveList(view.moveRowHeight * 3 + view.moveRowHeight / 2);
-        CheckInt(view.MoveCellPly(0), 6, s + ": scrolled 3.5 rows, the pool's first cell is ply 7's");
+        view._ScrollMoveList(view.moveRowHeight * 3 + view.moveRowHeight / 2);
+        CheckInt(view._MoveCellPly(0), 6, s + ": scrolled 3.5 rows, the pool's first cell is ply 7's");
         CheckFloat(view.moveListRows.anchoredPosition.y, view.moveRowHeight / 2,
             s + ": scrolled 3.5 rows, rows shifted");
         CheckString(view.moveNumbers[0].text, "4.", s + ": scrolled 3.5 rows, the first number");
-        int ply = view.MoveCellPly(3);
-        view.PressMoveCell(3);
+        int ply = view._MoveCellPly(3);
+        view._PressMoveCell(3);
         CheckInt(view.ViewPly(), ply + 1, s + ": a scrolled cell clicked, the position after its move");
-        Check(view.IsMoveCellCurrent(3), s + ": the clicked cell current", "not yellow");
+        Check(view._IsMoveCellCurrent(3), s + ": the clicked cell current", "not yellow");
         // Switching board scrolls to the new board's latest, and back.
         CheckInt(second.JoinAs(ChessRules.White, Bo), ChessBoard.InputAccepted, s + ": Bo joins the second board");
         view.PressRight();
         CheckMoveCells(new string[0], -1, s + ": the second board, no moves");
-        CheckFloat(view.MoveListScroll(), 0, s + ": the second board, at the top");
+        CheckFloat(view._MoveListScroll(), 0, s + ": the second board, at the top");
         view.PressLeft();
-        Check(view.IsMoveInView(first.moveCount - 1) && view.IsOnLatest(), s + ": back on the first, its latest in view",
-            "scroll " + view.MoveListScroll());
+        Check(view._IsMoveInView(first.moveCount - 1) && view.IsOnLatest(), s + ": back on the first, its latest in view",
+            "scroll " + view._MoveListScroll());
 
         // A game from a FEN with Black to move, its notation left for the board to fill in.
         ResetBoth();
@@ -591,10 +591,10 @@ public class Board2DTest : ChessTest {
         loaded[0] = FindMove(position, state, "e7", "e5");
         ChessPosition.MakeMove(position, state, loaded[0]);
         loaded[1] = FindMove(position, state, "g1", "f3");
-        CheckInt(first.LoadGame(FenBlackFirst, loaded, sans, clocks, 2, ChessGame.ModeStandard, "Fen A", "Fen B", "*",
+        CheckInt(first._LoadGame(FenBlackFirst, loaded, sans, clocks, 2, ChessGame.ModeStandard, "Fen A", "Fen B", "*",
             "", ChessArbiter.NoClock, 0), ChessBoard.InputAccepted, s + ": a game from Black to move loaded");
         view.Show(0);
-        view.Refresh();
+        view._Refresh();
         CheckString(view.moveCellLabels[1].text + "|" + view.moveCellLabels[2].text, "|",
             s + ": the notation not filled in yet, empty cells");
         Check(!view.moveCells[0].interactable && view.moveCells[1].interactable && view.moveCells[2].interactable,
@@ -607,7 +607,7 @@ public class Board2DTest : ChessTest {
         string s = "move list";
         CheckMoveCells(new string[] { "", "e5", "Nf3" }, 2, s + ": Black first, the notation filled in");
         CheckString(view.moveNumbers[0].text + " " + view.moveNumbers[1].text, "1. 2.", s + ": Black first, numbers");
-        view.PressMoveCell(1);
+        view._PressMoveCell(1);
         CheckInt(view.ViewPly(), 1, s + ": Black first, e5 clicked, ply 1");
         CheckMoveCells(new string[] { "", "e5", "Nf3" }, 1, s + ": Black first, e5 current");
         CheckInt(first.ResetBoardAs(Ana, true), ChessBoard.InputAccepted, s + ": reset");
@@ -699,14 +699,14 @@ public class Board2DTest : ChessTest {
         string details = "";
         for (int i = 0; i < view.moveCells.Length && ok; i++) {
             string expected = i < moves.Length ? moves[i] : "";
-            bool clickable = i < moves.Length && view.MoveCellPly(i) >= 0;
+            bool clickable = i < moves.Length && view._MoveCellPly(i) >= 0;
             if (view.moveCellLabels[i].text != expected) {
                 ok = false;
                 details = "cell " + i + " reads \"" + view.moveCellLabels[i].text + "\", expected \"" + expected + "\"";
             } else if (view.moveCells[i].interactable != clickable) {
                 ok = false;
                 details = "cell " + i + (clickable ? " not clickable" : " clickable");
-            } else if (view.IsMoveCellCurrent(i) != (i == current)) {
+            } else if (view._IsMoveCellCurrent(i) != (i == current)) {
                 ok = false;
                 details = "cell " + i + (i == current ? " not yellow" : " yellow");
             } else if (i == current && view.moveCellLabels[i].color != view.currentMoveTextColor) {
@@ -783,10 +783,10 @@ public class Board2DTest : ChessTest {
             clocks[count] = -1;
             count++;
         }
-        CheckInt(first.LoadGame("", moves, sans, clocks, count, ChessGame.ModeStandard, "Long A", "Long B", "*", "",
+        CheckInt(first._LoadGame("", moves, sans, clocks, count, ChessGame.ModeStandard, "Long A", "Long B", "*", "",
             ChessArbiter.NoClock, 0), ChessBoard.InputAccepted, s + ": " + count + " plies loaded");
         view.Show(0);
-        view.Refresh();
+        view._Refresh();
         CheckInt(view.ViewPly(), count, s + ": on the latest");
         CheckGamePosition(s + ": the latest");
         System.Diagnostics.Stopwatch watch = new System.Diagnostics.Stopwatch();
@@ -814,19 +814,20 @@ public class Board2DTest : ChessTest {
         string s = "holder";
         // The sums on their own: the view's bottom right corner along +x at size 1.
         Vector3 baseRight = new Vector3(0.7f, 0, 0);
-        CheckNear(ChessBoard2DViewHolder.SizeFor(baseRight, baseRight, 0.25f, 3), 1, s + ": size 1 at the corner");
-        CheckNear(ChessBoard2DViewHolder.SizeFor(baseRight * 2, baseRight, 0.25f, 3), 2, s + ": size 2 twice as far");
-        CheckNear(ChessBoard2DViewHolder.SizeFor(baseRight * 2 + new Vector3(0, -0.2f, 0.3f), baseRight, 0.25f, 3), 2,
+        CheckNear(ChessBoard2DViewHolder._SizeFor(baseRight, baseRight, 0.25f, 3), 1, s + ": size 1 at the corner");
+        CheckNear(ChessBoard2DViewHolder._SizeFor(baseRight * 2, baseRight, 0.25f, 3), 2, s + ": size 2 twice as far");
+        CheckNear(ChessBoard2DViewHolder._SizeFor(baseRight * 2 + new Vector3(0, -0.2f, 0.3f), baseRight, 0.25f, 3), 2,
             s + ": size 2, off the bottom edge");
-        CheckNear(ChessBoard2DViewHolder.SizeFor(baseRight * 5, baseRight, 0.25f, 3), 3, s + ": size clamped to 3");
-        CheckNear(ChessBoard2DViewHolder.SizeFor(-baseRight, baseRight, 0.25f, 3), 0.25f, s + ": size clamped to 0.25");
+        CheckNear(ChessBoard2DViewHolder._SizeFor(baseRight * 5, baseRight, 0.25f, 3), 3, s + ": size clamped to 3");
+        CheckNear(ChessBoard2DViewHolder._SizeFor(-baseRight, baseRight, 0.25f, 3), 0.25f,
+            s + ": size clamped to 0.25");
         Quaternion tilted = Quaternion.Euler(30, 90, 25);
-        CheckNearVector(ChessBoard2DViewHolder.Upright(tilted, Quaternion.identity) * Vector3.forward, Vector3.right,
+        CheckNearVector(ChessBoard2DViewHolder._Upright(tilted, Quaternion.identity) * Vector3.forward, Vector3.right,
             s + ": upright keeps the heading");
-        CheckNearVector(ChessBoard2DViewHolder.Upright(tilted, Quaternion.identity) * Vector3.up, Vector3.up,
+        CheckNearVector(ChessBoard2DViewHolder._Upright(tilted, Quaternion.identity) * Vector3.up, Vector3.up,
             s + ": upright stands up");
         Quaternion fallback = Quaternion.Euler(0, 45, 0);
-        CheckNearVector(ChessBoard2DViewHolder.Upright(Quaternion.Euler(90, 0, 0), fallback) * Vector3.forward,
+        CheckNearVector(ChessBoard2DViewHolder._Upright(Quaternion.Euler(90, 0, 0), fallback) * Vector3.forward,
             fallback * Vector3.forward, s + ": facing straight down keeps the heading before");
 
         if (!Utilities.IsValid(holder)) {
@@ -874,7 +875,7 @@ public class Board2DTest : ChessTest {
         Vector3 moved = startGrip + new Vector3(1, 0.2f, -0.5f);
         Quaternion turn = Quaternion.Euler(20, 90, 15);
         grip.SetPositionAndRotation(moved, turn * startGripTurn);
-        holder.Follow();
+        holder._Follow();
         CheckNearVector(v.position, moved + turn * (startView - startGrip), s + ": moved, the view follows the grip");
         CheckNearVector(v.up, turn * (startViewTurn * Vector3.up), s + ": moved, tilted with the grip");
         CheckNearVector(v.forward, turn * (startViewTurn * Vector3.forward), s + ": moved, turned with the grip");
@@ -885,7 +886,7 @@ public class Board2DTest : ChessTest {
         // turned upright on the grip, which isn't turned itself (VRChat places a held pickup).
         Check(!holder.IsUpright(), s + ": not upright before anyone picks it up", "upright");
         holder.SetUpright(true);
-        holder.Follow();
+        holder._Follow();
         Quaternion quarter = Quaternion.Euler(0, 90, 0);
         CheckNearVector(grip.up, turn * (startGripTurn * Vector3.up), s + ": upright, the grip left as held");
         CheckNearVector(v.position, moved + quarter * (startView - startGrip), s + ": upright, the view above it");
@@ -898,14 +899,14 @@ public class Board2DTest : ChessTest {
         }
         // As after a VR player picked it up: tilted with the grip again.
         holder.SetUpright(false);
-        holder.Follow();
+        holder._Follow();
         CheckNearVector(v.up, turn * (startViewTurn * Vector3.up), s + ": not upright, the view tilted with the grip");
         if (Utilities.IsValid(holder.gripModel)) {
             CheckNearVector(holder.gripModel.up, grip.up, s + ": not upright, the bar with the grip");
         }
         // Upright for the size checks below.
         holder.SetUpright(true);
-        holder.Follow();
+        holder._Follow();
         turn = quarter;
 
         // Resized about the view's bottom edge, which stays where it was from the grip, the corner beside its corner.
@@ -938,7 +939,7 @@ public class Board2DTest : ChessTest {
 
         // The view still draws where it's been moved (real clicks on it are left to a client run).
         view.Show(0);
-        view.Refresh();
+        view._Refresh();
         CheckView(s + ": the view drawn after moving");
 
         // Put back where it was placed, at its size there.
@@ -999,7 +1000,7 @@ public class Board2DTest : ChessTest {
         CheckInt(board.RequestTakebackAs(ChessRules.White, Ana), ChessBoard.InputAccepted,
             name + ": takeback to ply " + ply + " asked");
         if (view.ShownBoard() == board) {
-            view.Refresh();
+            view._Refresh();
             Check(view.statusLabel.text.IndexOf(ColorLine("status_takeback", ChessRules.White)) >= 0
                 && view.statusLabel.text.IndexOf(ColorLine("status_takeback_to_here", ChessRules.White)) < 0,
                 name + ": the request in the view's status", "got \"" + view.statusLabel.text + "\"");
@@ -1015,7 +1016,7 @@ public class Board2DTest : ChessTest {
         string got = "";
         bool ok = true;
         for (int i = 0; i < 4; i++) {
-            bool on = view.IsStepEnabled(i);
+            bool on = view._IsStepEnabled(i);
             Color color = view.stepLabels[i].color;
             if (on != expected[i] || color != (expected[i] ? view.stepLabelColor : view.stepLabelDisabledColor)) {
                 ok = false;
@@ -1064,17 +1065,18 @@ public class Board2DTest : ChessTest {
         CheckPieces(board.board, name);
     }
 
-    // Every square of the view against expected: its piece's sprite (hidden when empty) and ShownPieceAt.
+    // Every square of the view against expected: its piece's sprite (hidden when empty) and _ShownPieceAt.
     void CheckPieces(byte[] expected, string name) {
         bool ok = true;
         string details = "";
         for (int square = 0; square < 64 && ok; square++) {
             int piece = expected[square];
             Image image = view.pieceImages[square];
-            Sprite sprite = view.PieceSprite(piece);
-            if (view.ShownPieceAt(square) != piece) {
+            Sprite sprite = view._PieceSprite(piece);
+            if (view._ShownPieceAt(square) != piece) {
                 ok = false;
-                details = ChessRules.SquareName(square) + " holds " + view.ShownPieceAt(square) + ", expected " + piece;
+                details = ChessRules.SquareName(square) + " holds " + view._ShownPieceAt(square) + ", expected "
+                    + piece;
             } else if (image.enabled != (piece != ChessRules.Empty) || (image.enabled && image.sprite != sprite)) {
                 ok = false;
                 details = ChessRules.SquareName(square) + " shows "
@@ -1086,10 +1088,10 @@ public class Board2DTest : ChessTest {
 
     void CheckTexts(string name) {
         ChessBoard board = view.ShownBoard();
-        double now = board.ServerTime();
-        string[] texts = view.GameTexts();
-        CheckString(view.playersLabel.text, ChessBoardUI.PlayersTextFor(board, now, texts), name + ": players");
-        CheckString(view.statusLabel.text, ChessBoard2DView.StatusTextFor(board, now, view.ViewPly(), texts),
+        double now = board._ServerTime();
+        string[] texts = view._GameTexts();
+        CheckString(view.playersLabel.text, ChessBoardUI._PlayersTextFor(board, now, texts), name + ": players");
+        CheckString(view.statusLabel.text, ChessBoard2DView._StatusTextFor(board, now, view.ViewPly(), texts),
             name + ": status");
         CheckString(view.boardLabel.text, BoardLabel(board), name + ": board label");
     }
@@ -1104,7 +1106,7 @@ public class Board2DTest : ChessTest {
         for (int square = 0; square < 64 && ok; square++) {
             int piece = board.board[square];
             Image image = view.pieceImages[square];
-            Sprite expected = view.PieceSprite(piece);
+            Sprite expected = view._PieceSprite(piece);
             if (piece != ChessRules.Empty && expected == null) {
                 ok = false;
                 details = "no sprite for the piece on " + ChessRules.SquareName(square);
@@ -1115,11 +1117,11 @@ public class Board2DTest : ChessTest {
             }
         }
         Check(ok, name + ": pieces", details);
-        double now = board.ServerTime();
-        string[] texts = view.GameTexts();
-        CheckString(view.playersLabel.text, ChessBoardUI.PlayersTextFor(board, now, texts), name + ": players");
+        double now = board._ServerTime();
+        string[] texts = view._GameTexts();
+        CheckString(view.playersLabel.text, ChessBoardUI._PlayersTextFor(board, now, texts), name + ": players");
         // No takeback request is pending where this is called, so the view's lines are the UI's game lines.
-        CheckString(view.statusLabel.text, ChessBoardUI.GameStatusTextFor(board, now, texts), name + ": status");
+        CheckString(view.statusLabel.text, ChessBoardUI._GameStatusTextFor(board, now, texts), name + ": status");
         CheckString(view.boardLabel.text, BoardLabel(board), name + ": board label");
     }
 

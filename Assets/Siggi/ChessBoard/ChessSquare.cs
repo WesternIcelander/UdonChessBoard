@@ -12,7 +12,7 @@ namespace SiggiChessBoard {
         public int square = ChessRules.NoSquare;
 
         public override void Interact() {
-            if (Utilities.IsValid(view)) view.OnSquareClicked(square);
+            if (Utilities.IsValid(view)) view._OnSquareClicked(square);
         }
     }
 }

@@ -80,11 +80,11 @@ public class SettingsTest : ChessTest {
                 | ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced
                 | ChessArbiter.SettingPlayOnAfterFlagFall),
             "bits: draw rules are the six draw settings");
-        CheckString(ChessArbiter.SettingsToString(0), "none", "bits text: none");
-        CheckString(ChessArbiter.SettingsToString(all),
+        CheckString(ChessArbiter._SettingsToString(0), "none", "bits text: none");
+        CheckString(ChessArbiter._SettingsToString(all),
             "takebacks agreement threefold fifty-move fivefold seventy-five-move dead-position mode-forced clock-forced"
             + " play-on", "bits text: all");
-        CheckString(ChessArbiter.SettingsToString(ChessArbiter.SettingTakebacks | ChessArbiter.SettingClockForced),
+        CheckString(ChessArbiter._SettingsToString(ChessArbiter.SettingTakebacks | ChessArbiter.SettingClockForced),
             "takebacks clock-forced", "bits text: two");
     }
 
@@ -108,9 +108,9 @@ public class SettingsTest : ChessTest {
             string name) {
         int[] numbers = { resetAvailable, autoReset, mode, baseTime, increment };
         int[] expected = { expectResetAvailable, expectAutoReset, expectMode, expectBase, expectIncrement };
-        bool changed = ChessArbiter.FixNumbers(numbers);
-        string actualText = ChessArbiter.NumbersToString(numbers);
-        string expectedText = ChessArbiter.NumbersToString(expected);
+        bool changed = ChessArbiter._FixNumbers(numbers);
+        string actualText = ChessArbiter._NumbersToString(numbers);
+        string expectedText = ChessArbiter._NumbersToString(expected);
         Check(changed == expectChanged && actualText == expectedText, name,
             "expected " + expectedText + " (changed " + expectChanged + "), got " + actualText + " (changed "
             + changed + ")");
@@ -122,8 +122,8 @@ public class SettingsTest : ChessTest {
             Check(false, "editor defaults", "arbiter not assigned");
             return;
         }
-        Debug.Log("[SettingsTest] arbiter reports: " + ChessArbiter.SettingsToString(arbiter.defaultSettings) + "; "
-            + ChessArbiter.NumbersToString(arbiter.defaultNumbers));
+        Debug.Log("[SettingsTest] arbiter reports: " + ChessArbiter._SettingsToString(arbiter.defaultSettings) + "; "
+            + ChessArbiter._NumbersToString(arbiter.defaultNumbers));
 
         CheckSetting(ChessArbiter.SettingTakebacks, arbiter.takebacksAllowed, "takebacksAllowed");
         CheckSetting(ChessArbiter.SettingDrawAgreement, arbiter.drawAgreement, "drawAgreement");
@@ -142,7 +142,7 @@ public class SettingsTest : ChessTest {
             arbiter.resetAvailableTime, arbiter.autoResetTime, arbiter.forcedMode, arbiter.forcedBaseTime,
             arbiter.forcedIncrement
         };
-        ChessArbiter.FixNumbers(expected);
+        ChessArbiter._FixNumbers(expected);
         CheckInt(arbiter.defaultNumbers.Length, ChessArbiter.NumberCount, "editor defaults: number count");
         CheckInt(arbiter.DefaultNumber(ChessArbiter.NumberResetAvailableTime),
             expected[ChessArbiter.NumberResetAvailableTime], "editor defaults: resetAvailableTime");
@@ -173,21 +173,22 @@ public class SettingsTest : ChessTest {
         int numberBits = ChessArbiter.OverrideNumbersMask;
         CheckInt(numberBits & all, 0, "override bits: numbers above the settings");
         int numbers = 0;
-        for (int i = 0; i < ChessArbiter.NumberCount; i++) numbers |= ChessArbiter.OverrideNumberBit(i);
+        for (int i = 0; i < ChessArbiter.NumberCount; i++) numbers |= ChessArbiter._OverrideNumberBit(i);
         CheckInt(numbers, numberBits, "override bits: one per number, distinct");
-        CheckInt(ChessArbiter.OverrideNumberBit(0), 1 << ChessArbiter.SettingCount, "override bits: first number");
+        CheckInt(ChessArbiter._OverrideNumberBit(0), 1 << ChessArbiter.SettingCount, "override bits: first number");
 
-        CheckInt(ChessArbiter.CombineSettings(t | r, 0, 0), t | r, "combine: no mask gives the defaults");
-        CheckInt(ChessArbiter.CombineSettings(t | r, 0, all), t | r, "combine: unmasked values ignored");
-        CheckInt(ChessArbiter.CombineSettings(t | r, all, a | c), a | c, "combine: full mask gives the values");
-        CheckInt(ChessArbiter.CombineSettings(t | r, t | a, a), r | a, "combine: one off, one on");
-        CheckInt(ChessArbiter.CombineSettings(t | r, t | r, t | r), t | r, "combine: overridden to the same");
-        CheckInt(ChessArbiter.CombineSettings(t, m | c, m | a), t | m, "combine: only masked value bits count");
-        CheckInt(ChessArbiter.CombineSettings(0, ChessArbiter.SettingsDrawRules, 0), 0, "combine: no draws, from none");
-        CheckInt(ChessArbiter.CombineSettings(all, ChessArbiter.SettingsDrawRules, 0),
+        CheckInt(ChessArbiter._CombineSettings(t | r, 0, 0), t | r, "combine: no mask gives the defaults");
+        CheckInt(ChessArbiter._CombineSettings(t | r, 0, all), t | r, "combine: unmasked values ignored");
+        CheckInt(ChessArbiter._CombineSettings(t | r, all, a | c), a | c, "combine: full mask gives the values");
+        CheckInt(ChessArbiter._CombineSettings(t | r, t | a, a), r | a, "combine: one off, one on");
+        CheckInt(ChessArbiter._CombineSettings(t | r, t | r, t | r), t | r, "combine: overridden to the same");
+        CheckInt(ChessArbiter._CombineSettings(t, m | c, m | a), t | m, "combine: only masked value bits count");
+        CheckInt(ChessArbiter._CombineSettings(0, ChessArbiter.SettingsDrawRules, 0), 0,
+            "combine: no draws, from none");
+        CheckInt(ChessArbiter._CombineSettings(all, ChessArbiter.SettingsDrawRules, 0),
             t | m | c | ChessArbiter.SettingPlayOnAfterFlagFall, "combine: no draws, from all");
-        CheckInt(ChessArbiter.CombineSettings(t, numberBits, all), t, "combine: number bits don't touch settings");
-        CheckInt(ChessArbiter.CombineSettings(t | numberBits | (1 << 30), ~0, a | (1 << 30)), a,
+        CheckInt(ChessArbiter._CombineSettings(t, numberBits, all), t, "combine: number bits don't touch settings");
+        CheckInt(ChessArbiter._CombineSettings(t | numberBits | (1 << 30), ~0, a | (1 << 30)), a,
             "combine: no bits above the settings");
     }
 
@@ -203,7 +204,7 @@ public class SettingsTest : ChessTest {
         }
         int defaults = arbiter.defaultSettings;
         int[] defaultNumbers = arbiter.defaultNumbers;
-        string defaultText = ChessArbiter.NumbersToString(defaultNumbers);
+        string defaultText = ChessArbiter._NumbersToString(defaultNumbers);
         int t = ChessArbiter.SettingTakebacks;
         int a = ChessArbiter.SettingDrawAgreement;
         int r = ChessArbiter.SettingThreefoldRepetition;
@@ -262,8 +263,8 @@ public class SettingsTest : ChessTest {
             arbiter.SetNumberOverride(2, i, values[i]);
             int[] expectedNumbers = Copy(defaultNumbers);
             expectedNumbers[i] = values[i];
-            ChessArbiter.FixNumbers(expectedNumbers);
-            CheckBoard(2, defaults, ChessArbiter.NumbersToString(expectedNumbers), "numbers: board 2 overrides " + i);
+            ChessArbiter._FixNumbers(expectedNumbers);
+            CheckBoard(2, defaults, ChessArbiter._NumbersToString(expectedNumbers), "numbers: board 2 overrides " + i);
             CheckInt(arbiter.EffectiveNumber(2, i), expectedNumbers[i], "numbers: board 2's number " + i);
             Check(arbiter.IsNumberOverridden(2, i) && arbiter.NumberOverrideValue(2, i) == values[i]
                     && CountNumberOverrides(2) == 1, "numbers: only number " + i + " overridden", "");
@@ -271,11 +272,11 @@ public class SettingsTest : ChessTest {
             CheckBoard(1, expected, defaultText, "numbers: board 1 unaffected by " + i);
         }
         for (int i = 0; i < ChessArbiter.NumberCount; i++) arbiter.SetNumberOverride(2, i, values[i]);
-        CheckBoard(2, defaults, ChessArbiter.NumbersToString(values), "numbers: board 2 overrides all");
+        CheckBoard(2, defaults, ChessArbiter._NumbersToString(values), "numbers: board 2 overrides all");
         arbiter.ClearNumberOverride(2, ChessArbiter.NumberForcedIncrement);
         int[] partly = Copy(values);
         partly[ChessArbiter.NumberForcedIncrement] = defaultNumbers[ChessArbiter.NumberForcedIncrement];
-        CheckBoard(2, defaults, ChessArbiter.NumbersToString(partly), "numbers: increment back to the default");
+        CheckBoard(2, defaults, ChessArbiter._NumbersToString(partly), "numbers: increment back to the default");
 
         // Overridden and default times that conflict are corrected together.
         arbiter.ClearOverrides(2);
@@ -299,17 +300,17 @@ public class SettingsTest : ChessTest {
             if (arbiter.overrideMask[b] != 0 || arbiter.EffectiveSettings(b) != defaults) clear = false;
         }
         Check(clear, "cleared: boards 0 to 2 have the defaults", "");
-        CheckString(ChessArbiter.NumbersToString(arbiter.defaultNumbers), defaultText, "cleared: defaults unchanged");
+        CheckString(ChessArbiter._NumbersToString(arbiter.defaultNumbers), defaultText, "cleared: defaults unchanged");
     }
 
     void CheckBoard(int board, int expectedSettings, string expectedNumbers, string name) {
         int[] numbers = new int[ChessArbiter.NumberCount];
         arbiter.EffectiveNumbers(board, numbers);
         int settings = arbiter.EffectiveSettings(board);
-        string numberText = ChessArbiter.NumbersToString(numbers);
+        string numberText = ChessArbiter._NumbersToString(numbers);
         Check(settings == expectedSettings && numberText == expectedNumbers, name,
-            "expected " + ChessArbiter.SettingsToString(expectedSettings) + "; " + expectedNumbers + ", got "
-            + ChessArbiter.SettingsToString(settings) + "; " + numberText);
+            "expected " + ChessArbiter._SettingsToString(expectedSettings) + "; " + expectedNumbers + ", got "
+            + ChessArbiter._SettingsToString(settings) + "; " + numberText);
     }
 
     int CountNumberOverrides(int board) {
@@ -404,12 +405,12 @@ public class SettingsTest : ChessTest {
         Check(arbiter.BeginChange() && Networking.IsOwner(arbiter.gameObject),
             "changing: an organizer's BeginChange makes them the owner", "");
         Check(arbiter.EndChange(), "changing: the owner's EndChange sends", "");
-        Check(arbiter.MayOwn(local), "changing: ownership allowed to an organizer", "");
-        Check(!arbiter.MayOwn(null), "changing: ownership refused to no player", "");
+        Check(arbiter._MayOwn(local), "changing: ownership allowed to an organizer", "");
+        Check(!arbiter._MayOwn(null), "changing: ownership refused to no player", "");
         if (Utilities.IsValid(noOneAuth)) {
             arbiter.simpleAuth = noOneAuth;
             bool begun = arbiter.BeginChange();
-            bool allowed = arbiter.MayOwn(local);
+            bool allowed = arbiter._MayOwn(local);
             arbiter.simpleAuth = auth;
             Check(!begun, "changing: a non-organizer's BeginChange is refused", "");
             Check(!allowed, "changing: ownership refused to a non-organizer", "");
@@ -424,7 +425,7 @@ public class SettingsTest : ChessTest {
         arbiter.SetDefaultSetting(t, !takebacks);
         Check(arbiter.IsDefaultOn(t) != takebacks
                 && (arbiter.defaultSettings & ~t) == (savedSettings & ~t),
-            "changing: default takebacks flipped, the rest kept", ChessArbiter.SettingsToString(arbiter.defaultSettings));
+            "changing: default takebacks flipped, the rest kept", ChessArbiter._SettingsToString(arbiter.defaultSettings));
         arbiter.SetDefaultSetting(ChessArbiter.SettingsDrawRules, true);
         CheckInt(arbiter.defaultSettings & ChessArbiter.SettingsDrawRules, ChessArbiter.SettingsDrawRules,
             "changing: default draw rules all on");
@@ -438,7 +439,7 @@ public class SettingsTest : ChessTest {
             "changing: default times set", "");
         Check(arbiter.DefaultNumber(ChessArbiter.NumberResetAvailableTime) == 30
                 && arbiter.DefaultNumber(ChessArbiter.NumberAutoResetTime) == 600,
-            "changing: default times", ChessArbiter.NumbersToString(arbiter.defaultNumbers));
+            "changing: default times", ChessArbiter._NumbersToString(arbiter.defaultNumbers));
         arbiter.SetDefaultNumber(ChessArbiter.NumberAutoResetTime, 10);
         CheckInt(arbiter.DefaultNumber(ChessArbiter.NumberResetAvailableTime), 10,
             "changing: default auto-reset below reset-available clamps it");
@@ -473,7 +474,7 @@ public class SettingsTest : ChessTest {
         CheckInt(menu.values.Length, ChessSettingsMenu.ItemCount, "menu: a value text per item");
         string missing = "";
         for (int item = ChessSettingsMenu.ItemScope; item < ChessSettingsMenu.ItemCount; item++) {
-            bool setting = ChessSettingsMenu.IsSettingItem(item);
+            bool setting = ChessSettingsMenu._IsSettingItem(item);
             int first = setting ? ChessSettingsMenu.ActionOn : ChessSettingsMenu.ActionPrevious;
             int second = setting ? ChessSettingsMenu.ActionOff : ChessSettingsMenu.ActionNext;
             if (MenuButton(item, first) < 0) missing += " " + item + "/" + first;
@@ -489,12 +490,12 @@ public class SettingsTest : ChessTest {
                 && Utilities.IsValid(menu.resnapshotLabel),
             "menu: the re-snapshot button and its outcome text assigned", "");
         // The labels the menu writes (none from the builder): the title, each row's and each button's.
-        menu.Refresh();
+        menu._Refresh();
         string wrong = "";
         if (!Utilities.IsValid(menu.title) || menu.title.text.Length == 0) wrong += " title";
         for (int item = 0; item < ChessSettingsMenu.ItemCount; item++) {
             if (item >= menu.itemLabels.Length || !Utilities.IsValid(menu.itemLabels[item])
-                || menu.itemLabels[item].text.Length == 0 || menu.itemLabels[item].text != menu.ItemText(item)) {
+                || menu.itemLabels[item].text.Length == 0 || menu.itemLabels[item].text != menu._ItemText(item)) {
                 wrong += " row " + item;
             }
         }
@@ -506,7 +507,7 @@ public class SettingsTest : ChessTest {
         CheckString(wrong, "", "menu: the title, the rows' labels and the buttons' labels written");
         SimpleAuth auth = arbiter.simpleAuth;
         if (arbiter.simpleAuthMissing) {
-            menu.UpdateVisibility();
+            menu._UpdateVisibility();
             CheckString(menu.notice.text, Text("settings_notice_simple_auth_missing"),
                 "menu: the empty Simple Auth field shown in the notice");
         }
@@ -538,18 +539,18 @@ public class SettingsTest : ChessTest {
         menu.scope = ChessSettingsMenu.ScopeAllBoards;
 
         // Visibility.
-        menu.UpdateVisibility();
+        menu._UpdateVisibility();
         Check(menu.controlsShown && menu.controls.activeSelf, "menu: controls shown to an organizer", "");
         CheckString(menu.notice.text, "", "menu: no notice for an organizer");
         if (Utilities.IsValid(noOneAuth)) {
             arbiter.simpleAuth = noOneAuth;
-            menu.UpdateVisibility();
+            menu._UpdateVisibility();
             bool hidden = !menu.controlsShown && !menu.controls.activeSelf;
             string notice = menu.notice.text;
-            bool pressed = menu.Press(ChessSettingsMenu.ItemTakebacks, ChessSettingsMenu.ActionOff);
+            bool pressed = menu._Press(ChessSettingsMenu.ItemTakebacks, ChessSettingsMenu.ActionOff);
             bool takebacks = arbiter.IsDefaultOn(ChessArbiter.SettingTakebacks);
             arbiter.simpleAuth = auth;
-            menu.UpdateVisibility();
+            menu._UpdateVisibility();
             Check(hidden, "menu: controls hidden from a non-organizer", "");
             CheckString(notice, Text("settings_notice_organizers_only"), "menu: a non-organizer's notice");
             Check(!pressed && takebacks, "menu: a non-organizer's press changes nothing", "");
@@ -558,12 +559,12 @@ public class SettingsTest : ChessTest {
             // The empty field, as the arbiter's Start finds it (11.1b).
             arbiter.simpleAuth = null;
             arbiter.simpleAuthMissing = true;
-            menu.UpdateVisibility();
+            menu._UpdateVisibility();
             bool hiddenMissing = !menu.controlsShown && !menu.controls.activeSelf;
             string noticeMissing = menu.notice.text;
             arbiter.simpleAuth = auth;
             arbiter.simpleAuthMissing = false;
-            menu.UpdateVisibility();
+            menu._UpdateVisibility();
             Check(hiddenMissing, "menu: controls hidden while the Simple Auth field is empty", "");
             CheckString(noticeMissing, Text("settings_notice_simple_auth_missing"),
                 "menu: the empty Simple Auth field shown in the notice");
@@ -573,17 +574,17 @@ public class SettingsTest : ChessTest {
         }
 
         // Redrawing.
-        Check(menu.RefreshIfChanged(), "menu: redrawn after the settings changed", "");
-        Check(!menu.RefreshIfChanged(), "menu: not redrawn again without a change", "");
+        Check(menu._RefreshIfChanged(), "menu: redrawn after the settings changed", "");
+        Check(!menu._RefreshIfChanged(), "menu: not redrawn again without a change", "");
         int changesBefore = arbiter.changes;
         arbiter.SetDefaultSetting(ChessArbiter.SettingDeadPosition, false);
-        Check(arbiter.changes != changesBefore && menu.RefreshIfChanged(), "menu: a setter counts as a change", "");
+        Check(arbiter.changes != changesBefore && menu._RefreshIfChanged(), "menu: a setter counts as a change", "");
 
         // All boards: on and off.
         int t = ChessSettingsMenu.ItemTakebacks;
         CheckString(menu.scopeLabel.text, Text("settings_all_boards"), "menu: all boards: scope shown");
         CheckString(menu.values[t].text, Text("settings_on"), "menu: all boards: takebacks shown on");
-        Check(menu.IsSelected(t, ChessSettingsMenu.ActionOn) && !menu.IsSelected(t, ChessSettingsMenu.ActionOff),
+        Check(menu._IsSelected(t, ChessSettingsMenu.ActionOn) && !menu._IsSelected(t, ChessSettingsMenu.ActionOff),
             "menu: all boards: On marked", "");
         Check(ButtonColorIs(t, ChessSettingsMenu.ActionOn, menu.selectedButtonColor)
                 && ButtonColorIs(t, ChessSettingsMenu.ActionOff, menu.buttonColor),
@@ -591,94 +592,95 @@ public class SettingsTest : ChessTest {
         Check(!ButtonActive(t, ChessSettingsMenu.ActionDefault) && ButtonActive(t, ChessSettingsMenu.ActionOn)
                 && !ButtonActive(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionDefault),
             "menu: all boards: no Default buttons", "");
-        Check(!menu.Press(t, ChessSettingsMenu.ActionOn), "menu: all boards: pressing the current choice changes nothing",
+        Check(!menu._Press(t, ChessSettingsMenu.ActionOn), "menu: all boards: pressing the current choice changes nothing",
             "");
-        Check(!menu.Press(t, ChessSettingsMenu.ActionDefault), "menu: all boards: Default refused", "");
-        Check(menu.Press(t, ChessSettingsMenu.ActionOff) && !arbiter.IsDefaultOn(ChessArbiter.SettingTakebacks),
-            "menu: all boards: takebacks off", ChessArbiter.SettingsToString(arbiter.defaultSettings));
+        Check(!menu._Press(t, ChessSettingsMenu.ActionDefault), "menu: all boards: Default refused", "");
+        Check(menu._Press(t, ChessSettingsMenu.ActionOff) && !arbiter.IsDefaultOn(ChessArbiter.SettingTakebacks),
+            "menu: all boards: takebacks off", ChessArbiter._SettingsToString(arbiter.defaultSettings));
         Check(Networking.IsOwner(arbiter.gameObject), "menu: the organizer owns the arbiter after a change", "");
         CheckString(menu.values[t].text, Text("settings_off"), "menu: all boards: takebacks shown off");
-        Check(menu.IsSelected(t, ChessSettingsMenu.ActionOff) && ButtonColorIs(t, ChessSettingsMenu.ActionOff,
+        Check(menu._IsSelected(t, ChessSettingsMenu.ActionOff) && ButtonColorIs(t, ChessSettingsMenu.ActionOff,
             menu.selectedButtonColor), "menu: all boards: Off marked", "");
-        menu.Press(t, ChessSettingsMenu.ActionOn);
+        menu._Press(t, ChessSettingsMenu.ActionOn);
 
         // All boards: the draw rules together and apart.
         int d = ChessSettingsMenu.ItemDrawRules;
         CheckString(menu.values[d].text, Text("settings_value_off_no_draws"), "menu: all boards: No draws shown");
-        Check(menu.Press(d, ChessSettingsMenu.ActionOn), "menu: all boards: all draw rules on", "");
+        Check(menu._Press(d, ChessSettingsMenu.ActionOn), "menu: all boards: all draw rules on", "");
         CheckInt(arbiter.defaultSettings & ChessArbiter.SettingsDrawRules, ChessArbiter.SettingsDrawRules,
             "menu: all boards: every draw rule on");
         CheckString(menu.values[d].text, Text("settings_on"), "menu: all boards: all draw rules shown on");
-        menu.Press(ChessSettingsMenu.ItemThreefoldRepetition, ChessSettingsMenu.ActionOff);
+        menu._Press(ChessSettingsMenu.ItemThreefoldRepetition, ChessSettingsMenu.ActionOff);
         CheckInt(arbiter.defaultSettings & ChessArbiter.SettingsDrawRules,
             ChessArbiter.SettingsDrawRules & ~ChessArbiter.SettingThreefoldRepetition,
             "menu: all boards: threefold alone off");
         CheckString(menu.values[d].text, Text("settings_value_mixed"), "menu: all boards: draw rules shown mixed");
         CheckString(menu.values[ChessSettingsMenu.ItemThreefoldRepetition].text, Text("settings_off"),
             "menu: all boards: threefold shown off");
-        Check(!menu.IsSelected(d, ChessSettingsMenu.ActionOn) && !menu.IsSelected(d, ChessSettingsMenu.ActionOff),
+        Check(!menu._IsSelected(d, ChessSettingsMenu.ActionOn) && !menu._IsSelected(d, ChessSettingsMenu.ActionOff),
             "menu: all boards: nothing marked for mixed draw rules", "");
-        Check(menu.Press(d, ChessSettingsMenu.ActionOff), "menu: all boards: No draws pressed", "");
+        Check(menu._Press(d, ChessSettingsMenu.ActionOff), "menu: all boards: No draws pressed", "");
         CheckInt(arbiter.defaultSettings & ChessArbiter.SettingsDrawRules, 0, "menu: all boards: every draw rule off");
         Check(arbiter.IsDefaultOn(ChessArbiter.SettingTakebacks), "menu: all boards: the draw rules leave takebacks",
             "");
-        Check(menu.Press(ChessSettingsMenu.ItemModeForced, ChessSettingsMenu.ActionOn)
+        Check(menu._Press(ChessSettingsMenu.ItemModeForced, ChessSettingsMenu.ActionOn)
                 && arbiter.IsDefaultOn(ChessArbiter.SettingModeForced)
-                && menu.Press(ChessSettingsMenu.ItemClockForced, ChessSettingsMenu.ActionOn)
+                && menu._Press(ChessSettingsMenu.ItemClockForced, ChessSettingsMenu.ActionOn)
                 && arbiter.IsDefaultOn(ChessArbiter.SettingClockForced),
-            "menu: all boards: mode and clock forced", ChessArbiter.SettingsToString(arbiter.defaultSettings));
+            "menu: all boards: mode and clock forced", ChessArbiter._SettingsToString(arbiter.defaultSettings));
 
         // All boards: playing on untimed after a flag fall (12.9), off in the known defaults.
         int p = ChessSettingsMenu.ItemPlayOnAfterFlagFall;
-        CheckString(menu.ItemText(p), Text("settings_item_play_on_after_flag_fall"), "menu: play-on row's label");
+        CheckString(menu._ItemText(p), Text("settings_item_play_on_after_flag_fall"), "menu: play-on row's label");
         CheckString(menu.values[p].text, Text("settings_off"), "menu: all boards: play-on shown off");
-        Check(menu.Press(p, ChessSettingsMenu.ActionOn) && arbiter.IsDefaultOn(ChessArbiter.SettingPlayOnAfterFlagFall),
-            "menu: all boards: play-on on", ChessArbiter.SettingsToString(arbiter.defaultSettings));
+        Check(menu._Press(p, ChessSettingsMenu.ActionOn)
+                && arbiter.IsDefaultOn(ChessArbiter.SettingPlayOnAfterFlagFall),
+            "menu: all boards: play-on on", ChessArbiter._SettingsToString(arbiter.defaultSettings));
         CheckString(menu.values[p].text, Text("settings_on"), "menu: all boards: play-on shown on");
-        Check(menu.Press(p, ChessSettingsMenu.ActionOff)
+        Check(menu._Press(p, ChessSettingsMenu.ActionOff)
                 && !arbiter.IsDefaultOn(ChessArbiter.SettingPlayOnAfterFlagFall),
-            "menu: all boards: play-on off again", ChessArbiter.SettingsToString(arbiter.defaultSettings));
+            "menu: all boards: play-on off again", ChessArbiter._SettingsToString(arbiter.defaultSettings));
 
         // All boards: times, with Never last.
         int r = ChessSettingsMenu.ItemResetAvailableTime;
         int a = ChessSettingsMenu.ItemAutoResetTime;
         CheckString(menu.values[r].text, Minutes(2), "menu: all boards: reset-available time shown");
-        menu.Press(r, ChessSettingsMenu.ActionNext);
+        menu._Press(r, ChessSettingsMenu.ActionNext);
         CheckDefault(ChessArbiter.NumberResetAvailableTime, 300, Minutes(5), r, "menu: all boards: reset-available >");
-        menu.Press(r, ChessSettingsMenu.ActionPrevious);
+        menu._Press(r, ChessSettingsMenu.ActionPrevious);
         CheckDefault(ChessArbiter.NumberResetAvailableTime, 120, Minutes(2), r, "menu: all boards: reset-available <");
-        menu.Press(a, ChessSettingsMenu.ActionNext);
+        menu._Press(a, ChessSettingsMenu.ActionNext);
         CheckDefault(ChessArbiter.NumberAutoResetTime, 900, Minutes(15), a, "menu: all boards: auto-reset >");
         arbiter.SetDefaultNumber(ChessArbiter.NumberAutoResetTime, 3600);
-        menu.Refresh();
+        menu._Refresh();
         CheckString(menu.values[a].text, Hours(1), "menu: all boards: an hour shown");
-        menu.Press(a, ChessSettingsMenu.ActionNext);
+        menu._Press(a, ChessSettingsMenu.ActionNext);
         CheckDefault(ChessArbiter.NumberAutoResetTime, ChessArbiter.Never, Text("settings_never"), a,
             "menu: all boards: auto-reset > after the longest time is Never");
-        Check(!menu.Press(a, ChessSettingsMenu.ActionNext), "menu: all boards: nothing after Never", "");
-        menu.Press(a, ChessSettingsMenu.ActionPrevious);
+        Check(!menu._Press(a, ChessSettingsMenu.ActionNext), "menu: all boards: nothing after Never", "");
+        menu._Press(a, ChessSettingsMenu.ActionPrevious);
         CheckDefault(ChessArbiter.NumberAutoResetTime, 3600, Hours(1), a, "menu: all boards: auto-reset < from Never");
         arbiter.SetDefaultNumber(ChessArbiter.NumberAutoResetTime, 120);
-        menu.Press(a, ChessSettingsMenu.ActionPrevious);
+        menu._Press(a, ChessSettingsMenu.ActionPrevious);
         CheckDefault(ChessArbiter.NumberAutoResetTime, 60, Minutes(1), a, "menu: all boards: auto-reset < to a minute");
         CheckDefault(ChessArbiter.NumberResetAvailableTime, 60, Minutes(1), r,
             "menu: all boards: auto-reset below reset-available clamps it");
         arbiter.SetDefaultNumber(ChessArbiter.NumberAutoResetTime, ChessArbiter.Never);
         arbiter.SetDefaultNumber(ChessArbiter.NumberResetAvailableTime, 90);
-        menu.Refresh();
+        menu._Refresh();
         CheckString(menu.values[r].text,
             TextWith("duration_minutes_seconds", new string[] { "minutes", "1", "seconds", "30" }),
             "menu: all boards: a time off the list shown");
-        menu.Press(r, ChessSettingsMenu.ActionNext);
+        menu._Press(r, ChessSettingsMenu.ActionNext);
         CheckDefault(ChessArbiter.NumberResetAvailableTime, 120, Minutes(2), r,
             "menu: all boards: > from off the list");
         arbiter.SetDefaultNumber(ChessArbiter.NumberResetAvailableTime, 90);
-        menu.Press(r, ChessSettingsMenu.ActionPrevious);
+        menu._Press(r, ChessSettingsMenu.ActionPrevious);
         CheckDefault(ChessArbiter.NumberResetAvailableTime, 60, Minutes(1), r, "menu: all boards: < from off the list");
-        menu.Press(r, ChessSettingsMenu.ActionPrevious);
+        menu._Press(r, ChessSettingsMenu.ActionPrevious);
         CheckDefault(ChessArbiter.NumberResetAvailableTime, 30, Seconds(30), r,
             "menu: all boards: < to the shortest time");
-        Check(!menu.Press(r, ChessSettingsMenu.ActionPrevious), "menu: all boards: nothing before the shortest time",
+        Check(!menu._Press(r, ChessSettingsMenu.ActionPrevious), "menu: all boards: nothing before the shortest time",
             "");
 
         // All boards: the forced mode and time control.
@@ -686,38 +688,38 @@ public class SettingsTest : ChessTest {
         int bt = ChessSettingsMenu.ItemForcedBaseTime;
         int inc = ChessSettingsMenu.ItemForcedIncrement;
         CheckString(menu.values[m].text, Text("mode_standard"), "menu: all boards: forced mode shown");
-        Check(!menu.Press(m, ChessSettingsMenu.ActionPrevious), "menu: all boards: nothing before Standard", "");
-        menu.Press(m, ChessSettingsMenu.ActionNext);
+        Check(!menu._Press(m, ChessSettingsMenu.ActionPrevious), "menu: all boards: nothing before Standard", "");
+        menu._Press(m, ChessSettingsMenu.ActionNext);
         CheckDefault(ChessArbiter.NumberForcedMode, ChessGame.ModeChess960, Text("mode_chess960"), m,
             "menu: all boards: forced mode >");
-        Check(!menu.Press(m, ChessSettingsMenu.ActionNext), "menu: all boards: nothing after Chess960", "");
+        Check(!menu._Press(m, ChessSettingsMenu.ActionNext), "menu: all boards: nothing after Chess960", "");
         CheckString(menu.values[bt].text, Minutes(10), "menu: all boards: forced base time shown");
-        menu.Press(bt, ChessSettingsMenu.ActionPrevious);
+        menu._Press(bt, ChessSettingsMenu.ActionPrevious);
         CheckDefault(ChessArbiter.NumberForcedBaseTime, 300, Minutes(5), bt, "menu: all boards: forced base time <");
         arbiter.SetDefaultNumber(ChessArbiter.NumberForcedBaseTime, 60);
-        menu.Press(bt, ChessSettingsMenu.ActionPrevious);
+        menu._Press(bt, ChessSettingsMenu.ActionPrevious);
         CheckDefault(ChessArbiter.NumberForcedBaseTime, ChessArbiter.NoClock, Text("clock_none"), bt,
             "menu: all boards: forced base time < to no clock");
-        Check(!menu.Press(bt, ChessSettingsMenu.ActionPrevious), "menu: all boards: nothing before no clock", "");
-        menu.Press(bt, ChessSettingsMenu.ActionNext);
+        Check(!menu._Press(bt, ChessSettingsMenu.ActionPrevious), "menu: all boards: nothing before no clock", "");
+        menu._Press(bt, ChessSettingsMenu.ActionNext);
         CheckDefault(ChessArbiter.NumberForcedBaseTime, 60, Minutes(1), bt, "menu: all boards: forced base time >");
         CheckString(menu.values[inc].text, Seconds(0), "menu: all boards: forced increment shown");
-        menu.Press(inc, ChessSettingsMenu.ActionNext);
+        menu._Press(inc, ChessSettingsMenu.ActionNext);
         CheckDefault(ChessArbiter.NumberForcedIncrement, 1, Seconds(1), inc, "menu: all boards: forced increment >");
 
         // One board.
         int defaultsNow = arbiter.defaultSettings;
         int[] numbersNow = Copy(arbiter.defaultNumbers);
-        Check(menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionNext) && menu.scope == 0,
+        Check(menu._Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionNext) && menu.scope == 0,
             "menu: scope > from all boards is board 1", "scope " + menu.scope);
         CheckString(menu.scopeLabel.text, BoardLabel(1), "menu: board 1: scope shown");
         Check(ButtonActive(t, ChessSettingsMenu.ActionDefault)
                 && ButtonActive(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionDefault),
             "menu: board 1: Default buttons shown", "");
         CheckString(menu.values[t].text, FromDefault(Text("settings_on")), "menu: board 1: takebacks from the default");
-        Check(menu.IsSelected(t, ChessSettingsMenu.ActionDefault) && !menu.IsSelected(t, ChessSettingsMenu.ActionOn),
+        Check(menu._IsSelected(t, ChessSettingsMenu.ActionDefault) && !menu._IsSelected(t, ChessSettingsMenu.ActionOn),
             "menu: board 1: Default marked", "");
-        Check(menu.Press(t, ChessSettingsMenu.ActionOff), "menu: board 1: takebacks off pressed", "");
+        Check(menu._Press(t, ChessSettingsMenu.ActionOff), "menu: board 1: takebacks off pressed", "");
         Check(arbiter.IsSettingOverridden(0, ChessArbiter.SettingTakebacks)
                 && !arbiter.SettingOverrideValue(0, ChessArbiter.SettingTakebacks)
                 && !arbiter.IsEffectiveOn(0, ChessArbiter.SettingTakebacks),
@@ -725,23 +727,23 @@ public class SettingsTest : ChessTest {
         Check(arbiter.defaultSettings == defaultsNow && arbiter.overrideMask[1] == 0,
             "menu: board 1: the defaults and board 2 untouched", "");
         CheckString(menu.values[t].text, Text("settings_off"), "menu: board 1: takebacks shown off");
-        Check(menu.IsSelected(t, ChessSettingsMenu.ActionOff) && !menu.IsSelected(t, ChessSettingsMenu.ActionDefault),
+        Check(menu._IsSelected(t, ChessSettingsMenu.ActionOff) && !menu._IsSelected(t, ChessSettingsMenu.ActionDefault),
             "menu: board 1: Off marked", "");
-        Check(menu.Press(t, ChessSettingsMenu.ActionDefault)
+        Check(menu._Press(t, ChessSettingsMenu.ActionDefault)
                 && !arbiter.IsSettingOverridden(0, ChessArbiter.SettingTakebacks),
             "menu: board 1: takebacks back to the default", "");
         CheckString(menu.values[t].text, FromDefault(Text("settings_on")),
             "menu: board 1: takebacks shown from the default again");
-        Check(!menu.Press(t, ChessSettingsMenu.ActionDefault), "menu: board 1: Default again changes nothing", "");
+        Check(!menu._Press(t, ChessSettingsMenu.ActionDefault), "menu: board 1: Default again changes nothing", "");
 
-        Check(menu.Press(ChessSettingsMenu.ItemDrawAgreement, ChessSettingsMenu.ActionOn)
+        Check(menu._Press(ChessSettingsMenu.ItemDrawAgreement, ChessSettingsMenu.ActionOn)
                 && arbiter.IsEffectiveOn(0, ChessArbiter.SettingDrawAgreement),
             "menu: board 1: draw by agreement on", "");
         CheckString(menu.values[d].text, Text("settings_value_mixed"),
             "menu: board 1: draw rules mixed, partly overridden");
-        Check(!menu.IsSelected(d, ChessSettingsMenu.ActionDefault), "menu: board 1: partly overridden, Default not marked",
+        Check(!menu._IsSelected(d, ChessSettingsMenu.ActionDefault), "menu: board 1: partly overridden, Default not marked",
             "");
-        Check(menu.Press(d, ChessSettingsMenu.ActionDefault)
+        Check(menu._Press(d, ChessSettingsMenu.ActionDefault)
                 && (arbiter.overrideMask[0] & ChessArbiter.SettingsDrawRules) == 0,
             "menu: board 1: draw rules all back to the default", "");
         CheckString(menu.values[d].text, FromDefault(Text("settings_value_off_no_draws")),
@@ -749,20 +751,21 @@ public class SettingsTest : ChessTest {
 
         CheckString(menu.values[r].text, FromDefault(Seconds(30)),
             "menu: board 1: reset-available time from the default");
-        Check(menu.IsSelected(r, ChessSettingsMenu.ActionDefault), "menu: board 1: a time from the default marked", "");
-        menu.Press(r, ChessSettingsMenu.ActionNext);
+        Check(menu._IsSelected(r, ChessSettingsMenu.ActionDefault), "menu: board 1: a time from the default marked",
+            "");
+        menu._Press(r, ChessSettingsMenu.ActionNext);
         Check(arbiter.IsNumberOverridden(0, ChessArbiter.NumberResetAvailableTime)
                 && arbiter.NumberOverrideValue(0, ChessArbiter.NumberResetAvailableTime) == 60
                 && arbiter.DefaultNumber(ChessArbiter.NumberResetAvailableTime) == 30,
             "menu: board 1: reset-available time overridden",
             "override " + arbiter.NumberOverrideValue(0, ChessArbiter.NumberResetAvailableTime));
         CheckString(menu.values[r].text, Minutes(1), "menu: board 1: overridden time shown");
-        Check(!menu.IsSelected(r, ChessSettingsMenu.ActionDefault), "menu: board 1: overridden time, Default unmarked",
+        Check(!menu._IsSelected(r, ChessSettingsMenu.ActionDefault), "menu: board 1: overridden time, Default unmarked",
             "");
-        menu.Press(a, ChessSettingsMenu.ActionPrevious);
+        menu._Press(a, ChessSettingsMenu.ActionPrevious);
         CheckInt(arbiter.EffectiveNumber(0, ChessArbiter.NumberAutoResetTime), 3600,
             "menu: board 1: auto-reset < from Never");
-        menu.Press(bt, ChessSettingsMenu.ActionNext);
+        menu._Press(bt, ChessSettingsMenu.ActionNext);
         CheckInt(arbiter.EffectiveNumber(0, ChessArbiter.NumberForcedBaseTime), 180,
             "menu: board 1: forced base time > from the default");
         Check(arbiter.defaultNumbers[ChessArbiter.NumberAutoResetTime] == numbersNow[ChessArbiter.NumberAutoResetTime]
@@ -770,36 +773,36 @@ public class SettingsTest : ChessTest {
                     == numbersNow[ChessArbiter.NumberForcedBaseTime]
                 && !arbiter.IsNumberOverridden(1, ChessArbiter.NumberAutoResetTime),
             "menu: board 1: the default times and board 2 untouched", "");
-        Check(menu.Press(r, ChessSettingsMenu.ActionDefault)
+        Check(menu._Press(r, ChessSettingsMenu.ActionDefault)
                 && !arbiter.IsNumberOverridden(0, ChessArbiter.NumberResetAvailableTime),
             "menu: board 1: reset-available time back to the default", "");
         CheckString(menu.values[r].text, FromDefault(Seconds(30)), "menu: board 1: time shown from the default again");
-        Check(menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionDefault) && arbiter.overrideMask[0] == 0,
+        Check(menu._Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionDefault) && arbiter.overrideMask[0] == 0,
             "menu: board 1: All default clears its overrides", "mask " + arbiter.overrideMask[0]);
-        Check(!menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionDefault),
+        Check(!menu._Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionDefault),
             "menu: board 1: All default with nothing to clear changes nothing", "");
 
         // Scope.
-        menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionNext);
+        menu._Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionNext);
         CheckString(menu.scopeLabel.text, BoardLabel(2), "menu: scope > to board 2");
-        menu.Press(t, ChessSettingsMenu.ActionOff);
+        menu._Press(t, ChessSettingsMenu.ActionOff);
         Check(arbiter.IsSettingOverridden(1, ChessArbiter.SettingTakebacks) && arbiter.overrideMask[0] == 0,
             "menu: board 2: its own override", "");
-        menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionPrevious);
-        menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionPrevious);
+        menu._Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionPrevious);
+        menu._Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionPrevious);
         Check(menu.scope == ChessSettingsMenu.ScopeAllBoards && menu.scopeLabel.text == Text("settings_all_boards"),
             "menu: scope < back to all boards", "scope " + menu.scope);
-        menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionPrevious);
+        menu._Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionPrevious);
         CheckString(menu.scopeLabel.text, BoardLabel(boards), "menu: scope < from all boards wraps to the last board");
-        menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionNext);
+        menu._Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionNext);
         CheckInt(menu.scope, ChessSettingsMenu.ScopeAllBoards, "menu: scope > from the last board wraps to all boards");
         menu.scope = boards;
-        menu.Refresh();
+        menu._Refresh();
         CheckInt(menu.scope, ChessSettingsMenu.ScopeAllBoards, "menu: a board without overrides shows all boards");
 
         // Texts.
-        CheckString(menu.DurationText(45) + "|" + menu.DurationText(5400) + "|"
-                + menu.DurationText(7200) + "|" + menu.DurationText(0),
+        CheckString(menu._DurationText(45) + "|" + menu._DurationText(5400) + "|"
+                + menu._DurationText(7200) + "|" + menu._DurationText(0),
             Seconds(45) + "|" + Minutes(90) + "|" + Hours(2) + "|" + Seconds(0), "menu: durations");
 
         arbiter.defaultSettings = savedSettings;
@@ -810,7 +813,7 @@ public class SettingsTest : ChessTest {
         arbiter.changes++;
         arbiter.EndChange();
         menu.scope = savedScope;
-        menu.Refresh();
+        menu._Refresh();
     }
 
     // ---- 11.1b ----
@@ -822,8 +825,8 @@ public class SettingsTest : ChessTest {
     // the end (no moves, so nothing is logged). Settings are put back and sent.
     void TestMenuResnapshot() {
         if (!Utilities.IsValid(menu) || !Utilities.IsValid(arbiter)) return;
-        CheckString(menu.ResnapshotText(0, 0, 0) + "|" + menu.ResnapshotText(1, 2, 0) + "|"
-                + menu.ResnapshotText(2, 0, 1) + "|" + menu.ResnapshotText(0, 3, 0),
+        CheckString(menu._ResnapshotText(0, 0, 0) + "|" + menu._ResnapshotText(1, 2, 0) + "|"
+                + menu._ResnapshotText(2, 0, 1) + "|" + menu._ResnapshotText(0, 3, 0),
             Text("resnapshot_no_such_board") + "|"
                 + TextWith("resnapshot_not_in_use", new string[] {
                     "text", Text("resnapshot_updated_one"), "count", "2" }) + "|"
@@ -880,11 +883,11 @@ public class SettingsTest : ChessTest {
         arbiter.ClearOverrides(0);
         arbiter.ClearOverrides(1);
         menu.scope = ChessSettingsMenu.ScopeAllBoards;
-        menu.Refresh();
+        menu._Refresh();
 
-        Check(!menu.Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn),
+        Check(!menu._Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn),
             "re-snapshot: nothing taken with every board reset", "");
-        CheckString(menu.resnapshotText, menu.ResnapshotText(0, others + 2, 0),
+        CheckString(menu.resnapshotText, menu._ResnapshotText(0, others + 2, 0),
             "re-snapshot: reset boards reported not in use");
         CheckString(menu.resnapshotLabel.text, menu.resnapshotText, "re-snapshot: the outcome shown");
         Check(first.lifecycle == ChessBoard.LifecycleReset && first.gameSettings == 0,
@@ -898,9 +901,9 @@ public class SettingsTest : ChessTest {
         arbiter.SetDefaultSetting(t, false);
         Check(first.IsGameSettingOn(t), "re-snapshot: a changed default doesn't reach a board in use by itself", "");
 
-        menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionNext);
+        menu._Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionNext);
         CheckString(menu.resnapshotText, "", "re-snapshot: the outcome cleared when the scope changes");
-        Check(menu.Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn),
+        Check(menu._Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn),
             "re-snapshot: board 1 pressed", "");
         CheckString(menu.resnapshotText, Text("resnapshot_updated_one"), "re-snapshot: board 1's outcome");
         Check(!first.IsGameSettingOn(t), "re-snapshot: board 1 took the new default", "");
@@ -909,10 +912,10 @@ public class SettingsTest : ChessTest {
 
         arbiter.SetSettingOverride(1, ChessArbiter.SettingModeForced, true);
         arbiter.SetNumberOverride(1, ChessArbiter.NumberForcedMode, ChessGame.ModeChess960);
-        menu.Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionPrevious);
-        Check(menu.Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn),
+        menu._Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionPrevious);
+        Check(menu._Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn),
             "re-snapshot: all boards pressed", "");
-        CheckString(menu.resnapshotText, menu.ResnapshotText(2, others, 0),
+        CheckString(menu.resnapshotText, menu._ResnapshotText(2, others, 0),
             "re-snapshot: all boards' outcome");
         Check(!second.IsGameSettingOn(t), "re-snapshot: board 2 took the new default", "");
         Check(second.IsModeForced() && second.mode == ChessGame.ModeChess960,
@@ -924,10 +927,10 @@ public class SettingsTest : ChessTest {
             SimpleAuth auth = arbiter.simpleAuth;
             arbiter.SetDefaultSetting(t, true);
             arbiter.simpleAuth = noOneAuth;
-            bool pressed = menu.Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn);
+            bool pressed = menu._Press(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn);
             bool kept = !first.IsGameSettingOn(t) && !second.IsGameSettingOn(t);
             arbiter.simpleAuth = auth;
-            menu.UpdateVisibility();
+            menu._UpdateVisibility();
             Check(!pressed && kept, "re-snapshot: refused for a non-organizer, the snapshots kept", "");
         }
 
@@ -942,7 +945,7 @@ public class SettingsTest : ChessTest {
         arbiter.EndChange();
         menu.scope = savedScope;
         menu.resnapshotText = "";
-        menu.Refresh();
+        menu._Refresh();
     }
 
     // A default number after a menu press, and its value text.
@@ -1000,8 +1003,8 @@ public class SettingsTest : ChessTest {
 
     // Effective settings for combinations of instance defaults and overrides. The test swaps in each set of defaults
     // below for a moment (the arbiter's own ones last), and for each gives board 1 every override pattern, board 0 the
-    // next pattern and board 2 none. The expected values are worked out bit by bit and number by number here, not with
-    // CombineSettings, then corrected with FixNumbers (checked on its own in 6.1a). Defaults and boards 0 to 2 are put
+    // next pattern and board 2 none. The expected values are worked out bit by bit and number by number here, not
+    // with _CombineSettings, then corrected with _FixNumbers (checked on its own in 6.1a). Defaults and boards 0 to 2 are put
     // back at the end.
     void TestCombinations() {
         if (!Utilities.IsValid(arbiter)) {
@@ -1102,16 +1105,16 @@ public class SettingsTest : ChessTest {
             expectedNumbers[i] = (numberMask & (1 << i)) != 0
                 ? numberValueSets[pattern * ChessArbiter.NumberCount + i] : defaultNumbers[i];
         }
-        ChessArbiter.FixNumbers(expectedNumbers);
+        ChessArbiter._FixNumbers(expectedNumbers);
         int[] numbers = new int[ChessArbiter.NumberCount];
         arbiter.EffectiveNumbers(board, numbers);
         int settings = arbiter.EffectiveSettings(board);
-        string expectedText = ChessArbiter.NumbersToString(expectedNumbers);
-        string numberText = ChessArbiter.NumbersToString(numbers);
+        string expectedText = ChessArbiter._NumbersToString(expectedNumbers);
+        string numberText = ChessArbiter._NumbersToString(numbers);
         string problems = "";
         if (settings != expected) {
-            problems += " board " + board + " settings: expected " + ChessArbiter.SettingsToString(expected)
-                + ", got " + ChessArbiter.SettingsToString(settings) + ";";
+            problems += " board " + board + " settings: expected " + ChessArbiter._SettingsToString(expected)
+                + ", got " + ChessArbiter._SettingsToString(settings) + ";";
         }
         if (numberText != expectedText) {
             problems += " board " + board + " numbers: expected " + expectedText + ", got " + numberText + ";";
@@ -1119,7 +1122,7 @@ public class SettingsTest : ChessTest {
         for (int i = 0; i < ChessArbiter.SettingCount; i++) {
             int bit = 1 << i;
             if (arbiter.IsEffectiveOn(board, bit) != ((expected & bit) != 0)) {
-                problems += " board " + board + " IsEffectiveOn " + ChessArbiter.SettingsToString(bit) + ";";
+                problems += " board " + board + " IsEffectiveOn " + ChessArbiter._SettingsToString(bit) + ";";
             }
         }
         return problems;

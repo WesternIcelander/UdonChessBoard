@@ -22,7 +22,7 @@ namespace SiggiChessBoard {
         // - GameID and ContinuedFrom ("<GameID>/<ply>"), each only when not empty;
         // - Termination (docs/game-endings.md), except for a game still in progress (EndingNone).
         // ending is a ChessGame.Ending* value, winner ChessRules.White, Black or NoColor (a draw). Every value is
-        // escaped (EscapeTagValue). The blank line that ends the tag section is not included.
+        // escaped (_EscapeTagValue). The blank line that ends the tag section is not included.
         public static string WriteTags(string eventName, string site, string date, string white, string black,
             int ending, int winner, int mode, string startFen, int baseSeconds, int incrementSeconds, string gameId,
             string continuedFrom) {
@@ -93,8 +93,8 @@ namespace SiggiChessBoard {
             int tenths = milliseconds / 100;
             int seconds = tenths / 10;
             int minutes = seconds / 60;
-            string text = (minutes / 60).ToString() + ":" + ChessUtil.TwoDigits(minutes % 60) + ":"
-                + ChessUtil.TwoDigits(seconds % 60);
+            string text = (minutes / 60).ToString() + ":" + ChessUtil._TwoDigits(minutes % 60) + ":"
+                + ChessUtil._TwoDigits(seconds % 60);
             if (tenths % 10 != 0) text += "." + (tenths % 10).ToString();
             return text;
         }
@@ -143,8 +143,8 @@ namespace SiggiChessBoard {
             return "";
         }
 
-        // The TimeControl tag's value (docs/clocks.md): "?" for unknown (baseSeconds below 0, as ParseTimeControl gives
-        // it), "-" for no clock (0), "base" for no increment, else "base+inc".
+        // The TimeControl tag's value (docs/clocks.md): "?" for unknown (baseSeconds below 0, as _ParseTimeControl
+        // gives it), "-" for no clock (0), "base" for no increment, else "base+inc".
         public static string TimeControlText(int baseSeconds, int incrementSeconds) {
             if (baseSeconds < 0) return "?";
             if (baseSeconds == 0) return "-";
@@ -155,7 +155,7 @@ namespace SiggiChessBoard {
         // A tag value as the PGN standard requires: \ becomes \\ and " becomes \". Control characters (the Java's
         // Character.isISOControl: U+0000-U+001F and U+007F-U+009F) become a space, since a tag must stay on one line.
         // Everything else, surrogate pairs included, is kept as it is. Null gives "".
-        public static string EscapeTagValue(string value) {
+        public static string _EscapeTagValue(string value) {
             if (value == null) return "";
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < value.Length; i++) {
@@ -176,7 +176,7 @@ namespace SiggiChessBoard {
             sb.Append('[');
             sb.Append(name);
             sb.Append(" \"");
-            sb.Append(EscapeTagValue(value));
+            sb.Append(_EscapeTagValue(value));
             sb.Append("\"]\n");
         }
 
@@ -217,7 +217,7 @@ namespace SiggiChessBoard {
         public const string ClockPattern =
             @"\[%clk\s+(?<h>[0-9]{1,9}):(?<m>[0-9]{1,2}):(?<s>[0-9]{1,2})(?:\.(?<f>[0-9]+))?\s*\]";
 
-        // The tags import reads, as indices into the tags array ReadNext fills. All other tags are ignored.
+        // The tags import reads, as indices into the tags array _ReadNext fills. All other tags are ignored.
         public const int TagFen = 0;
         public const int TagVariant = 1;
         public const int TagWhite = 2;
@@ -227,14 +227,14 @@ namespace SiggiChessBoard {
         public const int TagTimeControl = 6;
         public const int TagCount = 7;
 
-        // The reading state ReadNext keeps between calls (an int[CursorLength]), so an import can stop after any move
+        // The reading state _ReadNext keeps between calls (an int[CursorLength]), so an import can stop after any move
         // and go on in a later frame: where in the text it is, how deep in variations, how many main-line moves it
         // has read, and whether the move text has started (1) or it is still in the tag section (0).
         public const int CursorPosition = 0;
         public const int CursorDepth = 1;
         public const int CursorMoves = 2;
         public const int CursorInMoveText = 3;
-        // Kept by ImportNext only: whether the starting position is set up (1) yet, and that position's fullmove
+        // Kept by _ImportNext only: whether the starting position is set up (1) yet, and that position's fullmove
         // number, side to move and halfmove clock (1, White and 0 until it is).
         public const int CursorSetUp = 4;
         public const int CursorFirstMoveNumber = 5;
@@ -242,14 +242,14 @@ namespace SiggiChessBoard {
         public const int CursorFirstHalfmoveClock = 7;
         public const int CursorLength = 8;
 
-        // What ReadNext found.
+        // What _ReadNext found.
         public const int ReadMove = 0;
         public const int ReadClock = 1;
         public const int ReadEnd = 2;
         public const int ReadError = 3;
 
         // The name of a tag import reads (TagFen...), as written in a PGN.
-        public static string TagName(int tag) {
+        public static string _TagName(int tag) {
             switch (tag) {
                 case TagFen: return "FEN";
                 case TagVariant: return "Variant";
@@ -263,16 +263,16 @@ namespace SiggiChessBoard {
         }
 
         // Which tag import reads a tag name is (case-sensitive, as in the PGN standard), -1 for any other.
-        public static int TagIndex(string name) {
+        public static int _TagIndex(string name) {
             for (int tag = 0; tag < TagCount; tag++) {
-                if (TagName(tag) == name) return tag;
+                if (_TagName(tag) == name) return tag;
             }
             return -1;
         }
 
         // Prepares cursor (int[CursorLength]) and tags (string[TagCount]) for reading a PGN from its start. Tags the
         // PGN doesn't have stay "".
-        public static void StartReading(int[] cursor, string[] tags) {
+        public static void _StartReading(int[] cursor, string[] tags) {
             for (int i = 0; i < CursorLength; i++) cursor[i] = 0;
             cursor[CursorFirstMoveNumber] = 1;
             cursor[CursorFirstSideToMove] = ChessRules.White;
@@ -280,7 +280,7 @@ namespace SiggiChessBoard {
         }
 
         // Reads a PGN (a single game) up to the next thing an import needs, using tokenRegex (TokenPattern) and
-        // clockRegex (ClockPattern), and the state in cursor (see StartReading). Returns:
+        // clockRegex (ClockPattern), and the state in cursor (see _StartReading). Returns:
         // - ReadMove: the next main-line move, its SAN in san, as written (with any +/#) except that castling is
         //   always O-O/O-O-O and annotations are left out. cursor[CursorMoves] counts it.
         // - ReadClock: a [%clk] in a comment after a main-line move, in milliseconds in clock; it is the clock of
@@ -295,7 +295,7 @@ namespace SiggiChessBoard {
         // unescaped; all come before the first move, so a FEN tag is known before the first ReadMove. A tag read
         // twice keeps its last value. Move numbers, NAGs, annotations, ; comments and % lines are skipped, and so
         // are variations with everything in them. Move numbers aren't checked against the moves.
-        public static int ReadNext(Regex tokenRegex, Regex clockRegex, string pgn, int[] cursor, string[] tags,
+        public static int _ReadNext(Regex tokenRegex, Regex clockRegex, string pgn, int[] cursor, string[] tags,
             out string san, out int clock) {
             san = "";
             clock = -1;
@@ -309,15 +309,15 @@ namespace SiggiChessBoard {
                     if (cursor[CursorInMoveText] != 0) {
                         return cursor[CursorDepth] > 0 ? ReadError : ReadEnd;
                     }
-                    int tag = TagIndex(match.Groups["name"].Value);
-                    if (tag >= 0) tags[tag] = UnescapeTagValue(match.Groups["value"].Value);
+                    int tag = _TagIndex(match.Groups["name"].Value);
+                    if (tag >= 0) tags[tag] = _UnescapeTagValue(match.Groups["value"].Value);
                     cursor[CursorPosition] = match.Index + match.Length;
                     continue;
                 }
                 if (match.Groups["comment"].Success) {
                     cursor[CursorPosition] = match.Index + match.Length;
                     if (cursor[CursorDepth] == 0 && cursor[CursorMoves] > 0) {
-                        clock = ClockFromComment(clockRegex, match.Groups["comment"].Value);
+                        clock = _ClockFromComment(clockRegex, match.Groups["comment"].Value);
                         if (clock >= 0) return ReadClock;
                     }
                     continue;
@@ -349,9 +349,9 @@ namespace SiggiChessBoard {
             }
         }
 
-        // What ImportNext did. ImportMore: it played a move or read a clock, call again. ImportDone: the PGN is
-        // read. The rest are failures, at the ply ImportFailedAt names:
-        // - ImportBadSyntax: text that is no PGN token, an unclosed { or ( and the like (ReadNext's ReadError);
+        // What _ImportNext did. ImportMore: it played a move or read a clock, call again. ImportDone: the PGN is
+        // read. The rest are failures, at the ply _ImportFailedAt names:
+        // - ImportBadSyntax: text that is no PGN token, an unclosed { or ( and the like (_ReadNext's ReadError);
         // - ImportIllegalMove, ImportAmbiguousMove: a move no legal move matches, or more than one does
         //   (ChessNotation.MoveFromSan);
         // - ImportBadFen: the FEN tag isn't a valid position (ChessFen.ParseFen), failing before the first move;
@@ -364,7 +364,7 @@ namespace SiggiChessBoard {
         public const int ImportBadFen = 5;
         public const int ImportTooLong = 6;
 
-        // Imports a PGN one step at a time: reads it with ReadNext (cursor and tags set up by StartReading) and plays
+        // Imports a PGN one step at a time: reads it with _ReadNext (cursor and tags set up by _StartReading) and plays
         // each main-line move on board and state (byte[64], int[ChessPosition.StateLength]), so the caller can stop
         // after any step and go on later (5.3). Returns an Import* value.
         // Before the first move (or the end, for a game with no moves) the position is set up from the FEN tag, or
@@ -376,12 +376,12 @@ namespace SiggiChessBoard {
         // and its [%clk] in clocks (-1 for none). moves, sans and clocks must be the same length, which limits the
         // game's length. cursor[CursorMoves] is always the number of moves played, also after a failure.
         // prohibitSelfCheck is the mode's (docs/modes.md), for the legal moves and the SAN.
-        public static int ImportNext(Regex tokenRegex, Regex clockRegex, string pgn, int[] cursor, string[] tags,
+        public static int _ImportNext(Regex tokenRegex, Regex clockRegex, string pgn, int[] cursor, string[] tags,
             byte[] board, int[] state, int[] moves, string[] sans, int[] clocks, int[] legalMoves, int[] scratch,
             bool prohibitSelfCheck) {
             string san;
             int clock;
-            int read = ReadNext(tokenRegex, clockRegex, pgn, cursor, tags, out san, out clock);
+            int read = _ReadNext(tokenRegex, clockRegex, pgn, cursor, tags, out san, out clock);
             if (read == ReadClock) {
                 clocks[cursor[CursorMoves] - 1] = clock;
                 return ImportMore;
@@ -423,21 +423,21 @@ namespace SiggiChessBoard {
         }
 
         // The move an import failed at, for "failed at move N": the next ply after the moves played, numbered from
-        // the starting position (MoveLabel).
-        public static string ImportFailedAt(int[] cursor) {
-            return MoveLabel(cursor[CursorFirstMoveNumber], cursor[CursorFirstSideToMove], cursor[CursorMoves]);
+        // the starting position (_MoveLabel).
+        public static string _ImportFailedAt(int[] cursor) {
+            return _MoveLabel(cursor[CursorFirstMoveNumber], cursor[CursorFirstSideToMove], cursor[CursorMoves]);
         }
 
         // The number of ply index ply (0 for the first move) of a game starting at fullmove number firstMoveNumber
         // with firstSideToMove (ChessRules.White or Black) to move: "12." for a White move, "12..." for Black's.
-        public static string MoveLabel(int firstMoveNumber, int firstSideToMove, int ply) {
+        public static string _MoveLabel(int firstMoveNumber, int firstSideToMove, int ply) {
             int halfmoves = firstSideToMove + ply;
             return (firstMoveNumber + halfmoves / 2).ToString() + (halfmoves % 2 == 0 ? "." : "...");
         }
 
-        // A short English description of an ImportNext failure, for logs and messages; "" for ImportMore and
+        // A short English description of an _ImportNext failure, for logs and messages; "" for ImportMore and
         // ImportDone.
-        public static string ImportErrorText(int result) {
+        public static string _ImportErrorText(int result) {
             switch (result) {
                 case ImportBadSyntax: return "not a PGN";
                 case ImportIllegalMove: return "illegal move";
@@ -450,11 +450,11 @@ namespace SiggiChessBoard {
 
         // The first [%clk] in a comment's text, using clockRegex (ClockPattern), in milliseconds. Digits after the
         // thousandths are dropped. -1 when there is none, or it doesn't fit in an int (over 596:31:23.647).
-        public static int ClockFromComment(Regex clockRegex, string comment) {
+        public static int _ClockFromComment(Regex clockRegex, string comment) {
             Match match = clockRegex.Match(comment);
             if (!match.Success) return -1;
-            long seconds = (long)ChessFen.ParseCount(match.Groups["h"].Value) * 3600
-                + ChessFen.ParseCount(match.Groups["m"].Value) * 60 + ChessFen.ParseCount(match.Groups["s"].Value);
+            long seconds = (long)ChessFen._ParseCount(match.Groups["h"].Value) * 3600
+                + ChessFen._ParseCount(match.Groups["m"].Value) * 60 + ChessFen._ParseCount(match.Groups["s"].Value);
             string fraction = match.Groups["f"].Value;
             int milliseconds = 0;
             for (int i = 0; i < 3; i++) {
@@ -466,8 +466,8 @@ namespace SiggiChessBoard {
             return (int)total;
         }
 
-        // Undoes EscapeTagValue's escapes: a backslash and the character after it become that character.
-        public static string UnescapeTagValue(string value) {
+        // Undoes _EscapeTagValue's escapes: a backslash and the character after it become that character.
+        public static string _UnescapeTagValue(string value) {
             if (value.IndexOf('\\') < 0) return value;
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < value.Length; i++) {
@@ -484,7 +484,7 @@ namespace SiggiChessBoard {
         // Reads a TimeControl tag's value (docs/clocks.md): "-" is no clock (0, 0), "base" or "base+increment" in
         // seconds with a base above 0. Anything else (including an empty value) is unknown: returns false with
         // both -1.
-        public static bool ParseTimeControl(string text, out int baseSeconds, out int incrementSeconds) {
+        public static bool _ParseTimeControl(string text, out int baseSeconds, out int incrementSeconds) {
             baseSeconds = -1;
             incrementSeconds = -1;
             if (text == "-") {
@@ -493,8 +493,8 @@ namespace SiggiChessBoard {
                 return true;
             }
             int plus = text.IndexOf('+');
-            int parsedBase = ChessFen.ParseCount(plus < 0 ? text : text.Substring(0, plus));
-            int parsedIncrement = plus < 0 ? 0 : ChessFen.ParseCount(text.Substring(plus + 1));
+            int parsedBase = ChessFen._ParseCount(plus < 0 ? text : text.Substring(0, plus));
+            int parsedIncrement = plus < 0 ? 0 : ChessFen._ParseCount(text.Substring(plus + 1));
             if (parsedBase <= 0 || parsedIncrement < 0) return false;
             baseSeconds = parsedBase;
             incrementSeconds = parsedIncrement;
@@ -503,7 +503,7 @@ namespace SiggiChessBoard {
 
         // Reads a Result tag's value: "1-0", "0-1" and "1/2-1/2" give the winner (ChessRules.White, Black, or NoColor
         // for the draw) and true; anything else ("*", empty, unknown text) gives NoColor and false.
-        public static bool ParseResult(string text, out int winner) {
+        public static bool _ParseResult(string text, out int winner) {
             winner = ChessRules.NoColor;
             if (text == "1-0") winner = ChessRules.White;
             else if (text == "0-1") winner = ChessRules.Black;
@@ -512,7 +512,7 @@ namespace SiggiChessBoard {
         }
 
         // The mode a Variant tag gives (docs/modes.md): ChessGame.ModeChess960 for "Chess960", otherwise Standard.
-        public static int ModeFromVariant(string variant) {
+        public static int _ModeFromVariant(string variant) {
             return variant == "Chess960" ? ChessGame.ModeChess960 : ChessGame.ModeStandard;
         }
     }

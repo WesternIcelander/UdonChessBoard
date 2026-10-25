@@ -72,7 +72,7 @@ namespace SiggiChessBoard {
         }
 
         // The slot holding gameId, -1 for none.
-        public int SlotOf(string gameId) {
+        public int _SlotOf(string gameId) {
             if (string.IsNullOrEmpty(gameId)) return -1;
             for (int i = 0; i < Capacity; i++) {
                 if (sequences[i] > 0 && gameIds[i] == gameId) return i;
@@ -80,38 +80,38 @@ namespace SiggiChessBoard {
             return -1;
         }
 
-        public int Info(int slot, int info) {
+        public int _Info(int slot, int info) {
             return infos[slot * InfoLength + info];
         }
 
-        public int MoveCount(int slot) {
+        public int _MoveCount(int slot) {
             return infos[slot * InfoLength + InfoMoveCount];
         }
 
         // Where slot's moves and clocks start in moves and clocks.
-        public int MoveOffset(int slot) {
+        public int _MoveOffset(int slot) {
             int offset = 0;
-            for (int i = 0; i < slot; i++) offset += MoveCount(i);
+            for (int i = 0; i < slot; i++) offset += _MoveCount(i);
             return offset;
         }
 
-        // Copies slot's moves into destination (which must have room for MoveCount(slot)).
-        public void CopyMoves(int slot, int[] destination) {
-            Array.Copy(moves, MoveOffset(slot), destination, 0, MoveCount(slot));
+        // Copies slot's moves into destination (which must have room for _MoveCount(slot)).
+        public void _CopyMoves(int slot, int[] destination) {
+            Array.Copy(moves, _MoveOffset(slot), destination, 0, _MoveCount(slot));
         }
 
-        public void CopyClocks(int slot, int[] destination) {
-            Array.Copy(clocks, MoveOffset(slot), destination, 0, MoveCount(slot));
+        public void _CopyClocks(int slot, int[] destination) {
+            Array.Copy(clocks, _MoveOffset(slot), destination, 0, _MoveCount(slot));
         }
 
         // Puts a game in slot, replacing what was there: its sequence (its place in the archive's order), the first
-        // count of gameMoves and gameClocks, and the rest as GameArchive.AddGame takes them. null strings are kept as
+        // count of gameMoves and gameClocks, and the rest as GameArchive._AddGame takes them. null strings are kept as
         // "". Nothing is sent (Send).
-        public void WriteSlot(int slot, int sequence, string gameId, string continuedFrom, string white, string black,
+        public void _WriteSlot(int slot, int sequence, string gameId, string continuedFrom, string white, string black,
             int mode, int ending, int winner, string startFen, int baseTime, int increment, int[] gameMoves,
             int[] gameClocks, int count) {
-            int offset = MoveOffset(slot);
-            int oldCount = MoveCount(slot);
+            int offset = _MoveOffset(slot);
+            int oldCount = _MoveCount(slot);
             int total = moves.Length - oldCount + count;
             int after = moves.Length - offset - oldCount;
             int[] newMoves = new int[total];
@@ -141,7 +141,7 @@ namespace SiggiChessBoard {
         }
 
         // Empties every slot. Nothing is sent.
-        public void Clear() {
+        public void _Clear() {
             sequences = new int[Capacity];
             gameIds = new string[Capacity];
             continuedFroms = new string[Capacity];
@@ -155,7 +155,7 @@ namespace SiggiChessBoard {
 
         // Takes ownership (allowed only to the archive's owner) and sends the games; returns whether this client
         // owns the holder. A localOnly holder is never sent.
-        public bool Send() {
+        public bool _Send() {
             if (localOnly) return false;
             VRCPlayerApi local = Networking.LocalPlayer;
             if (!Networking.IsOwner(gameObject)) Networking.SetOwner(local, gameObject);
@@ -170,7 +170,7 @@ namespace SiggiChessBoard {
 
         // Asked on the requesting client and on the owner. A refusal is logged, so a client's log shows it.
         public override bool OnOwnershipRequest(VRCPlayerApi requestingPlayer, VRCPlayerApi requestedOwner) {
-            bool allowed = MayOwn(requestedOwner);
+            bool allowed = _MayOwn(requestedOwner);
             if (!allowed) {
                 Debug.Log("[GameArchiveHolder] " + gameObject.name + ": ownership refused for "
                     + (Utilities.IsValid(requestedOwner) ? requestedOwner.displayName : "nobody"));
@@ -179,21 +179,21 @@ namespace SiggiChessBoard {
         }
 
         // Whether a player may own this holder: the archive's owner, and nobody for a localOnly holder.
-        public bool MayOwn(VRCPlayerApi who) {
+        public bool _MayOwn(VRCPlayerApi who) {
             if (localOnly || !Utilities.IsValid(who) || !Utilities.IsValid(archive)) return false;
             return Networking.IsOwner(who, archive.gameObject);
         }
 
         public override void OnPreSerialization() {
-            PackState();
+            _PackState();
         }
 
         public override void OnDeserialization() {
-            ReceiveState();
+            _ReceiveState();
         }
 
         // Copies the games into the synced fields (nothing for a localOnly holder). Public for tests.
-        public void PackState() {
+        public void _PackState() {
             if (localOnly) return;
             syncedSequences = sequences;
             syncedGameIds = PackStrings(gameIds);
@@ -206,9 +206,9 @@ namespace SiggiChessBoard {
             syncedClocks = clocks;
         }
 
-        // Takes the games from the synced fields, unless the holder is localOnly or they aren't an update PackState
+        // Takes the games from the synced fields, unless the holder is localOnly or they aren't an update _PackState
         // could have written. Public for tests.
-        public void ReceiveState() {
+        public void _ReceiveState() {
             if (localOnly || !IsValidUpdate()) return;
             sequences = CopyInts(syncedSequences);
             gameIds = CopyStrings(syncedGameIds);
@@ -220,10 +220,10 @@ namespace SiggiChessBoard {
             moves = CopyInts(syncedMoves);
             clocks = CopyInts(syncedClocks);
             ready = true;
-            if (Utilities.IsValid(archive)) archive.OnHolderChanged();
+            if (Utilities.IsValid(archive)) archive._OnHolderChanged();
         }
 
-        // Whether the synced fields are an update PackState could have written.
+        // Whether the synced fields are an update _PackState could have written.
         bool IsValidUpdate() {
             if (syncedSequences == null || syncedSequences.Length != Capacity) return false;
             if (!IsValidStrings(syncedGameIds) || !IsValidStrings(syncedContinuedFroms)
