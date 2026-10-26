@@ -422,7 +422,7 @@ MonoBehaviour:
       Data: 24|UnityEngine.TooltipAttribute, UnityEngine.CoreModule
     - Name: tooltip
       Entry: 1
-      Data: 'The builder''s square size, in the view''s units. Don''t change it to
+      Data: 'The prefab''s square size, in the view''s units. Don''t change it to
         resize the board: scale the view.'
     - Name: 
       Entry: 8
