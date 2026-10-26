@@ -12,27 +12,30 @@ using VRC.SDK3.Components;
 using VRC.Udon;
 using static ChessBuilderUtil;
 
-// Builds the history wall (docs/archive.md, GameHistoryWall.cs) in the open scene for its only GameArchive: a
-// world-space canvas with a title and one row per game the archive holds, in Columns columns, oldest first down each
-// column. Each row is a UI Button (step 10.2b) whose GameHistoryRow picks its game, so the canvas takes the pointer
-// (VRCUiShape, a trigger collider). Placed to the left of the boards (along -x), facing them; an existing wall is
-// replaced in place (same parent, position, rotation and scale). Every board UI on the archive's boards gets the
-// wall for its Load it here button. Menu: Tools > Chess Board > Create History Wall. Plain editor C#, not Udon.
+// Builds the history wall (docs/archive.md, GameHistoryWall.cs) in the open scene for its only GameArchive: a portrait
+// world-space canvas with a title and a vertical scroll view holding one two-line entry per game the archive holds,
+// newest first from the top (the wall hides those it has no game for and sizes the content to the rest). Each entry
+// is a UI Button (step 10.2b) covering both its lines, whose GameHistoryRow picks its game, so the canvas takes the
+// pointer (VRCUiShape, a trigger collider); dragging or the wheel over the entries scrolls them. Placed to the left of
+// the boards (along -x), facing them; an existing wall is replaced in place (same parent, position, rotation and
+// scale). Every board UI on the archive's boards gets the wall for its Load it here button. Menu: Tools > Chess Board
+// > Create History Wall. Plain editor C#, not Udon.
 public static class GameHistoryWallBuilder {
     const string WallScriptPath = "Assets/Siggi/ChessBoard/GameHistoryWall.cs";
     const string WallProgramPath = "Assets/Siggi/ChessBoard/GameHistoryWall.asset";
     const string RowScriptPath = "Assets/Siggi/ChessBoard/GameHistoryRow.cs";
     const string RowProgramPath = "Assets/Siggi/ChessBoard/GameHistoryRow.asset";
 
-    const int Columns = 2;
-    const float CanvasWidth = 3000;
+    // The canvas, in canvas pixels (a millimetre each): 1.2 m wide and 1.6 m tall.
+    const float CanvasWidth = 1200;
+    const float CanvasHeight = 1600;
     const float Margin = 40;
     const float TitleHeight = 100;
-    const float RowHeight = 64;
-    const float ColumnGap = 40;
+    const float EntryHeight = 100;
+    const float ScrollbarWidth = 24;
     const int TitleFontSize = 60;
-    const int RowFontSize = 30;
-    // A row's text inset from its button's edges, in canvas pixels.
+    const int RowFontSize = 32;
+    // An entry's text inset from its button's edges, in canvas pixels.
     const float RowInset = 12;
     // Where a new wall goes: this far to the left of the leftmost board (along -x, beside the spawn's view, which
     // looks along +z from behind the boards), its centre this high above them.
@@ -52,8 +55,6 @@ public static class GameHistoryWallBuilder {
             RowProgramPath)) return;
         GameArchive archive = archives[0];
         int rowCount = archive.holders.Length * GameArchiveHolder.Capacity;
-        int rowsPerColumn = (rowCount + Columns - 1) / Columns;
-        float canvasHeight = Margin * 2 + TitleHeight + Margin / 2 + rowsPerColumn * RowHeight;
 
         TMP_FontAsset font = DefaultFont();
         GameHistoryWall[] olds = Object.FindObjectsOfType<GameHistoryWall>(true);
@@ -63,7 +64,7 @@ public static class GameHistoryWallBuilder {
         Canvas canvas = root.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
         RectTransform rootRect = root.GetComponent<RectTransform>();
-        rootRect.sizeDelta = new Vector2(CanvasWidth, canvasHeight);
+        rootRect.sizeDelta = new Vector2(CanvasWidth, CanvasHeight);
         rootRect.localScale = Vector3.one * 0.001f;
         rootRect.position = NewWallPosition();
         // Facing the boards: seen from them, looking along -x.
@@ -81,18 +82,21 @@ public static class GameHistoryWallBuilder {
         wall.title = NewText(root, "Title", font, TitleFontSize, new Vector2(Margin, Margin),
             new Vector2(CanvasWidth - 2 * Margin, TitleHeight));
         wall.title.fontStyle = FontStyles.Bold;
-        // The wall writes every text from the language pack (PLAN.md 13.5).
-        wall.title.text = "";
-        float columnWidth = (CanvasWidth - 2 * Margin - (Columns - 1) * ColumnGap) / Columns;
-        float rowsTop = Margin + TitleHeight + Margin / 2;
+        // The wall writes every text from the language pack (PLAN.md 13.5), the title too; it's written here as
+        // well, so the wall's orientation shows in the editor.
+        wall.title.text = "Previous games";
+        float listTop = Margin + TitleHeight + Margin / 2;
+        GameObject content = BuildList(root, wall, new Vector2(Margin, listTop),
+            new Vector2(CanvasWidth - 2 * Margin, CanvasHeight - listTop - Margin));
+        wall.entryHeight = EntryHeight;
         wall.rows = new TextMeshProUGUI[rowCount];
         wall.rowTargets = new GameHistoryRow[rowCount];
+        float entryWidth = wall.content.sizeDelta.x;
         for (int i = 0; i < rowCount; i++) {
-            int column = i / rowsPerColumn;
-            int row = i % rowsPerColumn;
-            Vector2 topLeft = new Vector2(Margin + column * (columnWidth + ColumnGap), rowsTop + row * RowHeight);
-            AddRow(root, wall, i, font, topLeft, new Vector2(columnWidth, RowHeight));
+            AddRow(content, wall, i, font, new Vector2(0, i * EntryHeight), new Vector2(entryWidth, EntryHeight));
         }
+        // The content as tall as every entry in the editor; the wall sizes it to the games at run time.
+        wall.content.sizeDelta = new Vector2(entryWidth, rowCount * EntryHeight);
         UdonSharpEditorUtility.CopyProxyToUdon(wall);
 
         for (int i = 0; i < olds.Length; i++) {
@@ -114,21 +118,67 @@ public static class GameHistoryWallBuilder {
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[GameHistoryWallBuilder] " + (olds.Length > 0 ? "Replaced" : "Created") + " the history wall with "
-            + rowCount + " rows, for " + uis + " board UI(s). Move it where you like and save the scene.");
+            + rowCount + " entries, for " + uis + " board UI(s). Move it where you like and save the scene.");
     }
 
-    // A row: a button over the row's area (clear until pointed at) with a GameHistoryRow calling the wall's
-    // _SelectRow, and the row's text inside it.
-    static void AddRow(GameObject root, GameHistoryWall wall, int index, TMP_FontAsset font, Vector2 topLeft, Vector2 extent) {
-        GameObject rowObject = new GameObject("Row " + (index + 1), typeof(RectTransform));
-        rowObject.layer = root.layer;
-        RectTransform rect = rowObject.GetComponent<RectTransform>();
-        rect.SetParent(root.transform, false);
-        rect.anchorMin = new Vector2(0, 1);
-        rect.anchorMax = new Vector2(0, 1);
-        rect.pivot = new Vector2(0, 1);
-        rect.anchoredPosition = new Vector2(topLeft.x, -topLeft.y);
-        rect.sizeDelta = extent;
+    // The scroll view at topLeft, extent in size: a scroll rect (vertical only) over a masked viewport holding the
+    // content, an empty rect from the viewport's top for the entries, and a scrollbar along the right edge, shown
+    // while the entries don't fit (as the 2D view's move list, 12.15). Its scrolling calls the wall's _OnScrolled,
+    // which makes each turn of the mouse wheel one step (scrollSensitivity, an entry). Sets the wall's scroll,
+    // viewport, scrollbar and content, and returns the content.
+    static GameObject BuildList(GameObject root, GameHistoryWall wall, Vector2 topLeft, Vector2 extent) {
+        GameObject list = NewChild(root, "Games", topLeft, extent);
+        Image background = list.AddComponent<Image>();
+        background.color = new Color(0.14f, 0.14f, 0.17f, 1f);
+        background.raycastTarget = false;
+        ScrollRect scroll = list.AddComponent<ScrollRect>();
+
+        float viewportWidth = extent.x - ScrollbarWidth;
+        GameObject viewport = NewChild(list, "Viewport", Vector2.zero, new Vector2(viewportWidth, extent.y));
+        Image viewportImage = viewport.AddComponent<Image>();
+        // Clear but hit by the pointer, so a drag anywhere on the list scrolls it.
+        viewportImage.color = new Color(0, 0, 0, 0);
+        viewport.AddComponent<RectMask2D>();
+        GameObject content = NewChild(viewport, "Content", Vector2.zero, new Vector2(viewportWidth, 0));
+
+        GameObject bar = NewChild(list, "Scrollbar", new Vector2(viewportWidth, 0),
+            new Vector2(ScrollbarWidth, extent.y));
+        Image track = bar.AddComponent<Image>();
+        track.color = new Color(0.22f, 0.22f, 0.26f, 1f);
+        GameObject area = AddStretched(bar, "Sliding Area", new Vector2(3, 3), new Vector2(-3, -3));
+        GameObject handle = AddStretched(area, "Handle", Vector2.zero, Vector2.zero);
+        RectTransform handleRect = handle.GetComponent<RectTransform>();
+        Image handleImage = handle.AddComponent<Image>();
+        handleImage.color = new Color(0.7f, 0.7f, 0.75f, 1f);
+        Scrollbar scrollbar = bar.AddComponent<Scrollbar>();
+        scrollbar.handleRect = handleRect;
+        scrollbar.targetGraphic = handleImage;
+        scrollbar.direction = Scrollbar.Direction.BottomToTop;
+
+        scroll.content = content.GetComponent<RectTransform>();
+        scroll.viewport = viewport.GetComponent<RectTransform>();
+        scroll.horizontal = false;
+        scroll.vertical = true;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+        scroll.scrollSensitivity = EntryHeight;
+        scroll.verticalScrollbar = scrollbar;
+        scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+        UnityEventTools.AddStringPersistentListener(scroll.onValueChanged,
+            new UnityAction<string>(UdonSharpEditorUtility.GetBackingUdonBehaviour(wall).SendCustomEvent),
+            nameof(GameHistoryWall._OnScrolled));
+        wall.scroll = scroll;
+        wall.scrollbar = scrollbar;
+        wall.viewport = viewport.GetComponent<RectTransform>();
+        wall.content = content.GetComponent<RectTransform>();
+        return content;
+    }
+
+    // An entry: a button over both its lines (clear until pointed at) with a GameHistoryRow calling the wall's
+    // _SelectRow, and the entry's text inside it. Dragging or the wheel over it scrolls the list (the button takes
+    // only clicks, so they reach the scroll rect).
+    static void AddRow(GameObject content, GameHistoryWall wall, int index, TMP_FontAsset font, Vector2 topLeft,
+        Vector2 extent) {
+        GameObject rowObject = NewChild(content, "Entry " + (index + 1), topLeft, extent);
         Image image = rowObject.AddComponent<Image>();
         image.color = Color.white;
         Button button = rowObject.AddComponent<Button>();

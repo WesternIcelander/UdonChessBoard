@@ -116,9 +116,8 @@
   "hover_promote_queen": "Promote to queen",
 
   "wall_title": "Previous games",
-  "wall_title_empty": "Previous games: none yet",
-  "wall_row": "#${number}  ${white} vs ${black}: ${ending} (${result}), ${moves}",
-  "wall_row_chess960": "#${number}  ${white} vs ${black}: ${ending} (${result}), ${moves}, Chess960",
+  "wall_row": "#${number}  ${white} vs ${black}\n${ending} (${result}), ${moves}",
+  "wall_row_chess960": "#${number}  ${white} vs ${black}\n${ending} (${result}), ${moves}, Chess960",
 
   "settings_title": "Chess settings",
   "settings_scope": "Settings for",

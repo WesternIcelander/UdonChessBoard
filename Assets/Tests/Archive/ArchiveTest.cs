@@ -96,7 +96,7 @@ public class ArchiveTest : ChessTest {
         if (hasWall) {
             Check(wall._RefreshIfChanged(), "wall: redrawn once emptied", "not redrawn");
             CheckWallRows(0, 0, "wall: emptied");
-            CheckString(wall.title.text, Text("wall_title_empty"), "wall: emptied, title");
+            CheckString(wall.title.text, Text("wall_title"), "wall: emptied, title");
         }
         RestoreGames(hasWall);
         LogSummary();
@@ -401,20 +401,26 @@ public class ArchiveTest : ChessTest {
         Check(same, "end: the games put back read back oldest first", "a game differs");
         if (!hasWall) return;
         wall._RefreshIfChanged();
-        bool shown = savedCount == 0 || wall.rows[savedCount - 1].text != "";
+        // Newest first: the last game put back at the top.
+        bool shown = savedCount == 0 || wall.rows[0].text == wall._RowText(savedCount - 1);
+        if (savedCount > 0 && wall.rows[savedCount - 1].text != wall._RowText(0)) shown = false;
         if (savedCount < wall.rows.Length && wall.rows[savedCount].text != "") shown = false;
-        Check(shown, "end: the wall shows the " + savedCount + " game(s) put back", "its rows don't");
+        Check(shown, "end: the wall shows the " + savedCount + " game(s) put back, newest first", "its entries don't");
     }
 
     // ---- The history wall (step 10.2a) ----
 
     void RunWallSetupChecks() {
-        CheckInt(wall.rows.Length, Capacity, "wall: a row per game the archive holds");
-        bool assigned = Utilities.IsValid(wall.title);
+        CheckInt(wall.rows.Length, Capacity, "wall: an entry per game the archive holds");
+        bool assigned = Utilities.IsValid(wall.title) && Utilities.IsValid(wall.content)
+            && Utilities.IsValid(wall.scroll) && Utilities.IsValid(wall.viewport) && Utilities.IsValid(wall.scrollbar)
+            && wall.rowTargets.Length == wall.rows.Length;
         for (int i = 0; i < wall.rows.Length; i++) {
-            if (!Utilities.IsValid(wall.rows[i])) assigned = false;
+            if (!Utilities.IsValid(wall.rows[i]) || !Utilities.IsValid(wall.rowTargets[i])) assigned = false;
         }
-        Check(assigned, "wall: title and rows assigned", "a text is missing");
+        Check(assigned, "wall: title, scroll view, viewport, scrollbar, content and entries assigned",
+            "one is missing (Create History Wall)");
+        Check(wall.entryHeight > 0, "wall: entry height set", "" + wall.entryHeight);
         CheckString(ChessGame.EndingKey(ChessGame.EndingUnterminated, ChessRules.NoColor), "ending_unfinished",
             "wall: ending key, unfinished");
         CheckString(WallEndingText(ChessGame.EndingUnterminated, ChessRules.NoColor), Text("ending_unfinished"),
@@ -427,50 +433,84 @@ public class ArchiveTest : ChessTest {
             "wall: ending text, a loaded game's result");
     }
 
-    // After RunBoardChecks: the board's game alone on the wall.
+    // After RunBoardChecks: the board's game alone on the wall, at the top on two lines.
     void RunWallBoardChecks() {
         Check(wall._RefreshIfChanged(), "wall: redrawn after the board's game", "not redrawn");
         Check(!wall._RefreshIfChanged(), "wall: not redrawn again without a change", "redrawn");
         CheckString(wall.title.text, Text("wall_title"), "wall: board's game, title");
         CheckString(wall.rows[0].text, Row("wall_row", 1, "Archive Ana", "Archive Bo", Text("ending_unfinished"), "*",
-            1), "wall: board's game, row");
-        bool rest = true;
-        for (int i = 1; i < wall.rows.Length; i++) {
-            if (wall.rows[i].text != "") rest = false;
-        }
-        Check(rest, "wall: board's game, the other rows empty", "a row isn't empty");
+            1), "wall: board's game, entry");
+        string[] lines = wall.rows[0].text.Split(new char[] { '\n' });
+        Check(lines.Length == 2 && lines[0].StartsWith("#1 ") && lines[1].Length > 0,
+            "wall: board's game, its entry on two lines", "\"" + wall.rows[0].text + "\"");
+        CheckWallShown(1, "wall: board's game");
     }
 
-    // After RunAddChecks: test-1 to test-7.
+    // After RunAddChecks: test-7 down to test-1, newest first.
     void RunWallAddChecks() {
         Check(wall._RefreshIfChanged(), "wall: redrawn after adding", "not redrawn");
         CheckString(wall.title.text, Text("wall_title"), "wall: 7 games, title");
-        CheckString(wall.rows[0].text, Row("wall_row_chess960", 1, "White 1", "Black 1",
-            Text("ending_checkmate_black"), "0-1", 1), "wall: 7 games, test-1's row");
+        CheckString(wall.rows[6].text, Row("wall_row_chess960", 1, "White 1", "Black 1",
+            Text("ending_checkmate_black"), "0-1", 1), "wall: 7 games, test-1's entry (the last)");
         CheckWallRows(1, 7, "wall: 7 games");
     }
 
-    // After RunWrapChecks: full and wrapped, test-4 to test-53, oldest first across every holder.
+    // After RunWrapChecks: full and wrapped, test-53 down to test-4 across every holder.
     void RunWallFullChecks() {
         Check(wall._RefreshIfChanged(), "wall: redrawn after wrapping", "not redrawn");
         CheckString(wall.title.text, Text("wall_title"), "wall: full, title");
-        CheckWallRows(4, Capacity, "wall: full, test-4 to test-53");
-        CheckString(wall.rows[Capacity - 1].text, ExpectedRow(Capacity + 3), "wall: full, the newest last");
+        CheckWallRows(4, Capacity, "wall: full, test-53 to test-4");
+        CheckString(wall.rows[0].text, ExpectedRow(Capacity + 3), "wall: full, the newest at the top");
+        // Scrolling: the mouse wheel's step can't be simulated (Input.GetAxisRaw), so this checks that a move
+        // without it (a drag) stays where it went.
+        if (Utilities.IsValid(wall.content) && Utilities.IsValid(wall.viewport)) {
+            float max = Capacity * wall.entryHeight - wall.viewport.rect.height;
+            Check(Mathf.Abs(wall._MaxScroll() - max) < 0.5f, "wall: full, scrolls as far as the content overflows",
+                "got " + wall._MaxScroll() + ", expected " + max);
+            Vector2 at = wall.content.anchoredPosition;
+            wall.content.anchoredPosition = new Vector2(at.x, 3.5f * wall.entryHeight);
+            wall._OnScrolled();
+            Check(wall.content.anchoredPosition.y == 3.5f * wall.entryHeight, "wall: a drag's scroll kept",
+                "moved to " + wall.content.anchoredPosition.y);
+            wall.content.anchoredPosition = at;
+            wall._OnScrolled();
+        }
         // Picked for RunWallPickGoneChecks, after RunRecentChecks overwrites it.
-        wall._SelectRow(0);
-        CheckString(wall.selectedGameId, "test-4", "pick: the oldest game picked");
+        wall._SelectRow(Capacity - 1);
+        CheckString(wall.selectedGameId, "test-4", "pick: the oldest game picked, from the last entry");
     }
 
-    // The wall's first count rows are test-first onwards, oldest first, and the rest empty.
+    // The wall's first count entries are test-(first + count - 1) down to test-first, newest first, and the rest
+    // empty and hidden (CheckWallShown).
     void CheckWallRows(int first, int count, string name) {
         string differs = "";
-        for (int i = 0; i < wall.rows.Length && differs == ""; i++) {
-            string expected = i < count ? ExpectedRow(first + i) : "";
+        for (int i = 0; i < count && differs == ""; i++) {
+            string expected = ExpectedRow(first + count - 1 - i);
             if (wall.rows[i].text != expected) {
-                differs = "row " + i + " is \"" + wall.rows[i].text + "\", expected \"" + expected + "\"";
+                differs = "entry " + i + " is \"" + wall.rows[i].text + "\", expected \"" + expected + "\"";
             }
         }
-        Check(differs == "", name + ": rows", differs);
+        Check(differs == "", name + ": entries", differs);
+        CheckWallShown(count, name);
+    }
+
+    // The wall's first count entries shown and the rest empty and hidden, the scroll content as tall as those shown.
+    void CheckWallShown(int count, string name) {
+        string differs = "";
+        for (int i = 0; i < wall.rows.Length && differs == ""; i++) {
+            bool shown = i < count;
+            if (!shown && wall.rows[i].text != "") {
+                differs = "entry " + i + " isn't empty: \"" + wall.rows[i].text + "\"";
+            } else if (i >= wall.rowTargets.Length || !Utilities.IsValid(wall.rowTargets[i])) {
+                differs = "entry " + i + " has no target";
+            } else if (wall.rowTargets[i].gameObject.activeSelf != shown) {
+                differs = "entry " + i + (shown ? " hidden" : " shown");
+            }
+        }
+        Check(differs == "", name + ": the entries past the archive's count empty and hidden", differs);
+        float height = Utilities.IsValid(wall.content) ? wall.content.sizeDelta.y : -1;
+        Check(height == count * wall.entryHeight, name + ": the scroll content as tall as the entries shown",
+            "got " + height + ", expected " + count * wall.entryHeight);
     }
 
     // How a game ended, as the wall writes it (its game texts).
@@ -522,34 +562,37 @@ public class ArchiveTest : ChessTest {
         if (archive.GameCount() != 2 || archive.GameIdAt(1) != mateId) return;
         wall._RefreshIfChanged();
 
-        // Picking on the wall.
+        // Picking on the wall: the newest game, the fool's mate, is entry 0 (the top).
         bool targets = wall.rowTargets.Length == wall.rows.Length;
         for (int i = 0; i < wall.rowTargets.Length; i++) {
             GameHistoryRow target = wall.rowTargets[i];
             if (!Utilities.IsValid(target) || target.wall != wall || target.index != i) targets = false;
         }
-        Check(targets, "pick: every row has its target", "a row's target is missing or wrong (Create History Wall)");
+        Check(targets, "pick: every entry has its target",
+            "an entry's target is missing or wrong (Create History Wall)");
         wall._ClearSelection();
         int changes = wall.selectionChanges;
         wall._SelectRow(5);
-        Check(!wall._HasSelection() && wall.selectionChanges == changes, "pick: an empty row picks nothing",
+        Check(!wall._HasSelection() && wall.selectionChanges == changes, "pick: an empty entry picks nothing",
             "picked " + wall.selectedGameId);
-        if (targets) wall.rowTargets[1]._Press();
-        else wall._SelectRow(1);
-        CheckString(wall.selectedGameId, mateId, "pick: row 2 picks the fool's mate");
-        CheckInt(wall._SelectedIndex(), 1, "pick: its index");
+        if (targets) wall.rowTargets[0]._Press();
+        else wall._SelectRow(0);
+        CheckString(wall.selectedGameId, mateId, "pick: entry 1 (the top) picks the fool's mate");
+        CheckInt(wall._SelectedIndex(), 1, "pick: its archive index");
         Check(wall.selectionChanges == changes + 1, "pick: counted as a change", "changes " + wall.selectionChanges);
-        Check(wall.rows[1].color == wall.selectedColor && wall.rows[0].color == wall.rowColor,
-            "pick: only the picked row coloured", "row 1 " + wall.rows[0].color + ", row 2 " + wall.rows[1].color);
-        wall._SelectRow(1);
+        Check(wall.rows[0].color == wall.selectedColor && wall.rows[1].color == wall.rowColor,
+            "pick: only the picked entry coloured",
+            "entry 1 " + wall.rows[0].color + ", entry 2 " + wall.rows[1].color);
+        wall._SelectRow(0);
         Check(!wall._HasSelection() && wall.selectedGameId == "", "pick: pressed again, unpicked",
             "still " + wall.selectedGameId);
-        Check(wall.rows[1].color == wall.rowColor, "pick: unpicked, its row uncoloured", "" + wall.rows[1].color);
-        wall._SelectRow(0);
-        CheckString(wall.selectedGameId, firstId, "pick: row 1 picks the board's first game");
+        Check(wall.rows[0].color == wall.rowColor, "pick: unpicked, its entry uncoloured", "" + wall.rows[0].color);
         wall._SelectRow(1);
-        CheckString(wall.selectedGameId, mateId, "pick: another row replaces the pick");
-        Check(wall.rows[0].color == wall.rowColor, "pick: replaced, the first row uncoloured", "" + wall.rows[0].color);
+        CheckString(wall.selectedGameId, firstId, "pick: entry 2 picks the board's first game");
+        Check(wall.rows[1].color == wall.selectedColor, "pick: entry 2 coloured", "" + wall.rows[1].color);
+        wall._SelectRow(0);
+        CheckString(wall.selectedGameId, mateId, "pick: another entry replaces the pick");
+        Check(wall.rows[1].color == wall.rowColor, "pick: replaced, entry 2 uncoloured", "" + wall.rows[1].color);
 
         // Load it here: only on a reset board with a game picked.
         bool hasUI = Utilities.IsValid(ui) && ui.board == board && ui.historyWall == wall;
@@ -570,7 +613,7 @@ public class ArchiveTest : ChessTest {
             CheckInt(ui._PressButton(ChessBoardUI.ButtonLoadHere), ChessBoard.InputRejected,
                 "Load it here: refused with nothing picked");
             CheckInt(board.lifecycle, ChessBoard.LifecycleReset, "Load it here: refused, the board still reset");
-            wall._SelectRow(1);
+            wall._SelectRow(0);
         }
         CheckInt(board.LoadArchivedGame("no-such-game"), ChessBoard.InputRejected, "load: a game not archived refused");
         CheckInt(board.LoadArchivedGame(""), ChessBoard.InputRejected, "load: no ID refused");
