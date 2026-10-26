@@ -9,7 +9,8 @@ namespace SiggiChessBoard {
     // Only the archive's owner writes to the holders, so additions never race; every client also keeps its own last
     // games in a local-only holder (recent), and whoever owns the archive adds those missing from it, so a game
     // ending as the owner leaves isn't lost. Reading gives the games oldest first. Holds no board and touches no
-    // world objects; the history wall (step 10.2) is a view of it.
+    // world objects; the history wall (step 10.2) is a view of it. Placed from the Game Archive prefab (step 14.5,
+    // docs/prefabs.md), which holds the holders as its children.
     [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
     public class GameArchive : UdonSharpBehaviour {
         // The synced holders, in slot order: the archive holds holders.Length * GameArchiveHolder.Capacity games.
@@ -41,13 +42,15 @@ namespace SiggiChessBoard {
         void Start() {
             for (int i = 0; i < holders.Length; i++) {
                 if (!Utilities.IsValid(holders[i])) {
-                    Debug.LogError("[GameArchive] " + gameObject.name + ": holder " + i + " is missing. Run Tools > "
-                        + "Chess Board > Create Game Archive again.");
+                    Debug.LogError("[GameArchive] " + gameObject.name + ": holder " + i + " is missing. Revert the "
+                        + "Holders field and the holder objects to the Game Archive prefab's, or place the prefab "
+                        + "again.");
                 }
             }
             if (!Utilities.IsValid(recent) || !recent.localOnly) {
                 Debug.LogError("[GameArchive] " + gameObject.name + ": the recent holder is missing or not local "
-                    + "only. Run Tools > Chess Board > Create Game Archive again.");
+                    + "only. Revert the Recent field and its object to the Game Archive prefab's, or place the prefab "
+                    + "again.");
             }
         }
 

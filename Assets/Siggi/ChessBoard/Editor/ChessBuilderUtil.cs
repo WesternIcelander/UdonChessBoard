@@ -7,6 +7,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using VRC.Udon;
 
 // Helpers shared by the Tools > Chess Board builders and the test builders (steps 12.18 and 12.19), so a change to
 // one is made once.
@@ -102,11 +103,47 @@ public static class ChessBuilderUtil {
     }
 
     // Copies every behaviour's fields under root (a prefab's contents) to its Udon data, so the saved prefab holds
-    // every field of the current code.
+    // every field of the current code, and sets their sync methods (SetSyncMethods).
     public static void CopyProxiesToUdon(GameObject root) {
         foreach (UdonSharpBehaviour behaviour in root.GetComponentsInChildren<UdonSharpBehaviour>(true)) {
             UdonSharpEditorUtility.CopyProxyToUdon(behaviour);
         }
+        SetSyncMethods(root);
+    }
+
+    // The sync method an UdonBehaviour should have, from its UdonSharp script's UdonBehaviourSyncMode as UdonSharp sets
+    // it on scene objects: NoVariableSync (or Any) is Manual beside a manually synced behaviour on the same object and
+    // Continuous otherwise. Null for a behaviour that isn't UdonSharp's.
+    public static VRC.SDKBase.Networking.SyncType? ExpectedSyncMethod(UdonBehaviour udon) {
+        if (!(udon.programSource is UdonSharpProgramAsset program)) return null;
+        switch (program.behaviourSyncMode) {
+            case BehaviourSyncMode.Manual: return VRC.SDKBase.Networking.SyncType.Manual;
+            case BehaviourSyncMode.Continuous: return VRC.SDKBase.Networking.SyncType.Continuous;
+            case BehaviourSyncMode.None: return VRC.SDKBase.Networking.SyncType.None;
+        }
+        foreach (UdonBehaviour other in udon.GetComponents<UdonBehaviour>()) {
+            if (other.programSource is UdonSharpProgramAsset otherProgram
+                && otherProgram.behaviourSyncMode == BehaviourSyncMode.Manual) {
+                return VRC.SDKBase.Networking.SyncType.Manual;
+            }
+        }
+        return VRC.SDKBase.Networking.SyncType.Continuous;
+    }
+
+    // Sets the sync method of every UdonBehaviour under root (a prefab's contents, leaving out nested prefabs, which
+    // their own prefab sets) to ExpectedSyncMethod. UdonSharp sets it in a delayed call, which never runs for an object
+    // saved as a prefab and destroyed at once, and its own pass leaves the Unknown that's then saved as it is, so a
+    // placed instance would have no sync method (found in 14.5). Returns how many changed.
+    public static int SetSyncMethods(GameObject root) {
+        int changed = 0;
+        foreach (UdonBehaviour udon in root.GetComponentsInChildren<UdonBehaviour>(true)) {
+            if (PrefabUtility.IsPartOfPrefabInstance(udon)) continue;
+            VRC.SDKBase.Networking.SyncType? expected = ExpectedSyncMethod(udon);
+            if (expected == null || udon.SyncMethod == expected.Value) continue;
+            udon.SyncMethod = expected.Value;
+            changed++;
+        }
+        return changed;
     }
 
     // Makes a scene object that isn't from prefab an instance of it (one a builder made before its prefab existed):

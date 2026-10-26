@@ -630,9 +630,12 @@ public static class ChessBoardViewBuilder {
             note += ", made " + PieceSetPrefabPath;
         } else {
             GameObject contents = PrefabUtility.LoadPrefabContents(PieceSetPrefabPath);
-            if (AddPromotionSlots(contents.GetComponent<ChessPieceSet>(), meshes, ghost) > 0) {
+            int added = AddPromotionSlots(contents.GetComponent<ChessPieceSet>(), meshes, ghost);
+            int synced = SetSyncMethods(contents);
+            if (added + synced > 0) {
                 PrefabUtility.SaveAsPrefabAsset(contents, PieceSetPrefabPath);
-                note += ", promotion slots in " + PieceSetPrefabPath;
+                if (added > 0) note += ", promotion slots in " + PieceSetPrefabPath;
+                if (synced > 0) note += ", sync methods in " + PieceSetPrefabPath;
             }
             PrefabUtility.UnloadPrefabContents(contents);
         }
@@ -674,8 +677,10 @@ public static class ChessBoardViewBuilder {
             arbiter.pieceSets = new[] { set };
             note += ", the arbiter prefab's Piece Sets listing only " + DefaultSetName;
         }
-        // Saved every time, so the prefab holds every field of the current code.
+        // Saved every time, so the prefab holds every field of the current code and its sync methods (the nested set
+        // has its own prefabs).
         UdonSharpEditorUtility.CopyProxyToUdon(arbiter);
+        SetSyncMethods(root);
         PrefabUtility.SaveAsPrefabAsset(root, ArbiterPrefabPath);
         PrefabUtility.UnloadPrefabContents(root);
         return note;

@@ -8,7 +8,7 @@ Until step 14.13 the **Tools > Chess Board** builders make each prefab when it's
 
 Every chess prefab shares one `I18n`, the **Chess Language** prefab (step 14.10), placed once per scene as a sibling or on a parent of the chess objects, so the `I18n` sanity check links them to it ([architecture](architecture.md), languages).
 
-**The minimum a world needs:** one **Chess Arbiter**, and per board a **Chess Board** wired to it with a **Chess Board View** and a **Chess Board UI** on it (the UI holds the buttons: without it, nobody can join or start a game). The archive prefab (step 14.5) is added here once it's made.
+**The minimum a world needs:** one **Chess Arbiter**, and per board a **Chess Board** wired to it with a **Chess Board View** and a **Chess Board UI** on it (the UI holds the buttons: without it, nobody can join or start a game). Add one **Game Archive** per world to keep finished games (for the history wall and **Load it here**); without one, games are only logged.
 
 ## Chess Pieces
 
@@ -75,3 +75,13 @@ Place one per board. After placing it, set:
 - **I18n**: nothing. The `I18n` sanity check fills it from the Chess Language on build and before Play Mode.
 
 **Clock Bases** and **Clock Increments** are the time controls the Clock button steps through. A world that wants its own UI can leave this prefab out and write a `ChessBoardListener` of its own; the view works without it.
+
+## Game Archive
+
+`Prefabs/Game Archive.prefab` (step 14.5): the instance's archive of finished games, a `GameArchive` ([archive](archive.md)) with its 10 synced `GameArchiveHolder`s (**Holder 0** to **Holder 9**, 5 games each, so the last 50 games) and the local-only **Recent (local only)** holder as its children, already in its **Holders** and **Recent** fields, each holder's **Archive** pointing back. Its holders and the archive itself are synced objects ([networking](networking.md)): only the archive's owner writes to them.
+
+Place one per world. It needs nothing set after placing it; the boards point at it (their **Archive**, [Chess Board](#chess-board)), and the history wall reads it (step 14.6). Don't change its holders: the archive logs an error on start when one is missing or the recent holder isn't local only, and reverting the fields and objects to the prefab's mends it.
+
+## Sync methods
+
+Each prefab saves every `UdonBehaviour` with the sync method its script asks for (`UdonBehaviourSyncMode`: Manual for the board, arbiter and archive, None for the views, Continuous for the pieces' and squares' `NoVariableSync`), as UdonSharp sets it on scene objects. UdonSharp doesn't set it on an object saved straight to a prefab, so before step 14.5 the built prefabs held Continuous everywhere; the builders now set it whenever they save a prefab (`ChessBuilderUtil.SetSyncMethods`), and **Test Prefabs** checks it.

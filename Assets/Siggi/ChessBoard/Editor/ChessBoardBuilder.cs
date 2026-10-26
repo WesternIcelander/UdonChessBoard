@@ -119,8 +119,8 @@ public static class ChessBoardBuilder {
             board.importer = importer;
             UdonSharpEditorUtility.CopyProxyToUdon(importer);
         }
-        // Saved every time, so the prefab holds every field of the current code.
-        UdonSharpEditorUtility.CopyProxyToUdon(board);
+        // Saved every time, so the prefab holds every field of the current code and its sync methods.
+        CopyProxiesToUdon(root);
         PrefabUtility.SaveAsPrefabAsset(root, BoardPrefabPath);
         PrefabUtility.UnloadPrefabContents(root);
         return note;
