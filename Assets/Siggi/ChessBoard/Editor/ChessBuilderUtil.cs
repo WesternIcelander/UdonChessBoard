@@ -4,6 +4,7 @@ using TMPro;
 using UdonSharp;
 using UdonSharpEditor;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -70,6 +71,53 @@ public static class ChessBuilderUtil {
             if (boardOf(found[i]) == board) return found[i].gameObject;
         }
         return null;
+    }
+
+    // ---- Prefabs (step 14, docs/prefabs.md) ----
+
+    public const string PrefabsFolder = "Assets/Siggi/ChessBoard/Prefabs";
+
+    public static void EnsurePrefabsFolder() {
+        if (!AssetDatabase.IsValidFolder(PrefabsFolder)) AssetDatabase.CreateFolder("Assets/Siggi/ChessBoard", "Prefabs");
+    }
+
+    // Copies every behaviour's fields under root (a prefab's contents) to its Udon data, so the saved prefab holds
+    // every field of the current code.
+    public static void CopyProxiesToUdon(GameObject root) {
+        foreach (UdonSharpBehaviour behaviour in root.GetComponentsInChildren<UdonSharpBehaviour>(true)) {
+            UdonSharpEditorUtility.CopyProxyToUdon(behaviour);
+        }
+    }
+
+    // Makes a scene object that isn't from prefab an instance of it (one a builder made before its prefab existed):
+    // matched by hierarchy, so the object and its children stay the same objects (whatever points at them keeps doing
+    // so) and their values become the instance's overrides. Whatever it holds beyond the prefab is kept, as added
+    // objects and components. Whether it was converted (false when it already was an instance).
+    public static bool ConvertToInstance(GameObject root, GameObject prefab) {
+        if (PrefabUtility.IsPartOfPrefabInstance(root)) return false;
+        ConvertToPrefabInstanceSettings settings = new ConvertToPrefabInstanceSettings {
+            objectMatchMode = ObjectMatchMode.ByHierarchy,
+            componentsNotMatchedBecomesOverride = true,
+            gameObjectsNotMatchedBecomesOverride = true,
+            recordPropertyOverridesOfMatches = true,
+            changeRootNameToAssetName = false,
+            logInfo = true,
+        };
+        PrefabUtility.ConvertToPrefabInstance(root, prefab, settings, InteractionMode.UserAction);
+        foreach (UdonSharpBehaviour behaviour in root.GetComponentsInChildren<UdonSharpBehaviour>(true)) {
+            RecordInstance(behaviour);
+        }
+        EditorSceneManager.MarkSceneDirty(root.scene);
+        return true;
+    }
+
+    // Copies a placed behaviour's fields to its Udon data and records both as the instance's overrides.
+    public static void RecordInstance(UdonSharpBehaviour behaviour) {
+        UdonSharpEditorUtility.CopyProxyToUdon(behaviour);
+        PrefabUtility.RecordPrefabInstancePropertyModifications(behaviour);
+        PrefabUtility.RecordPrefabInstancePropertyModifications(
+            UdonSharpEditorUtility.GetBackingUdonBehaviour(behaviour));
+        EditorUtility.SetDirty(behaviour);
     }
 
     // A child rect at a position from the parent's top left, in canvas pixels.

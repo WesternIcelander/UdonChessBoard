@@ -10,8 +10,8 @@ namespace SiggiChessBoard {
     // the squares the logical board says, with what goes with them on the table: pickups and clicks, highlights,
     // animations, the promotion ghosts, the player blocker and the move sounds. The buttons, the status display, the
     // PGN box and the other sounds are the UI's (ChessBoardUI, step 12.1), which this view doesn't know. Holds no game
-    // state and no synced fields; it reads the board after each change. Built in the scene by Tools > Chess Board >
-    // Create Board View (Editor/ChessBoardViewBuilder.cs).
+    // state and no synced fields; it reads the board after each change. Part of the Chess Board View prefab
+    // (Prefabs/Chess Board View.prefab, docs/prefabs.md), which holds every object it uses.
     //
     // The view's local space: the playing surface at y = 0, files a to h along +x, ranks 1 to 8 along +z (White at
     // -z), the board's centre at the origin. Everything is placed in it, so the view can be scaled as a whole, and
@@ -42,9 +42,9 @@ namespace SiggiChessBoard {
         // Each piece object's pickup and collider (the same index). The collider is fitted to the piece's mesh.
         public VRCPickup[] piecePickups = new VRCPickup[PieceCount];
         public BoxCollider[] pieceColliders = new BoxCollider[PieceCount];
-        // The width of a square, in the view's local units. The builder's square targets and highlights are made for
+        // The width of a square, in the view's local units. The prefab's square targets and highlights are made for
         // it, so it isn't for resizing: scale the view's transform instead (step 12.2, docs/customizing.md).
-        [Tooltip("The builder's square size, in the view's units. Don't change it to resize the board: scale the view.")]
+        [Tooltip("The prefab's square size, in the view's units. Don't change it to resize the board: scale the view.")]
         public float squareSize = 0.05f;
         // InputAuto, InputPickups or InputClicks, the same for every client of a build; _CycleInputStyle changes it on
         // one client.
@@ -78,7 +78,7 @@ namespace SiggiChessBoard {
         // Check lines (step 12.7): while a king is in check in the position shown (in replay too), a red line from
         // each piece giving check to the king, each a bar like lastMoveLine; the lines beyond the checks are hidden,
         // and checks beyond the lines aren't shown. A game has at most two (a double check); a custom replay position
-        // can have more. The builder makes CheckLineCount.
+        // can have more. The prefab has CheckLineCount.
         public GameObject[] checkLines = new GameObject[0];
         public const int CheckLineCount = 16;
         public GameObject[] targetHighlights = new GameObject[64];
@@ -424,7 +424,7 @@ namespace SiggiChessBoard {
                 if (!warnedNoSet[color]) {
                     string side = white ? "White" : "Black";
                     Debug.LogError("[ChessBoardView] " + gameObject.name + ": no chess piece set for " + side + ": add "
-                        + "one to the Chess Arbiter's Piece Sets (Tools > Chess Board > Create Board View makes one). "
+                        + "one to the Chess Arbiter's Piece Sets (the Chess Arbiter prefab has one, Chess Pieces). "
                         + side + "'s pieces keep the models they have.");
                     warnedNoSet[color] = true;
                 }

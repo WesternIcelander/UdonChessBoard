@@ -12,12 +12,15 @@ using VRC.SDKBase.Editor.BuildPipeline;
 // checks what it holds. 14.1: Chess Pieces on its own, and the Chess Arbiter with its nested Chess Pieces, the build
 // check on it, a change to the Chess Pieces prefab reaching the nested instance but not an unpacked copy. The change
 // is undone and the prefab saved again before it ends. 14.2: the Chess Board with its importer, two placed with their
-// own board numbers, and the open scene's boards instances of it. Every prefab: nothing it uses is under Assets/Tests/.
+// own board numbers, and the open scene's boards instances of it. 14.3: the Chess Board View with every object it uses,
+// its pieces standing on their starting squares, pointed at a placed board, and the open scene's views instances of
+// it. Every prefab: nothing it uses is under Assets/Tests/.
 // Logs "[PrefabTest] PASS: <check>" or "[PrefabTest] FAIL: <check>: <details>" per check, then a summary line.
 public static class PrefabTest {
     const string PieceSetPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Pieces.prefab";
     const string ArbiterPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Arbiter.prefab";
     const string BoardPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Board.prefab";
+    const string ViewPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Board View.prefab";
 
     static int passed;
     static int failed;
@@ -32,7 +35,9 @@ public static class PrefabTest {
         Check(arbiterPrefab != null, "the Chess Arbiter prefab at " + ArbiterPrefabPath, "missing");
         GameObject boardPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(BoardPrefabPath);
         Check(boardPrefab != null, "the Chess Board prefab at " + BoardPrefabPath, "missing");
-        if (setPrefab == null || arbiterPrefab == null || boardPrefab == null) {
+        GameObject viewPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(ViewPrefabPath);
+        Check(viewPrefab != null, "the Chess Board View prefab at " + ViewPrefabPath, "missing");
+        if (setPrefab == null || arbiterPrefab == null || boardPrefab == null || viewPrefab == null) {
             Summary();
             return;
         }
@@ -41,11 +46,15 @@ public static class PrefabTest {
             CheckPieceSet(setPrefab, scene);
             CheckArbiter(setPrefab, arbiterPrefab, scene);
             CheckBoard(boardPrefab, scene);
+            CheckView(viewPrefab, boardPrefab, scene);
         } finally {
             EditorSceneManager.CloseScene(scene, true);
         }
         CheckSceneBoards(boardPrefab);
-        foreach (string path in new[] { PieceSetPrefabPath, ArbiterPrefabPath, BoardPrefabPath }) CheckNoTests(path);
+        CheckSceneViews(viewPrefab);
+        foreach (string path in new[] { PieceSetPrefabPath, ArbiterPrefabPath, BoardPrefabPath, ViewPrefabPath }) {
+            CheckNoTests(path);
+        }
         Summary();
     }
 
@@ -244,6 +253,139 @@ public static class PrefabTest {
                 name + " has its own importer", board.importer == null ? "empty" : "on " + board.importer.name);
             Check(numbers.Add(board.boardNumber), name + "'s number " + board.boardNumber + " is its own",
                 "another board has it");
+        }
+    }
+
+    // ---- 14.3: Chess Board View ----
+
+    // The back rank from a to h, by piece type, as the view maps the pieces on Start.
+    static readonly int[] BackRank = {
+        ChessRules.Rook, ChessRules.Knight, ChessRules.Bishop, ChessRules.Queen, ChessRules.King, ChessRules.Bishop,
+        ChessRules.Knight, ChessRules.Rook,
+    };
+
+    static void CheckView(GameObject viewPrefab, GameObject boardPrefab, Scene scene) {
+        List<string> logged = new List<string>();
+        Application.LogCallback listener = (text, stack, type) => logged.Add(type + ": " + text);
+        Application.logMessageReceived += listener;
+        GameObject placed;
+        try {
+            placed = (GameObject)PrefabUtility.InstantiatePrefab(viewPrefab, scene);
+        } finally {
+            Application.logMessageReceived -= listener;
+        }
+        Check(logged.Count == 0, "the Chess Board View placed logs nothing", string.Join("; ", logged));
+        ChessBoardView view = placed.GetComponent<ChessBoardView>();
+        Check(view != null, "the Chess Board View has a ChessBoardView", "none");
+        if (view == null) return;
+        Check(view.board == null, "the view's board is left to set", "on " + view.board);
+        Check(view.i18n == null, "the view's I18n is left for the sanity check", "on " + view.i18n);
+        Check(view.LocalSpaceProblem() == "", "the view's objects are in its local space", view.LocalSpaceProblem());
+
+        string pieces = "";
+        float size = view.squareSize;
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            Transform piece = view.pieces != null && obj < view.pieces.Length ? view.pieces[obj] : null;
+            if (piece == null || !piece.IsChildOf(placed.transform)) {
+                pieces += " " + obj + " missing;";
+                continue;
+            }
+            bool white = obj < ChessBoardView.PiecesPerColor;
+            int index = obj % ChessBoardView.PiecesPerColor;
+            int file = index % 8;
+            bool backRank = white == (index < 8);
+            int rank = white ? (backRank ? 0 : 1) : (backRank ? 7 : 6);
+            int type = backRank ? BackRank[file] : ChessRules.Pawn;
+            Vector3 square = new Vector3((file - 3.5f) * size, 0, (rank - 3.5f) * size);
+            if ((piece.localPosition - square).sqrMagnitude > 1e-8f) {
+                pieces += " " + piece.name + " at " + piece.localPosition.ToString("F3") + ";";
+            }
+            MeshFilter filter = view.pieceFilters[obj];
+            if (filter == null || filter.transform != piece || filter.sharedMesh == null
+                || filter.sharedMesh.name != new[] { "", "Pawn", "Knight", "Bishop", "Rook", "Queen", "King" }[type]) {
+                pieces += " " + piece.name + "'s mesh;";
+            }
+            if (view.pieceRenderers[obj] == null || view.pieceRenderers[obj].transform != piece
+                || view.piecePickups[obj] == null || view.piecePickups[obj].transform != piece
+                || view.pieceColliders[obj] == null || view.pieceColliders[obj].transform != piece) {
+                pieces += " " + piece.name + "'s renderer, pickup or collider;";
+            }
+            ChessPiece behaviour = view.pieceBehaviours[obj];
+            if (behaviour == null || behaviour.transform != piece || behaviour.view != view || behaviour.index != obj) {
+                pieces += " " + piece.name + "'s ChessPiece;";
+            }
+        }
+        Check(pieces == "", "the view's 32 pieces stand on their starting squares, each wired to the view", pieces);
+
+        string targets = "";
+        for (int square = 0; square < 64; square++) {
+            ChessSquare target = view.squareTargets != null && square < view.squareTargets.Length
+                ? view.squareTargets[square] : null;
+            if (target == null || target.view != view || target.square != square || target.gameObject.activeSelf) {
+                targets += " " + square;
+            }
+            if (view.targetHighlights == null || square >= view.targetHighlights.Length
+                || view.targetHighlights[square] == null) {
+                targets += " highlight " + square;
+            }
+        }
+        Check(targets == "", "the view's 64 square targets (hidden) and legal-target highlights", targets);
+        Check(view.lastMoveLine != null && view.lastMoveMark != null && view.checkLines != null
+            && view.checkLines.Length == ChessBoardView.CheckLineCount && System.Array.IndexOf(view.checkLines, null) < 0,
+            "the view's last-move line and mark and its " + ChessBoardView.CheckLineCount + " check lines",
+            "missing");
+        string ghosts = "";
+        for (int ghost = 0; ghost < ChessBoardView.GhostCount; ghost++) {
+            ChessPromotionGhost g = view.promotionGhosts != null && ghost < view.promotionGhosts.Length
+                ? view.promotionGhosts[ghost] : null;
+            if (g == null || g.view != view || g.pieceType != ChessBoardView._GhostType(ghost)) ghosts += " " + ghost;
+        }
+        Check(ghosts == "", "the view's promotion ghosts", ghosts);
+        Check(view.whiteCapturedPlaces != null && view.whiteCapturedPlaces.Length == ChessBoardView.PiecesPerColor
+            && System.Array.IndexOf(view.whiteCapturedPlaces, null) < 0 && view.blackCapturedPlaces != null
+            && view.blackCapturedPlaces.Length == ChessBoardView.PiecesPerColor
+            && System.Array.IndexOf(view.blackCapturedPlaces, null) < 0, "the view's 16 captured places per colour",
+            "missing");
+        Check(view.blocker != null && view.blocker.transform.IsChildOf(placed.transform), "the view's player blocker",
+            "missing");
+        Check(view.audioSource != null && view.moveSound != null && view.captureSound != null
+            && view.promoteSound != null && view.checkSound != null, "the view's sound source and move sounds",
+            "missing");
+        Check(viewPrefab.GetComponent<ChessBoardView>().board == null, "the view prefab points at no board",
+            "it does");
+
+        // Pointed at a placed board by hand, as a world creator would set it in the Inspector.
+        GameObject boardObject = (GameObject)PrefabUtility.InstantiatePrefab(boardPrefab, scene);
+        ChessBoard board = boardObject.GetComponent<ChessBoard>();
+        SerializedObject fields = new SerializedObject(view);
+        fields.FindProperty("board").objectReferenceValue = board;
+        fields.ApplyModifiedProperties();
+        Check(view.board == board, "the view pointed at a placed board", "on " + view.board);
+        Check(viewPrefab.GetComponent<ChessBoardView>().board == null,
+            "the view pointed at a board: the prefab still points at none", "it doesn't");
+        Object.DestroyImmediate(placed);
+        Object.DestroyImmediate(boardObject);
+    }
+
+    // The open scene's views (the test scene's) are instances of the Chess Board View prefab, each on its own board,
+    // their pieces wired to them.
+    static void CheckSceneViews(GameObject viewPrefab) {
+        ChessBoardView[] views = Object.FindObjectsOfType<ChessBoardView>(true);
+        Check(views.Length > 0, "the open scene has views", "none");
+        HashSet<ChessBoard> boards = new HashSet<ChessBoard>();
+        foreach (ChessBoardView view in views) {
+            string name = "the scene's " + view.gameObject.name;
+            Check(PrefabUtility.IsAnyPrefabInstanceRoot(view.gameObject)
+                && PrefabUtility.GetCorrespondingObjectFromOriginalSource(view.gameObject) == viewPrefab,
+                name + " is a Chess Board View instance", "it isn't");
+            Check(view.board != null && boards.Add(view.board), name + " has a board of its own",
+                view.board == null ? "empty" : "shared");
+            int wired = 0;
+            for (int obj = 0; obj < view.pieceBehaviours.Length; obj++) {
+                ChessPiece piece = view.pieceBehaviours[obj];
+                if (piece != null && piece.view == view && piece.transform.IsChildOf(view.transform)) wired++;
+            }
+            CheckIntValue(wired, ChessBoardView.PieceCount, name + "'s pieces are its own");
         }
     }
 

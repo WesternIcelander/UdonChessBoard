@@ -1,6 +1,6 @@
 # Customizing a board
 
-What a world creator can change on a board built by **Tools > Chess Board > Create Board View**, without touching the code.
+What a world creator can change on a board view (the **Chess Board View** prefab, [Prefabs](prefabs.md#chess-board-view), placed by hand or by **Tools > Chess Board > Create Board View**), without touching the code. On a placed instance the changes are overrides: deleting **Table**, **Board** or **Squares** and adding a model of your own work there as on an unpacked view.
 
 ## The board model and scale (step 12.2)
 

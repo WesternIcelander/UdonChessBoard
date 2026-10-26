@@ -18,7 +18,6 @@ public static class ChessBoardBuilder {
     const string BoardProgramPath = "Assets/Siggi/ChessBoard/ChessBoard.asset";
     const string ImporterScriptPath = "Assets/Siggi/ChessBoard/ChessPgnImporter.cs";
     const string ImporterProgramPath = "Assets/Siggi/ChessBoard/ChessPgnImporter.asset";
-    const string PrefabsFolder = "Assets/Siggi/ChessBoard/Prefabs";
     const string BoardPrefabPath = PrefabsFolder + "/Chess Board.prefab";
     const string ImporterName = "ChessPgnImporter";
     // How far along x a new board stands from the last one: clear of its table and its debug view.
@@ -86,7 +85,7 @@ public static class ChessBoardBuilder {
         string note = EnsureBoardPrefab();
         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(BoardPrefabPath);
         foreach (ChessBoard board in Object.FindObjectsOfType<ChessBoard>(true)) {
-            note += ConvertToInstance(board, prefab);
+            if (ConvertToInstance(board.gameObject, prefab)) note += ", " + board.gameObject.name + " made an instance";
         }
         Debug.Log("[ChessBoardBuilder] Board prefab: " + (note.Length > 0 ? note.Substring(2) : "unchanged"));
     }
@@ -97,7 +96,7 @@ public static class ChessBoardBuilder {
     // note for the log ("" when nothing changed).
     static string EnsureBoardPrefab() {
         string note = "";
-        if (!AssetDatabase.IsValidFolder(PrefabsFolder)) AssetDatabase.CreateFolder("Assets/Siggi/ChessBoard", "Prefabs");
+        EnsurePrefabsFolder();
         if (AssetDatabase.LoadAssetAtPath<GameObject>(BoardPrefabPath) == null) {
             GameObject made = new GameObject("Chess Board");
             UdonSharpUndo.AddComponent<ChessBoard>(made);
@@ -125,35 +124,5 @@ public static class ChessBoardBuilder {
         PrefabUtility.SaveAsPrefabAsset(root, BoardPrefabPath);
         PrefabUtility.UnloadPrefabContents(root);
         return note;
-    }
-
-    // Makes a scene board that isn't from the prefab an instance of it (a board built by Create Board before 14.2):
-    // matched by hierarchy, so the board and its importer stay the same objects (whatever points at them keeps doing
-    // so) and their values (board number, arbiter, archive, listeners) become the instance's overrides. A board whose
-    // object holds more than the prefab keeps it, as added objects. Returns a note for the log.
-    static string ConvertToInstance(ChessBoard board, GameObject prefab) {
-        if (PrefabUtility.IsPartOfPrefabInstance(board.gameObject)) return "";
-        ConvertToPrefabInstanceSettings settings = new ConvertToPrefabInstanceSettings {
-            objectMatchMode = ObjectMatchMode.ByHierarchy,
-            componentsNotMatchedBecomesOverride = true,
-            gameObjectsNotMatchedBecomesOverride = true,
-            recordPropertyOverridesOfMatches = true,
-            changeRootNameToAssetName = false,
-            logInfo = true,
-        };
-        PrefabUtility.ConvertToPrefabInstance(board.gameObject, prefab, settings, InteractionMode.UserAction);
-        RecordInstance(board);
-        if (board.importer != null) RecordInstance(board.importer);
-        EditorSceneManager.MarkSceneDirty(board.gameObject.scene);
-        return ", " + board.gameObject.name + " made an instance";
-    }
-
-    // Copies a placed behaviour's fields to its Udon data and records both as the instance's overrides.
-    static void RecordInstance(UdonSharpBehaviour behaviour) {
-        UdonSharpEditorUtility.CopyProxyToUdon(behaviour);
-        PrefabUtility.RecordPrefabInstancePropertyModifications(behaviour);
-        PrefabUtility.RecordPrefabInstancePropertyModifications(
-            UdonSharpEditorUtility.GetBackingUdonBehaviour(behaviour));
-        EditorUtility.SetDirty(behaviour);
     }
 }

@@ -8,7 +8,7 @@ Until step 14.13 the **Tools > Chess Board** builders make each prefab when it's
 
 Every chess prefab shares one `I18n`, the **Chess Language** prefab (step 14.10), placed once per scene as a sibling or on a parent of the chess objects, so the `I18n` sanity check links them to it ([architecture](architecture.md), languages).
 
-**The minimum a world needs:** one **Chess Arbiter** and a **Chess Board** per board, wired to it. The view, UI and archive prefabs (steps 14.3 to 14.5) are added here as they're made.
+**The minimum a world needs:** one **Chess Arbiter**, and per board a **Chess Board** wired to it with a **Chess Board View** on it. The UI and archive prefabs (steps 14.4 and 14.5) are added here as they're made.
 
 ## Chess Pieces
 
@@ -48,3 +48,16 @@ Place one per board. After placing it, set:
 - **Listeners**: nothing for the package's own views. The view, the UI and the 2D view add themselves when they start (`AddListener`); list here only a behaviour of your own that doesn't.
 
 **PGN Event** and **PGN Site** (empty and `VRChat`) are the tags of the board's exported and logged games. Step 14.11 will fill in the arbiter, archive and board numbers by itself.
+
+## Chess Board View
+
+`Prefabs/Chess Board View.prefab` (step 14.3): the physical board, a `ChessBoardView` ([physical pieces](physical-pieces.md), [player input](player-input.md)) with everything it places: the placeholder **Table**, **Board** and **Squares**, the **Player Blocker**, the 32 **Pieces** (each a `VRCPickup` with a `ChessPiece`), the 64 **Square Targets** for desktop clicks, the **Highlights** (last move, check lines, legal targets), the **Promotion Ghosts**, the **Captured Places** and its **Sounds**. Its meshes and materials are the generated ones in `Models/`; its pieces wear the arbiter's piece sets once the game starts ([customizing](customizing.md#chess-piece-sets-steps-123-1210-and-136)), so the view holds no set of its own. It has no buttons or status display: those are the board's UI (step 14.4).
+
+Its origin is the board's centre on the playing surface, with files along +x and White's end at −z; the table reaches 0.8 m down from there, so raise a placed view 0.8 m above the floor (step 14.9's Chess Table does that for you).
+
+Place one per board. After placing it, set:
+
+- **Board**: the board it shows, a placed **Chess Board**. The view adds itself to the board's listeners when it starts; left empty, it shows nothing.
+- **I18n**: nothing. The `I18n` sanity check fills it from the Chess Language on build and before Play Mode.
+
+What a world may change on it (its model, its size, the captured places) is in [customizing](customizing.md#the-board-model-and-scale-step-122). Change it on the placed instance (an override) or unpack it; the package's later updates reach whatever the instance leaves as it is.

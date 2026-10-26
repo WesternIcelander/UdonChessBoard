@@ -13,9 +13,12 @@ using VRC.SDK3.Components;
 using VRC.Udon;
 using static ChessBuilderUtil;
 
-// Builds the physical board (PLAN.md 9.1, ChessBoardView.cs) in the open scene for the selected ChessBoard, or the
-// scene's only one: a table, the board's surface and squares, the 32 piece objects, the highlights, the promotion
-// ghosts (step 12.11) and the captured-piece places (step 12.4), wired to a ChessBoardView; and its UI (step 12.1,
+// Places the physical board (PLAN.md 9.1, ChessBoardView.cs) in the open scene for the selected ChessBoard, or the
+// scene's only one: an instance of the Chess Board View prefab (step 14.3, docs/prefabs.md; BuildView makes it when
+// missing, EnsureViewPrefab): a table, the board's surface and squares, the 32 piece objects, the highlights, the
+// promotion ghosts (step 12.11) and the captured-piece places (step 12.4), wired to a ChessBoardView, its board set on
+// the instance. Tools > Chess Board > Update View Prefab updates the prefab and makes the scene's views built before
+// 14.3 instances of it, keeping their objects and values. And the view's UI (step 12.1,
 // ChessBoardUI.cs) on an object of its own beside the view, standing where the view does (the board's centre): the
 // button panels (steps 9.4a and 9.4b), the
 // status panels (step 9.5c) and the PGN box (steps 11.2a, 11.2b); and a sound source on each, with the clips in
@@ -65,32 +68,153 @@ public static class ChessBoardViewBuilder {
     static void Create() {
         ChessBoard board = FindBoard("Create Board View", "view");
         if (board == null) return;
-        if (!EnsureProgramAssets("Create Board View", ViewScriptPath, ViewProgramPath, UIScriptPath, UIProgramPath,
-            PieceScriptPath, PieceProgramPath, SquareScriptPath, SquareProgramPath, PieceSetScriptPath,
-            PieceSetProgramPath, GhostScriptPath, GhostProgramPath)) return;
+        if (!EnsureViewProgramAssets("Create Board View")) return;
 
         Mesh[] meshes = PieceMeshes();
-        Material whitePieces = MaterialAsset("White Pieces", new Color(0.92f, 0.89f, 0.82f), 0.55f);
-        Material blackPieces = MaterialAsset("Black Pieces", new Color(0.13f, 0.12f, 0.12f), 0.6f);
+        Material whitePieces = WhitePiecesMaterial();
+        Material blackPieces = BlackPiecesMaterial();
+        Material ghost = GhostMaterialAsset();
+        string setNote = EnsureDefaultPieceSet(board, meshes, whitePieces, blackPieces, ghost);
+        string prefabNote = EnsureViewPrefab(meshes, whitePieces, blackPieces, ghost);
+
+        // Looked for before the new view points at the board.
+        GameObject old = ExistingFor<ChessBoardView>(board, existing => existing.board);
+        GameObject root = (GameObject)PrefabUtility.InstantiatePrefab(
+            AssetDatabase.LoadAssetAtPath<GameObject>(ViewPrefabPath));
+        Undo.RegisterCreatedObjectUndo(root, "Create Board View");
+        root.name = "ChessBoardView (" + board.gameObject.name + ")";
+        root.transform.position = board.transform.position + new Vector3(0, TableHeight, 0);
+        ChessBoardView view = root.GetComponent<ChessBoardView>();
+        view.board = board;
+        RecordInstance(view);
+
+        // The UI (step 12.1), a behaviour of its own on an object beside the view, standing where the view does (the
+        // board's centre), so the view's local space is its too: its parts are placed around the table as before, and
+        // neither behaviour knows the other.
+        GameObject uiObject = new GameObject("ChessBoardUI (" + board.gameObject.name + ")");
+        Undo.RegisterCreatedObjectUndo(uiObject, "Create Board View");
+        uiObject.transform.position = root.transform.position;
+        ChessBoardUI ui = UdonSharpUndo.AddComponent<ChessBoardUI>(uiObject);
+        ui.board = board;
+        ui.historyWall = HistoryWallFor(board);
+        AddButtons(uiObject, ui, BoardWidth * TableDepthFactor);
+        AddStatusPanels(uiObject, ui, BoardWidth * TableDepthFactor);
+        AddPgnBox(uiObject, ui);
+        AddUISounds(uiObject, ui);
+        UdonSharpEditorUtility.CopyProxyToUdon(ui);
+
+        // Read before old is destroyed, after which Unity compares it equal to null.
+        bool replacing = old != null;
+        int repointed = 0;
+        string kept = "";
+        ChessBoardUI oldUi = ExistingUI(board, ui);
+        // An earlier UI inside the old view (as the first 12.1 builds made it) goes with the view.
+        bool oldUiBeside = oldUi != null && (old == null || !oldUi.transform.IsChildOf(old.transform));
+        if (oldUi != null) repointed += RepointReferences(oldUi, ui);
+        if (old != null) {
+            repointed += RepointReferences(old.GetComponent<ChessBoardView>(), view);
+            root.transform.SetParent(old.transform.parent, false);
+            root.transform.SetSiblingIndex(old.transform.GetSiblingIndex());
+            root.transform.position = old.transform.position;
+            root.transform.rotation = old.transform.rotation;
+            root.transform.localScale = old.transform.localScale;
+            kept = KeepCustomModel(old.transform, root.transform);
+            kept += KeepCapturedPlaces(old.GetComponent<ChessBoardView>(), view, root.transform);
+            Undo.DestroyObjectImmediate(old);
+        }
+        PrefabUtility.RecordPrefabInstancePropertyModifications(root.transform);
+        // An earlier UI beside the view is replaced where it stands; otherwise the UI stands beside the view, just
+        // after it, where the view stands.
+        Transform place = oldUiBeside ? oldUi.transform : root.transform;
+        uiObject.transform.SetParent(place.parent, false);
+        uiObject.transform.SetSiblingIndex(place.GetSiblingIndex() + (oldUiBeside ? 0 : 1));
+        uiObject.transform.position = place.position;
+        uiObject.transform.rotation = place.rotation;
+        uiObject.transform.localScale = place.localScale;
+        if (oldUiBeside) Undo.DestroyObjectImmediate(oldUi.gameObject);
+        // The view's and the UI's text comes from the shared Chess Language (PLAN.md 13.5), made when the scene has
+        // none; the I18n fields are left empty, for the I18n sanity check to fill on build and before Play Mode.
+        EnsureChessLanguage(root.scene);
+        EditorSceneManager.MarkSceneDirty(root.scene);
+        Selection.activeGameObject = root;
+        Debug.Log("[ChessBoardViewBuilder] " + (replacing ? "Replaced " : "Created ") + root.name + " for "
+            + board.gameObject.name + (replacing ? " (" + repointed + " behaviour(s) pointed at the new view" + kept
+                + ")" : "")
+            + " and " + uiObject.name + (ui.historyWall != null ? ", with the history wall" : "") + setNote
+            + prefabNote + ". Move them where you like (the UI's origin at the board's centre) and save the scene.");
+    }
+
+    // ---- The Chess Board View prefab (step 14.3, docs/prefabs.md) ----
+
+    const string ViewPrefabName = "Chess Board View";
+    const string ViewPrefabPath = PrefabsFolder + "/" + ViewPrefabName + ".prefab";
+    // The board's width, its frame included.
+    const float BoardWidth = 8 * SquareSize + 2 * Border;
+
+    [MenuItem("Tools/Chess Board/Update View Prefab")]
+    static void UpdateViewPrefab() {
+        if (!EnsureViewProgramAssets("Update View Prefab")) return;
+        string note = EnsureViewPrefab(PieceMeshes(), WhitePiecesMaterial(), BlackPiecesMaterial(),
+            GhostMaterialAsset());
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(ViewPrefabPath);
+        foreach (ChessBoardView view in Object.FindObjectsOfType<ChessBoardView>(true)) {
+            if (ConvertToInstance(view.gameObject, prefab)) note += ", " + view.gameObject.name + " made an instance";
+        }
+        Debug.Log("[ChessBoardViewBuilder] View prefab: " + (note.Length > 0 ? note.Substring(2) : "unchanged"));
+    }
+
+    static bool EnsureViewProgramAssets(string menuItem) {
+        return EnsureProgramAssets(menuItem, ViewScriptPath, ViewProgramPath, UIScriptPath, UIProgramPath,
+            PieceScriptPath, PieceProgramPath, SquareScriptPath, SquareProgramPath, PieceSetScriptPath,
+            PieceSetProgramPath, GhostScriptPath, GhostProgramPath);
+    }
+
+    static Material WhitePiecesMaterial() {
+        return MaterialAsset("White Pieces", new Color(0.92f, 0.89f, 0.82f), 0.55f);
+    }
+
+    static Material BlackPiecesMaterial() {
+        return MaterialAsset("Black Pieces", new Color(0.13f, 0.12f, 0.12f), 0.6f);
+    }
+
+    // Makes the Chess Board View prefab when it's missing (BuildView), and otherwise saves it again in place, so it
+    // holds every field of the current code, keeping everything already there (rule 1 of docs/compatibility.md).
+    // Returns a note for the log ("" when it was there).
+    static string EnsureViewPrefab(Mesh[] meshes, Material whitePieces, Material blackPieces, Material ghost) {
+        EnsurePrefabsFolder();
+        string note = "";
+        if (AssetDatabase.LoadAssetAtPath<GameObject>(ViewPrefabPath) == null) {
+            GameObject built = BuildView(meshes, whitePieces, blackPieces, ghost);
+            PrefabUtility.SaveAsPrefabAsset(built, ViewPrefabPath);
+            Object.DestroyImmediate(built);
+            note = ", made " + ViewPrefabPath;
+        }
+        GameObject root = PrefabUtility.LoadPrefabContents(ViewPrefabPath);
+        root.name = ViewPrefabName;
+        CopyProxiesToUdon(root);
+        PrefabUtility.SaveAsPrefabAsset(root, ViewPrefabPath);
+        PrefabUtility.UnloadPrefabContents(root);
+        return note;
+    }
+
+    // The physical board without a board (the prefab's contents), its origin at the playing surface's centre: a
+    // table, the board's frame and squares, the 32 piece objects standing as at the start, the square targets, the
+    // highlights, the promotion ghosts, the captured-piece places and the move sounds, wired to a ChessBoardView. The
+    // pieces wear the generated meshes until the view dresses them in the arbiter's piece set on Start.
+    static GameObject BuildView(Mesh[] meshes, Material whitePieces, Material blackPieces, Material ghost) {
         Material lightSquares = MaterialAsset("Light Squares", new Color(0.93f, 0.85f, 0.71f), 0.3f);
         Material darkSquares = MaterialAsset("Dark Squares", new Color(0.55f, 0.37f, 0.24f), 0.3f);
         Material frame = MaterialAsset("Board Frame", new Color(0.3f, 0.19f, 0.11f), 0.35f);
-        Material ghost = GhostMaterialAsset();
         Mesh squares = SquaresMesh();
 
-        GameObject root = new GameObject("ChessBoardView (" + board.gameObject.name + ")");
-        Undo.RegisterCreatedObjectUndo(root, "Create Board View");
-        GameObject old = ExistingFor<ChessBoardView>(board, existing => existing.board);
-        root.transform.position = board.transform.position + new Vector3(0, TableHeight, 0);
-
-        float boardWidth = 8 * SquareSize + 2 * Border;
+        GameObject root = new GameObject(ViewPrefabName);
         // Deep enough for the status and button panels beyond each end of the board.
         GameObject table = GameObject.CreatePrimitive(PrimitiveType.Cube);
         table.name = "Table";
         table.transform.SetParent(root.transform, false);
         table.transform.localPosition = new Vector3(0, -(TableHeight + BoardThickness) / 2, 0);
-        table.transform.localScale = new Vector3(boardWidth * 1.6f, TableHeight - BoardThickness,
-            boardWidth * TableDepthFactor);
+        table.transform.localScale = new Vector3(BoardWidth * 1.6f, TableHeight - BoardThickness,
+            BoardWidth * TableDepthFactor);
         table.GetComponent<MeshRenderer>().sharedMaterial = frame;
         // Players walk through the table and the board; the blocker stops those without a seat.
         Object.DestroyImmediate(table.GetComponent<BoxCollider>());
@@ -105,7 +229,7 @@ public static class ChessBoardViewBuilder {
         boardBase.name = "Board";
         boardBase.transform.SetParent(root.transform, false);
         boardBase.transform.localPosition = new Vector3(0, -BoardThickness / 2, 0);
-        boardBase.transform.localScale = new Vector3(boardWidth, BoardThickness, boardWidth);
+        boardBase.transform.localScale = new Vector3(BoardWidth, BoardThickness, BoardWidth);
         boardBase.GetComponent<MeshRenderer>().sharedMaterial = frame;
         Object.DestroyImmediate(boardBase.GetComponent<BoxCollider>());
 
@@ -115,9 +239,7 @@ public static class ChessBoardViewBuilder {
         squaresObject.AddComponent<MeshRenderer>().sharedMaterials = new[] { lightSquares, darkSquares };
 
         ChessBoardView view = UdonSharpUndo.AddComponent<ChessBoardView>(root);
-        view.board = board;
         view.squareSize = SquareSize;
-        string setNote = EnsureDefaultPieceSet(board, meshes, whitePieces, blackPieces, ghost);
         view.blocker = blockerBox;
         view.pieces = new Transform[ChessBoardView.PieceCount];
         view.pieceFilters = new MeshFilter[ChessBoardView.PieceCount];
@@ -155,60 +277,7 @@ public static class ChessBoardViewBuilder {
         AddCapturedPlaces(root, view);
         AddViewSounds(root, view);
         UdonSharpEditorUtility.CopyProxyToUdon(view);
-
-        // The UI (step 12.1), a behaviour of its own on an object beside the view, standing where the view does (the
-        // board's centre), so the view's local space is its too: its parts are placed around the table as before, and
-        // neither behaviour knows the other.
-        GameObject uiObject = new GameObject("ChessBoardUI (" + board.gameObject.name + ")");
-        Undo.RegisterCreatedObjectUndo(uiObject, "Create Board View");
-        uiObject.transform.position = root.transform.position;
-        ChessBoardUI ui = UdonSharpUndo.AddComponent<ChessBoardUI>(uiObject);
-        ui.board = board;
-        ui.historyWall = HistoryWallFor(board);
-        AddButtons(uiObject, ui, boardWidth * TableDepthFactor);
-        AddStatusPanels(uiObject, ui, boardWidth * TableDepthFactor);
-        AddPgnBox(uiObject, ui);
-        AddUISounds(uiObject, ui);
-        UdonSharpEditorUtility.CopyProxyToUdon(ui);
-
-        // Read before old is destroyed, after which Unity compares it equal to null.
-        bool replacing = old != null;
-        int repointed = 0;
-        string kept = "";
-        ChessBoardUI oldUi = ExistingUI(board, ui);
-        // An earlier UI inside the old view (as the first 12.1 builds made it) goes with the view.
-        bool oldUiBeside = oldUi != null && (old == null || !oldUi.transform.IsChildOf(old.transform));
-        if (oldUi != null) repointed += RepointReferences(oldUi, ui);
-        if (old != null) {
-            repointed += RepointReferences(old.GetComponent<ChessBoardView>(), view);
-            root.transform.SetParent(old.transform.parent, false);
-            root.transform.SetSiblingIndex(old.transform.GetSiblingIndex());
-            root.transform.position = old.transform.position;
-            root.transform.rotation = old.transform.rotation;
-            root.transform.localScale = old.transform.localScale;
-            kept = KeepCustomModel(old.transform, root.transform);
-            kept += KeepCapturedPlaces(old.GetComponent<ChessBoardView>(), view, root.transform);
-            Undo.DestroyObjectImmediate(old);
-        }
-        // An earlier UI beside the view is replaced where it stands; otherwise the UI stands beside the view, just
-        // after it, where the view stands.
-        Transform place = oldUiBeside ? oldUi.transform : root.transform;
-        uiObject.transform.SetParent(place.parent, false);
-        uiObject.transform.SetSiblingIndex(place.GetSiblingIndex() + (oldUiBeside ? 0 : 1));
-        uiObject.transform.position = place.position;
-        uiObject.transform.rotation = place.rotation;
-        uiObject.transform.localScale = place.localScale;
-        if (oldUiBeside) Undo.DestroyObjectImmediate(oldUi.gameObject);
-        // The view's and the UI's text comes from the shared Chess Language (PLAN.md 13.5), made when the scene has
-        // none; the I18n fields are left empty, for the I18n sanity check to fill on build and before Play Mode.
-        EnsureChessLanguage(root.scene);
-        EditorSceneManager.MarkSceneDirty(root.scene);
-        Selection.activeGameObject = root;
-        Debug.Log("[ChessBoardViewBuilder] " + (replacing ? "Replaced " : "Created ") + root.name + " for "
-            + board.gameObject.name + (replacing ? " (" + repointed + " behaviour(s) pointed at the new view" + kept
-                + ")" : "")
-            + " and " + uiObject.name + (ui.historyWall != null ? ", with the history wall" : "") + setNote
-            + ". Move them where you like (the UI's origin at the board's centre) and save the scene.");
+        return root;
     }
 
     // The parts of the table and board model a world creator may delete (step 12.2, docs/customizing.md), and every
@@ -316,7 +385,7 @@ public static class ChessBoardViewBuilder {
         view.blackCapturedPlaces = oldView.blackCapturedPlaces;
         // Built places nothing points at any more (the old view's are elsewhere) go.
         if (oldPlaces == null && built != null) Object.DestroyImmediate(built.gameObject);
-        UdonSharpEditorUtility.CopyProxyToUdon(view);
+        RecordInstance(view);
         return ", captured places kept";
     }
 
@@ -497,7 +566,6 @@ public static class ChessBoardViewBuilder {
 
     // ---- The Chess Pieces and Chess Arbiter prefabs (step 14.1, docs/prefabs.md) ----
 
-    const string PrefabsFolder = "Assets/Siggi/ChessBoard/Prefabs";
     const string PieceSetPrefabPath = PrefabsFolder + "/Chess Pieces.prefab";
     const string ArbiterPrefabPath = PrefabsFolder + "/Chess Arbiter.prefab";
     // Where the arbiter prefab was before 14.1; moved (keeping its GUID) when found.
@@ -511,9 +579,7 @@ public static class ChessBoardViewBuilder {
             ArbiterProgramPath)) return;
         Mesh[] meshes = PieceMeshes();
         Material ghost = GhostMaterialAsset();
-        string note = EnsureArbiterPrefabs(meshes,
-            MaterialAsset("White Pieces", new Color(0.92f, 0.89f, 0.82f), 0.55f),
-            MaterialAsset("Black Pieces", new Color(0.13f, 0.12f, 0.12f), 0.6f), ghost);
+        string note = EnsureArbiterPrefabs(meshes, WhitePiecesMaterial(), BlackPiecesMaterial(), ghost);
         foreach (ChessArbiter arbiter in ChessArbiterBuildCheck.FindAll()) {
             note += MoveOntoDefaultSet(arbiter, meshes, ghost);
         }
@@ -529,7 +595,7 @@ public static class ChessBoardViewBuilder {
     // changed).
     static string EnsureArbiterPrefabs(Mesh[] meshes, Material white, Material black, Material ghost) {
         string note = "";
-        if (!AssetDatabase.IsValidFolder(PrefabsFolder)) AssetDatabase.CreateFolder("Assets/Siggi/ChessBoard", "Prefabs");
+        EnsurePrefabsFolder();
 
         if (AssetDatabase.LoadAssetAtPath<GameObject>(PieceSetPrefabPath) == null) {
             ChessPieceSet built = BuildPieceSet(DefaultSetName, null, meshes, new[] { white }, Vector3.zero,
