@@ -4,8 +4,10 @@ using SiggiUSTools;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UdonSharpEditor;
 using UnityEngine.SceneManagement;
 using VRC.SDKBase.Editor.BuildPipeline;
+using VRC.Udon;
 
 // Step 14's check of the prefabs (docs/prefabs.md), without Play Mode: run it from Tools > Chess Board > Test Prefabs.
 // It drops each prefab into a new scene of its own, opened beside the open one and closed unsaved afterwards, and
@@ -14,13 +16,15 @@ using VRC.SDKBase.Editor.BuildPipeline;
 // is undone and the prefab saved again before it ends. 14.2: the Chess Board with its importer, two placed with their
 // own board numbers, and the open scene's boards instances of it. 14.3: the Chess Board View with every object it uses,
 // its pieces standing on their starting squares, pointed at a placed board, and the open scene's views instances of
-// it. Every prefab: nothing it uses is under Assets/Tests/.
+// it. 14.4: the Chess Board UI with its buttons (each calling its own UI), status panels, PGN box and sounds, pointed
+// at a placed board, and the open scene's UIs instances of it. Every prefab: nothing it uses is under Assets/Tests/.
 // Logs "[PrefabTest] PASS: <check>" or "[PrefabTest] FAIL: <check>: <details>" per check, then a summary line.
 public static class PrefabTest {
     const string PieceSetPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Pieces.prefab";
     const string ArbiterPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Arbiter.prefab";
     const string BoardPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Board.prefab";
     const string ViewPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Board View.prefab";
+    const string UIPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Board UI.prefab";
 
     static int passed;
     static int failed;
@@ -37,7 +41,10 @@ public static class PrefabTest {
         Check(boardPrefab != null, "the Chess Board prefab at " + BoardPrefabPath, "missing");
         GameObject viewPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(ViewPrefabPath);
         Check(viewPrefab != null, "the Chess Board View prefab at " + ViewPrefabPath, "missing");
-        if (setPrefab == null || arbiterPrefab == null || boardPrefab == null || viewPrefab == null) {
+        GameObject uiPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(UIPrefabPath);
+        Check(uiPrefab != null, "the Chess Board UI prefab at " + UIPrefabPath, "missing");
+        if (setPrefab == null || arbiterPrefab == null || boardPrefab == null || viewPrefab == null
+            || uiPrefab == null) {
             Summary();
             return;
         }
@@ -47,12 +54,16 @@ public static class PrefabTest {
             CheckArbiter(setPrefab, arbiterPrefab, scene);
             CheckBoard(boardPrefab, scene);
             CheckView(viewPrefab, boardPrefab, scene);
+            CheckUI(uiPrefab, boardPrefab, scene);
         } finally {
             EditorSceneManager.CloseScene(scene, true);
         }
         CheckSceneBoards(boardPrefab);
         CheckSceneViews(viewPrefab);
-        foreach (string path in new[] { PieceSetPrefabPath, ArbiterPrefabPath, BoardPrefabPath, ViewPrefabPath }) {
+        CheckSceneUIs(uiPrefab);
+        foreach (string path in new[] {
+            PieceSetPrefabPath, ArbiterPrefabPath, BoardPrefabPath, ViewPrefabPath, UIPrefabPath,
+        }) {
             CheckNoTests(path);
         }
         Summary();
@@ -389,6 +400,136 @@ public static class PrefabTest {
         }
     }
 
+    // ---- 14.4: Chess Board UI ----
+
+    static void CheckUI(GameObject uiPrefab, GameObject boardPrefab, Scene scene) {
+        List<string> logged = new List<string>();
+        Application.LogCallback listener = (text, stack, type) => logged.Add(type + ": " + text);
+        Application.logMessageReceived += listener;
+        GameObject placed;
+        try {
+            placed = (GameObject)PrefabUtility.InstantiatePrefab(uiPrefab, scene);
+        } finally {
+            Application.logMessageReceived -= listener;
+        }
+        Check(logged.Count == 0, "the Chess Board UI placed logs nothing", string.Join("; ", logged));
+        ChessBoardUI ui = placed.GetComponent<ChessBoardUI>();
+        Check(ui != null, "the Chess Board UI has a ChessBoardUI", "none");
+        if (ui == null) return;
+        Check(ui.board == null && ui.historyWall == null, "the UI's board and history wall are left to set",
+            "board " + ui.board + ", wall " + ui.historyWall);
+        Check(ui.i18n == null, "the UI's I18n is left for the sanity check", "on " + ui.i18n);
+
+        // Each panel has every action but the other colour's: the colourless ones twice, each colour's once.
+        UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(ui);
+        int[] seen = new int[ChessBoardUI.ButtonCount];
+        string buttons = "";
+        int count = ui.buttons != null ? ui.buttons.Length : 0;
+        if (ui.buttonActions == null || ui.buttonActions.Length != count || ui.buttonLabels == null
+            || ui.buttonLabels.Length != count) {
+            buttons += " the arrays' lengths differ;";
+            count = 0;
+        }
+        for (int i = 0; i < count; i++) {
+            GameObject button = ui.buttons[i];
+            int action = ui.buttonActions[i];
+            if (button == null || !button.transform.IsChildOf(placed.transform) || action < 0
+                || action >= ChessBoardUI.ButtonCount) {
+                buttons += " " + i + " missing;";
+                continue;
+            }
+            seen[action]++;
+            if (ui.buttonLabels[i] == null || !ui.buttonLabels[i].transform.IsChildOf(button.transform)) {
+                buttons += " " + button.name + "'s label;";
+            }
+            string pressed = PressEvent(button.GetComponent<UnityEngine.UI.Button>(), udon);
+            if (pressed != "_Press" + button.name) buttons += " " + button.name + " calls " + pressed + ";";
+        }
+        for (int action = 0; action < ChessBoardUI.ButtonCount; action++) {
+            int expected = ChessBoardUI._ButtonColor(action) == ChessRules.NoColor ? 2 : 1;
+            if (seen[action] != expected) buttons += " action " + action + " " + seen[action] + " times;";
+        }
+        Check(count > 0 && buttons == "", "the UI's " + count + " buttons, each action on its panels, each calling the "
+            + "UI's own event", buttons);
+        Check(ui.statusPlayerLabels != null && ui.statusPlayerLabels.Length == 2
+            && System.Array.IndexOf(ui.statusPlayerLabels, null) < 0 && ui.statusLabels != null
+            && ui.statusLabels.Length == 2 && System.Array.IndexOf(ui.statusLabels, null) < 0,
+            "the UI's two status panels", "missing");
+
+        bool box = ui.pgnBox != null && ui.pgnBox.transform.IsChildOf(placed.transform) && !ui.pgnBox.activeSelf
+            && ui.pgnField != null && ui.pgnField.readOnly && ui.pgnPasteField != null && !ui.pgnPasteField.readOnly
+            && ui.pgnCopyPart != null && ui.pgnPastePart != null && !ui.pgnPastePart.activeSelf
+            && ui.pgnCopyHint != null && ui.pgnPasteHint != null && ui.pgnImportLabel != null
+            && ui.pgnImportButton != null && ui.pgnImportText != null && ui.pgnCloseText != null;
+        Check(box, "the UI's PGN box (hidden) with its copy and paste parts", "missing");
+        if (box) {
+            CheckString(PressEvent(ui.pgnImportButton.GetComponent<UnityEngine.UI.Button>(), udon), "_PressImport",
+                "the PGN box's Import calls the UI's own event");
+            CheckString(PressEvent(ui.pgnCloseText.transform.parent.GetComponent<UnityEngine.UI.Button>(), udon),
+                "_PressPgnClose", "the PGN box's Close calls the UI's own event");
+        }
+        Check(ui.audioSource != null && ui.audioSource.transform.IsChildOf(placed.transform) && ui.clickSound != null
+            && ui.gameStartSound != null && ui.notificationSound != null && ui.gameEndSound != null
+            && ui.resetSound != null && ui.timeWarningSound != null && ui.timeOutSound != null && ui.checkSound != null,
+            "the UI's sound source and sounds", "missing");
+
+        // Pointed at a placed board by hand, as a world creator would set it in the Inspector.
+        GameObject boardObject = (GameObject)PrefabUtility.InstantiatePrefab(boardPrefab, scene);
+        ChessBoard board = boardObject.GetComponent<ChessBoard>();
+        SerializedObject fields = new SerializedObject(ui);
+        fields.FindProperty("board").objectReferenceValue = board;
+        fields.ApplyModifiedProperties();
+        Check(ui.board == board, "the UI pointed at a placed board", "on " + ui.board);
+        Check(uiPrefab.GetComponent<ChessBoardUI>().board == null,
+            "the UI pointed at a board: the prefab still points at none", "it doesn't");
+        Object.DestroyImmediate(placed);
+        Object.DestroyImmediate(boardObject);
+    }
+
+    // The event a UI button sends: its one click listener's SendCustomEvent argument, when it calls udon; otherwise
+    // what's wrong.
+    static string PressEvent(UnityEngine.UI.Button button, UdonBehaviour udon) {
+        if (button == null) return "(no button)";
+        if (button.onClick.GetPersistentEventCount() != 1) return "(" + button.onClick.GetPersistentEventCount()
+            + " listeners)";
+        if (button.onClick.GetPersistentTarget(0) != udon) return "(another behaviour)";
+        if (button.onClick.GetPersistentMethodName(0) != "SendCustomEvent") return "(not SendCustomEvent)";
+        return new SerializedObject(button)
+            .FindProperty("m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Arguments.m_StringArgument").stringValue;
+    }
+
+    // The open scene's UIs (the test scene's) are instances of the Chess Board UI prefab, each on its own board, with
+    // the history wall on its board's archive, and its buttons its own.
+    static void CheckSceneUIs(GameObject uiPrefab) {
+        ChessBoardUI[] uis = Object.FindObjectsOfType<ChessBoardUI>(true);
+        Check(uis.Length > 0, "the open scene has UIs", "none");
+        GameHistoryWall[] walls = Object.FindObjectsOfType<GameHistoryWall>(true);
+        HashSet<ChessBoard> boards = new HashSet<ChessBoard>();
+        foreach (ChessBoardUI ui in uis) {
+            string name = "the scene's " + ui.gameObject.name;
+            Check(PrefabUtility.IsAnyPrefabInstanceRoot(ui.gameObject)
+                && PrefabUtility.GetCorrespondingObjectFromOriginalSource(ui.gameObject) == uiPrefab,
+                name + " is a Chess Board UI instance", "it isn't");
+            Check(ui.board != null && boards.Add(ui.board), name + " has a board of its own",
+                ui.board == null ? "empty" : "shared");
+            GameHistoryWall wall = null;
+            foreach (GameHistoryWall w in walls) {
+                if (ui.board != null && ui.board.archive != null && w.archive == ui.board.archive) wall = w;
+            }
+            Check(ui.historyWall == wall, name + "'s history wall is its board's archive's",
+                "on " + ui.historyWall + ", expected " + wall);
+            UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(ui);
+            int own = 0;
+            for (int i = 0; i < ui.buttons.Length; i++) {
+                if (ui.buttons[i] != null && ui.buttons[i].transform.IsChildOf(ui.transform)
+                    && PressEvent(ui.buttons[i].GetComponent<UnityEngine.UI.Button>(), udon).StartsWith("_Press")) {
+                    own++;
+                }
+            }
+            CheckIntValue(own, ui.buttons.Length, name + "'s buttons are its own, calling it");
+        }
+    }
+
     // Nothing a prefab uses (scripts, programs, assets) is a test's (step 14: no Assets/Tests/ references).
     static void CheckNoTests(string path) {
         List<string> tests = new List<string>();
@@ -396,6 +537,10 @@ public static class PrefabTest {
             if (dependency.StartsWith("Assets/Tests/")) tests.Add(dependency);
         }
         Check(tests.Count == 0, path + " uses nothing under Assets/Tests/", string.Join(", ", tests));
+    }
+
+    static void CheckString(string got, string expected, string name) {
+        Check(got == expected, name, "got \"" + got + "\", expected \"" + expected + "\"");
     }
 
     static void CheckIntValue(int got, int expected, string name) {

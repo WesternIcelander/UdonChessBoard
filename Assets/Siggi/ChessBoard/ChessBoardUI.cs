@@ -11,11 +11,11 @@ namespace SiggiChessBoard {
     // display, the PGN box (copying a game out, pasting one in) and Load it here for the history wall's pick. A
     // listener of its own, holding no game state and no synced fields: it reads the board after each change and acts
     // through the board's methods, never through the physical board (ChessBoardView), which it doesn't know. It plays
-    // every sound but the move sounds (step 12.12), so a UI of a world's own replaces them all with it. Built in
-    // the scene with the view by Tools > Chess Board > Create Board View (Editor/ChessBoardViewBuilder.cs).
+    // every sound but the move sounds (step 12.12), so a UI of a world's own replaces them all with it. Placed from
+    // the Chess Board UI prefab (step 14.4, docs/prefabs.md), its board and history wall set on the instance.
     //
-    // Its local space is the view's: the builder stands it at the board's centre, files along +x, White's end at -z,
-    // so the PGN box (and _LocalEnd) need nothing from the table. Its parts are placed around that origin by the builder.
+    // Its local space is the view's: it stands at the board's centre, files along +x, White's end at -z, so the PGN box
+    // (and _LocalEnd) need nothing from the table. The prefab places its parts around that origin.
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class ChessBoardUI : ChessBoardListener {
         // The board shown and acted on; the UI adds itself as a listener on Start.
@@ -107,7 +107,7 @@ namespace SiggiChessBoard {
         public const int ButtonLeaveWhite = 31;
         public const int ButtonLeaveBlack = 32;
         public const int ButtonCount = 33;
-        // The button objects in the world (any number: the builder puts a panel at each end of the table), with the
+        // The button objects in the world (any number: the prefab has a panel at each end of the table), with the
         // Button* action of each and its label at the same index. A button's UI Button calls the UI's Press...
         // event for its action.
         public GameObject[] buttons = new GameObject[0];
@@ -120,7 +120,7 @@ namespace SiggiChessBoard {
         public GameHistoryWall historyWall;
         // The wall's selectionChanges when the buttons last saw it.
         int seenSelectionChanges;
-        // The status display (step 9.5c): any number of panels (the builder puts one at each end of the table), each
+        // The status display (step 9.5c): any number of panels (the prefab has one at each end of the table), each
         // with a players text (both seats, with their clocks during and after a game) and a status text (whose turn,
         // check, the result, pending offers and requests, a loaded game's names, the replay position), at the same
         // index. Brought up to date on every Refresh, every StatusInterval while a clock runs and once a second
@@ -131,7 +131,7 @@ namespace SiggiChessBoard {
         float nextStatusUpdate;
         // The PGN box (step 11.2a): a child of this UI, shown only to the local player once they open it with the PGN
         // button, with the game's PGN as it stands (ChessBoard.GamePgn) in a read-only text field to copy it from. It
-        // stands upright over the far edge of the board, facing the end the player opened it from; the builder sets its
+        // stands upright over the far edge of the board, facing the end the player opened it from; the prefab sets its
         // height and distance, the UI only which side of the board it stands on. Kept up to date while it shows, and
         // closed when the game has no moves left (a reset).
         public GameObject pgnBox;
@@ -166,7 +166,7 @@ namespace SiggiChessBoard {
         float nextButtonCheck;
         const float ButtonCheckInterval = 1;
         // Sound effects (step 12.12): every sound but the move sounds (ChessBoardView's), from audioSource (a spatial
-        // source the builder stands at the UI's origin, the board's centre). clickSound plays for a button pressed, on
+        // source the prefab stands at the UI's origin, the board's centre). clickSound plays for a button pressed, on
         // the presser's client; the rest on every client, for a change as it happens: gameStartSound for Start or
         // Continue from here, notificationSound for a draw offered or a takeback requested, gameEndSound when a game
         // ends (timeOutSound instead for a flag fall), resetSound for a reset, and timeWarningSound as the side to
@@ -1047,7 +1047,7 @@ namespace SiggiChessBoard {
         }
 
         // Stands the PGN box over the far edge of the board from color's end of the table, facing that end (unturned it
-        // faces -z, White's end), at the height and distance the builder gave it.
+        // faces -z, White's end), at the height and distance the prefab gives it.
         public void _PlacePgnBox(int color) {
             if (!Utilities.IsValid(pgnBox)) return;
             Transform box = pgnBox.transform;

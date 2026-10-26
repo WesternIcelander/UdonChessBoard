@@ -167,7 +167,8 @@ public static class GameHistoryWallBuilder {
             if (ui.board == null || ui.board.archive != wall.archive) continue;
             Undo.RecordObject(ui, "Create History Wall");
             ui.historyWall = wall;
-            UdonSharpEditorUtility.CopyProxyToUdon(ui);
+            // An override on a Chess Board UI instance (step 14.4).
+            RecordInstance(ui);
             count++;
         }
         return count;

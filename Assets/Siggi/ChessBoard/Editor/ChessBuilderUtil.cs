@@ -81,6 +81,26 @@ public static class ChessBuilderUtil {
         if (!AssetDatabase.IsValidFolder(PrefabsFolder)) AssetDatabase.CreateFolder("Assets/Siggi/ChessBoard", "Prefabs");
     }
 
+    // Makes the prefab at path when it's missing, from the object build returns (destroyed once saved), and otherwise
+    // saves it again in place, so it holds every field of the current code, keeping everything already there (rule 1
+    // of docs/compatibility.md); its root named name either way. Returns a note for the log ("" when it was there).
+    public static string EnsurePrefab(string path, string name, System.Func<GameObject> build) {
+        EnsurePrefabsFolder();
+        string note = "";
+        if (AssetDatabase.LoadAssetAtPath<GameObject>(path) == null) {
+            GameObject built = build();
+            PrefabUtility.SaveAsPrefabAsset(built, path);
+            Object.DestroyImmediate(built);
+            note = ", made " + path;
+        }
+        GameObject root = PrefabUtility.LoadPrefabContents(path);
+        root.name = name;
+        CopyProxiesToUdon(root);
+        PrefabUtility.SaveAsPrefabAsset(root, path);
+        PrefabUtility.UnloadPrefabContents(root);
+        return note;
+    }
+
     // Copies every behaviour's fields under root (a prefab's contents) to its Udon data, so the saved prefab holds
     // every field of the current code.
     public static void CopyProxiesToUdon(GameObject root) {
