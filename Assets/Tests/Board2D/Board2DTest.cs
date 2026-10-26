@@ -550,6 +550,15 @@ public class Board2DTest : ChessTest {
         view._ScrollMoveList(view.moveRowHeight * 3);
         view._Refresh();
         CheckFloat(view._MoveListScroll(), view.moveRowHeight * 3, s + ": scrolled by hand, kept on a redraw");
+        // The scroll rect's onValueChanged after the view's own scroll keeps it. The mouse wheel's step can't be
+        // simulated (Input.GetAxisRaw), so this checks that a move without it (a drag) stays where it went.
+        view._OnMoveListScrolled();
+        CheckFloat(view._MoveListScroll(), view.moveRowHeight * 3, s + ": the view's own scroll kept");
+        Vector2 at = view.moveListContent.anchoredPosition;
+        view.moveListContent.anchoredPosition = new Vector2(at.x, view.moveRowHeight * 5.5f);
+        view._OnMoveListScrolled();
+        CheckFloat(view._MoveListScroll(), view.moveRowHeight * 5.5f, s + ": a drag's scroll kept");
+        view._ScrollMoveList(view.moveRowHeight * 3);
         // A step brings the move back into view, scrolling just enough: e5's row (the first) at the top.
         view.PressForward();
         CheckFloat(view._MoveListScroll(), 0, s + ": > to ply 2, scrolled up just to e5's row");

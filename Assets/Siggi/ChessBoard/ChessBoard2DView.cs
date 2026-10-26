@@ -116,6 +116,9 @@ namespace SiggiChessBoard {
         int listFirstRow;
         ChessBoard listBoard;
         int listPly = -1;
+        // The scroll position (the content's y) when the list last scrolled, by the player or the view, for
+        // _OnMoveListScrolled.
+        float listScrolledTo;
         // The game texts the view writes its status lines with (ChessBoardUI._LoadGameTexts), from i18n: read on first
         // use and again on a language change.
         string[] gameTexts;
@@ -451,8 +454,29 @@ namespace SiggiChessBoard {
             if (ply >= 0) ShowPly(ply + 1);
         }
 
-        // The scroll rect moved (its onValueChanged): the rows it now shows.
+        // The scroll rect moved (its onValueChanged, in the frame it moved): the rows it now shows. A ScrollRect moves
+        // the content by the wheel's delta times its scrollSensitivity, and that delta's size depends on the input:
+        // about 1 a notch through the legacy input, about 120 through the Input System (as in ClientSim), which threw
+        // the list to its top or bottom. So when the wheel turned this frame, the move is replaced by one
+        // scrollSensitivity step (a row) in its direction from where the list was, as on the history wall
+        // (GameHistoryWall._OnScrolled). Dragging is left as it is, and so is the view's own scrolling (SetScroll
+        // remembers where it put the list). The scroll rect has already set its scrollbar from its own move, so the
+        // scrollbar is set here too, or it shows the list's end for a frame.
         public void _OnMoveListScrolled() {
+            if (Utilities.IsValid(moveListContent)) {
+                float offset = moveListContent.anchoredPosition.y;
+                if (offset != listScrolledTo && Input.GetAxisRaw("Mouse ScrollWheel") != 0
+                    && Utilities.IsValid(moveList)) {
+                    float step = offset > listScrolledTo ? moveList.scrollSensitivity : -moveList.scrollSensitivity;
+                    float max = _MoveListMaxScroll();
+                    offset = Mathf.Clamp(listScrolledTo + step, 0, max);
+                    moveListContent.anchoredPosition = new Vector2(moveListContent.anchoredPosition.x, offset);
+                    // 1 at the top, 0 at the bottom.
+                    Scrollbar scrollbar = moveList.verticalScrollbar;
+                    if (Utilities.IsValid(scrollbar) && max > 0) scrollbar.SetValueWithoutNotify(1 - offset / max);
+                }
+                listScrolledTo = offset;
+            }
             DrawMoveList();
         }
 
@@ -518,9 +542,12 @@ namespace SiggiChessBoard {
             return Utilities.IsValid(moveListViewport) ? moveListViewport.rect.height : 0;
         }
 
+        // Scrolls the list to offset, remembered for _OnMoveListScrolled so that a wheel turn in the same frame doesn't
+        // undo it.
         void SetScroll(float offset) {
             if (!Utilities.IsValid(moveListContent)) return;
             offset = Mathf.Clamp(offset, 0, _MoveListMaxScroll());
+            listScrolledTo = offset;
             Vector2 position = moveListContent.anchoredPosition;
             if (position.y != offset) moveListContent.anchoredPosition = new Vector2(position.x, offset);
         }
