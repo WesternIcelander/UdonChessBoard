@@ -16,11 +16,11 @@ UdonSharp port of the Java ChessBoard library, for VRChat worlds. `PLAN.md` hold
 From the first release (PLAN 16.1) on, worlds use the package, and updating must need nothing but importing the new version. Every change follows [docs/compatibility.md](docs/compatibility.md); in short:
 
 - **Edit prefabs in place, never rebuild them:** keep every existing object, add only what's new. Recreating an object loses every world's overrides on it.
-- **Never rename, retype or remove a saved field without a migration** (old field kept hidden and moved by the migrator, PLAN 14.12). A field whose meaning changes is a new field.
+- **Never rename, retype or remove a saved field in a way that loses a world's value**: a plain rename uses `[FormerlySerializedAs]` (kept forever); anything more keeps the old field hidden with a run-time fallback to it, or is avoided. There is no editor migrator: updated prefabs carry the rest. A field whose meaning changes is a new field.
 - **Keep asset GUIDs:** move or rename assets only inside Unity (or with their `.meta`), never delete and recreate one worlds can reference.
-- **New required parts come with a default** (in the prefab, found at run time, or filled in by the wiring script or migrator); a world shouldn't have to set anything.
+- **New required parts come with a default** (in the prefab, found at run time, or filled in by the wiring script); a world shouldn't have to set anything.
 - **Keep the public API:** names, parameters, return codes and constants stay; a changed signature gets a new method and the old one forwards to it.
-- **Changed defaults and behaviour that reach every world are deliberate**, and every release has a `CHANGELOG.md` entry saying what changed, what the migrator does, and anything a world must do by hand.
+- **Changed defaults and behaviour that reach every world are deliberate**, and every release has a `CHANGELOG.md` entry saying what changed, what reaches existing worlds, and anything a world must do by hand.
 - **Test every release against the previous one** (the compatibility fixture, PLAN 16.1).
 
 ## UdonSharp limits

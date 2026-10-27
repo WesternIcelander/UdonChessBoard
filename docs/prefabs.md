@@ -4,7 +4,7 @@ World creators add the chess objects by dragging prefabs from `Assets/Siggi/Ches
 
 A prefab can't reference objects in the scene, so the links between the chess objects (a board to its arbiter and archive, a view to its board, …) are set after placing them. Most of them fill themselves in: the [wiring script](#wiring) (step 14.11) links each empty one to the one object of its kind in the scene when the scene is saved, when Play Mode starts and before every build, and numbers the boards. Each section below says what it sets and what is left to you.
 
-Until step 14.13 the **Tools > Chess Board** builders make each prefab when it's missing and otherwise update it in place, keeping its objects ([compatibility](compatibility.md), rule 1). From then on the prefabs are the source, changed in place in Unity.
+Until step 14.12 the **Tools > Chess Board** builders make each prefab when it's missing and otherwise update it in place, keeping its objects ([compatibility](compatibility.md), rule 1). From then on the prefabs are the source, changed in place in Unity.
 
 Every chess prefab shares one `I18n`, the [Chess Language](#chess-language) prefab (step 14.10), placed once per scene beside the chess objects (or beside one of their parents), so the `I18n` sanity check links them to it ([architecture](architecture.md#player-text-step-135)).
 
