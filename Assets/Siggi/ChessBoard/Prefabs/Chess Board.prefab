@@ -59,8 +59,6 @@ MonoBehaviour:
   arbiter: {fileID: 0}
   boardNumber: 0
   importer: {fileID: 7069539568944241613}
-  pgnEvent: 
-  pgnSite: VRChat
   listeners: []
 --- !u!114 &4311974778898720612
 MonoBehaviour:
