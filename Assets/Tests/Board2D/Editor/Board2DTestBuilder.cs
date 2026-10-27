@@ -21,8 +21,8 @@ public static class Board2DTestBuilder {
         if (view == null && views.Length == 1) view = views[0];
         if (view == null) {
             EditorUtility.DisplayDialog("Create 2D View Test", views.Length == 0
-                ? "There's no 2D board view in the open scene. Create one with Tools > Chess Board > Create 2D Board "
-                    + "View."
+                ? "There's no 2D board view in the open scene. Place the 2D Chess Board View or Movable 2D Chess "
+                    + "Board View prefab (Assets/Siggi/ChessBoard/Prefabs)."
                 : "There are several 2D board views in the scene. Select the one to test, then try again.", "OK");
             return;
         }
@@ -33,7 +33,7 @@ public static class Board2DTestBuilder {
         Undo.RegisterCreatedObjectUndo(root, "Create 2D View Test");
         Board2DTest test = UdonSharpUndo.AddComponent<Board2DTest>(root);
         test.view = view;
-        test.holder = ChessBoard2DViewBuilder.HolderOf(view);
+        test.holder = HolderOf(view);
         BoardTest[] boardTests = Object.FindObjectsOfType<BoardTest>(true);
         test.boardTest = boardTests.Length > 0 ? boardTests[0] : null;
         ViewTest[] viewTests = Object.FindObjectsOfType<ViewTest>(true);
@@ -74,8 +74,8 @@ public static class Board2DTestBuilder {
             views[i].synced = !views[i].synced;
             // An override on a prefab instance (14.8); RecordInstance copies it to the Udon data either way.
             RecordInstance(views[i]);
-            ChessBoard2DViewHolder holder = ChessBoard2DViewBuilder.HolderOf(views[i]);
-            if (holder != null) ChessBoard2DViewBuilder.MatchObjectSync(holder);
+            ChessBoard2DViewHolder holder = HolderOf(views[i]);
+            if (holder != null) ChessBoard2DViewSyncCheck.MatchObjectSync(holder);
             EditorSceneManager.MarkSceneDirty(views[i].gameObject.scene);
             Debug.Log("[Board2DTestBuilder] " + views[i].gameObject.name + ": Synced " + (views[i].synced ? "on" : "off")
                 + (holder != null ? " (its grip's VRCObjectSync matched)" : "") + ". Save the scene.");

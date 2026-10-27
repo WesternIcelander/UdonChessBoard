@@ -84,7 +84,8 @@ public class ArchiveTest : ChessTest {
         RunArbiterChecks();
         SaveGames();
         bool hasWall = Utilities.IsValid(wall) && wall.archive == archive;
-        Check(hasWall, "wall: assigned on this archive", "assign ArchiveTest's Wall (Create History Wall, then "
+        Check(hasWall, "wall: assigned on this archive", "assign ArchiveTest's Wall (place the Game History Wall "
+            + "prefab, then "
             + "Create Archive Test again)");
         if (hasWall) RunWallSetupChecks();
         RunBoardChecks();
@@ -429,7 +430,7 @@ public class ArchiveTest : ChessTest {
             if (!Utilities.IsValid(wall.rows[i]) || !Utilities.IsValid(wall.rowTargets[i])) assigned = false;
         }
         Check(assigned, "wall: title, scroll view, viewport, scrollbar, content and entries assigned",
-            "one is missing (Create History Wall)");
+            "one is missing (the Game History Wall prefab)");
         Check(wall.entryHeight > 0, "wall: entry height set", "" + wall.entryHeight);
         CheckString(ChessGame.EndingKey(ChessGame.EndingUnterminated, ChessRules.NoColor), "ending_unfinished",
             "wall: ending key, unfinished");
@@ -584,7 +585,7 @@ public class ArchiveTest : ChessTest {
             if (!Utilities.IsValid(target) || target.wall != wall || target.index != i) targets = false;
         }
         Check(targets, "pick: every entry has its target",
-            "an entry's target is missing or wrong (Create History Wall)");
+            "an entry's target is missing or wrong (the Game History Wall prefab)");
         // The pick is on the arbiter (step 13.10): its archive and the game's ID.
         ChessArbiter arbiter = board.arbiter;
         arbiter._ClearSelection();
@@ -618,7 +619,7 @@ public class ArchiveTest : ChessTest {
 
         // Load it here: only on a reset board with a game picked.
         bool hasUI = Utilities.IsValid(ui) && ui.board == board;
-        Check(hasUI, "UI: assigned, on this board", "assign ArchiveTest's UI (Create Board View, then Create Archive "
+        Check(hasUI, "UI: assigned, on this board", "assign ArchiveTest's UI (a Chess Table's, then Create Archive "
             + "Test again)");
         if (hasUI) {
             CheckLoadButton(true, "Load it here: shown on a reset board with a game picked");
@@ -716,7 +717,7 @@ public class ArchiveTest : ChessTest {
             found++;
             if (ui.buttons[i].activeSelf != shown) errors += "button " + i + (shown ? " hidden; " : " shown; ");
         }
-        if (found == 0) errors += "no Load it here button (Create Board View); ";
+        if (found == 0) errors += "no Load it here button (the Chess Board UI prefab); ";
         if (ui._ButtonApplies(ChessBoardUI.ButtonLoadHere) != shown) errors += "applies " + !shown + "; ";
         Check(errors.Length == 0, name, errors);
     }
@@ -738,7 +739,8 @@ public class ArchiveTest : ChessTest {
     // refuses deleting; the arbiter introduced itself to both archives, and the walls registered with theirs.
     void RunArbiterChecks() {
         if (!BoardUsesArchive()) {
-            Check(false, "arbiter: lists the instance archive", "set the arbiter's Archives (Create Game Archive)");
+            Check(false, "arbiter: lists the instance archive",
+                "set the arbiter's Archives (empty it to have it wired)");
             return;
         }
         ChessArbiter arbiter = board.arbiter;
@@ -749,7 +751,7 @@ public class ArchiveTest : ChessTest {
             if (Utilities.IsValid(personal) && arbiter.archives[i] == personal) listsPersonal = true;
         }
         Check(!Utilities.IsValid(personal) || listsPersonal, "arbiter: lists the personal archive",
-            "not listed (Create Personal Game Archive)");
+            "not listed (empty the arbiter's Archives to have it wired)");
         Check(found.arbiter == arbiter && (!Utilities.IsValid(personal) || personal.arbiter == arbiter),
             "arbiter: introduced itself to its archives", "an archive has no arbiter");
         CheckInt(found.Capacity(), Capacity, "base: the instance archive's capacity through a GameArchive field");
@@ -834,7 +836,7 @@ public class ArchiveTest : ChessTest {
         bool hasPersonal = Utilities.IsValid(personal) && Utilities.IsValid(personalWall)
             && personalWall.archive == personal;
         Check(hasPersonal, "personal: archive and wall assigned", "assign ArchiveTest's Personal and Personal Wall "
-            + "(Create Personal Game Archive, Create Personal History Wall, then Create Archive Test again)");
+            + "(place the Personal Game Archive and Personal History Wall prefabs, then Create Archive Test again)");
         if (!hasPersonal || !BoardUsesArchive()) return;
         bool hasUI = Utilities.IsValid(ui) && ui.board == board;
         ChessArbiter arbiter = board.arbiter;

@@ -51,6 +51,8 @@ public static class PrefabTest {
     const string Movable2DPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Movable 2D Chess Board View.prefab";
     const string TablePrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Table.prefab";
     const string LanguagePrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Language.prefab";
+    // The Game Archive prefab's synced holders (step 10.1a).
+    const int ArchiveHolderCount = 10;
 
     static int passed;
     static int failed;
@@ -715,6 +717,13 @@ public static class PrefabTest {
         return "";
     }
 
+    // The Chess Table instance board is in, or null.
+    static GameObject TableOf(ChessBoard board) {
+        GameObject outer = PrefabUtility.GetOutermostPrefabInstanceRoot(board.gameObject);
+        return outer != null && outer != board.gameObject
+            && PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(outer) == TablePrefabPath ? outer : null;
+    }
+
     // The open scene's boards (the test scene's) are each in a Chess Table instance with the view and UI on it.
     static void CheckSceneTables() {
         ChessBoard[] boards = Object.FindObjectsOfType<ChessBoard>(true);
@@ -722,7 +731,7 @@ public static class PrefabTest {
             // Not the inactive spare board SettingsTest numbers 2 (14.11, SpareBoardBuilder), which has no table.
             if (!board.gameObject.activeInHierarchy) continue;
             string name = "the scene's " + board.gameObject.name + " (board " + board.boardNumber + ")";
-            GameObject table = ChessBoardViewBuilder.TableOf(board);
+            GameObject table = TableOf(board);
             Check(table != null, name + " is in a Chess Table instance", "it isn't");
             if (table == null) continue;
             ChessBoardView[] views = table.GetComponentsInChildren<ChessBoardView>(true);
@@ -895,7 +904,7 @@ public static class PrefabTest {
         Check(wall.title != null && wall.title.transform.IsChildOf(placed.transform), kind + "'s title", "missing");
 
         int expected = personal ? PersonalGameArchive.DefaultCapacity
-            : GameArchiveBuilder.HolderCount * GameArchiveHolder.Capacity;
+            : ArchiveHolderCount * GameArchiveHolder.Capacity;
         CheckIntValue(wall.rowTargets != null ? wall.rowTargets.Length : -1, expected,
             kind + " has an entry per game of its archive's default capacity");
         string entries = "";
@@ -1337,7 +1346,7 @@ public static class PrefabTest {
         if (holder.grip != null) {
             view.synced = true;
             ChessBuilderUtil.RecordInstance(view);
-            bool matched = ChessBoard2DViewBuilder.MatchObjectSync(holder);
+            bool matched = ChessBoard2DViewSyncCheck.MatchObjectSync(holder);
             VRC.SDK3.Components.VRCObjectSync sync = holder.grip.GetComponent<VRC.SDK3.Components.VRCObjectSync>();
             bool added = false;
             foreach (UnityEditor.SceneManagement.AddedComponent component in PrefabUtility.GetAddedComponents(placed)) {
@@ -1350,7 +1359,7 @@ public static class PrefabTest {
                 "Synced ticked on the instance: the prefab's grip still has no VRCObjectSync", "it has one");
             view.synced = false;
             ChessBuilderUtil.RecordInstance(view);
-            matched = ChessBoard2DViewBuilder.MatchObjectSync(holder);
+            matched = ChessBoard2DViewSyncCheck.MatchObjectSync(holder);
             Check(matched && holder.grip.GetComponent<VRC.SDK3.Components.VRCObjectSync>() == null
                 && PrefabUtility.GetAddedComponents(placed).Count == 0,
                 "Synced unticked: the grip's VRCObjectSync goes, no component added", "it stays");
@@ -1402,7 +1411,7 @@ public static class PrefabTest {
         Check(views.Length > 0, "the open scene has 2D views", "none");
         foreach (ChessBoard2DView view in views) {
             string name = "the scene's " + view.gameObject.name;
-            ChessBoard2DViewHolder holder = ChessBoard2DViewBuilder.HolderOf(view);
+            ChessBoard2DViewHolder holder = ChessBuilderUtil.HolderOf(view);
             if (holder != null) {
                 Check(PrefabUtility.IsAnyPrefabInstanceRoot(holder.gameObject)
                     && PrefabUtility.GetCorrespondingObjectFromOriginalSource(holder.gameObject) == movablePrefab
@@ -1421,7 +1430,7 @@ public static class PrefabTest {
         }
         Board2DTest[] tests = Object.FindObjectsOfType<Board2DTest>(true);
         Check(tests.Length == 1 && tests[0].view != null && tests[0].holder != null
-            && tests[0].holder == ChessBoard2DViewBuilder.HolderOf(tests[0].view),
+            && tests[0].holder == ChessBuilderUtil.HolderOf(tests[0].view),
             "Board2DTest is on a scene's movable 2D view and its holder", "it isn't");
     }
 

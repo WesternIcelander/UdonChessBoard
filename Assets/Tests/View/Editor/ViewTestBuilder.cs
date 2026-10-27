@@ -34,8 +34,8 @@ public static class ViewTestBuilder {
             if (uis[i].board == view.board) ui = uis[i];
         }
         if (ui == null) {
-            EditorUtility.DisplayDialog("Create View Test", "The board has no ChessBoardUI. Build it with Tools > "
-                + "Chess Board > Create Board View (select the board first).", "OK");
+            EditorUtility.DisplayDialog("Create View Test", "The board has no ChessBoardUI. Place the Chess Board "
+                + "UI prefab with its Board set to the board, or test a Chess Table's board.", "OK");
             return;
         }
 
@@ -77,7 +77,7 @@ public static class ViewTestBuilder {
                 root.transform.SetSiblingIndex(olds[i].transform.GetSiblingIndex());
             }
             // ArchiveTest waits for the ViewTest it was given: point it at the new one.
-            ChessBoardViewBuilder.RepointReferences(olds[i], test);
+            RepointReferences(olds[i], test);
             Undo.DestroyObjectImmediate(olds[i].gameObject);
         }
         string setNote = ListTestSets(view.board.arbiter, new[] { test.testPieceSet, colourSet });
@@ -137,7 +137,7 @@ public static class ViewTestBuilder {
         }
         if (view == null || view.board == null) {
             EditorUtility.DisplayDialog("Create View Test", views.Length == 0
-                ? "There's no ChessBoardView in the open scene. Create one with Tools > Chess Board > Create Board View."
+                ? "There's no ChessBoardView in the open scene. Place a Chess Table prefab."
                 : view == null ? "There are several ChessBoardViews in the scene. Select the board to test, then try "
                     + "again."
                 : "The ChessBoardView has no board.", "OK");
@@ -158,7 +158,7 @@ public static class ViewTestBuilder {
     // materials of their own, set up facing White (White's turned half round). Its promotion pieces are White's only,
     // so Black's fall back on them.
     static ChessPieceSet BuildTestPieceSet(Transform parent) {
-        Mesh[] meshes = ChessBoardViewBuilder.PieceMeshes();
+        Mesh[] meshes = PieceMeshes();
         Mesh[] testMeshes = new Mesh[meshes.Length];
         for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) testMeshes[type] = TestMesh(meshes[type]);
         Material[] white = { TestMaterial("Test White Body", new Color(0.95f, 0.9f, 0.75f)),
@@ -170,7 +170,7 @@ public static class ViewTestBuilder {
         Vector3 offset = -(rotation * (TestOrigin * 0.5f));
         // Its promotion templates (step 12.11) take the test pieces' transforms and a material of their own.
         Material ghost = TestMaterial("Test Promotion Ghost", new Color(0.3f, 0.4f, 0.95f));
-        ChessPieceSet set = ChessBoardViewBuilder.BuildPieceSet("Test Chess Pieces", parent, testMeshes, white, offset,
+        ChessPieceSet set = BuildPieceSet("Test Chess Pieces", parent, testMeshes, white, offset,
             rotation, Vector3.one * 0.5f, ghost, testMeshes, black);
         set.transform.localPosition = new Vector3(0, 0, 0.3f);
         return set;
@@ -182,8 +182,8 @@ public static class ViewTestBuilder {
         Material[] white = { TestMaterial("Test Red", new Color(0.85f, 0.2f, 0.15f)) };
         Material[] black = { TestMaterial("Test Blue", new Color(0.15f, 0.3f, 0.85f)) };
         Material ghost = TestMaterial("Test Promotion Ghost", new Color(0.3f, 0.4f, 0.95f));
-        ChessPieceSet set = ChessBoardViewBuilder.BuildPieceSet("Test Colours", parent,
-            ChessBoardViewBuilder.PieceMeshes(), white, Vector3.zero, Quaternion.identity, Vector3.one, ghost, null,
+        ChessPieceSet set = BuildPieceSet("Test Colours", parent,
+            PieceMeshes(), white, Vector3.zero, Quaternion.identity, Vector3.one, ghost, null,
             black);
         set.transform.localPosition = new Vector3(0, 0, 0.6f);
         return set;
@@ -191,7 +191,7 @@ public static class ViewTestBuilder {
 
     // Lists the test's sets on the arbiter after its own (step 13.6: indexes 1 and 2 for the several-client checks),
     // dropping empty entries (an earlier test's sets, destroyed with it). Nothing when the list is empty: the board's
-    // own set comes first, from Create Board View.
+    // own set comes first, the Chess Arbiter prefab's default (Chess Pieces).
     static string ListTestSets(ChessArbiter arbiter, ChessPieceSet[] testSets) {
         if (arbiter == null) return ", no arbiter to list the test sets on";
         var sets = new System.Collections.Generic.List<ChessPieceSet>();
@@ -201,8 +201,8 @@ public static class ViewTestBuilder {
             }
         }
         if (sets.Count == 0) {
-            Debug.LogWarning("[ViewTestBuilder] " + arbiter.gameObject.name + " has no piece sets: run Create Board View, "
-                + "then Create View Test again.");
+            Debug.LogWarning("[ViewTestBuilder] " + arbiter.gameObject.name + " has no piece sets: list the default, "
+                + "Chess Pieces (nested in the Chess Arbiter prefab), first, then Create View Test again.");
             return ", the test sets not listed (the arbiter has none)";
         }
         foreach (ChessPieceSet set in testSets) {
@@ -257,5 +257,143 @@ public static class ViewTestBuilder {
         material.color = color;
         AssetDatabase.CreateAsset(material, path);
         return material;
+    }
+
+    // ---- Building a piece set (laid out as the Chess Pieces prefab is, step 14.1) ----
+
+    const string ModelsFolder = "Assets/Siggi/ChessBoard/Models";
+    static readonly string[] TypeNames = { "", "Pawn", "Knight", "Bishop", "Rook", "Queen", "King" };
+    // The board view's square (m), and how far apart a set's slots are, in squares.
+    const float SquareSize = 0.05f;
+    const float SlotSpacing = 1.5f;
+
+    // The package's placeholder piece meshes in Models/, by ChessRules type (entry 0 empty).
+    static Mesh[] PieceMeshes() {
+        Mesh[] meshes = new Mesh[7];
+        for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) {
+            meshes[type] = AssetDatabase.LoadAssetAtPath<Mesh>(ModelsFolder + "/" + TypeNames[type] + ".asset");
+        }
+        return meshes;
+    }
+
+    // A ChessPieceSet named name under parent (step 13.6), in rows SlotSpacing squares apart: White's, a slot per
+    // piece type holding a one-square guide on the playing surface and the template, its mesh meshes[type] with
+    // materials, standing at offset, turned by rotation and scaled by scale (facing +z); White's promotion slots
+    // behind it (AddPromotionSlots), with promotionMaterial; and Black's behind those. With blackMeshes, each Black
+    // template has its type's mesh and blackMaterials, at White's offset and rotation turned half round about the
+    // square's centre (facing -z); without, only a renderer with blackMaterials and no mesh, so Black wears White's
+    // mesh turned (the view's fallback); with neither, the Black row is left out.
+    static ChessPieceSet BuildPieceSet(string name, Transform parent, Mesh[] meshes, Material[] materials,
+            Vector3 offset, Quaternion rotation, Vector3 scale, Material promotionMaterial, Mesh[] blackMeshes,
+            Material[] blackMaterials) {
+        GameObject root = new GameObject(name);
+        Undo.RegisterCreatedObjectUndo(root, "Create Piece Set");
+        root.transform.SetParent(parent, false);
+        root.transform.localPosition = new Vector3(0, 0, -2 * SquareSize * SlotSpacing);
+        ChessPieceSet set = UdonSharpUndo.AddComponent<ChessPieceSet>(root);
+        Transform[] templates = new Transform[7];
+        Transform[] blackTemplates = new Transform[7];
+        Quaternion turn = Quaternion.Euler(0, 180, 0);
+        for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) {
+            Transform model = AddSlot(root.transform, "White " + TypeNames[type],
+                new Vector3((type - 1) * SlotSpacing * SquareSize, 0, 0), meshes[type], materials);
+            model.localPosition = offset;
+            model.localRotation = rotation;
+            model.localScale = scale;
+            templates[type] = model;
+            if (blackMeshes == null && blackMaterials == null) continue;
+            Transform black = AddSlot(root.transform, "Black " + TypeNames[type],
+                new Vector3((type - 1) * SlotSpacing * SquareSize, 0, 2 * SlotSpacing * SquareSize),
+                blackMeshes != null ? blackMeshes[type] : null, blackMaterials);
+            if (blackMeshes != null) {
+                black.localPosition = turn * offset;
+                black.localRotation = turn * rotation;
+                black.localScale = scale;
+            }
+            blackTemplates[type] = black;
+        }
+        set.whitePawn = templates[ChessRules.Pawn];
+        set.whiteKnight = templates[ChessRules.Knight];
+        set.whiteBishop = templates[ChessRules.Bishop];
+        set.whiteRook = templates[ChessRules.Rook];
+        set.whiteQueen = templates[ChessRules.Queen];
+        set.whiteKing = templates[ChessRules.King];
+        set.blackPawn = blackTemplates[ChessRules.Pawn];
+        set.blackKnight = blackTemplates[ChessRules.Knight];
+        set.blackBishop = blackTemplates[ChessRules.Bishop];
+        set.blackRook = blackTemplates[ChessRules.Rook];
+        set.blackQueen = blackTemplates[ChessRules.Queen];
+        set.blackKing = blackTemplates[ChessRules.King];
+        UdonSharpEditorUtility.CopyProxyToUdon(set);
+        AddPromotionSlots(set, promotionMaterial);
+        return set;
+    }
+
+    // Adds to set its White promotion slots (step 12.11), in a row behind White's pieces (+z, SlotSpacing squares),
+    // each behind its piece's slot: a guide and a template with the mesh and local transform of the set's own White
+    // template of that type, and material on every slot of the mesh. Black's promotion pieces fall back on these.
+    static void AddPromotionSlots(ChessPieceSet set, Material material) {
+        Transform[] templates = new Transform[7];
+        for (int type = ChessRules.Knight; type <= ChessRules.Queen; type++) {
+            Transform piece = set._Template(ChessRules.White, type);
+            Vector3 place = piece.parent.localPosition;
+            place.z += SlotSpacing * SquareSize;
+            Mesh mesh = piece.GetComponent<MeshFilter>().sharedMesh;
+            Material[] materials = new Material[Mathf.Max(1, mesh.subMeshCount)];
+            for (int i = 0; i < materials.Length; i++) materials[i] = material;
+            Transform model = AddSlot(set.transform, "White Promotion " + TypeNames[type], place, mesh, materials);
+            model.localPosition = piece.localPosition;
+            model.localRotation = piece.localRotation;
+            model.localScale = piece.localScale;
+            templates[type] = model;
+        }
+        set.whitePromotionKnight = templates[ChessRules.Knight];
+        set.whitePromotionBishop = templates[ChessRules.Bishop];
+        set.whitePromotionRook = templates[ChessRules.Rook];
+        set.whitePromotionQueen = templates[ChessRules.Queen];
+        UdonSharpEditorUtility.CopyProxyToUdon(set);
+    }
+
+    // A slot named name under setRoot at place: a one-square guide on the playing surface (the package's Piece Set
+    // Guide mesh and material) and a "Model" with mesh (no MeshFilter for none) and materials (no MeshRenderer for
+    // none), unmoved. Returns the model.
+    static Transform AddSlot(Transform setRoot, string name, Vector3 place, Mesh mesh, Material[] materials) {
+        GameObject slot = new GameObject(name);
+        Undo.RegisterCreatedObjectUndo(slot, "Create Piece Set");
+        slot.transform.SetParent(setRoot, false);
+        slot.transform.localPosition = place;
+        GameObject guide = new GameObject("Guide");
+        guide.transform.SetParent(slot.transform, false);
+        guide.AddComponent<MeshFilter>().sharedMesh =
+            AssetDatabase.LoadAssetAtPath<Mesh>(ModelsFolder + "/Piece Set Guide.asset");
+        MeshRenderer guideRenderer = guide.AddComponent<MeshRenderer>();
+        guideRenderer.sharedMaterial = AssetDatabase.LoadAssetAtPath<Material>(ModelsFolder + "/Piece Set Guide.mat");
+        guideRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        GameObject model = new GameObject("Model");
+        model.transform.SetParent(slot.transform, false);
+        if (mesh != null) model.AddComponent<MeshFilter>().sharedMesh = mesh;
+        if (materials != null) model.AddComponent<MeshRenderer>().sharedMaterials = materials;
+        return model.transform;
+    }
+
+    // Points every other behaviour's field holding the old test (ArchiveTest's) at the new one, so replacing it
+    // doesn't leave them on a destroyed object.
+    static void RepointReferences(UdonSharpBehaviour oldTest, UdonSharpBehaviour newTest) {
+        foreach (UdonSharpBehaviour behaviour in Object.FindObjectsOfType<UdonSharpBehaviour>(true)) {
+            if (behaviour == newTest || behaviour.transform.IsChildOf(oldTest.transform)) continue;
+            SerializedObject serialized = new SerializedObject(behaviour);
+            SerializedProperty property = serialized.GetIterator();
+            bool found = false;
+            while (property.Next(true)) {
+                if (property.propertyType == SerializedPropertyType.ObjectReference
+                    && property.objectReferenceValue == oldTest) {
+                    property.objectReferenceValue = newTest;
+                    found = true;
+                }
+            }
+            if (!found) continue;
+            serialized.ApplyModifiedProperties();
+            UdonSharpEditorUtility.CopyProxyToUdon(behaviour);
+        }
     }
 }

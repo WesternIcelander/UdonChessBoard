@@ -16,7 +16,7 @@ public class SettingsTest : ChessTest {
     // The arbiter under test; its checks fail if it isn't assigned. Set any values on it in the editor: the checks
     // compare what it reports with them, and its report is logged for comparing by eye.
     public ChessArbiter arbiter;
-    // The scene's settings menu on that arbiter (step 11.1a); set by Tools > Chess Board > Create Settings Menu.
+    // The scene's settings menu on that arbiter (step 11.1a), a Chess Settings Menu prefab instance (14.7).
     public ChessSettingsMenu menu;
 
     // Found on this object: swapped in for the arbiter's simpleAuth to make the local player a non-organizer.
@@ -462,7 +462,7 @@ public class SettingsTest : ChessTest {
     void TestMenu() {
         VRCPlayerApi local = Networking.LocalPlayer;
         if (!Utilities.IsValid(menu)) {
-            Check(false, "menu: assigned", "run Tools > Chess Board > Create Settings Menu, which sets SettingsTest's "
+            Check(false, "menu: assigned", "place the Chess Settings Menu prefab and set SettingsTest's "
                 + "Menu");
             return;
         }
@@ -489,7 +489,7 @@ public class SettingsTest : ChessTest {
         Check(MenuButton(ChessSettingsMenu.ItemResnapshot, ChessSettingsMenu.ActionOn) >= 0
                 && Utilities.IsValid(menu.resnapshotLabel),
             "menu: the re-snapshot button and its outcome text assigned", "");
-        // The labels the menu writes (none from the builder): the title, each row's and each button's.
+        // The labels the menu writes (none in the prefab): the title, each row's and each button's.
         menu._Refresh();
         string wrong = "";
         if (!Utilities.IsValid(menu.title) || menu.title.text.Length == 0) wrong += " title";
@@ -866,7 +866,7 @@ public class SettingsTest : ChessTest {
         CheckString(wiring, "", "re-snapshot: the menu's boards are on its arbiter");
         if (first == null || second == null) {
             Check(false, "re-snapshot: boards numbered 0 and 1", "the menu has " + menu.boards.Length + " board(s); "
-                + "create a second board (Tools > Chess Board > Create Board) and run Create Settings Menu again");
+                + "place a second Chess Table and empty the menu's Boards to have them wired again");
             return;
         }
         if (first.lifecycle != ChessBoard.LifecycleReset || second.lifecycle != ChessBoard.LifecycleReset) {

@@ -2,7 +2,7 @@
 
 Once the package is released (step 16), worlds will already be using it. A world creator updating to a newer version should only have to import the new package: no re-wiring, no re-placing, no lost customizations. Where that can't be done (a new feature that only the world creator can decide on), the change must be as small as possible and say exactly what to do.
 
-These rules apply to every change made after the first release (version 1, step 16.1). Before then, nothing outside this project depends on the prefabs, so the builders may still rebuild them from scratch until they're deleted (step 14.12). From then on the prefabs are the source, changed in place in Unity.
+These rules apply to every change made after the first release (version 1, step 16.1). Before then, nothing outside this project depends on the prefabs, and the builders could still rebuild them from scratch until step 14.12 deleted them. Since then the prefabs are the source, changed in place in Unity.
 
 ## What a world holds
 
@@ -18,7 +18,7 @@ Anything that changes one of these identities, IDs, names or signatures without 
 
 ## Rules
 
-1. **Prefabs are edited in place, never rebuilt.** An object recreated in a prefab gets a new file ID, so every override on the old object is lost. A change to a prefab, in Unity's prefab editor or by an editor script, keeps every existing object (changing it where it is), adds only what is new, and saves. Removing an object deletes what worlds overrode on it: only when it's no longer used, and say so in the changelog. The builders that rebuilt the prefabs and views from scratch in steps 9 to 14 are deleted in 14.12, before the first release.
+1. **Prefabs are edited in place, never rebuilt.** An object recreated in a prefab gets a new file ID, so every override on the old object is lost. A change to a prefab, in Unity's prefab editor or by an editor script, keeps every existing object (changing it where it is), adds only what is new, and saves. Removing an object deletes what worlds overrode on it: only when it's no longer used, and say so in the changelog. The builders that rebuilt the prefabs and views from scratch in steps 9 to 14 were deleted in 14.12, before the first release.
 2. **Saved fields are never renamed, retyped or removed in a way that loses a world's value.** A world's overrides are saved on its instances under each field's serialized name, so a prefab update can't change them: a renamed field reads as empty in every world that set it (e.g. 12.10's `pieceSet` becoming `whitePieceSet` and `blackPieceSet`). Instead:
    - a plain rename uses `[FormerlySerializedAs("oldName")]` on the new field, **never removed**. Checked in Unity (during the since-dropped migrator step): Unity carries the value over onto the UdonSharp proxy for a prefab, a scene object and a prefab instance's override alike, and UdonSharp copies the proxy to the Udon data before Play Mode and every build. An instance's override stays saved under the old name, applied only through the attribute, so it must stay for good;
    - anything more (a field split, retyped or whose meaning changed) keeps the old field, hidden from the Inspector (`[HideInInspector]`), and the code falls back to it at run time while the new field is empty (e.g. `if (whitePieceSet == null) whitePieceSet = pieceSet;`), which works on instances, unpacked copies and hand-built objects alike; or, better, the change is avoided by adding a new field and leaving the old one as it is.

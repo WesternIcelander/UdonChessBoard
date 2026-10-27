@@ -840,7 +840,8 @@ public class Board2DTest : ChessTest {
             fallback * Vector3.forward, s + ": facing straight down keeps the heading before");
 
         if (!Utilities.IsValid(holder)) {
-            Debug.Log("[Board2DTest] holder checks skipped: the view has no holder (Create Movable 2D Board View)");
+            Debug.Log("[Board2DTest] holder checks skipped: the view has no holder (the Movable 2D Chess Board View "
+                + "prefab)");
             return;
         }
         Check(holder.view == view, s + ": its view is the view tested", "another view");

@@ -1707,7 +1707,7 @@ public class ViewTest : ChessTest {
     public void RunPgnBoxChecks() {
         string s = "PGN box";
         bool wired = Utilities.IsValid(ui.pgnBox) && Utilities.IsValid(ui.pgnField);
-        Check(wired, s + ": box and field assigned", "rebuild the view (Tools > Chess Board > Create Board View)");
+        Check(wired, s + ": box and field assigned", "the Chess Board UI prefab has them");
         if (!wired) {
             LogSummary();
             return;
@@ -1817,7 +1817,7 @@ public class ViewTest : ChessTest {
             && Utilities.IsValid(ui.pgnPasteField) && Utilities.IsValid(ui.pgnImportLabel)
             && Utilities.IsValid(ui.pgnImportButton);
         Check(wired, s + ": the box's copy and paste parts assigned",
-            "rebuild the view (Tools > Chess Board > Create Board View)");
+            "the Chess Board UI prefab has them");
         TextAsset nuka = Utilities.IsValid(boardTest) ? boardTest.siggiVsNuka : null;
         Check(Utilities.IsValid(importer) && nuka != null, s + ": importer and Siggi-vs-Nuka assigned",
             "assign ViewTest's Importer and BoardTest's Siggi Vs Nuka in the Inspector");
@@ -1989,8 +1989,8 @@ public class ViewTest : ChessTest {
         ChessArbiter arbiter = board.arbiter;
         bool ready = Utilities.IsValid(testPieceSet) && Utilities.IsValid(arbiter)
             && Utilities.IsValid(arbiter.PieceSet(0));
-        Check(ready, s + ": the test set and the arbiter's default set assigned", "rebuild with Tools > Chess Board > "
-            + "Create Board View, then Create View Test");
+        Check(ready, s + ": the test set and the arbiter's default set assigned", "list the arbiter's default set, "
+            + "Chess Pieces, first, then run Create View Test");
         if (!ready) {
             LogSummary();
             return;

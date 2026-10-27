@@ -18,7 +18,8 @@ public static class ArchiveTestBuilder {
         InstanceGameArchive[] archives = Object.FindObjectsOfType<InstanceGameArchive>(true);
         if (archives.Length != 1) {
             EditorUtility.DisplayDialog("Create Archive Test", archives.Length == 0
-                ? "There's no GameArchive in the open scene. Create one with Tools > Chess Board > Create Game Archive."
+                ? "There's no GameArchive in the open scene. Place the Game Archive prefab "
+                    + "(Assets/Siggi/ChessBoard/Prefabs)."
                 : "There are several GameArchives in the scene; the test needs exactly one.", "OK");
             return;
         }
@@ -32,7 +33,8 @@ public static class ArchiveTestBuilder {
         test.archive = archive;
         ChessBoard[] boards = Object.FindObjectsOfType<ChessBoard>(true);
         for (int i = 0; i < boards.Length && test.board == null; i++) {
-            if (boards[i].arbiter != null && System.Array.IndexOf(boards[i].arbiter.archives, archive) >= 0) {
+            // Not the inactive spare board SettingsTest numbers 2 (14.11, SpareBoardBuilder), which has no UI.
+            if (boards[i].gameObject.activeInHierarchy && boards[i].arbiter != null && System.Array.IndexOf(boards[i].arbiter.archives, archive) >= 0) {
                 test.board = boards[i];
             }
         }
@@ -68,10 +70,12 @@ public static class ArchiveTestBuilder {
             + (test.board != null ? " with board " + test.board.gameObject.name : " with no board using the archive")
             + ", waiting for " + (test.boardTest != null ? "BoardTest" : "no BoardTest") + " and "
             + (test.viewTest != null ? "ViewTest" : "no ViewTest") + ", "
-            + (test.wall != null ? "with the history wall" : "with no history wall (Create History Wall first)")
+            + (test.wall != null ? "with the history wall"
+                : "with no history wall (place the Game History Wall prefab first)")
             + (test.ui != null ? ", with its UI" : ", with no UI of the board")
             + (test.personalWall != null ? ", with the personal archive and its wall"
-                : ", with no personal archive or wall (Create Personal Game Archive, Create Personal History Wall)")
+                : ", with no personal archive or wall (place the Personal Game Archive and Personal History Wall "
+                    + "prefabs)")
             + ". Save the scene.");
     }
 }

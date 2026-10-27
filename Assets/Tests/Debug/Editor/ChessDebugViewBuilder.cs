@@ -14,8 +14,8 @@ using static ChessBuilderUtil;
 
 // Builds the debug view (PLAN.md 8.1, ChessDebugView.cs) in the open scene for the selected ChessBoard, or the scene's
 // only one: a world-space canvas with the 8x8 board (the 2D view's piece sprites, 12.13), the status text and one
-// button per public method of the view. An existing debug view for the same board is replaced, keeping its place,
-// so it can be rebuilt when buttons change.
+// button per public method of the view. An existing debug view for the same board is replaced, keeping its place
+// and name, so it can be rebuilt when buttons change.
 // Menu: Tools > Chess Board > Create Debug View. Plain editor C#, not Udon.
 public static class ChessDebugViewBuilder {
     const string ViewScriptPath = "Assets/Tests/Debug/ChessDebugView.cs";
@@ -91,8 +91,8 @@ public static class ChessDebugViewBuilder {
         }
         view.squareImages = new Image[64];
         view.pieceImages = new Image[64];
-        view.whiteSprites = ChessBoard2DViewBuilder.LoadPieceSprites(ChessRules.White);
-        view.blackSprites = ChessBoard2DViewBuilder.LoadPieceSprites(ChessRules.Black);
+        view.whiteSprites = LoadPieceSprites(ChessRules.White);
+        view.blackSprites = LoadPieceSprites(ChessRules.Black);
 
         // The board, White at the bottom: a1 bottom left.
         for (int square = 0; square < 64; square++) {
@@ -102,7 +102,7 @@ public static class ChessDebugViewBuilder {
                 new Vector2(Margin + file * SquareSize, Margin + (7 - rank) * SquareSize),
                 new Vector2(SquareSize, SquareSize));
             view.squareImages[square] = cell.AddComponent<Image>();
-            view.pieceImages[square] = ChessBoard2DViewBuilder.NewPieceImage(cell, 2);
+            view.pieceImages[square] = NewPieceImage(cell, 2);
         }
 
         float statusLeft = Margin * 2 + 8 * SquareSize;
@@ -135,6 +135,7 @@ public static class ChessDebugViewBuilder {
 
         UdonSharpEditorUtility.CopyProxyToUdon(view);
         if (old != null) {
+            root.name = old.name;
             root.transform.SetParent(old.transform.parent, false);
             root.transform.SetSiblingIndex(old.transform.GetSiblingIndex());
             rootRect.position = old.transform.position;
@@ -182,6 +183,52 @@ public static class ChessDebugViewBuilder {
         Debug.LogWarning("[ChessDebugViewBuilder] No ChessBoardView for " + board.gameObject.name + "; the Input style "
             + "and Take piece buttons need one in the debug view's Board View field.");
         return null;
+    }
+
+    // ---- The piece sprites (the 2D view's, 12.13) ----
+
+    const string SpritesFolder = "Assets/Siggi/ChessBoard/Sprites2D/";
+    static readonly string[] SpriteNames = { "Pawn", "Knight", "Bishop", "Rook", "Queen", "King" };
+
+    // Each colour's piece sprites, pawn to king, from Sprites2D/ (null where one is missing, with a warning). A texture
+    // not imported as a sprite is set to Sprite and reimported.
+    static Sprite[] LoadPieceSprites(int color) {
+        Sprite[] sprites = new Sprite[SpriteNames.Length];
+        string suffix = color == ChessRules.White ? "W" : "B";
+        for (int i = 0; i < SpriteNames.Length; i++) {
+            string path = SpritesFolder + SpriteNames[i] + suffix + ".png";
+            TextureImporter importer = AssetImporter.GetAtPath(path) as TextureImporter;
+            if (importer == null) {
+                Debug.LogWarning("[ChessDebugViewBuilder] " + path + " not found; that piece shows nothing.");
+                continue;
+            }
+            if (importer.textureType != TextureImporterType.Sprite
+                || importer.spriteImportMode != SpriteImportMode.Single) {
+                importer.textureType = TextureImporterType.Sprite;
+                importer.spriteImportMode = SpriteImportMode.Single;
+                importer.alphaIsTransparency = true;
+                importer.SaveAndReimport();
+            }
+            sprites[i] = AssetDatabase.LoadAssetAtPath<Sprite>(path);
+        }
+        return sprites;
+    }
+
+    // A piece image filling its square but for inset on each side, keeping the sprite's shape, hidden until drawn.
+    static Image NewPieceImage(GameObject square, float inset) {
+        GameObject child = new GameObject("Piece", typeof(RectTransform));
+        child.layer = square.layer;
+        RectTransform rect = child.GetComponent<RectTransform>();
+        rect.SetParent(square.transform, false);
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = new Vector2(inset, inset);
+        rect.offsetMax = new Vector2(-inset, -inset);
+        Image image = child.AddComponent<Image>();
+        image.preserveAspect = true;
+        image.raycastTarget = false;
+        image.enabled = false;
+        return image;
     }
 
     static string SquareName(int square) {
