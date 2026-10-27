@@ -52,9 +52,9 @@ The PGN Event and Site tags of its games are the arbiter's (the board's own fiel
 
 ## Chess Board View
 
-`Prefabs/Chess Board View.prefab` (step 14.3): the physical board, a `ChessBoardView` ([physical pieces](physical-pieces.md), [player input](player-input.md)) with everything it places: the placeholder **Table**, **Board** and **Squares**, the **Player Blocker**, the 32 **Pieces** (each a `VRCPickup` with a `ChessPiece`), the 64 **Square Targets** for desktop clicks, the **Highlights** (last move, check lines, legal targets), the **Promotion Ghosts**, the **Captured Places** and its **Sounds**. Its meshes and materials are the generated ones in `Models/`; its pieces wear the arbiter's piece sets once the game starts ([customizing](customizing.md#chess-piece-sets-steps-123-1210-and-136)), so the view holds no set of its own. It has no buttons or status display: those are the board's UI (step 14.4).
+`Prefabs/Chess Board View.prefab` (step 14.3): the physical board, a `ChessBoardView` ([physical pieces](physical-pieces.md), [player input](player-input.md)) with everything it places: the placeholder **Board** and **Squares**, the **Player Blocker**, the 32 **Pieces** (each a `VRCPickup` with a `ChessPiece`), the 64 **Square Targets** for desktop clicks, the **Highlights** (last move, check lines, legal targets), the **Promotion Ghosts**, the **Captured Places** and its **Sounds**. Its meshes and materials are the generated ones in `Models/`; its pieces wear the arbiter's piece sets once the game starts ([customizing](customizing.md#chess-piece-sets-steps-123-1210-and-136)), so the view holds no set of its own. It has no buttons or status display: those are the board's UI (step 14.4).
 
-Its origin is the board's centre on the playing surface, with files along +x and White's end at −z; the table reaches 0.8 m down from there, so raise a placed view 0.8 m above the floor (the [Chess Table](#chess-table) does that for you).
+Its origin is the board's centre on the playing surface, with files along +x and White's end at −z. The placeholder board is 2 cm thick, so a view placed 2 cm above a table top has its board resting on it (the [Chess Table](#chess-table) does that for you). It has no table: the world's own furniture stands under it (since the change to 14.3; it had a placeholder **Table** before, 0.8 m tall). It's made for a table about 0.70 m across (along the files) and 0.99 m deep, 0.78 m tall: the UI's panels stand at its ends, the captured pieces' places beside the board, and the **Player Blocker**'s solid box fills that space under the board (resize its `BoxCollider` to fit another table, [customizing](customizing.md#the-board-model-and-scale-step-122)). The test scene has a placeholder cube of that size under each of its tables (**Table Placeholder (Chess Table 1)**, …), the scene's own objects beside them.
 
 Place one per board. After placing it, set:
 
@@ -67,7 +67,7 @@ What a world may change on it (its model, its size, the captured places) is in [
 
 `Prefabs/Chess Board UI.prefab` (step 14.4): the board's UI, a `ChessBoardUI` ([player input](player-input.md#the-boards-ui-step-121)) with the **Buttons (White)** and **Buttons (Black)** panels (each button calling the UI's `_Press…` event for its action), the **Status (White)** and **Status (Black)** panels ([physical pieces](physical-pieces.md)), the hidden **PGN Box** with its copy and paste parts ([PGN](pgn.md#input--output)), and its **Sounds** (every sound but the move sounds). Its labels and hints are empty in the prefab: the UI writes them from the language pack.
 
-Its origin is the board's centre on the playing surface with the view's axes, as the view's is: its panels stand at the ends of the view's table and the PGN box over the board's far edge. Put it where the board's **Chess Board View** stands, with the same rotation and scale (beside the view, not inside it), so the panels sit on the table.
+Its origin is the board's centre on the playing surface with the view's axes, as the view's is: its panels stand at the ends of the table under the view (one of the size the view is made for, above) and the PGN box over the board's far edge. Put it where the board's **Chess Board View** stands, with the same rotation and scale (beside the view, not inside it), so the panels sit on the table.
 
 Place one per board. After placing it, set:
 
@@ -81,9 +81,9 @@ Place one per board. After placing it, set:
 `Prefabs/Chess Table.prefab` (step 14.9): a playable board in one drag. Its root, **Chess Table**, holds nothing itself; its children are nested instances of the three prefabs above, already wired to each other:
 
 - **Chess Board** at the root's origin;
-- **Chess Board View** and **Chess Board UI** 0.8 m above it, their origin on the playing surface (so the table stands on the floor where the root is), both with **Board** set to the table's own Chess Board.
+- **Chess Board View** and **Chess Board UI** 2 cm above it, their origin on the playing surface (so the board rests on a table top where the root is), both with **Board** set to the table's own Chess Board.
 
-Since they're nested instances, a later change to the board, view or UI prefab reaches every table. Drop it onto the ground, as many as you need (one per board). After placing it, set on its **Chess Board** child:
+Since they're nested instances, a later change to the board, view or UI prefab reaches every table. Despite its name it has no table of its own (the [Chess Board View](#chess-board-view) says what size it's made for): drop it onto a table in your world, as many as you need (one per board). (Before the change to 14.3 and 14.9 the view had a placeholder table and the root stood on the floor, the view and UI 0.8 m up.) After placing it, set on its **Chess Board** child:
 
 - **Arbiter**: the scene's **Chess Arbiter**.
 - **Board Number**: 0 for the first table, 1 for the next, and so on (as for [Chess Board](#chess-board)).

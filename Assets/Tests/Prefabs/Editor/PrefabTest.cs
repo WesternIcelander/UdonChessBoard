@@ -15,9 +15,9 @@ using VRC.Udon;
 // checks what it holds. 14.1: Chess Pieces on its own, and the Chess Arbiter with its nested Chess Pieces, the build
 // check on it, a change to the Chess Pieces prefab reaching the nested instance but not an unpacked copy. The change
 // is undone and the prefab saved again before it ends. 14.2: the Chess Board with its importer, two placed with their
-// own board numbers, and the open scene's boards instances of it. 14.3: the Chess Board View with every object it uses,
-// its pieces standing on their starting squares, pointed at a placed board, and the open scene's views instances of
-// it. 14.4: the Chess Board UI with its buttons (each calling its own UI), status panels, PGN box and sounds, pointed
+// own board numbers, and the open scene's boards instances of it. 14.3: the Chess Board View with every object it uses
+// and no table, its pieces standing on their starting squares, pointed at a placed board, and the open scene's views
+// instances of it. 14.4: the Chess Board UI with its buttons (each calling its own UI), status panels, PGN box and sounds, pointed
 // at a placed board, and the open scene's UIs instances of it. 14.5: the Game Archive with its own holders, a board
 // pointed at it, and the open scene's archive an instance of it, every board on it. 14.6: the Personal Game Archive
 // at its defaults, the Game History Wall and Personal History Wall with their entries (the personal one's with delete
@@ -29,7 +29,7 @@ using VRC.Udon;
 // 2D Chess Board View, its grip and corner pickups, Synced ticked on an instance giving the grip a VRCObjectSync as an
 // added component and unticked taking it away, a change to the fixed prefab reaching it (undone); and the open
 // scene's 2D views instances of them, Board2DTest on a movable one. 14.9: the Chess Table, its board, view and UI
-// nested instances of their prefabs (the view and UI 0.8 m above the board, on it), two placed and wired by hand, a
+// nested instances of their prefabs (the view and UI 2 cm above the board, on it), two placed and wired by hand, a
 // change to the view prefab reaching it (undone), and the open scene's boards each in a table with its view and UI.
 // 14.10: the Chess Language with the package's packs, the I18n sanity check's rule wiring a table's, a wall's, a
 // menu's and a 2D view's I18n fields to it beside them and grouped beside a world's own main I18n, ambiguous beside it
@@ -363,6 +363,8 @@ public static class PrefabTest {
         Check(view.board == null, "the view's board is left to set", "on " + view.board);
         Check(view.i18n == null, "the view's I18n is left for the sanity check", "on " + view.i18n);
         Check(view.LocalSpaceProblem() == "", "the view's objects are in its local space", view.LocalSpaceProblem());
+        // The table under it is the world's own (the test scene has placeholders beside its Chess Tables).
+        Check(placed.transform.Find("Table") == null, "the view has no table", "it has one");
 
         string pieces = "";
         float size = view.squareSize;
@@ -621,10 +623,10 @@ public static class PrefabTest {
         ChessBoardView view = views[0];
         ChessBoardUI ui = uis[0];
         string nested = NestedProblem(board.gameObject, first, boardPrefab, Vector3.zero)
-            + NestedProblem(view.gameObject, first, viewPrefab, new Vector3(0, 0.8f, 0))
-            + NestedProblem(ui.gameObject, first, uiPrefab, new Vector3(0, 0.8f, 0));
-        Check(nested == "", "the table's board (on the floor), view and UI (0.8 m up) are its children, nested "
-            + "instances of their prefabs", nested);
+            + NestedProblem(view.gameObject, first, viewPrefab, new Vector3(0, 0.02f, 0))
+            + NestedProblem(ui.gameObject, first, uiPrefab, new Vector3(0, 0.02f, 0));
+        Check(nested == "", "the table's board (at its root), view and UI (2 cm up, the board's thickness) are its "
+            + "children, nested instances of their prefabs", nested);
         Check(view.board == board && ui.board == board, "the table's view and UI are on its board", "they aren't");
         Check(board.arbiter == null, "the table's arbiter is left to set", "on " + board.arbiter);
         CheckIntValue(board.boardNumber, 0, "the table's board number is 0");

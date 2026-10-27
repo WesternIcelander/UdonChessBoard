@@ -1,6 +1,6 @@
 # Customizing a board
 
-What a world creator can change on a board view (the **Chess Board View** prefab, [Prefabs](prefabs.md#chess-board-view), on its own or in a **Chess Table**), without touching the code. On a placed instance the changes are overrides: deleting **Table**, **Board** or **Squares** and adding a model of your own work there as on an unpacked view.
+What a world creator can change on a board view (the **Chess Board View** prefab, [Prefabs](prefabs.md#chess-board-view), on its own or in a **Chess Table**), without touching the code. On a placed instance the changes are overrides: deleting **Board** or **Squares** and adding a model of your own work there as on an unpacked view. The view has no table: it stands on the world's own (see [Prefabs](prefabs.md#chess-board-view) for the size it's made for).
 
 ## The board model and scale (step 12.2)
 
@@ -8,25 +8,25 @@ A view (`ChessBoardView (<board>)`) holds these children:
 
 | Child | What it is | May it go? |
 |---|---|---|
-| **Table** | the placeholder table | yes |
 | **Board**, **Squares** | the placeholder board: its frame, and the 64 squares as one mesh | yes |
-| **Player Blocker** | the solid box keeping players without a seat out of the table ([Physical pieces](physical-pieces.md#walking-through-the-board-step-95a2)) | keep it; resize its `BoxCollider` to a table of your own |
+| **Player Blocker** | the solid box keeping players without a seat out of the table under the view ([Physical pieces](physical-pieces.md#walking-through-the-board-step-95a2)) | keep it; resize its `BoxCollider` to your table |
 | **Pieces**, **Square Targets**, **Highlights**, **Promotion Ghosts** | the pieces, desktop mode's click targets, the highlights and the promotion ghosts ([Promotion pieces](#chess-piece-sets-steps-123-1210-and-136)) | no: the view uses them |
 | **Captured Places** | where captured pieces stand ([below](#captured-piece-places-step-124)) | move them freely; delete some for fewer places |
 
-The view reads nothing from **Table**, **Board** or **Squares**, so delete them and put your own model in their place, as a child of the view so it scales with it:
+The view reads nothing from **Board** or **Squares** (nor did it from the **Table** it had before the change to 14.3), so delete them and put your own model in their place, as a child of the view so it scales with it:
 
 - **The playing surface** at the view's y = 0 (the pieces stand on it).
 - **a1** at the view's −x −z corner, files a to h along +x, ranks 1 to 8 along +z (White at −z), the board's centre at the view's origin.
 - **Each square** `squareSize` wide (0.05 view units: the whole board 0.4 units across), so the model's squares lie under the square targets.
 - **No colliders** on it, or triggers only, so players can walk up to the board and clicks reach the square targets and pieces. The square targets stay separate from the model: they take the clicks, so a model needs none of its own.
 
-**Package updates** keep these changes: the prefab is only ever edited in place ([compatibility](compatibility.md)), so a deleted **Table**, **Board** or **Squares** stays deleted and your model stays where it is, as overrides on your instance. (Until step 14.12 a builder rebuilt views, carrying these changes over.)
+**Package updates** keep these changes: the prefab is only ever edited in place ([compatibility](compatibility.md)), so a deleted **Board** or **Squares** stays deleted and your model stays where it is, as overrides on your instance. (Until step 14.12 a builder rebuilt views, carrying these changes over.)
 
 **Scaling:** scale the view's transform, uniformly (the same on x, y and z). Everything the view places (pieces, highlights, click targets, animations, captured pieces) is in its local space, so it all scales with it, and drops are read through the view's transform. `squareSize` isn't for resizing: the square targets and highlights are built for it.
 
-- Give the board's UI (`ChessBoardUI (<board>)`, beside the view) the same scale and place, so its panels stay around the table.
-- The table scales too: a view at 0.5 has a table half as tall, so lower the view (or use your own table) to stand it on the floor.
+- Give the board's UI (`ChessBoardUI (<board>)`, beside the view) the same scale and place, so its panels stay around the table. The view works without it matching, but the panels then stand where the unscaled table's ends would be.
+- The **Player Blocker** and the board's 2 cm thickness scale too: a view at 2 sits 4 cm above the table top and its blocker reaches 1.56 m down, so resize the blocker's `BoxCollider` to your table.
+- The pickups' grab range is VRChat's, in metres: a much smaller view packs the pieces closer than a hand can tell apart in VR.
 - Leave the view's groups (**Pieces**, **Square Targets**, **Highlights**) unmoved, unturned and unscaled: the view places their children in its own space. On Start it logs a warning naming the first object whose group isn't (`ChessBoardView.LocalSpaceProblem`).
 
 ## Chess piece sets (steps 12.3, 12.10 and 13.6)
