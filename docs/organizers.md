@@ -8,7 +8,7 @@ public abstract class SimpleAuth : UdonSharpBehaviour {
 }
 ```
 
-- A player for whom `IsAuthorized` returns `true` is an **organizer**: they can change settings (instance-wide and per board), make a board re-snapshot its settings, and reset any board.
+- A player for whom `IsAuthorized` returns `true` is an **organizer**: they can change settings (instance-wide and per board), set the PGN Event and Site tags (step 14.13), make a board re-snapshot its settings, and reset any board.
 - `ChessArbiter` has a `SimpleAuth` field set in the editor, pointing at whatever concrete implementation the world uses.
 - **Being authorized changes nothing by itself.** An organizer joining the instance doesn't switch on tournament rules or any other settings; settings only change when an organizer changes them in the settings UI.
 - **Where it's checked:**

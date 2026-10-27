@@ -43,6 +43,9 @@ namespace SiggiChessBoard {
         public const int ItemScope = -1;
         // The re-snapshot row (step 11.1b): On makes the boards shown that are in use take the settings now.
         public const int ItemResnapshot = -2;
+        // The PGN Event and Site rows (step 14.13): a text field each, for All boards only.
+        public const int ItemPgnEvent = -3;
+        public const int ItemPgnSite = -4;
 
         // A button's action. Setting items have On, Off and Default; number items Previous, Next and Default; Default
         // only for a single board, where it makes the board use the instance default again.
@@ -85,6 +88,16 @@ namespace SiggiChessBoard {
         public Image[] buttonImages = new Image[0];
         public int[] buttonItems = new int[0];
         public int[] buttonActions = new int[0];
+        // The PGN Event and Site rows (step 14.13), below the re-snapshot row and shown for All boards only: their
+        // parent, each row's label, text field (single line; its onSelect and onEndEdit call _SelectPgn… and
+        // _EndEditPgn…) and the field's placeholder, shown while it's empty.
+        public GameObject pgnRows;
+        public TextMeshProUGUI pgnEventLabel;
+        public TextMeshProUGUI pgnSiteLabel;
+        public TMP_InputField pgnEventField;
+        public TMP_InputField pgnSiteField;
+        public TextMeshProUGUI pgnEventPlaceholder;
+        public TextMeshProUGUI pgnSitePlaceholder;
         public Color buttonColor = new Color(0.85f, 0.85f, 0.88f);
         public Color selectedButtonColor = new Color(1f, 0.8f, 0.3f);
         // The choices Previous and Next step through, in seconds. Never comes after the longest time.
@@ -104,6 +117,10 @@ namespace SiggiChessBoard {
         // counts (updated, not in use, refused), to write it again in another language.
         [NonSerialized] public string resnapshotText = "";
         int[] resnapshotCounts = new int[3];
+        // Whether the local player is editing a PGN field (selected, not ended yet): a value arriving then doesn't
+        // overwrite what they type.
+        [NonSerialized] public bool editingPgnEvent;
+        [NonSerialized] public bool editingPgnSite;
         // The strings the menu shows, from i18n (LoadTexts), read on first use (textsLoaded) and again on a language
         // change: each item's row label (by item), and the rest by what they say.
         bool textsLoaded;
@@ -111,6 +128,9 @@ namespace SiggiChessBoard {
         string textTitle = "";
         string textScope = "";
         string textResnapshot = "";
+        string textPgnEvent = "";
+        string textPgnSite = "";
+        string textPgnEmpty = "";
         string textAllBoards = "";
         string textBoardNumber = "";
         string textOn = "";
@@ -159,6 +179,9 @@ namespace SiggiChessBoard {
             textTitle = ChessUtil.Text(i18n, "settings_title");
             textScope = ChessUtil.Text(i18n, _ItemKey(ItemScope));
             textResnapshot = ChessUtil.Text(i18n, _ItemKey(ItemResnapshot));
+            textPgnEvent = ChessUtil.Text(i18n, _ItemKey(ItemPgnEvent));
+            textPgnSite = ChessUtil.Text(i18n, _ItemKey(ItemPgnSite));
+            textPgnEmpty = ChessUtil.Text(i18n, "settings_pgn_empty");
             textAllBoards = ChessUtil.Text(i18n, "settings_all_boards");
             textBoardNumber = ChessUtil.Text(i18n, "board_number");
             textOn = ChessUtil.Text(i18n, "settings_on");
@@ -241,6 +264,7 @@ namespace SiggiChessBoard {
                 ChessUtil._SetText(values[item], _ValueText(item));
             }
             ChessUtil._SetText(resnapshotLabel, resnapshotText);
+            DrawPgnRows();
             for (int i = 0; i < buttons.Length; i++) {
                 GameObject button = buttons[i];
                 if (!Utilities.IsValid(button) || i >= buttonItems.Length || i >= buttonActions.Length) continue;
@@ -350,6 +374,110 @@ namespace SiggiChessBoard {
             return text;
         }
 
+        // ---- PGN Event and Site (step 14.13) ----
+        // Udon events take no arguments: each field's onSelect, onValueChanged and onEndEdit call one of these, which
+        // read the text from the field. VRChat's keyboard (on desktop too) puts the text in the field when it closes
+        // without an onEndEdit (found in 14.13's client check), so a change also commits once the field has been
+        // quiet for PgnCommitDelay seconds (typing straight into the field, as in ClientSim, changes it per key).
+
+        // Seconds without a change before a changed field commits.
+        public const float PgnCommitDelay = 1f;
+        // When each field last changed (Time.time), for the quiet commit.
+        [NonSerialized] public float pgnEventChangedAt;
+        [NonSerialized] public float pgnSiteChangedAt;
+        // Set while the menu writes a field itself (DrawField), so its own onValueChanged isn't taken for typing.
+        bool drawingField;
+
+        public void _SelectPgnEvent() {
+            editingPgnEvent = true;
+        }
+
+        public void _SelectPgnSite() {
+            editingPgnSite = true;
+        }
+
+        public void _ChangedPgnEvent() {
+            if (drawingField) return;
+            editingPgnEvent = true;
+            pgnEventChangedAt = Time.time;
+            SendCustomEventDelayedSeconds(nameof(_CommitPgnEventIfQuiet), PgnCommitDelay);
+        }
+
+        public void _ChangedPgnSite() {
+            if (drawingField) return;
+            editingPgnSite = true;
+            pgnSiteChangedAt = Time.time;
+            SendCustomEventDelayedSeconds(nameof(_CommitPgnSiteIfQuiet), PgnCommitDelay);
+        }
+
+        // A change's delayed check: commits unless the field changed again since (a later check commits it) or was
+        // committed already.
+        public void _CommitPgnEventIfQuiet() {
+            if (!editingPgnEvent || Time.time - pgnEventChangedAt < PgnCommitDelay - 0.05f) return;
+            Debug.Log("[ChessSettingsMenu] PGN Event field quiet after a change: committing");
+            _EndEditPgnEvent();
+        }
+
+        public void _CommitPgnSiteIfQuiet() {
+            if (!editingPgnSite || Time.time - pgnSiteChangedAt < PgnCommitDelay - 0.05f) return;
+            Debug.Log("[ChessSettingsMenu] PGN Site field quiet after a change: committing");
+            _EndEditPgnSite();
+        }
+
+        public void _EndEditPgnEvent() {
+            editingPgnEvent = false;
+            _SetPgnTag(ItemPgnEvent, Utilities.IsValid(pgnEventField) ? pgnEventField.text : "");
+        }
+
+        public void _EndEditPgnSite() {
+            editingPgnSite = false;
+            _SetPgnTag(ItemPgnSite, Utilities.IsValid(pgnSiteField) ? pgnSiteField.text : "");
+        }
+
+        // A PGN row's text committed (ItemPgnEvent or ItemPgnSite): sets the arbiter's tag to it as an organizer
+        // (cleaned up, ChessArbiter._CleanPgnTag), sent to every client and logged, for All boards only. Returns
+        // whether it changed; either way the field then shows the arbiter's value, so a refused or cleaned-up text
+        // doesn't stay in it.
+        public bool _SetPgnTag(int item, string text) {
+            if (!Utilities.IsValid(arbiter) || (item != ItemPgnEvent && item != ItemPgnSite)) return false;
+            FixScope();
+            bool isEvent = item == ItemPgnEvent;
+            string value = ChessArbiter._CleanPgnTag(text);
+            string current = isEvent ? arbiter._PgnEvent() : arbiter._PgnSite();
+            bool done = false;
+            if (scope == ScopeAllBoards && value != current) {
+                if (arbiter.BeginChange()) {
+                    done = isEvent ? arbiter.SetPgnEvent(value) : arbiter.SetPgnSite(value);
+                    arbiter.EndChange();
+                    resnapshotText = "";
+                    Debug.Log("[ChessSettingsMenu] " + ChessUtil._LocalName("?") + ": " + ScopeLogText() + ", "
+                        + _ItemKey(item) + ": \"" + value + "\"" + (done ? "" : " (not changed)"));
+                } else {
+                    // No longer an organizer: hide the controls now rather than at the next check.
+                    _UpdateVisibility();
+                }
+            }
+            DrawPgnRows();
+            return done;
+        }
+
+        // The PGN rows shown for All boards only, each field holding the arbiter's value unless the local player is
+        // editing it.
+        void DrawPgnRows() {
+            bool all = scope == ScopeAllBoards;
+            if (Utilities.IsValid(pgnRows) && pgnRows.activeSelf != all) pgnRows.SetActive(all);
+            if (!Utilities.IsValid(arbiter)) return;
+            if (!editingPgnEvent) DrawField(pgnEventField, arbiter._PgnEvent());
+            if (!editingPgnSite) DrawField(pgnSiteField, arbiter._PgnSite());
+        }
+
+        void DrawField(TMP_InputField field, string text) {
+            if (!Utilities.IsValid(field) || field.text == text) return;
+            drawingField = true;
+            field.text = text;
+            drawingField = false;
+        }
+
         // Makes the change on the arbiter's local copy (the caller sends it).
         bool Apply(int item, int action) {
             bool all = scope == ScopeAllBoards;
@@ -436,6 +564,8 @@ namespace SiggiChessBoard {
                 case ItemResetAvailableTime: return "settings_item_reset_available_time";
                 case ItemAutoResetTime: return "settings_item_auto_reset_time";
                 case ItemResnapshot: return "settings_item_resnapshot";
+                case ItemPgnEvent: return "settings_item_pgn_event";
+                case ItemPgnSite: return "settings_item_pgn_site";
                 case ItemScope: return "settings_scope";
             }
             return "";
@@ -456,6 +586,8 @@ namespace SiggiChessBoard {
             if (!textsLoaded) LoadTexts();
             if (item == ItemScope) return textScope;
             if (item == ItemResnapshot) return textResnapshot;
+            if (item == ItemPgnEvent) return textPgnEvent;
+            if (item == ItemPgnSite) return textPgnSite;
             return item >= 0 && item < ItemCount ? itemTexts[item] : "";
         }
 
@@ -556,6 +688,10 @@ namespace SiggiChessBoard {
             ChessUtil._SetText(title, textTitle);
             ChessUtil._SetText(scopeTitle, _ItemText(ItemScope));
             ChessUtil._SetText(resnapshotTitle, _ItemText(ItemResnapshot));
+            ChessUtil._SetText(pgnEventLabel, _ItemText(ItemPgnEvent));
+            ChessUtil._SetText(pgnSiteLabel, _ItemText(ItemPgnSite));
+            ChessUtil._SetText(pgnEventPlaceholder, textPgnEmpty);
+            ChessUtil._SetText(pgnSitePlaceholder, textPgnEmpty);
             for (int item = 0; item < ItemCount && item < itemLabels.Length; item++) {
                 ChessUtil._SetText(itemLabels[item], _ItemText(item));
             }

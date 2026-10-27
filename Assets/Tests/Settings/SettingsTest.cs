@@ -450,6 +450,27 @@ public class SettingsTest : ChessTest {
             "changing: unknown number refused", "");
         arbiter.defaultSettings = savedSettings;
         arbiter.defaultNumbers = savedNumbers;
+
+        // The PGN Event and Site (step 14.13): cleaned up, counted as a change, unchanged values refused.
+        string savedEvent = arbiter.pgnEvent;
+        string savedSite = arbiter.pgnSite;
+        int changes = arbiter.changes;
+        Check(arbiter.SetPgnEvent("  Spring Open  ") && arbiter._PgnEvent() == "Spring Open"
+                && arbiter.changes == changes + 1,
+            "changing: PGN Event set, trimmed, counted as a change", "\"" + arbiter._PgnEvent() + "\"");
+        Check(!arbiter.SetPgnEvent("Spring Open ") && arbiter.changes == changes + 1,
+            "changing: PGN Event unchanged, refused", "");
+        Check(arbiter.SetPgnSite(null) && arbiter._PgnSite() == "", "changing: PGN Site emptied by null",
+            "\"" + arbiter._PgnSite() + "\"");
+        string longText = "";
+        for (int i = 0; i < ChessArbiter.PgnTagMaxLength - 1; i++) longText += "x";
+        CheckString(ChessArbiter._CleanPgnTag(longText + "yz"), longText + "y", "changing: PGN tag cut to the maximum");
+        // An emoji is a surrogate pair: cut before it rather than through it.
+        CheckString(ChessArbiter._CleanPgnTag(longText + "\U0001F434"), longText,
+            "changing: PGN tag cut without splitting a surrogate pair");
+        CheckString(ChessArbiter._CleanPgnTag(null), "", "changing: PGN tag, null is empty");
+        arbiter.pgnEvent = savedEvent;
+        arbiter.pgnSite = savedSite;
         arbiter.EndChange();
     }
 
@@ -812,6 +833,8 @@ public class SettingsTest : ChessTest {
                 + menu._DurationText(7200) + "|" + menu._DurationText(0),
             Seconds(45) + "|" + Minutes(90) + "|" + Hours(2) + "|" + Seconds(0), "menu: durations");
 
+        TestMenuPgnTags(auth);
+
         arbiter.defaultSettings = savedSettings;
         arbiter.defaultNumbers = savedNumbers;
         arbiter.overrideMask = savedMask;
@@ -820,6 +843,105 @@ public class SettingsTest : ChessTest {
         arbiter.changes++;
         arbiter.EndChange();
         menu.scope = savedScope;
+        menu._Refresh();
+    }
+
+    // ---- 14.13 ----
+
+    // The menu's PGN Event and Site rows: wired, shown for All boards only, an organizer's text set on the arbiter
+    // when editing ends (cleaned up), a value arriving while editing not overwriting the field, a non-organizer's
+    // refused, and the value written escaped in a PGN. The arbiter's tags are put back (TestMenu sends them).
+    void TestMenuPgnTags(SimpleAuth auth) {
+        bool wired = Utilities.IsValid(menu.pgnRows) && Utilities.IsValid(menu.pgnEventLabel)
+            && Utilities.IsValid(menu.pgnSiteLabel) && Utilities.IsValid(menu.pgnEventField)
+            && Utilities.IsValid(menu.pgnSiteField) && Utilities.IsValid(menu.pgnEventPlaceholder)
+            && Utilities.IsValid(menu.pgnSitePlaceholder);
+        Check(wired, "menu: PGN rows, labels, fields and placeholders assigned",
+            "one is missing (the Chess Settings Menu prefab)");
+        if (!wired) return;
+        Check(menu.pgnRows.transform.IsChildOf(menu.controls.transform), "menu: PGN rows among the controls",
+            "outside them");
+        string savedEvent = arbiter.pgnEvent;
+        string savedSite = arbiter.pgnSite;
+        arbiter.pgnEvent = "Menu Event";
+        arbiter.pgnSite = "Menu Site";
+        menu.scope = ChessSettingsMenu.ScopeAllBoards;
+        menu.editingPgnEvent = false;
+        menu.editingPgnSite = false;
+        menu._Refresh();
+        Check(menu.pgnRows.activeSelf, "menu: PGN rows shown for all boards", "hidden");
+        CheckString(menu.pgnEventLabel.text, Text("settings_item_pgn_event"), "menu: PGN Event row's label");
+        CheckString(menu.pgnSiteLabel.text, Text("settings_item_pgn_site"), "menu: PGN Site row's label");
+        CheckString(menu.pgnEventPlaceholder.text, Text("settings_pgn_empty"), "menu: PGN fields' placeholder");
+        CheckString(menu.pgnEventField.text + "|" + menu.pgnSiteField.text, "Menu Event|Menu Site",
+            "menu: PGN fields show the arbiter's");
+        menu._Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionNext);
+        Check(!menu.pgnRows.activeSelf, "menu: PGN rows hidden for a board", "shown");
+        Check(!menu._SetPgnTag(ChessSettingsMenu.ItemPgnEvent, "Board Event") && arbiter._PgnEvent() == "Menu Event",
+            "menu: PGN Event refused for a board", arbiter._PgnEvent());
+        menu._Press(ChessSettingsMenu.ItemScope, ChessSettingsMenu.ActionPrevious);
+        Check(menu.pgnRows.activeSelf, "menu: PGN rows shown again for all boards", "hidden");
+
+        // Typed and committed, as the field's onSelect and onEndEdit do it.
+        int changes = arbiter.changes;
+        menu._SelectPgnEvent();
+        menu.pgnEventField.text = "  Club \"Night\" \\ 1  ";
+        menu._EndEditPgnEvent();
+        CheckString(arbiter._PgnEvent(), "Club \"Night\" \\ 1", "menu: PGN Event set from its field, trimmed");
+        Check(arbiter.changes > changes && Networking.IsOwner(arbiter.gameObject),
+            "menu: PGN Event a change, the organizer owning the arbiter", "");
+        CheckString(menu.pgnEventField.text, "Club \"Night\" \\ 1", "menu: PGN Event field shows the cleaned value");
+        string tags = ChessPgn.WriteTags(arbiter._PgnEvent(), arbiter._PgnSite(), "", "", "", ChessGame.EndingNone,
+            ChessRules.NoColor, ChessGame.ModeStandard, "", 0, 0, "", "");
+        Check(tags.StartsWith("[Event \"Club \\\"Night\\\" \\\\ 1\"]\n[Site \"Menu Site\"]\n"),
+            "menu: PGN Event written escaped", tags);
+        changes = arbiter.changes;
+        menu._SelectPgnSite();
+        menu.pgnSiteField.text = "Menu Site";
+        menu._EndEditPgnSite();
+        Check(arbiter.changes == changes, "menu: PGN Site unchanged, nothing changed", "counted a change");
+
+        // A value arriving while the field is being edited doesn't replace what's typed.
+        menu._SelectPgnSite();
+        menu.pgnSiteField.text = "Half typ";
+        arbiter.SetPgnSite("From Elsewhere");
+        CheckString(menu.pgnSiteField.text, "Half typ", "menu: PGN Site being edited kept over an arriving value");
+        CheckString(menu.pgnEventField.text, "Club \"Night\" \\ 1", "menu: the other field still drawn");
+        menu.pgnSiteField.text = "Typed Site";
+        menu._EndEditPgnSite();
+        CheckString(arbiter._PgnSite(), "Typed Site", "menu: PGN Site set once editing ends");
+
+        // A non-organizer's text refused, the field back to the arbiter's.
+        if (Utilities.IsValid(noOneAuth)) {
+            arbiter.simpleAuth = noOneAuth;
+            menu._SelectPgnEvent();
+            menu.pgnEventField.text = "Not Allowed";
+            menu._EndEditPgnEvent();
+            string after = arbiter._PgnEvent();
+            string field = menu.pgnEventField.text;
+            arbiter.simpleAuth = auth;
+            menu._UpdateVisibility();
+            CheckString(after, "Club \"Night\" \\ 1", "menu: a non-organizer's PGN Event refused");
+            CheckString(field, "Club \"Night\" \\ 1", "menu: refused, the field shows the arbiter's again");
+        }
+
+        // VRChat's keyboard: the text set in the field with no onEndEdit, committed once the field is quiet. The
+        // field's onValueChanged calls _ChangedPgnEvent; called here too, in case UI events don't reach it.
+        menu.editingPgnEvent = false;
+        menu.pgnEventField.text = "Keyboard Event";
+        menu._ChangedPgnEvent();
+        Check(menu.editingPgnEvent, "menu: a changed PGN field counts as being edited", "not");
+        menu._CommitPgnEventIfQuiet();
+        CheckString(arbiter._PgnEvent(), "Club \"Night\" \\ 1", "menu: a changed PGN field not committed at once");
+        menu.pgnEventChangedAt = Time.time - ChessSettingsMenu.PgnCommitDelay;
+        menu._CommitPgnEventIfQuiet();
+        CheckString(arbiter._PgnEvent(), "Keyboard Event", "menu: a changed PGN field committed once quiet");
+        Check(!menu.editingPgnEvent, "menu: committed, no longer being edited", "still");
+        arbiter.SetPgnEvent("Drawn Event");
+        Check(menu.pgnEventField.text == "Drawn Event" && !menu.editingPgnEvent,
+            "menu: the menu's own redraw of a field isn't taken for typing", "editing " + menu.editingPgnEvent);
+        arbiter.pgnEvent = savedEvent;
+        arbiter.pgnSite = savedSite;
         menu._Refresh();
     }
 

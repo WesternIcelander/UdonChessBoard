@@ -548,7 +548,7 @@ public class ChessDebugView : ChessBoardListener {
         string white = "Fill White " + fillNumber;
         string black = "Fill Black " + fillNumber;
         bool added = Archive()._AddGame(gameId, "", white, black, ChessGame.ModeStandard, ending, winner,
-            ChessFen.StartFen, ChessArbiter.NoClock, 0, fillMoves, fillClocks, count, "");
+            ChessFen.StartFen, ChessArbiter.NoClock, 0, fillMoves, fillClocks, count, "", "", "VRChat");
         Debug.Log("[ChessDebugView] Add 10 games: " + gameId + " (" + white + " vs " + black + ", "
             + ChessPgn.ResultText(ending, winner) + ", " + count + " plies) " + (added ? "added" : "REFUSED")
             + (fillLeft > 0 ? ", " + fillLeft + " to go" : ", done"));
@@ -630,7 +630,7 @@ public class ChessDebugView : ChessBoardListener {
         string pgn = ChessPgn.WriteGame("", "VRChat", me, opponent, ending, winner, ChessGame.ModeStandard,
             ChessFen.StartFen, 600, 0, gameId, "", longSans, longClocks, count, 1, ChessRules.White);
         bool added = personal._AddGame(gameId, "", me, opponent, ChessGame.ModeStandard, ending, winner,
-            ChessFen.StartFen, 600, 0, longMoves, longClocks, count, pgn);
+            ChessFen.StartFen, 600, 0, longMoves, longClocks, count, pgn, "", "VRChat");
         Debug.Log("[ChessDebugView] Fill my games: " + gameId + ", " + count + " plies, PGN " + pgn.Length
             + " characters, " + (added ? "added" : "REFUSED") + (personalLeft > 0 ? ", " + personalLeft + " to go"
             : ", done: the archive logs the PlayerData used once the client reports it"));
@@ -1196,7 +1196,10 @@ public class ChessDebugView : ChessBoardListener {
             + ChessArbiter._NumbersToString(numbers) + "; defaults: "
             + ChessArbiter._SettingsToString(board.arbiter.defaultSettings) + " | "
             + ChessArbiter._NumbersToString(board.arbiter.defaultNumbers)
-            + "; owner " + ChessUtil._OwnerName(board.arbiter.gameObject, "nobody");
+            + "; owner " + ChessUtil._OwnerName(board.arbiter.gameObject, "nobody")
+            // Step 14.13: the arbiter's PGN tags, and those the board's PGN is written with now.
+            + "; PGN Event \"" + board.arbiter._PgnEvent() + "\", Site \"" + board.arbiter._PgnSite()
+            + "\"; the board writes Event \"" + board._PgnEvent() + "\", Site \"" + board._PgnSite() + "\"";
         if (text == lastArbiterSettings) return;
         lastArbiterSettings = text;
         Debug.Log("[ChessDebugView] arbiter settings: " + text);

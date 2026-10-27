@@ -49,6 +49,8 @@ namespace SiggiChessBoard {
         string[] whites;
         string[] blacks;
         string[] startFens;
+        string[] events;
+        string[] sites;
         int[] modes;
         int[] endings;
         int[] winners;
@@ -80,6 +82,8 @@ namespace SiggiChessBoard {
             whites = new string[count];
             blacks = new string[count];
             startFens = new string[count];
+            events = new string[count];
+            sites = new string[count];
             modes = new int[count];
             endings = new int[count];
             winners = new int[count];
@@ -142,11 +146,12 @@ namespace SiggiChessBoard {
         // ---- Adding ----
 
         // A game logged on this client: kept when the local player sat as White or Black, with its moves, clocks and
-        // logged PGN (saved after its PlyCount and Ending tags). Refused (false) for a game with no ID or no moves,
-        // or without the local player.
+        // logged PGN (saved after its PlyCount and Ending tags), whose own Event and Site tags it reads like a saved
+        // game's (eventName and site are the same values). Refused (false) for a game with no ID or no moves, or
+        // without the local player.
         public override bool _AddGame(string gameId, string continuedFrom, string white, string black, int mode,
             int ending, int winner, string startFen, int baseTime, int increment, int[] moves, int[] clocks, int count,
-            string pgn) {
+            string pgn, string eventName, string site) {
             if (string.IsNullOrEmpty(gameId) || moves == null || clocks == null || count <= 0 || count > moves.Length
                 || count > clocks.Length || pgn == null) {
                 return false;
@@ -230,6 +235,8 @@ namespace SiggiChessBoard {
             whites[slot] = tags[ChessPgn.TagWhite];
             blacks[slot] = tags[ChessPgn.TagBlack];
             startFens[slot] = tags[ChessPgn.TagFen].Length > 0 ? tags[ChessPgn.TagFen] : ChessFen.StartFen;
+            events[slot] = ChessPgn._KnownTag(tags[ChessPgn.TagEvent]);
+            sites[slot] = ChessPgn._KnownTag(tags[ChessPgn.TagSite]);
             modes[slot] = ChessPgn._ModeFromVariant(tags[ChessPgn.TagVariant]);
             int winner;
             bool decided = ChessPgn._ParseResult(tags[ChessPgn.TagResult], out winner);
@@ -262,6 +269,8 @@ namespace SiggiChessBoard {
             whites[slot] = "";
             blacks[slot] = "";
             startFens[slot] = "";
+            events[slot] = "";
+            sites[slot] = "";
             modes[slot] = ChessGame.ModeStandard;
             endings[slot] = ChessGame.EndingNone;
             winners[slot] = ChessRules.NoColor;
@@ -355,6 +364,14 @@ namespace SiggiChessBoard {
 
         public override string StartFenAt(int index) {
             return startFens[SlotAt(index)];
+        }
+
+        public override string EventAt(int index) {
+            return events[SlotAt(index)];
+        }
+
+        public override string SiteAt(int index) {
+            return sites[SlotAt(index)];
         }
 
         public override int ModeAt(int index) {

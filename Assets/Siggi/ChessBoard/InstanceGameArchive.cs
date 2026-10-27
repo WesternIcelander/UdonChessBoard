@@ -63,14 +63,14 @@ namespace SiggiChessBoard {
         // A game logged by a board on this client: its Game ID, ContinuedFrom ("" for none), players, mode
         // (ChessGame.Mode*), ending (ChessGame.Ending*) and winner (ChessRules colour, NoColor for none), starting
         // FEN, time control (seconds, base ChessArbiter.NoClock for no clock) and the first count of its moves
-        // (packed) and clocks (milliseconds, -1 unknown). Kept in the recent games, then archived if this client owns
-        // the archive (Flush). Returns false for a game with no ID or no moves, or one already in the recent games. The
-        // logged PGN (pgn) is ignored: the archive keeps no notation.
+        // (packed) and clocks (milliseconds, -1 unknown), and its PGN Event and Site (step 14.13). Kept in the recent
+        // games, then archived if this client owns the archive (Flush). Returns false for a game with no ID or no
+        // moves, or one already in the recent games. The logged PGN (pgn) is ignored: the archive keeps no notation.
         public override bool _AddGame(string gameId, string continuedFrom, string white, string black, int mode,
             int ending, int winner, string startFen, int baseTime, int increment, int[] moves, int[] clocks, int count,
-            string pgn) {
+            string pgn, string eventName, string site) {
             if (!_StoreRecent(gameId, continuedFrom, white, black, mode, ending, winner, startFen, baseTime, increment,
-                    moves, clocks, count)) {
+                    moves, clocks, count, eventName, site)) {
                 return false;
             }
             _Flush();
@@ -81,7 +81,7 @@ namespace SiggiChessBoard {
         // full. Public for tests, which use it as a client that doesn't own the archive.
         public bool _StoreRecent(string gameId, string continuedFrom, string white, string black, int mode,
             int ending, int winner, string startFen, int baseTime, int increment, int[] moves, int[] clocks,
-            int count) {
+            int count, string eventName, string site) {
             if (!Utilities.IsValid(recent) || string.IsNullOrEmpty(gameId) || moves == null || clocks == null
                 || count <= 0 || count > moves.Length || count > clocks.Length) {
                 return false;
@@ -89,7 +89,7 @@ namespace SiggiChessBoard {
             if (recent._SlotOf(gameId) >= 0) return false;
             int slot = OldestSlot(recent);
             recent._WriteSlot(slot, HighestSequence(recent) + 1, gameId, continuedFrom, white, black, mode, ending,
-                winner, startFen, baseTime, increment, moves, clocks, count);
+                winner, startFen, baseTime, increment, moves, clocks, count, eventName, site);
             recentSeen[slot] = IsArchived(gameId);
             return true;
         }
@@ -175,7 +175,8 @@ namespace SiggiChessBoard {
                 recent._Info(recentSlot, GameArchiveHolder.InfoEnding),
                 recent._Info(recentSlot, GameArchiveHolder.InfoWinner), recent.startFens[recentSlot],
                 recent._Info(recentSlot, GameArchiveHolder.InfoBaseTime),
-                recent._Info(recentSlot, GameArchiveHolder.InfoIncrement), scratchMoves, scratchClocks, count);
+                recent._Info(recentSlot, GameArchiveHolder.InfoIncrement), scratchMoves, scratchClocks, count,
+                recent.events[recentSlot], recent.sites[recentSlot]);
             holder._Send();
             Debug.Log("[GameArchive] archived game " + sequence + ", " + recent.gameIds[recentSlot] + " ("
                 + recent.whites[recentSlot] + " vs " + recent.blacks[recentSlot] + "), in " + holder.gameObject.name
@@ -294,6 +295,14 @@ namespace SiggiChessBoard {
 
         public override string StartFenAt(int index) {
             return Text(HolderAt(index).startFens[HolderSlotAt(index)]);
+        }
+
+        public override string EventAt(int index) {
+            return Text(HolderAt(index).events[HolderSlotAt(index)]);
+        }
+
+        public override string SiteAt(int index) {
+            return Text(HolderAt(index).sites[HolderSlotAt(index)]);
         }
 
         public override int ModeAt(int index) {

@@ -4188,6 +4188,12 @@ public class BoardTest : ChessTest {
         CheckString(board.lastLoggedPgn, board.GamePgn(), name + ": the logged PGN is the board's");
     }
 
+    // The board's PGN starts with start.
+    void CheckPgnStart(string start, string name) {
+        string pgn = board.GamePgn();
+        Check(pgn.StartsWith(start), name, "PGN:\n" + pgn);
+    }
+
     void TestPgnLog() {
         NothingForced();
         ChessArbiter tagArbiter = board.arbiter;
@@ -4222,20 +4228,38 @@ public class BoardTest : ChessTest {
             + "2... Qh4# { [%clk 0:01:01.5] } 0-1\n";
         CheckString(board.lastLoggedPgn, expected, "log: fool's mate PGN");
         CheckString(board.GamePgn(), expected, "log: GamePgn gives it too");
-        // Empty tags on the arbiter, and no arbiter at all, are written "?" (step 13.11).
-        string questioned = "[Event \"?\"]\n[Site \"?\"]\n" + expected.Substring(expected.IndexOf("[Date "));
+        // The ended game keeps the tags it ended with (step 14.13): the arbiter's changed afterwards, or gone, change
+        // nothing.
+        CheckString(board.gameEvent + "|" + board.gameSite, "Test Event|Test Site", "log: the ended game's tags kept");
         tagArbiter.pgnEvent = "";
-        tagArbiter.pgnSite = "";
-        CheckString(board.GamePgn(), questioned, "log: empty tags on the arbiter written ?");
+        tagArbiter.pgnSite = "Other Site";
+        CheckString(board.GamePgn(), expected, "log: ended, the arbiter's tags changed afterwards, its own written");
+        board.arbiter = null;
+        CheckString(board.GamePgn(), expected, "log: ended, its own written without an arbiter too");
+        board.arbiter = tagArbiter;
         tagArbiter.pgnEvent = "Test Event";
         tagArbiter.pgnSite = "Test Site";
-        board.arbiter = null;
-        CheckString(board.GamePgn(), questioned, "log: no arbiter, both tags ?");
-        board.arbiter = tagArbiter;
         board._CheckFlagFallAt(1e6);
         board.ResignAs(ChessRules.White, "Ana");
         board.PieceDroppedAs("Ana", ChessRules.E1, ChessRules.F2);
         CheckLogged(before, 1, "log: nothing more once ended");
+
+        // A game in progress follows the arbiter's (step 14.13): empty tags, and no arbiter at all, are written "?"
+        // (step 13.11).
+        StartedGame(60, 2, 1000);
+        Play(ChessRules.F2, ChessRules.F3, 1001, "log: in progress: 1. f3");
+        CheckPgnStart("[Event \"Test Event\"]\n[Site \"Test Site\"]\n", "log: in progress, the arbiter's tags");
+        tagArbiter.pgnEvent = "";
+        tagArbiter.pgnSite = "";
+        CheckPgnStart("[Event \"?\"]\n[Site \"?\"]\n[Date ", "log: in progress, empty tags on the arbiter written ?");
+        tagArbiter.pgnEvent = "Test Event";
+        tagArbiter.pgnSite = "Test Site";
+        board.arbiter = null;
+        CheckPgnStart("[Event \"?\"]\n[Site \"?\"]\n[Date ", "log: in progress, no arbiter, both tags ?");
+        board.arbiter = tagArbiter;
+        CheckString(board.gameEvent + "|" + board.gameSite, "|", "log: in progress, no tags kept");
+        board._ClearState();
+        CheckLogged(before, 1, "log: the game in progress cleared, not logged");
 
         // Games with no moves aren't logged, however they end.
         before = board.loggedGames;

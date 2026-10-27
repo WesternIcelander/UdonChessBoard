@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using SiggiChessBoard;
 using SiggiUSTools;
+using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -1086,6 +1087,10 @@ public static class PrefabTest {
         Check(count > 0 && buttons == "", "the menu's " + count + " buttons, each passing its row and action to the "
             + "placed menu", buttons);
         Check(resnapshot, "the menu's Apply now button", "missing");
+        string pgnRows = MenuPgnRowsProblem(menu);
+        Check(pgnRows == "", "the menu's PGN Event and Site rows (14.13), each field calling the placed menu", pgnRows);
+        string outside = MenuOutsideCanvas(menu);
+        Check(outside == "", "the menu's controls all within its canvas (14.13)", "past its bottom:" + outside);
 
         // Pointed at a placed arbiter and board by hand, as a world creator would set them in the Inspector.
         GameObject arbiterObject = (GameObject)PrefabUtility.InstantiatePrefab(arbiterPrefab, scene);
@@ -1106,6 +1111,76 @@ public static class PrefabTest {
         Object.DestroyImmediate(placed);
         Object.DestroyImmediate(arbiterObject);
         Object.DestroyImmediate(boardObject);
+    }
+
+    // What's wrong with menu's PGN Event and Site rows (step 14.13), "" for nothing: their parent among the controls,
+    // each row's label and single-line field (limited to ChessArbiter.PgnTagMaxLength, its text, placeholder and label
+    // empty: the menu writes them) under it, each field's onSelect, onValueChanged and onEndEdit calling the menu's own
+    // events.
+    static string MenuPgnRowsProblem(ChessSettingsMenu menu) {
+        if (menu.pgnRows == null || menu.controls == null) return "no PGN rows";
+        string problems = "";
+        if (menu.pgnRows.transform.parent != menu.controls.transform) problems += " the rows not among the controls;";
+        UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(menu);
+        TMP_InputField[] fields = { menu.pgnEventField, menu.pgnSiteField };
+        TextMeshProUGUI[] labels = { menu.pgnEventLabel, menu.pgnSiteLabel };
+        TextMeshProUGUI[] placeholders = { menu.pgnEventPlaceholder, menu.pgnSitePlaceholder };
+        string[] selects = { "_SelectPgnEvent", "_SelectPgnSite" };
+        string[] endEdits = { "_EndEditPgnEvent", "_EndEditPgnSite" };
+        string[] changes = { "_ChangedPgnEvent", "_ChangedPgnSite" };
+        for (int i = 0; i < 2; i++) {
+            string name = i == 0 ? " Event" : " Site";
+            TMP_InputField field = fields[i];
+            if (labels[i] == null || !labels[i].transform.IsChildOf(menu.pgnRows.transform) || labels[i].text != "") {
+                problems += name + "'s label;";
+            }
+            if (field == null || !field.transform.IsChildOf(menu.pgnRows.transform)) {
+                problems += name + "'s field missing;";
+                continue;
+            }
+            if (field.lineType != TMP_InputField.LineType.SingleLine) problems += name + " not single-line;";
+            if (field.characterLimit != ChessArbiter.PgnTagMaxLength) {
+                problems += name + "'s limit " + field.characterLimit + ";";
+            }
+            if (field.text != "") problems += name + " holds text;";
+            if (placeholders[i] == null || (Object)field.placeholder != placeholders[i] || placeholders[i].text != "") {
+                problems += name + "'s placeholder;";
+            }
+            string select = EventCall(field.onSelect, "m_OnSelect", field, udon);
+            if (select != selects[i]) problems += name + "'s onSelect calls " + select + ";";
+            string endEdit = EventCall(field.onEndEdit, "m_OnEndEdit", field, udon);
+            if (endEdit != endEdits[i]) problems += name + "'s onEndEdit calls " + endEdit + ";";
+            string changed = EventCall(field.onValueChanged, "m_OnValueChanged", field, udon);
+            if (changed != changes[i]) problems += name + "'s onValueChanged calls " + changed + ";";
+        }
+        return problems;
+    }
+
+    // The menu's controls (each top-left anchored) that reach past the bottom of its canvas, as the canvas's own size
+    // has it, "" for none. An instance root's RectTransform size is a default override on every instance, so a
+    // prefab update can't grow a placed menu's canvas, and VRCUiShape takes the pointer only within it (found in
+    // 14.13): new rows must fit in the canvas a world already has.
+    static string MenuOutsideCanvas(ChessSettingsMenu menu) {
+        if (menu.controls == null) return "no controls";
+        float height = menu.GetComponent<RectTransform>().sizeDelta.y;
+        string outside = "";
+        foreach (RectTransform rect in menu.controls.GetComponentsInChildren<RectTransform>(true)) {
+            if (rect.anchorMin != new Vector2(0, 1) || rect.anchorMax != new Vector2(0, 1)) continue;
+            if (rect.parent != menu.controls.transform && rect.parent != menu.pgnRows.transform) continue;
+            float bottom = -rect.anchoredPosition.y + rect.sizeDelta.y * (1 - rect.pivot.y);
+            if (bottom > height + 0.5f) outside += " " + rect.name + " (" + bottom + ")";
+        }
+        return outside;
+    }
+
+    // The event a UnityEvent (property path on owner) sends to udon through its one SendCustomEvent listener.
+    static string EventCall(UnityEngine.Events.UnityEventBase unityEvent, string path, Object owner,
+            UdonBehaviour udon) {
+        if (unityEvent.GetPersistentEventCount() != 1) return "(" + unityEvent.GetPersistentEventCount() + " listeners)";
+        if (unityEvent.GetPersistentTarget(0) != udon) return "(another behaviour)";
+        if (unityEvent.GetPersistentMethodName(0) != "SendCustomEvent") return "(not SendCustomEvent)";
+        return new SerializedObject(owner)
+            .FindProperty(path + ".m_PersistentCalls.m_Calls.Array.data[0].m_Arguments.m_StringArgument").stringValue;
     }
 
     // The open scene's settings menu (the test scene's) is an instance of the prefab, on the scene's arbiter with
@@ -1138,6 +1213,11 @@ public static class PrefabTest {
             if (target != null && target.menu == menu && button.transform.IsChildOf(menu.transform)) own++;
         }
         CheckIntValue(own, menu.buttons.Length, "the scene's settings menu's buttons are its own");
+        string pgnRows = MenuPgnRowsProblem(menu);
+        Check(pgnRows == "", "the scene's settings menu has the PGN Event and Site rows (14.13), calling it", pgnRows);
+        string outside = MenuOutsideCanvas(menu);
+        Check(outside == "", "the scene's settings menu's controls all within its canvas, as the instance has it (14.13)",
+            "past its bottom:" + outside);
     }
 
     // ---- 14.8: 2D Chess Board View, Movable 2D Chess Board View ----

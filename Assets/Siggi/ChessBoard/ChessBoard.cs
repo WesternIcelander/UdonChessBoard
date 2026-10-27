@@ -141,6 +141,12 @@ namespace SiggiChessBoard {
         // for its export; the clock for continuing it is baseTime and increment.
         [NonSerialized] public int replaySourceBaseTime = ChessArbiter.NoClock;
         [NonSerialized] public int replaySourceIncrement;
+        // The PGN Event and Site tags the game keeps (step 14.13, docs/pgn.md): the arbiter's as the game ended (fixed
+        // in EndGameAt and sent with the ended state, so every client writes the same), or a loaded game's own (from
+        // its archive, or its PGN's tags; "" for none, written "?"). A game in progress follows the arbiter's instead
+        // (_PgnEvent, _PgnSite). "" on a reset board, and again once a game is continued.
+        [NonSerialized] public string gameEvent = "";
+        [NonSerialized] public string gameSite = "";
 
         // The seated players' display names, "" for an empty seat (docs/board-lifecycle.md, Seats).
         [NonSerialized] public string whitePlayer = "";
@@ -252,6 +258,8 @@ namespace SiggiChessBoard {
         [UdonSynced] [NonSerialized] public string syncedWhitePlayer = "";
         [UdonSynced] [NonSerialized] public string syncedBlackPlayer = "";
         [UdonSynced] [NonSerialized] public string syncedLoadedBy = "";
+        [UdonSynced] [NonSerialized] public string syncedGameEvent = "";
+        [UdonSynced] [NonSerialized] public string syncedGameSite = "";
 
         // ---- Local, not synced ----
 
@@ -539,6 +547,8 @@ namespace SiggiChessBoard {
             syncedWhitePlayer = NotNull(whitePlayer);
             syncedBlackPlayer = NotNull(blackPlayer);
             syncedLoadedBy = NotNull(loadedBy);
+            syncedGameEvent = NotNull(gameEvent);
+            syncedGameSite = NotNull(gameSite);
         }
 
         static string NotNull(string text) {
@@ -584,7 +594,7 @@ namespace SiggiChessBoard {
             return syncedStartFen != null && syncedGameId != null && syncedContinuedFrom != null
                 && syncedReplaySourceWhite != null && syncedReplaySourceBlack != null
                 && syncedReplaySourceResult != null && syncedWhitePlayer != null && syncedBlackPlayer != null
-                && syncedLoadedBy != null;
+                && syncedLoadedBy != null && syncedGameEvent != null && syncedGameSite != null;
         }
 
         // Whether the update in the synced fields is this game played on untimed after its flag fell (step 12.9): its
@@ -671,6 +681,8 @@ namespace SiggiChessBoard {
             whitePlayer = syncedWhitePlayer;
             blackPlayer = syncedBlackPlayer;
             loadedBy = syncedLoadedBy;
+            gameEvent = syncedGameEvent;
+            gameSite = syncedGameSite;
         }
 
         // ---- Getters for the view (docs/architecture.md) ----
@@ -801,6 +813,8 @@ namespace SiggiChessBoard {
             whitePlayer = "";
             blackPlayer = "";
             loadedBy = "";
+            gameEvent = "";
+            gameSite = "";
             whitePieceSet = 0;
             blackPieceSet = 0;
             lastActivity = 0;
@@ -1383,9 +1397,14 @@ namespace SiggiChessBoard {
         // Ends the game in progress at server time now: how it ended, who won (ChessRules.NoColor for a draw), and
         // the ended state. A running clock stops with the side to move's remaining time stored, so it keeps showing
         // what was left. A pending draw offer lapses; a takeback request stays, since an ended game can still be
-        // continued. The game's PGN is logged on this transition, unless it has no moves.
+        // continued. The game keeps the arbiter's PGN Event and Site as they are now (step 14.13), so a later change
+        // to them doesn't relabel it. The game's PGN is logged on this transition, unless it has no moves.
         void EndGameAt(int newEnding, int newWinner, double now) {
             bool wasInGame = lifecycle == LifecycleInGame;
+            if (wasInGame) {
+                gameEvent = ArbiterEvent();
+                gameSite = ArbiterSite();
+            }
             if (IsClockRunning()) {
                 int mover = state[ChessPosition.StateSideToMove];
                 int left = _RemainingTimeAt(mover, now);
@@ -1531,12 +1550,42 @@ namespace SiggiChessBoard {
             if (moveCount % 2 == 1) firstSide = ChessRules.OtherColor(firstSide);
             bool loaded = lifecycle == LifecycleLoaded;
             int pgnBase = loaded ? replaySourceBaseTime : baseTime;
-            bool hasArbiter = Utilities.IsValid(arbiter);
-            return ChessPgn.WriteGame(hasArbiter ? arbiter._PgnEvent() : "", hasArbiter ? arbiter._PgnSite() : "",
+            return ChessPgn.WriteGame(_PgnEvent(), _PgnSite(),
                 loaded ? replaySourceWhite : whitePlayer, loaded ? replaySourceBlack : blackPlayer, pgnEnding,
                 pgnWinner, mode, startFen,
                 _PgnBaseSeconds(pgnBase), loaded ? replaySourceIncrement : increment, gameId, continuedFrom, notation,
                 clockHistory, moveCount, startMoveNumber, firstSide);
+        }
+
+        // The PGN Event and Site tags the game's PGN is written with (step 14.13, docs/pgn.md): an ended or loaded
+        // game's own (gameEvent, gameSite), otherwise (a game in progress, a lobby, a reset board) the arbiter's now,
+        // so a change made mid-game reaches the game at once. "" for none, written "?".
+        public string _PgnEvent() {
+            return KeepsTags() ? gameEvent : ArbiterEvent();
+        }
+
+        public string _PgnSite() {
+            return KeepsTags() ? gameSite : ArbiterSite();
+        }
+
+        bool KeepsTags() {
+            return lifecycle == LifecycleEnded || lifecycle == LifecycleLoaded;
+        }
+
+        // A game continued (a takeback, Continue from here, playing on after a flag fall) is a new game here: it
+        // follows the arbiter's tags again until it ends.
+        void FollowArbiterTags() {
+            gameEvent = "";
+            gameSite = "";
+        }
+
+        // The arbiter's Event and Site now, "" without an arbiter.
+        string ArbiterEvent() {
+            return Utilities.IsValid(arbiter) ? arbiter._PgnEvent() : "";
+        }
+
+        string ArbiterSite() {
+            return Utilities.IsValid(arbiter) ? arbiter._PgnSite() : "";
         }
 
         // A base time (seconds, ChessArbiter.NoClock or UnknownClock) as ChessPgn writes it: 0 for no clock, below 0
@@ -1547,9 +1596,9 @@ namespace SiggiChessBoard {
 
         // Writes the game's PGN, with this ending and winner, to the log as one entry: a "[ChessPGN]" line, then the
         // PGN, so a bot reading the output log finds every game (docs/game-endings.md: each client logs once, on the
-        // transition), and hands it with that PGN to every archive on the arbiter (docs/archive.md), each keeping what
-        // it wants. A game with no moves isn't logged, nor is a game played on untimed after a flag fall with no move
-        // since the flag fell (step 12.9): the timed game holds them.
+        // transition), and hands it with that PGN and its Event and Site to every archive on the arbiter
+        // (docs/archive.md), each keeping what it wants. A game with no moves isn't logged, nor is a game played on
+        // untimed after a flag fall with no move since the flag fell (step 12.9): the timed game holds them.
         void LogGame(int logEnding, int logWinner) {
             if (moveCount == 0 || moveCount == flagFallPly) return;
             lastLoggedPgn = PgnWith(logEnding, logWinner);
@@ -1560,7 +1609,8 @@ namespace SiggiChessBoard {
             for (int i = 0; i < archives.Length; i++) {
                 if (!Utilities.IsValid(archives[i])) continue;
                 archives[i]._AddGame(gameId, continuedFrom, whitePlayer, blackPlayer, mode, logEnding, logWinner,
-                    startFen, baseTime, increment, moveHistory, clockHistory, moveCount, lastLoggedPgn);
+                    startFen, baseTime, increment, moveHistory, clockHistory, moveCount, lastLoggedPgn, _PgnEvent(),
+                    _PgnSite());
             }
         }
 
@@ -1607,6 +1657,7 @@ namespace SiggiChessBoard {
         // takeback request was for the ended game and is cleared; replay is left as it is.
         void PlayOnUntimedAt(double now) {
             _ContinueGameIdAt(moveCount, _NetworkDateTime());
+            FollowArbiterTags();
             for (int i = 0; i < moveCount; i++) clockHistory[i] = -1;
             baseTime = ChessArbiter.NoClock;
             increment = 0;
@@ -2308,6 +2359,7 @@ namespace SiggiChessBoard {
         void ContinueFromTakeback(int ply) {
             if (lifecycle == LifecycleInGame) LogGame(ChessGame.EndingUnterminated, ChessRules.NoColor);
             _ContinueGameIdAt(ply, _NetworkDateTime());
+            FollowArbiterTags();
             TruncateHistory(ply);
             RestoreClocks(_ServerTime());
             flagFallPly = -1;
@@ -2451,10 +2503,10 @@ namespace SiggiChessBoard {
         // enters the loaded state showing it in replay. Players can then join and continue it (step 7.9b).
 
         // Loads a finished import from importer (ChessPgnImporter.result ImportDone): its starting position, moves,
-        // SAN and clocks, the mode from Variant, the White, Black, Result and GameID tags, and the time control from
-        // TimeControl ("-" no clock, a value it can't read unknown). Refused while it's still importing (its result
-        // is ImportMore) or after a failed import, and as _LoadGame refuses. Loaded by the local player
-        // (_LoadImportAs).
+        // SAN and clocks, the mode from Variant, the White, Black, Result, GameID, Event and Site tags ("?" read as
+        // none), and the time control from TimeControl ("-" no clock, a value it can't read unknown). Refused while
+        // it's still importing (its result is ImportMore) or after a failed import, and as _LoadGame refuses. Loaded
+        // by the local player (_LoadImportAs).
         public int _LoadImport(ChessPgnImporter importer) {
             return _LoadImportAs(ChessUtil._LocalName(""), importer);
         }
@@ -2478,7 +2530,8 @@ namespace SiggiChessBoard {
             return _LoadGameEndingAs(name, importer._StartFen(), importer.moves, importer.sans, importer.clocks,
                 importer.MoveCount(), ChessPgn._ModeFromVariant(tags[ChessPgn.TagVariant]), tags[ChessPgn.TagWhite],
                 tags[ChessPgn.TagBlack], tags[ChessPgn.TagResult], tags[ChessPgn.TagGameId], loadedBase,
-                loadedIncrement, ChessGame.EndingFromName(tags[ChessPgn.TagEnding]));
+                loadedIncrement, ChessGame.EndingFromName(tags[ChessPgn.TagEnding]),
+                ChessPgn._KnownTag(tags[ChessPgn.TagEvent]), ChessPgn._KnownTag(tags[ChessPgn.TagSite]));
         }
 
         // Loads a game onto the board (CanLoadGame: only a reset board): the position fen ("" or null for the
@@ -2506,16 +2559,17 @@ namespace SiggiChessBoard {
             int loadedMode, string white, string black, string result, string loadedGameId, int loadedBaseTime,
             int loadedIncrement) {
             return _LoadGameEndingAs(name, fen, moves, sans, clocks, count, loadedMode, white, black, result,
-                loadedGameId, loadedBaseTime, loadedIncrement, -1);
+                loadedGameId, loadedBaseTime, loadedIncrement, -1, "", "");
         }
 
         // _LoadGameAs with the ending the game was logged with (ChessGame.Ending*; step 13.10): from an archive, or an
         // import's Ending tag. The game keeps it, with the Result tag's winner, instead of the ending worked out from
         // the position and the result, unless it's -1 (unknown), EndingNone or EndingUnterminated (an unfinished game,
-        // which loads as one without an ending, as before). Public for tests.
+        // which loads as one without an ending, as before), and the PGN Event and Site tags it keeps (gameEvent,
+        // gameSite; step 14.13: "" for none, written "?", never this instance's). Public for tests.
         public int _LoadGameEndingAs(string name, string fen, int[] moves, string[] sans, int[] clocks, int count,
             int loadedMode, string white, string black, string result, string loadedGameId, int loadedBaseTime,
-            int loadedIncrement, int loadedEnding) {
+            int loadedIncrement, int loadedEnding, string loadedEvent, string loadedSite) {
             if (!CanLoadGame()) return InputRejected;
             if (moves == null || sans == null || clocks == null || count < 0 || count > moves.Length
                 || count > sans.Length || count > clocks.Length) {
@@ -2559,6 +2613,8 @@ namespace SiggiChessBoard {
             gameId = loadedGameId == null ? "" : loadedGameId;
             continuedFrom = "";
             loadedBy = name == null ? "" : name;
+            gameEvent = loadedEvent == null ? "" : loadedEvent;
+            gameSite = loadedSite == null ? "" : loadedSite;
 
             int status = ChessMoves.PositionStatus(board, state,
                 ChessMoves.GenerateLegalMoves(board, state, legalMoves, true), true);
@@ -2673,7 +2729,8 @@ namespace SiggiChessBoard {
             return _LoadGameEndingAs(name, source.StartFenAt(index), moves, sans, clocks, count, source.ModeAt(index),
                 source.WhiteAt(index), source.BlackAt(index),
                 ChessPgn.ResultText(archivedEnding, source.WinnerAt(index)), source.GameIdAt(index),
-                source.BaseTimeAt(index), source.IncrementAt(index), archivedEnding);
+                source.BaseTimeAt(index), source.IncrementAt(index), archivedEnding, source.EventAt(index),
+                source.SiteAt(index));
         }
 
         public int ContinueGame() {
@@ -2713,6 +2770,7 @@ namespace SiggiChessBoard {
             replaySourceBaseTime = ChessArbiter.NoClock;
             replaySourceIncrement = 0;
             loadedBy = "";
+            FollowArbiterTags();
             drawOfferColor = ChessRules.NoColor;
             lifecycle = LifecycleInGame;
             ShowPly(moveCount);

@@ -266,8 +266,10 @@ namespace SiggiChessBoard {
         }
 
         // The board's arbiter changed (step 13.10): a game picked or unpicked on a history wall shows or hides Load it
-        // here at once, and a settings change brings the buttons up to date.
+        // here at once, and a settings change brings the buttons and the PGN box up to date (a game in progress takes
+        // the arbiter's PGN Event and Site as they change, step 14.13).
         public override void OnArbiterChanged(ChessBoard changed, int change) {
+            if (change == ChessArbiter.ChangeSettings) _UpdatePgnBox();
             _UpdateButtons();
         }
 

@@ -416,10 +416,17 @@ public class PgnTest : ChessTest {
     }
 
     // The tags import reads, in ChessPgn.Tag* order; ContinuedFrom, PlyCount and Ending (13.10) empty, as no test
-    // PGN has them.
+    // PGN has them, and Event and Site (14.13) empty, set by the caller for the files that have them (WithEvent).
     string[] Tags(string fen, string variant, string white, string black, string result, string gameId,
         string timeControl) {
-        return new string[] { fen, variant, white, black, result, gameId, timeControl, "", "", "" };
+        return new string[] { fen, variant, white, black, result, gameId, timeControl, "", "", "", "", "" };
+    }
+
+    // tags with the Event and Site tags set.
+    string[] WithEvent(string[] tags, string eventName, string site) {
+        tags[ChessPgn.TagEvent] = eventName;
+        tags[ChessPgn.TagSite] = site;
+        return tags;
     }
 
     string JoinSans(string[] sans) {
@@ -481,7 +488,7 @@ public class PgnTest : ChessTest {
         for (int tag = 0; tag < ChessPgn.TagCount; tag++) {
             if (ChessPgn._TagIndex(ChessPgn._TagName(tag)) != tag) errors += " " + tag;
         }
-        if (ChessPgn._TagIndex("GameId") != -1 || ChessPgn._TagIndex("white") != -1 || ChessPgn._TagIndex("Event") != -1
+        if (ChessPgn._TagIndex("GameId") != -1 || ChessPgn._TagIndex("white") != -1 || ChessPgn._TagIndex("Round") != -1
             || ChessPgn._TagIndex("") != -1) {
             errors += " other names";
         }
@@ -507,11 +514,12 @@ public class PgnTest : ChessTest {
 
         // The full SAN lists are joined from SiggiVsNukaSan (which has O-O for the file's 0-0).
         CheckRead("import: Siggi-vs-Nuka (VRChess: 0-0, no result token)", PgnText("Siggi-vs-Nuka.pgn"), end,
-            Tags("", "", siggi, nuka, "0-1", "20250710001921", "600"), JoinSans(SiggiVsNukaSan()),
-            SiggiVsNukaClocks());
+            WithEvent(Tags("", "", siggi, nuka, "0-1", "20250710001921", "600"), "", "VRChess"),
+            JoinSans(SiggiVsNukaSan()), SiggiVsNukaClocks());
 
         CheckRead("import: lichess-long-draw (Lichess formatting)", PgnText("lichess-long-draw.pgn"), end,
-            Tags("", "Standard", "iazz1", "Mohamed_AL_Shaqiri", "1/2-1/2", "", "60+0"),
+            WithEvent(Tags("", "Standard", "iazz1", "Mohamed_AL_Shaqiri", "1/2-1/2", "", "60+0"), "rated bullet game",
+                "https://lichess.org/h0rrawli"),
             "e4 g6 d4 c6 Nc3 d5 f3 dxe4 fxe4 Bg7 Nf3 Bg4 Be3 Nd7 Bc4 e5 O-O Ngf6 h3 Bxf3 Qxf3 exd4 Bxd4 O-O Rad1 Qe7 e5 "
             + "Nxe5 Bxe5 Qxe5 Bb3 Rae8 Kh1 Re7 Nb1 Nh5 Rf2 Ng3+ Kg1 Ne2+ Kh1 Nd4 Qd3 Nf5 Nd2 Qxb2 Ne4 Qe5 Re1 Kh8 Rfe2 "
             + "Qc7 Kg1 h6 Nf2 Rxe2 Rxe2 Kg8 Ng4 h5 Nf2 Bd4 c3 Bxf2+ Rxf2 Kg7 g4 hxg4 hxg4 Qg3+ Qxg3 Nxg3 c4 Ne4 Re2 "
@@ -533,7 +541,7 @@ public class PgnTest : ChessTest {
 
         string formattingSans = "d4 d5 Nc3 Nc6 Bf4 Bf5 Qd2 Qd7 O-O-O O-O-O e4 dxe4 d5 Nb4 a3 Nxd5 Nxd5 Qxd5 Qxd5 Rxd5 "
             + "Rxd5 e6 Rd8+ Kxd8";
-        string[] formattingTags = Tags("", "", "White", "Black", "*", "", "");
+        string[] formattingTags = WithEvent(Tags("", "", "White", "Black", "*", "", ""), "Formatting test", "");
         string formatting = PgnText("formatting.pgn");
         CheckRead("import: formatting (main line only, clocks)", formatting, end, formattingTags, formattingSans,
             FormattingClocks());
@@ -971,6 +979,7 @@ public class PgnTest : ChessTest {
         string[] expectedTags = Tags("qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w GBgb - 0 1", "Chess960",
             "Ana \"The Rook\" \\ Ñandú 🐴", "\\\"\\", "1-0", "20261011120000-000001", "5400+30");
         expectedTags[ChessPgn.TagContinuedFrom] = "20261010120000-000002/4";
+        WithEvent(expectedTags, "Casual game", "VRChat");
         for (int tag = 0; tag < ChessPgn.TagCount; tag++) {
             if (tags[tag] != expectedTags[tag]) errors += " " + ChessPgn._TagName(tag) + " \"" + tags[tag] + "\"";
         }

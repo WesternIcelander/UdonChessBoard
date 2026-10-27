@@ -235,6 +235,8 @@ namespace SiggiChessBoard {
         // The tags import reads, as indices into the tags array _ReadNext fills. All other tags are ignored.
         // ContinuedFrom, PlyCount and Ending (step 13.10) are for the personal archive, which reads its saved games'
         // tags (_ReadTags); an import also takes the ending from Ending (ChessGame.EndingName) when it's there.
+        // Event and Site (step 14.13) are kept with a loaded game and read by the personal archive, "?" read as ""
+        // (_KnownTag).
         public const int TagFen = 0;
         public const int TagVariant = 1;
         public const int TagWhite = 2;
@@ -245,7 +247,9 @@ namespace SiggiChessBoard {
         public const int TagContinuedFrom = 7;
         public const int TagPlyCount = 8;
         public const int TagEnding = 9;
-        public const int TagCount = 10;
+        public const int TagEvent = 10;
+        public const int TagSite = 11;
+        public const int TagCount = 12;
 
         // The reading state _ReadNext keeps between calls (an int[CursorLength]), so an import can stop after any move
         // and go on in a later frame: where in the text it is, how deep in variations, how many main-line moves it
@@ -281,6 +285,8 @@ namespace SiggiChessBoard {
                 case TagContinuedFrom: return "ContinuedFrom";
                 case TagPlyCount: return "PlyCount";
                 case TagEnding: return "Ending";
+                case TagEvent: return "Event";
+                case TagSite: return "Site";
             }
             return "";
         }
@@ -551,6 +557,12 @@ namespace SiggiChessBoard {
             else if (text == "0-1") winner = ChessRules.Black;
             else if (text != "1/2-1/2") return false;
             return true;
+        }
+
+        // An Event or Site tag's value as the game keeps it (step 14.13): "?" (unknown, as WriteTags writes an empty
+        // one) is "", so writing it again gives "?" once more.
+        public static string _KnownTag(string value) {
+            return value == null || value == "?" ? "" : value;
         }
 
         // The mode a Variant tag gives (docs/modes.md): ChessGame.ModeChess960 for "Chess960", otherwise Standard.

@@ -437,7 +437,8 @@ namespace SiggiChessBoard {
         }
 
         // The index-th game's PGN as a board that loaded it would write it (ChessBoard.GamePgn): the tags from what
-        // the archive holds (the Event and Site from the arbiter), with sans and clocks, the first count of them.
+        // the archive holds (the Event and Site it was played with, step 14.13, not the arbiter's now), with sans and
+        // clocks, the first count of them.
         public string _WritePgn(int index, string[] sans, int[] clocks, int count) {
             string fen = archive.StartFenAt(index);
             if (fen.Length == 0) fen = ChessFen.StartFen;
@@ -451,10 +452,8 @@ namespace SiggiChessBoard {
             } else {
                 number = 1;
             }
-            ChessArbiter arbiter = archive.arbiter;
-            bool hasArbiter = Utilities.IsValid(arbiter);
             int baseTime = archive.BaseTimeAt(index);
-            return ChessPgn.WriteGame(hasArbiter ? arbiter._PgnEvent() : "", hasArbiter ? arbiter._PgnSite() : "",
+            return ChessPgn.WriteGame(archive.EventAt(index), archive.SiteAt(index),
                 archive.WhiteAt(index), archive.BlackAt(index), archive.EndingAt(index), archive.WinnerAt(index),
                 archive.ModeAt(index), fen, ChessBoard._PgnBaseSeconds(baseTime),
                 baseTime < 1 ? 0 : archive.IncrementAt(index), archive.GameIdAt(index), archive.ContinuedFromAt(index),

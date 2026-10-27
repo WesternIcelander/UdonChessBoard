@@ -48,6 +48,8 @@ public class ArchiveTest : ChessTest {
     string[] savedWhites;
     string[] savedBlacks;
     string[] savedFens;
+    string[] savedEvents;
+    string[] savedSites;
     int[] savedInfos;
     int[] savedOffsets;
     int[] savedMoves;
@@ -92,6 +94,7 @@ public class ArchiveTest : ChessTest {
         if (hasWall) RunWallBoardChecks();
         if (hasWall) RunLoadChecks();
         if (hasWall) RunPersonalChecks();
+        if (hasWall) RunPgnTagChecks();
         RunAddChecks();
         if (hasWall) RunWallAddChecks();
         RunWrapChecks();
@@ -212,11 +215,11 @@ public class ArchiveTest : ChessTest {
         CheckInt(archive.GameCount(), 7, "duplicate: still 7 games");
         CheckSends(0, 0, "duplicate: nothing sent");
         int[] moves = new int[4];
-        Check(!archive._AddGame("", "", "W", "B", 0, 0, 0, "", -1, 0, moves, moves, 2, ""), "refused: no game ID",
-            "accepted");
-        Check(!archive._AddGame("bad-1", "", "W", "B", 0, 0, 0, "", -1, 0, moves, moves, 0, ""), "refused: no moves",
-            "accepted");
-        Check(!archive._AddGame("bad-2", "", "W", "B", 0, 0, 0, "", -1, 0, moves, moves, 5, ""),
+        Check(!archive._AddGame("", "", "W", "B", 0, 0, 0, "", -1, 0, moves, moves, 2, "", "", ""),
+            "refused: no game ID", "accepted");
+        Check(!archive._AddGame("bad-1", "", "W", "B", 0, 0, 0, "", -1, 0, moves, moves, 0, "", "", ""),
+            "refused: no moves", "accepted");
+        Check(!archive._AddGame("bad-2", "", "W", "B", 0, 0, 0, "", -1, 0, moves, moves, 5, "", "", ""),
             "refused: more moves than given", "accepted");
         CheckInt(archive.GameCount(), 7, "refused: still 7 games");
     }
@@ -258,8 +261,9 @@ public class ArchiveTest : ChessTest {
             "the recent games differ");
         SaveSends();
         Check(archive._StoreRecent("rec-1", "", "R W", "R B", 0, 0, 0, "", -1, 0, new int[] { 11, 12 },
-            new int[] { 1, 2 }, 2), "recent: rec-1 stored", "refused");
-        archive._StoreRecent("rec-2", "x/1", "R W", "R B", 0, 0, 0, "", -1, 0, new int[] { 21 }, new int[] { 3 }, 1);
+            new int[] { 1, 2 }, 2, "Rec Event", "Rec Site"), "recent: rec-1 stored", "refused");
+        archive._StoreRecent("rec-2", "x/1", "R W", "R B", 0, 0, 0, "", -1, 0, new int[] { 21 }, new int[] { 3 }, 1, "",
+            "");
         Check(!archive.IsArchived("rec-1") && !archive.IsArchived("rec-2"), "recent: stored only (no flush)",
             "archived");
         CheckSends(0, 0, "recent: nothing sent while only stored");
@@ -267,6 +271,8 @@ public class ArchiveTest : ChessTest {
         CheckString(archive.GameIdAt(Capacity - 2), "rec-1", "flush: rec-1 second newest");
         CheckString(archive.GameIdAt(Capacity - 1), "rec-2", "flush: rec-2 newest");
         CheckString(archive.ContinuedFromAt(Capacity - 1), "x/1", "flush: rec-2's ContinuedFrom");
+        CheckString(archive.EventAt(Capacity - 2) + "/" + archive.SiteAt(Capacity - 2), "Rec Event/Rec Site",
+            "flush: rec-1's Event and Site (14.13)");
         CheckInt(archive.MoveCountAt(Capacity - 2), 2, "flush: rec-1's moves");
         archive.CopyMovesAt(Capacity - 2, scratch);
         Check(scratch[0] == 11 && scratch[1] == 12, "flush: rec-1's moves read back", "differ");
@@ -294,6 +300,10 @@ public class ArchiveTest : ChessTest {
         holder.syncedGameIds = new string[GameArchiveHolder.Capacity];
         holder._ReceiveState();
         CheckString(archive.GameIdAt(0), "test-6", "sync: an update with a null string ignored");
+        holder._PackState();
+        holder.syncedEvents = new string[GameArchiveHolder.Capacity];
+        holder._ReceiveState();
+        CheckString(archive.EventAt(0), "Event 6", "sync: an update with a null Event ignored (14.13)");
         CheckTestGame(0, 6);
 
         GameArchiveHolder recent = archive.recent;
@@ -323,7 +333,7 @@ public class ArchiveTest : ChessTest {
             for (int s = 0; s < GameArchiveHolder.Capacity; s++) {
                 int k = h * GameArchiveHolder.Capacity + s;
                 archive.holders[h]._WriteSlot(s, 1001 + k, "other-" + k, "", "Other W", "Other B", 0, 0,
-                    ChessRules.NoColor, "", ChessArbiter.NoClock, 0, one, one, 1);
+                    ChessRules.NoColor, "", ChessArbiter.NoClock, 0, one, one, 1, "", "");
             }
             archive._OnHolderChanged();
         }
@@ -340,12 +350,12 @@ public class ArchiveTest : ChessTest {
         Check(noneWaiting, "overwritten: none waiting", "one is");
 
         // A game stored and never seen archived still waits and goes in; one already archived when stored doesn't.
-        archive._StoreRecent("rec-3", "", "R W", "R B", 0, 0, 0, "", -1, 0, one, one, 1);
+        archive._StoreRecent("rec-3", "", "R W", "R B", 0, 0, 0, "", -1, 0, one, one, 1, "", "");
         Check(archive._IsRecentWaiting(recent._SlotOf("rec-3")), "overwritten: rec-3 stored, waiting", "not waiting");
         CheckInt(archive._Flush(), 1, "overwritten: rec-3 archived");
         CheckString(archive.GameIdAt(Capacity - 1), "rec-3", "overwritten: rec-3 newest");
         Check(!archive._IsRecentWaiting(recent._SlotOf("rec-3")), "overwritten: rec-3 no longer waiting", "waiting");
-        archive._StoreRecent("other-49", "", "Other W", "Other B", 0, 0, 0, "", -1, 0, one, one, 1);
+        archive._StoreRecent("other-49", "", "Other W", "Other B", 0, 0, 0, "", -1, 0, one, one, 1, "", "");
         Check(!archive._IsRecentWaiting(recent._SlotOf("other-49")), 
             "overwritten: an archived game stored, not waiting", "waiting");
         CheckInt(archive._Flush(), 0, "overwritten: nothing more to add");
@@ -360,6 +370,8 @@ public class ArchiveTest : ChessTest {
         savedWhites = new string[savedCount];
         savedBlacks = new string[savedCount];
         savedFens = new string[savedCount];
+        savedEvents = new string[savedCount];
+        savedSites = new string[savedCount];
         savedInfos = new int[savedCount * InfoLength];
         savedOffsets = new int[savedCount + 1];
         for (int i = 0; i < savedCount; i++) savedOffsets[i + 1] = savedOffsets[i] + archive.MoveCountAt(i);
@@ -371,6 +383,8 @@ public class ArchiveTest : ChessTest {
             savedWhites[i] = archive.WhiteAt(i);
             savedBlacks[i] = archive.BlackAt(i);
             savedFens[i] = archive.StartFenAt(i);
+            savedEvents[i] = archive.EventAt(i);
+            savedSites[i] = archive.SiteAt(i);
             int at = i * InfoLength;
             savedInfos[at] = archive.ModeAt(i);
             savedInfos[at + 1] = archive.EndingAt(i);
@@ -400,12 +414,13 @@ public class ArchiveTest : ChessTest {
             int at = i * InfoLength;
             archive._AddGame(savedIds[i], savedContinuedFroms[i], savedWhites[i], savedBlacks[i], savedInfos[at],
                 savedInfos[at + 1], savedInfos[at + 2], savedFens[i], savedInfos[at + 3], savedInfos[at + 4], moves,
-                clocks, count, "");
+                clocks, count, "", savedEvents[i], savedSites[i]);
         }
         CheckInt(archive.GameCount(), savedCount, "end: the games archived before the checks put back");
         for (int i = 0; i < savedCount && i < archive.GameCount(); i++) {
             if (archive.GameIdAt(i) != savedIds[i] || archive.WhiteAt(i) != savedWhites[i]
-                || archive.MoveCountAt(i) != savedOffsets[i + 1] - savedOffsets[i]) {
+                || archive.MoveCountAt(i) != savedOffsets[i + 1] - savedOffsets[i]
+                || archive.EventAt(i) != savedEvents[i] || archive.SiteAt(i) != savedSites[i]) {
                 same = false;
             }
         }
@@ -1021,6 +1036,161 @@ public class ArchiveTest : ChessTest {
         if (hasUI) ui._UpdateButtons();
     }
 
+    // ---- The PGN Event and Site kept with each game (step 14.13) ----
+
+    const string TagGame = "20261013100000-000013";
+    // With a " and a \, written escaped.
+    const string EscapedEvent = "Tag \"Event\" 2 \\";
+    const string EscapedEventLine = "[Event \"Tag \\\"Event\\\" 2 \\\\\"]\n";
+
+    // A game in progress follows the arbiter's Event and Site as they change; once ended it keeps them, on the board,
+    // in both archives (the personal one read back from PlayerData too), in both walls' exports and in a reload from
+    // either archive, whatever the arbiter says afterwards. A pasted PGN keeps its own tags ("?" without them), and a
+    // loaded game continued takes the arbiter's. The arbiter's tags are set locally and put back; the personal
+    // archive runs on its test keys.
+    void RunPgnTagChecks() {
+        if (!BoardUsesArchive() || !Utilities.IsValid(personal) || !Utilities.IsValid(personalWall)
+            || !Utilities.IsValid(board.importer)) {
+            Check(false, "tags: board, archives, walls and importer assigned", "one is missing");
+            return;
+        }
+        ChessArbiter arbiter = board.arbiter;
+        string savedEvent = arbiter.pgnEvent;
+        string savedSite = arbiter.pgnSite;
+        int savedCapacity = personal.capacity;
+        string savedPrefix = personal.keyPrefix;
+        personal.capacity = PersonalCapacity;
+        personal.keyPrefix = PersonalTestPrefix;
+        personal._Forget();
+        personal._Restore();
+        personal._ClearSaved();
+        arbiter._ClearSelection();
+        string me = ChessUtil._LocalName("");
+
+        // In progress: the arbiter's now, a change reaching it at once.
+        arbiter.SetPgnEvent("Tag Event 1");
+        arbiter.SetPgnSite("Tag Site 1");
+        board._ClearState();
+        board.JoinAs(ChessRules.White, me);
+        board.JoinAs(ChessRules.Black, "Tag Opp");
+        board.StartGameAs(me);
+        board.gameId = TagGame;
+        board.PieceDroppedAs(me, Sq("f2"), Sq("f3"));
+        CheckTags(board.GamePgn(), "[Event \"Tag Event 1\"]\n", "Tag Site 1", "tags: in progress, the arbiter's");
+        arbiter.SetPgnEvent(EscapedEvent);
+        CheckTags(board.GamePgn(), EscapedEventLine, "Tag Site 1", "tags: changed mid-game, the game's PGN follows");
+        CheckString(board.gameEvent + "|" + board.gameSite, "|", "tags: in progress, none kept yet");
+        board.PieceDroppedAs("Tag Opp", Sq("e7"), Sq("e5"));
+        board.PieceDroppedAs(me, Sq("g2"), Sq("g4"));
+        board.PieceDroppedAs("Tag Opp", Sq("d8"), Sq("h4"));
+        CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "tags: the fool's mate ended");
+        string logged = board.lastLoggedPgn;
+        CheckTags(logged, EscapedEventLine, "Tag Site 1", "tags: logged with the values as it ended");
+        CheckString(board.gameEvent + "|" + board.gameSite, EscapedEvent + "|Tag Site 1", "tags: kept by the board");
+
+        // Synced with the ended state: a receiver gets them.
+        board._PackState();
+        CheckString(board.syncedGameEvent + "|" + board.syncedGameSite, EscapedEvent + "|Tag Site 1",
+            "tags: sent with the ended state");
+        board.gameEvent = "";
+        board.gameSite = "";
+        board._ReceiveState();
+        CheckString(board.gameEvent + "|" + board.gameSite, EscapedEvent + "|Tag Site 1", "tags: received");
+
+        // Changed afterwards: the ended game keeps its own everywhere.
+        arbiter.SetPgnEvent("Tag Event 3");
+        arbiter.SetPgnSite("Tag Site 3");
+        CheckString(board.GamePgn(), logged, "tags: changed after the end, the board's PGN unchanged");
+        int index = archive.IndexOf(TagGame);
+        int mine = personal.IndexOf(TagGame);
+        Check(index >= 0 && mine >= 0, "tags: archived in both archives", "instance " + index + ", personal " + mine);
+        if (index < 0 || mine < 0) {
+            EndPgnTagChecks(savedEvent, savedSite, savedCapacity, savedPrefix);
+            return;
+        }
+        CheckString(archive.EventAt(index) + "|" + archive.SiteAt(index), EscapedEvent + "|Tag Site 1",
+            "tags: the instance archive's");
+        CheckString(personal.EventAt(mine) + "|" + personal.SiteAt(mine), EscapedEvent + "|Tag Site 1",
+            "tags: the personal archive's");
+        board._ClearState();
+        wall._RefreshIfChanged();
+        arbiter._SelectGame(archive, TagGame);
+        RunExportChecks(wall, TagGame, logged, true, "tags: export (instance)");
+        arbiter._SelectGame(personal, TagGame);
+        RunExportChecks(personalWall, TagGame, logged, false, "tags: export (personal)");
+        arbiter._ClearSelection();
+
+        // Reloaded from either archive: the game's own, not the arbiter's.
+        CheckInt(board.LoadArchivedGameFrom(archive, TagGame), ChessBoard.InputAccepted, "tags: loaded (instance)");
+        CheckTags(board.GamePgn(), EscapedEventLine, "Tag Site 1", "tags: loaded from the instance archive");
+        board._ClearState();
+        CheckInt(board.LoadArchivedGameFrom(personal, TagGame), ChessBoard.InputAccepted, "tags: loaded (personal)");
+        CheckTags(board.GamePgn(), EscapedEventLine, "Tag Site 1", "tags: loaded from the personal archive");
+        board._ClearState();
+        personal._Forget();
+        personal._Restore();
+        mine = personal.IndexOf(TagGame);
+        CheckString(mine < 0 ? "none" : personal.EventAt(mine) + "|" + personal.SiteAt(mine),
+            EscapedEvent + "|Tag Site 1", "tags: the personal archive's read back from PlayerData");
+        arbiter._SelectGame(personal, TagGame);
+        CheckInt(board.LoadSelectedGame(), ChessBoard.InputAccepted, "tags: the personal game's import started");
+        board.importer._ImportFor(float.MaxValue);
+        board._ImportFinished();
+        CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "tags: the personal game imported");
+        CheckTags(board.GamePgn(), EscapedEventLine, "Tag Site 1", "tags: imported from the personal archive");
+
+        // A pasted PGN keeps its own tags; one without them writes "?", not this instance's.
+        board._ClearState();
+        CheckTags(Import("[Event \"Pasted Event\"]\n[Site \"Pasted Site\"]\n\n1. e4 e5 *\n"),
+            "[Event \"Pasted Event\"]\n", "Pasted Site", "tags: a pasted PGN's own");
+        CheckString(board.gameEvent + "|" + board.gameSite, "Pasted Event|Pasted Site", "tags: a pasted PGN's kept");
+        board._ClearState();
+        CheckTags(Import("1. e4 e5 *\n"), "[Event \"?\"]\n", "?", "tags: a pasted PGN without them");
+        board._ClearState();
+        CheckTags(Import("[Event \"?\"]\n[Site \"?\"]\n\n1. e4 *\n"), "[Event \"?\"]\n", "?",
+            "tags: a pasted PGN's ? read as none");
+        CheckString(board.gameEvent + "|" + board.gameSite, "|", "tags: ? kept as none");
+
+        // Continued: a new game here, with this instance's.
+        board._ClearState();
+        Import("[Event \"Pasted Event\"]\n[Site \"Pasted Site\"]\n\n1. e4 e5 *\n");
+        board.JoinAs(ChessRules.White, "Tag Ana");
+        board.JoinAs(ChessRules.Black, "Tag Bob");
+        CheckInt(board.ContinueGameAs("Tag Ana"), ChessBoard.InputAccepted, "tags: the pasted game continued");
+        CheckTags(board.GamePgn(), "[Event \"Tag Event 3\"]\n", "Tag Site 3", "tags: continued, the arbiter's");
+        CheckString(board.gameEvent + "|" + board.gameSite, "|", "tags: continued, none kept");
+
+        EndPgnTagChecks(savedEvent, savedSite, savedCapacity, savedPrefix);
+    }
+
+    // The arbiter's tags, the personal archive's keys and the board put back.
+    void EndPgnTagChecks(string savedEvent, string savedSite, int savedCapacity, string savedPrefix) {
+        board._ClearState();
+        board.arbiter._ClearSelection();
+        board.arbiter.pgnEvent = savedEvent;
+        board.arbiter.pgnSite = savedSite;
+        personal._ClearSaved();
+        personal.capacity = savedCapacity;
+        personal.keyPrefix = savedPrefix;
+        personal._Forget();
+        personal._Restore();
+        if (Utilities.IsValid(ui) && ui.board == board) ui._UpdateButtons();
+    }
+
+    // Imports text onto the reset board at once, and returns the board's PGN once loaded ("" if it wasn't).
+    string Import(string text) {
+        if (board._StartImportAs("", text) != ChessBoard.InputAccepted) return "";
+        board.importer._ImportFor(float.MaxValue);
+        board._ImportFinished();
+        return board.lifecycle == ChessBoard.LifecycleLoaded ? board.GamePgn() : "";
+    }
+
+    // pgn's Event line is eventLine and its Site tag site.
+    void CheckTags(string pgn, string eventLine, string site, string name) {
+        Check(pgn.StartsWith(eventLine + "[Site \"" + site + "\"]\n"), name,
+            "expected " + eventLine.Trim() + " [Site \"" + site + "\"], PGN:\n" + pgn);
+    }
+
     // Plays a game on the board between white and black with the Game ID id: the moves ("e2e4 e7e5", alternately
     // White's and Black's), then, unless they ended it, resigns for resigner (a ChessRules colour), or resets it
     // unfinished for NoColor. Returns the PGN the board logged ("" if none), and leaves the board reset.
@@ -1124,7 +1294,7 @@ public class ArchiveTest : ChessTest {
         }
         return archive._AddGame("test-" + n, n % 3 == 0 ? "prev-" + n + "/4" : "", "White " + n, "Black " + n, n % 2,
             n % 11, n % 3 - 1 < 0 ? ChessRules.NoColor : n % 2, "fen " + n, n % 4 == 0 ? ChessArbiter.NoClock : n * 10,
-            n % 5, moves, clocks, count, "");
+            n % 5, moves, clocks, count, "", "Event " + n, n % 2 == 0 ? "" : "Site " + n);
     }
 
     void CheckTestGame(int index, int n) {
@@ -1139,6 +1309,8 @@ public class ArchiveTest : ChessTest {
         CheckInt(archive.WinnerAt(index), n % 3 - 1 < 0 ? ChessRules.NoColor : n % 2, name + "winner");
         CheckInt(archive.BaseTimeAt(index), n % 4 == 0 ? ChessArbiter.NoClock : n * 10, name + "base time");
         CheckInt(archive.IncrementAt(index), n % 5, name + "increment");
+        CheckString(archive.EventAt(index), "Event " + n, name + "Event");
+        CheckString(archive.SiteAt(index), n % 2 == 0 ? "" : "Site " + n, name + "Site");
         int count = n % 7 + 1;
         CheckInt(archive.MoveCountAt(index), count, name + "move count");
         if (archive.MoveCountAt(index) != count) return;

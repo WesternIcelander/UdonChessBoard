@@ -58,13 +58,20 @@ namespace SiggiChessBoard {
         [Tooltip("How many boards can have their own overrides: board numbers 0 to this minus 1.")]
         public int boardCount = 4;
 
-        // The PGN Event and Site tags of every board's games and of games exported from a history wall (docs/pgn.md,
-        // Export tags); empty is written "?". Read with _PgnEvent and _PgnSite.
+        // The PGN Event and Site tags of the games played here (docs/pgn.md, Export tags); empty is written "?". The
+        // Inspector values are the instance's starting values; since step 14.13 they're synced with the settings and
+        // changed in-world by organizers (SetPgnEvent, SetPgnSite, from the settings menu). Each game keeps the values
+        // it ended with (ChessBoard.gameEvent). Read with _PgnEvent and _PgnSite; never null.
         [Header("PGN")]
-        [Tooltip("The PGN Event tag of games played in this world. Empty is written \"?\".")]
-        public string pgnEvent = "";
-        [Tooltip("The PGN Site tag of games played in this world. Empty is written \"?\".")]
-        public string pgnSite = "VRChat";
+        [Tooltip("The PGN Event tag of games played in this world, until an organizer changes it in the settings "
+            + "menu. Empty is written \"?\".")]
+        [UdonSynced] public string pgnEvent = "";
+        [Tooltip("The PGN Site tag of games played in this world, until an organizer changes it in the settings "
+            + "menu. Empty is written \"?\".")]
+        [UdonSynced] public string pgnSite = "VRChat";
+        // The longest Event or Site an organizer can set (SetPgnEvent, SetPgnSite; the menu's fields too), in UTF-16
+        // units.
+        public const int PgnTagMaxLength = 100;
 
         // ---- Instance defaults, set in the editor ----
         // Read once on Start into the synced defaults below; changing them afterwards does nothing.
@@ -165,6 +172,9 @@ namespace SiggiChessBoard {
             for (int i = 0; i < archives.Length; i++) {
                 if (Utilities.IsValid(archives[i])) archives[i]._SetArbiter(this);
             }
+            // Synced strings must never be null.
+            if (pgnEvent == null) pgnEvent = "";
+            if (pgnSite == null) pgnSite = "";
             if (received) return;
             defaultSettings = _EditorSettings();
             defaultNumbers = _EditorNumbers();
@@ -263,13 +273,45 @@ namespace SiggiChessBoard {
             return Utilities.IsValid(selectedArchive) && selectedGameId.Length > 0;
         }
 
-        // The PGN Event and Site tags (pgnEvent, pgnSite), for the boards' games and a history wall's export.
+        // The PGN Event and Site tags now (pgnEvent, pgnSite), for the games in progress on the boards; never null.
         public string _PgnEvent() {
-            return pgnEvent;
+            return pgnEvent == null ? "" : pgnEvent;
         }
 
         public string _PgnSite() {
-            return pgnSite;
+            return pgnSite == null ? "" : pgnSite;
+        }
+
+        // Sets the PGN Event tag of the games played from now on and of those in progress (step 14.13), cleaned up
+        // (_CleanPgnTag). Like the other setters it only changes this client's copy: an organizer's change wraps it in
+        // BeginChange and EndChange. Returns whether the value changed.
+        public bool SetPgnEvent(string text) {
+            string value = _CleanPgnTag(text);
+            if (value == _PgnEvent()) return false;
+            pgnEvent = value;
+            SettingsChanged();
+            return true;
+        }
+
+        // SetPgnEvent for the Site tag.
+        public bool SetPgnSite(string text) {
+            string value = _CleanPgnTag(text);
+            if (value == _PgnSite()) return false;
+            pgnSite = value;
+            SettingsChanged();
+            return true;
+        }
+
+        // An Event or Site as it's kept: trimmed, and cut to PgnTagMaxLength without splitting a surrogate pair. Null
+        // gives "". Escaping is the PGN writer's (ChessPgn._EscapeTagValue).
+        public static string _CleanPgnTag(string text) {
+            if (text == null) return "";
+            string value = text.Trim();
+            if (value.Length <= PgnTagMaxLength) return value;
+            int length = PgnTagMaxLength;
+            char last = value[length - 1];
+            if (last >= '\uD800' && last <= '\uDBFF') length--;
+            return value.Substring(0, length).TrimEnd();
         }
 
         // ---- Piece sets (step 13.6, docs/customizing.md) ----

@@ -30,14 +30,18 @@ namespace SiggiChessBoard {
 
         // ---- Games ----
         // Each slot's place in the archive's order (from 1; 0 for an empty slot), its game's ID, ContinuedFrom, players
-        // and starting FEN ("" or null for none), its numbers (InfoLength per slot), and the slots' moves and clocks
-        // back to back. All zeros and nulls is every slot empty.
+        // and starting FEN ("" or null for none), the PGN Event and Site it was played with (step 14.13, "" for none),
+        // its numbers (InfoLength per slot), and the slots' moves and clocks back to back. All zeros and
+        // nulls (or "") is every slot empty.
         [NonSerialized] public int[] sequences = new int[Capacity];
         [NonSerialized] public string[] gameIds = new string[Capacity];
         [NonSerialized] public string[] continuedFroms = new string[Capacity];
         [NonSerialized] public string[] whites = new string[Capacity];
         [NonSerialized] public string[] blacks = new string[Capacity];
         [NonSerialized] public string[] startFens = new string[Capacity];
+        // "" in every slot, not null (Capacity of them).
+        [NonSerialized] public string[] events = { "", "", "", "", "" };
+        [NonSerialized] public string[] sites = { "", "", "", "", "" };
         [NonSerialized] public int[] infos = new int[Capacity * InfoLength];
         [NonSerialized] public int[] moves = new int[0];
         [NonSerialized] public int[] clocks = new int[0];
@@ -52,6 +56,8 @@ namespace SiggiChessBoard {
         [UdonSynced] [NonSerialized] public string[] syncedWhites = new string[0];
         [UdonSynced] [NonSerialized] public string[] syncedBlacks = new string[0];
         [UdonSynced] [NonSerialized] public string[] syncedStartFens = new string[0];
+        [UdonSynced] [NonSerialized] public string[] syncedEvents = new string[0];
+        [UdonSynced] [NonSerialized] public string[] syncedSites = new string[0];
         [UdonSynced] [NonSerialized] public int[] syncedInfos = new int[0];
         [UdonSynced] [NonSerialized] public int[] syncedMoves = new int[0];
         [UdonSynced] [NonSerialized] public int[] syncedClocks = new int[0];
@@ -105,11 +111,11 @@ namespace SiggiChessBoard {
         }
 
         // Puts a game in slot, replacing what was there: its sequence (its place in the archive's order), the first
-        // count of gameMoves and gameClocks, and the rest as InstanceGameArchive._AddGame takes them. null strings are kept as
-        // "". Nothing is sent (Send).
+        // count of gameMoves and gameClocks, and the rest as InstanceGameArchive._AddGame takes them. null strings are
+        // kept as "". Nothing is sent (Send).
         public void _WriteSlot(int slot, int sequence, string gameId, string continuedFrom, string white, string black,
             int mode, int ending, int winner, string startFen, int baseTime, int increment, int[] gameMoves,
-            int[] gameClocks, int count) {
+            int[] gameClocks, int count, string eventName, string site) {
             int offset = _MoveOffset(slot);
             int oldCount = _MoveCount(slot);
             int total = moves.Length - oldCount + count;
@@ -131,6 +137,8 @@ namespace SiggiChessBoard {
             whites[slot] = white == null ? "" : white;
             blacks[slot] = black == null ? "" : black;
             startFens[slot] = startFen == null ? "" : startFen;
+            events[slot] = eventName == null ? "" : eventName;
+            sites[slot] = site == null ? "" : site;
             int info = slot * InfoLength;
             infos[info + InfoMode] = mode;
             infos[info + InfoEnding] = ending;
@@ -148,6 +156,8 @@ namespace SiggiChessBoard {
             whites = new string[Capacity];
             blacks = new string[Capacity];
             startFens = new string[Capacity];
+            events = EmptyStrings();
+            sites = EmptyStrings();
             infos = new int[Capacity * InfoLength];
             moves = new int[0];
             clocks = new int[0];
@@ -201,6 +211,8 @@ namespace SiggiChessBoard {
             syncedWhites = PackStrings(whites);
             syncedBlacks = PackStrings(blacks);
             syncedStartFens = PackStrings(startFens);
+            syncedEvents = PackStrings(events);
+            syncedSites = PackStrings(sites);
             syncedInfos = infos;
             syncedMoves = moves;
             syncedClocks = clocks;
@@ -216,6 +228,8 @@ namespace SiggiChessBoard {
             whites = CopyStrings(syncedWhites);
             blacks = CopyStrings(syncedBlacks);
             startFens = CopyStrings(syncedStartFens);
+            events = CopyStrings(syncedEvents);
+            sites = CopyStrings(syncedSites);
             infos = CopyInts(syncedInfos);
             moves = CopyInts(syncedMoves);
             clocks = CopyInts(syncedClocks);
@@ -228,7 +242,7 @@ namespace SiggiChessBoard {
             if (syncedSequences == null || syncedSequences.Length != Capacity) return false;
             if (!IsValidStrings(syncedGameIds) || !IsValidStrings(syncedContinuedFroms)
                 || !IsValidStrings(syncedWhites) || !IsValidStrings(syncedBlacks)
-                || !IsValidStrings(syncedStartFens)) {
+                || !IsValidStrings(syncedStartFens) || !IsValidStrings(syncedEvents) || !IsValidStrings(syncedSites)) {
                 return false;
             }
             if (syncedInfos == null || syncedInfos.Length != Capacity * InfoLength) return false;
@@ -248,6 +262,13 @@ namespace SiggiChessBoard {
                 if (values[i] == null) return false;
             }
             return true;
+        }
+
+        // Capacity empty strings.
+        static string[] EmptyStrings() {
+            string[] values = new string[Capacity];
+            for (int i = 0; i < Capacity; i++) values[i] = "";
+            return values;
         }
 
         // A copy of values with "" for each null.

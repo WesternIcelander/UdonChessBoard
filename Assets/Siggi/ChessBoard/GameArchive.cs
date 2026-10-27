@@ -59,6 +59,15 @@ namespace SiggiChessBoard {
             return "";
         }
 
+        // The PGN Event and Site tags the game was played with (step 14.13), "" for none (written "?").
+        public virtual string EventAt(int index) {
+            return "";
+        }
+
+        public virtual string SiteAt(int index) {
+            return "";
+        }
+
         // ChessGame.Mode*.
         public virtual int ModeAt(int index) {
             return ChessGame.ModeStandard;
@@ -124,10 +133,11 @@ namespace SiggiChessBoard {
         // arbiter): its Game ID, ContinuedFrom ("" for none), players, mode (ChessGame.Mode*), ending
         // (ChessGame.Ending*) and winner (ChessRules colour, NoColor for none), starting FEN, time control (seconds,
         // base ChessArbiter.NoClock for no clock), the first count of its moves (packed) and clocks (milliseconds, -1
-        // unknown), and the PGN the board logged. Each kind keeps what it wants; returns whether it kept the game.
+        // unknown), the PGN the board logged, and the PGN Event and Site tags it was played with (step 14.13, "" for
+        // none). Each kind keeps what it wants; returns whether it kept the game.
         public virtual bool _AddGame(string gameId, string continuedFrom, string white, string black, int mode,
             int ending, int winner, string startFen, int baseTime, int increment, int[] moves, int[] clocks, int count,
-            string pgn) {
+            string pgn, string eventName, string site) {
             return false;
         }
 
