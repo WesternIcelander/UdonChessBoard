@@ -27,7 +27,10 @@ using VRC.Udon;
 // view) and move list, not grabbable, pointed at two placed boards; the Movable 2D Chess Board View, its view a nested
 // 2D Chess Board View, its grip and corner pickups, Synced ticked on an instance giving the grip a VRCObjectSync as an
 // added component and unticked taking it away, a change to the fixed prefab reaching it (undone); and the open
-// scene's 2D views instances of them, Board2DTest on a movable one. Every prefab: nothing it uses is under Assets/Tests/.
+// scene's 2D views instances of them, Board2DTest on a movable one. 14.9: the Chess Table, its board, view and UI
+// nested instances of their prefabs (the view and UI 0.8 m above the board, on it), two placed and wired by hand, a
+// change to the view prefab reaching it (undone), and the open scene's boards each in a table with its view and UI.
+// Every prefab: nothing it uses is under Assets/Tests/.
 // Logs "[PrefabTest] PASS: <check>" or "[PrefabTest] FAIL: <check>: <details>" per check, then a summary line.
 public static class PrefabTest {
     const string PieceSetPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Pieces.prefab";
@@ -42,6 +45,7 @@ public static class PrefabTest {
     const string MenuPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Settings Menu.prefab";
     const string View2DPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/2D Chess Board View.prefab";
     const string Movable2DPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Movable 2D Chess Board View.prefab";
+    const string TablePrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Table.prefab";
 
     static int passed;
     static int failed;
@@ -74,9 +78,12 @@ public static class PrefabTest {
         Check(view2DPrefab != null, "the 2D Chess Board View prefab at " + View2DPrefabPath, "missing");
         GameObject movable2DPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(Movable2DPrefabPath);
         Check(movable2DPrefab != null, "the Movable 2D Chess Board View prefab at " + Movable2DPrefabPath, "missing");
+        GameObject tablePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(TablePrefabPath);
+        Check(tablePrefab != null, "the Chess Table prefab at " + TablePrefabPath, "missing");
         if (setPrefab == null || arbiterPrefab == null || boardPrefab == null || viewPrefab == null
             || uiPrefab == null || archivePrefab == null || personalPrefab == null || wallPrefab == null
-            || personalWallPrefab == null || menuPrefab == null || view2DPrefab == null || movable2DPrefab == null) {
+            || personalWallPrefab == null || menuPrefab == null || view2DPrefab == null || movable2DPrefab == null
+            || tablePrefab == null) {
             Summary();
             return;
         }
@@ -87,6 +94,7 @@ public static class PrefabTest {
             CheckBoard(boardPrefab, scene);
             CheckView(viewPrefab, boardPrefab, scene);
             CheckUI(uiPrefab, boardPrefab, scene);
+            CheckTable(tablePrefab, boardPrefab, viewPrefab, uiPrefab, arbiterPrefab, scene);
             CheckArchive(archivePrefab, arbiterPrefab, scene);
             CheckPersonalArchive(personalPrefab, arbiterPrefab, scene);
             CheckWall(wallPrefab, archivePrefab, false, scene);
@@ -100,6 +108,7 @@ public static class PrefabTest {
         CheckSceneBoards(boardPrefab);
         CheckSceneViews(viewPrefab);
         CheckSceneUIs(uiPrefab);
+        CheckSceneTables();
         CheckSceneArchive(archivePrefab);
         CheckScenePersonalArchive(personalPrefab);
         CheckSceneWalls(wallPrefab, personalWallPrefab);
@@ -108,7 +117,7 @@ public static class PrefabTest {
         foreach (string path in new[] {
             PieceSetPrefabPath, ArbiterPrefabPath, BoardPrefabPath, ViewPrefabPath, UIPrefabPath, ArchivePrefabPath,
             PersonalPrefabPath, WallPrefabPath, PersonalWallPrefabPath, MenuPrefabPath,
-            View2DPrefabPath, Movable2DPrefabPath,
+            View2DPrefabPath, Movable2DPrefabPath, TablePrefabPath,
         }) {
             CheckNoTests(path);
             CheckSyncMethods(path);
@@ -570,6 +579,145 @@ public static class PrefabTest {
                 }
             }
             CheckIntValue(own, ui.buttons.Length, name + "'s buttons are its own, calling it");
+        }
+    }
+
+    // ---- 14.9: Chess Table ----
+
+    static void CheckTable(GameObject tablePrefab, GameObject boardPrefab, GameObject viewPrefab, GameObject uiPrefab,
+            GameObject arbiterPrefab, Scene scene) {
+        List<string> logged = new List<string>();
+        Application.LogCallback listener = (text, stack, type) => logged.Add(type + ": " + text);
+        Application.logMessageReceived += listener;
+        GameObject first;
+        GameObject second;
+        try {
+            first = (GameObject)PrefabUtility.InstantiatePrefab(tablePrefab, scene);
+            second = (GameObject)PrefabUtility.InstantiatePrefab(tablePrefab, scene);
+        } finally {
+            Application.logMessageReceived -= listener;
+        }
+        Check(logged.Count == 0, "the Chess Table placed logs nothing", string.Join("; ", logged));
+        Check(first.GetComponents<Component>().Length == 1, "the table's root holds nothing but its transform",
+            first.GetComponents<Component>().Length + " components");
+        ChessBoard[] boards = first.GetComponentsInChildren<ChessBoard>(true);
+        ChessBoardView[] views = first.GetComponentsInChildren<ChessBoardView>(true);
+        ChessBoardUI[] uis = first.GetComponentsInChildren<ChessBoardUI>(true);
+        Check(boards.Length == 1 && views.Length == 1 && uis.Length == 1, "the table has one board, view and UI",
+            boards.Length + ", " + views.Length + ", " + uis.Length);
+        if (boards.Length != 1 || views.Length != 1 || uis.Length != 1) return;
+        ChessBoard board = boards[0];
+        ChessBoardView view = views[0];
+        ChessBoardUI ui = uis[0];
+        string nested = NestedProblem(board.gameObject, first, boardPrefab, Vector3.zero)
+            + NestedProblem(view.gameObject, first, viewPrefab, new Vector3(0, 0.8f, 0))
+            + NestedProblem(ui.gameObject, first, uiPrefab, new Vector3(0, 0.8f, 0));
+        Check(nested == "", "the table's board (on the floor), view and UI (0.8 m up) are its children, nested "
+            + "instances of their prefabs", nested);
+        Check(view.board == board && ui.board == board, "the table's view and UI are on its board", "they aren't");
+        Check(board.arbiter == null, "the table's arbiter is left to set", "on " + board.arbiter);
+        CheckIntValue(board.boardNumber, 0, "the table's board number is 0");
+        CheckIntValue(board.listeners != null ? board.listeners.Length : -1, 0, "the table's board has no listeners");
+        Check(board.importer != null && board.importer.transform.parent == board.transform,
+            "the table's board has its own importer", board.importer == null ? "empty" : "on " + board.importer.name);
+        Check(view.i18n == null && ui.i18n == null, "the table's view's and UI's I18n are left for the sanity check",
+            "set");
+        Check(view.LocalSpaceProblem() == "", "the table's view's objects are in its local space",
+            view.LocalSpaceProblem());
+        ChessBoard prefabBoard = tablePrefab.GetComponentInChildren<ChessBoard>(true);
+        Check(prefabBoard != null && tablePrefab.GetComponentInChildren<ChessBoardView>(true).board == prefabBoard
+            && tablePrefab.GetComponentInChildren<ChessBoardUI>(true).board == prefabBoard,
+            "the table prefab's view and UI are on its own board", "they aren't");
+
+        // Its two fields set by hand, as a world creator would: the first table's arbiter, the second's number 1 and
+        // the same arbiter. Each keeps its own board, view and UI.
+        ChessArbiter arbiter = ((GameObject)PrefabUtility.InstantiatePrefab(arbiterPrefab, scene))
+            .GetComponent<ChessArbiter>();
+        ChessBoard other = second.GetComponentInChildren<ChessBoard>(true);
+        SerializedObject fields = new SerializedObject(board);
+        fields.FindProperty("arbiter").objectReferenceValue = arbiter;
+        fields.ApplyModifiedProperties();
+        fields = new SerializedObject(other);
+        fields.FindProperty("arbiter").objectReferenceValue = arbiter;
+        fields.FindProperty("boardNumber").intValue = 1;
+        fields.ApplyModifiedProperties();
+        Check(board.arbiter == arbiter && other.arbiter == arbiter && board.boardNumber == 0 && other.boardNumber == 1,
+            "two placed tables wired by hand: both on the arbiter, numbers 0 and 1",
+            board.boardNumber + ", " + other.boardNumber);
+        Check(second.GetComponentInChildren<ChessBoardView>(true).board == other
+            && second.GetComponentInChildren<ChessBoardUI>(true).board == other && other.importer != board.importer,
+            "two placed tables: each view and UI on its own table's board, each board with its own importer",
+            "shared");
+        Check(prefabBoard != null && prefabBoard.arbiter == null && prefabBoard.boardNumber == 0,
+            "two placed tables: the prefab's board is unchanged", "it changed");
+
+        // A change to the Chess Board View prefab (its player blocker moved up, then back) reaches the table prefab's
+        // view and a placed table's.
+        const string Blocker = "Player Blocker";
+        Vector3 shift = new Vector3(0, 0.1f, 0);
+        GameObject contents = PrefabUtility.LoadPrefabContents(ViewPrefabPath);
+        Transform prefabBlocker = contents.transform.Find(Blocker);
+        Vector3 original = prefabBlocker != null ? prefabBlocker.localPosition : Vector3.zero;
+        bool changed = false;
+        try {
+            Check(prefabBlocker != null, "the Chess Board View prefab has its " + Blocker, "none");
+            if (prefabBlocker != null) {
+                prefabBlocker.localPosition = original + shift;
+                PrefabUtility.SaveAsPrefabAsset(contents, ViewPrefabPath);
+                changed = true;
+                ChessBoardView reloaded = AssetDatabase.LoadAssetAtPath<GameObject>(TablePrefabPath)
+                    .GetComponentInChildren<ChessBoardView>(true);
+                Transform nestedBlocker = reloaded != null ? reloaded.transform.Find(Blocker) : null;
+                Transform placedBlocker = view.transform.Find(Blocker);
+                Check(nestedBlocker != null && nestedBlocker.localPosition == original + shift,
+                    "a change to the Chess Board View prefab reaches the table prefab's view",
+                    nestedBlocker == null ? "no blocker" : nestedBlocker.localPosition.ToString("F2"));
+                Check(placedBlocker != null && placedBlocker.localPosition == original + shift,
+                    "a change to the Chess Board View prefab reaches a placed table's view",
+                    placedBlocker == null ? "no blocker" : placedBlocker.localPosition.ToString("F2"));
+            }
+        } finally {
+            if (changed) {
+                prefabBlocker.localPosition = original;
+                PrefabUtility.SaveAsPrefabAsset(contents, ViewPrefabPath);
+            }
+            PrefabUtility.UnloadPrefabContents(contents);
+        }
+        Transform restored = viewPrefab.transform.Find(Blocker);
+        Check(restored != null && restored.localPosition == original, "the Chess Board View prefab is put back",
+            restored == null ? "no blocker" : restored.localPosition.ToString("F2"));
+        Object.DestroyImmediate(first);
+        Object.DestroyImmediate(second);
+        Object.DestroyImmediate(arbiter.gameObject);
+    }
+
+    // What's wrong with part as table's nested instance of prefab at position (local, unturned, unscaled), or "".
+    static string NestedProblem(GameObject part, GameObject table, GameObject prefab, Vector3 position) {
+        string name = " " + part.name;
+        if (part.transform.parent != table.transform) return name + " isn't the table's child;";
+        if (!PrefabUtility.IsAnyPrefabInstanceRoot(part)
+            || PrefabUtility.GetCorrespondingObjectFromOriginalSource(part) != prefab) {
+            return name + " isn't a nested " + prefab.name + ";";
+        }
+        if ((part.transform.localPosition - position).sqrMagnitude > 1e-8f
+            || part.transform.localRotation != Quaternion.identity || part.transform.localScale != Vector3.one) {
+            return name + " at " + part.transform.localPosition.ToString("F3") + ";";
+        }
+        return "";
+    }
+
+    // The open scene's boards (the test scene's) are each in a Chess Table instance with the view and UI on it.
+    static void CheckSceneTables() {
+        ChessBoard[] boards = Object.FindObjectsOfType<ChessBoard>(true);
+        foreach (ChessBoard board in boards) {
+            string name = "the scene's " + board.gameObject.name + " (board " + board.boardNumber + ")";
+            GameObject table = ChessBoardViewBuilder.TableOf(board);
+            Check(table != null, name + " is in a Chess Table instance", "it isn't");
+            if (table == null) continue;
+            ChessBoardView[] views = table.GetComponentsInChildren<ChessBoardView>(true);
+            ChessBoardUI[] uis = table.GetComponentsInChildren<ChessBoardUI>(true);
+            Check(views.Length == 1 && views[0].board == board && uis.Length == 1 && uis[0].board == board,
+                name + "'s table holds its view and UI, on it", views.Length + " view(s), " + uis.Length + " UI(s)");
         }
     }
 

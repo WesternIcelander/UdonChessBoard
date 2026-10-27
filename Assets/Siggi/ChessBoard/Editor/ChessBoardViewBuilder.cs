@@ -30,8 +30,10 @@ using static ChessBuilderUtil;
 // can be replaced there. The piece models come from the ChessPieceSets on the board's arbiter (steps 12.3, 12.10 and
 // 13.6): the default, Chess Pieces, is a prefab made from the generated meshes and nested in the Chess Arbiter prefab
 // (step 14.1, EnsureArbiterPrefabs, also on its own menu item Tools > Chess Board > Update Arbiter Prefabs), and the
-// scene's arbiter is moved onto it (EnsureDefaultPieceSet). Menu: Tools > Chess Board > Create Board View. Plain
-// editor C#, not Udon.
+// scene's arbiter is moved onto it (EnsureDefaultPieceSet). Menu: Tools > Chess Board > Create Board View. Also the
+// Chess Table prefab (step 14.9, BuildTable): the board, view and UI prefabs nested in one, wired to each other;
+// Tools > Chess Board > Create Chess Table places one, and Update Table Prefab makes the scene's boards (with their
+// views and UIs) instances of it. Plain editor C#, not Udon.
 public static class ChessBoardViewBuilder {
     const string ViewScriptPath = "Assets/Siggi/ChessBoard/ChessBoardView.cs";
     const string ViewProgramPath = "Assets/Siggi/ChessBoard/ChessBoardView.asset";
@@ -198,6 +200,178 @@ public static class ChessBoardViewBuilder {
         AddUISounds(root, ui);
         UdonSharpEditorUtility.CopyProxyToUdon(ui);
         return root;
+    }
+
+    // ---- The Chess Table prefab (step 14.9, docs/prefabs.md) ----
+
+    const string TablePrefabName = "Chess Table";
+    const string TablePrefabPath = PrefabsFolder + "/" + TablePrefabName + ".prefab";
+
+    // A playable board in one drag: an instance of the Chess Table prefab with the next board number and the scene's
+    // arbiter (as Create Board picks them), beside the board with the highest number (or its table).
+    [MenuItem("Tools/Chess Board/Create Chess Table")]
+    static void CreateTable() {
+        string prefabNote;
+        if (!EnsureTablePrefabs("Create Chess Table", out prefabNote)) return;
+        ChessArbiter arbiter;
+        ChessBoard last;
+        int number = ChessBoardBuilder.NextBoard(out arbiter, out last);
+        GameObject root = (GameObject)PrefabUtility.InstantiatePrefab(
+            AssetDatabase.LoadAssetAtPath<GameObject>(TablePrefabPath));
+        Undo.RegisterCreatedObjectUndo(root, "Create Chess Table");
+        root.name = TablePrefabName + " " + (number + 1);
+        if (last != null) {
+            Transform beside = TableOf(last) != null ? TableOf(last).transform : last.transform;
+            root.transform.SetParent(beside.parent, false);
+            root.transform.SetSiblingIndex(beside.GetSiblingIndex() + 1);
+            root.transform.SetPositionAndRotation(beside.position + new Vector3(ChessBoardBuilder.Spacing, 0, 0),
+                beside.rotation);
+            PrefabUtility.RecordPrefabInstancePropertyModifications(root.transform);
+        }
+        ChessBoard board = root.GetComponentInChildren<ChessBoard>(true);
+        board.arbiter = arbiter;
+        board.boardNumber = number;
+        RecordInstance(board);
+        // The view's and the UI's text comes from the shared Chess Language (PLAN.md 13.5), as for Create Board View.
+        EnsureChessLanguage(root.scene);
+        EditorSceneManager.MarkSceneDirty(root.scene);
+        Selection.activeGameObject = root;
+        Debug.Log("[ChessBoardViewBuilder] Created " + root.name + " (board " + number + ", arbiter "
+            + (arbiter != null ? arbiter.gameObject.name : "none") + prefabNote + "). Move it where you like and save "
+            + "the scene.");
+    }
+
+    // Makes the Chess Table prefab when it's missing, and otherwise saves it again in place; and makes the scene's
+    // boards that aren't in a table (each with its view and UI) Chess Table instances (ReplaceWithTable).
+    [MenuItem("Tools/Chess Board/Update Table Prefab")]
+    static void UpdateTablePrefab() {
+        string note;
+        if (!EnsureTablePrefabs("Update Table Prefab", out note)) return;
+        foreach (ChessBoard board in Object.FindObjectsOfType<ChessBoard>(true)) {
+            if (TableOf(board) == null) note += ReplaceWithTable(board);
+        }
+        Debug.Log("[ChessBoardViewBuilder] Table prefab: " + (note.Length > 0 ? note.Substring(2) : "unchanged"));
+    }
+
+    // Makes or saves the board, view and UI prefabs, then the table's that nests them (BuildTable). False when a
+    // program asset was missing (EnsureProgramAssets); note is for the log ("" when every prefab was there).
+    static bool EnsureTablePrefabs(string menuItem, out string note) {
+        note = "";
+        if (!ChessBoardBuilder.EnsureBoardProgramAssets(menuItem) || !EnsureViewProgramAssets(menuItem)) return false;
+        note = ChessBoardBuilder.EnsureBoardPrefab()
+            + EnsureViewPrefab(PieceMeshes(), WhitePiecesMaterial(), BlackPiecesMaterial(), GhostMaterialAsset())
+            + EnsureUIPrefab() + EnsurePrefab(TablePrefabPath, TablePrefabName, BuildTable);
+        return true;
+    }
+
+    // The table (a prefab's contents): its root on the floor holding nested instances of the Chess Board prefab at its
+    // origin and of the Chess Board View and Chess Board UI prefabs TableHeight above it (their origin is the playing
+    // surface), the view's and the UI's board the nested board. No arbiter or board number: a prefab can't point into
+    // a scene, and each table needs its own number.
+    static GameObject BuildTable() {
+        GameObject root = new GameObject(TablePrefabName);
+        ChessBoard board = NestPrefab(ChessBoardBuilder.BoardPrefabPath, root.transform, Vector3.zero)
+            .GetComponent<ChessBoard>();
+        Vector3 surface = new Vector3(0, TableHeight, 0);
+        ChessBoardView view = NestPrefab(ViewPrefabPath, root.transform, surface).GetComponent<ChessBoardView>();
+        ChessBoardUI ui = NestPrefab(UIPrefabPath, root.transform, surface).GetComponent<ChessBoardUI>();
+        view.board = board;
+        RecordInstance(view);
+        ui.board = board;
+        RecordInstance(ui);
+        return root;
+    }
+
+    // An instance of the prefab at path as parent's child, at position (local), unturned.
+    static GameObject NestPrefab(string path, Transform parent, Vector3 position) {
+        GameObject placed = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(path));
+        placed.transform.SetParent(parent, false);
+        placed.transform.localPosition = position;
+        placed.transform.localRotation = Quaternion.identity;
+        return placed;
+    }
+
+    // The Chess Table instance board is in, or null.
+    public static GameObject TableOf(ChessBoard board) {
+        GameObject outer = PrefabUtility.GetOutermostPrefabInstanceRoot(board.gameObject);
+        return outer != null && outer != board.gameObject
+            && PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(outer) == TablePrefabPath ? outer : null;
+    }
+
+    // Replaces old (a placed Chess Board) and its view and UI (instances of their prefabs, beside each other) by a
+    // Chess Table instance where old stands, named after its number: its board taking old's arbiter, number and
+    // listeners, its view and UI old's view's and UI's places (overrides when they differ from the table's). Whatever
+    // pointed at old, its importer, view or UI points at the table's. A board whose view or UI isn't a plain instance
+    // (objects or components added or removed, e.g. a world creator's own model) is left as it is, as the note says:
+    // the table would lose them. Returns a note for the log.
+    static string ReplaceWithTable(ChessBoard old) {
+        GameObject oldViewObject = ExistingFor<ChessBoardView>(old, existing => existing.board);
+        ChessBoardView oldView = oldViewObject != null ? oldViewObject.GetComponent<ChessBoardView>() : null;
+        ChessBoardUI oldUi = ExistingUI(old, null);
+        string problem = PlainInstanceProblem(old.gameObject, ChessBoardBuilder.BoardPrefabPath, "board")
+            + PlainInstanceProblem(oldViewObject, ViewPrefabPath, "view")
+            + PlainInstanceProblem(oldUi != null ? oldUi.gameObject : null, UIPrefabPath, "UI");
+        if (problem.Length > 0) return ", " + old.gameObject.name + " left as it is:" + problem.TrimEnd(';');
+
+        string oldName = old.gameObject.name;
+        GameObject root = (GameObject)PrefabUtility.InstantiatePrefab(
+            AssetDatabase.LoadAssetAtPath<GameObject>(TablePrefabPath));
+        Undo.RegisterCreatedObjectUndo(root, "Update Table Prefab");
+        root.name = TablePrefabName + " " + (old.boardNumber + 1);
+        Transform rootTransform = root.transform;
+        rootTransform.SetParent(old.transform.parent, false);
+        rootTransform.SetSiblingIndex(old.transform.GetSiblingIndex());
+        rootTransform.SetPositionAndRotation(old.transform.position, old.transform.rotation);
+        PrefabUtility.RecordPrefabInstancePropertyModifications(rootTransform);
+
+        ChessBoard board = root.GetComponentInChildren<ChessBoard>(true);
+        ChessBoardView view = root.GetComponentInChildren<ChessBoardView>(true);
+        ChessBoardUI ui = root.GetComponentInChildren<ChessBoardUI>(true);
+        board.arbiter = old.arbiter;
+        board.boardNumber = old.boardNumber;
+        List<ChessBoardListener> listeners = new List<ChessBoardListener>();
+        foreach (ChessBoardListener listener in old.listeners ?? new ChessBoardListener[0]) {
+            if (listener != null && listener != oldView && listener != oldUi) listeners.Add(listener);
+        }
+        board.listeners = listeners.ToArray();
+        RecordInstance(board);
+        PlaceLike(view.transform, oldView.transform);
+        PlaceLike(ui.transform, oldUi.transform);
+
+        int repointed = RepointReferences(oldView, view) + RepointReferences(oldUi, ui);
+        Undo.DestroyObjectImmediate(oldViewObject);
+        Undo.DestroyObjectImmediate(oldUi.gameObject);
+        if (old.importer != null) repointed += RepointReferences(old.importer, board.importer);
+        repointed += RepointReferences(old, board);
+        Undo.DestroyObjectImmediate(old.gameObject);
+        EditorSceneManager.MarkSceneDirty(root.scene);
+        return ", " + oldName + " and its view and UI replaced by " + root.name + " (" + repointed
+            + " behaviour(s) pointed at it)";
+    }
+
+    // Why placed (one of the scene's chess objects, the what) can't be swapped for its part of a table: missing, not
+    // an instance of the prefab at path, or with objects or components added or removed. "" when it can.
+    static string PlainInstanceProblem(GameObject placed, string path, string what) {
+        if (placed == null) return " no " + what + ";";
+        if (!PrefabUtility.IsAnyPrefabInstanceRoot(placed)
+            || PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(placed) != path) {
+            return " its " + what + " isn't an instance of " + path + ";";
+        }
+        if (PrefabUtility.GetAddedGameObjects(placed).Count > 0 || PrefabUtility.GetRemovedGameObjects(placed).Count > 0
+            || PrefabUtility.GetAddedComponents(placed).Count > 0
+            || PrefabUtility.GetRemovedComponents(placed).Count > 0) {
+            return " its " + what + " has objects or components added or removed;";
+        }
+        return "";
+    }
+
+    // Puts part (a table's view or UI) where like stands in the world, at its size, recorded as overrides.
+    static void PlaceLike(Transform part, Transform like) {
+        part.SetPositionAndRotation(like.position, like.rotation);
+        Vector3 scale = like.lossyScale;
+        Vector3 parentScale = part.parent.lossyScale;
+        part.localScale = new Vector3(scale.x / parentScale.x, scale.y / parentScale.y, scale.z / parentScale.z);
+        PrefabUtility.RecordPrefabInstancePropertyModifications(part);
     }
 
     static bool EnsureViewProgramAssets(string menuItem) {

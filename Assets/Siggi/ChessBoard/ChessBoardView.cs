@@ -11,7 +11,8 @@ namespace SiggiChessBoard {
     // animations, the promotion ghosts, the player blocker and the move sounds. The buttons, the status display, the
     // PGN box and the other sounds are the UI's (ChessBoardUI, step 12.1), which this view doesn't know. Holds no game
     // state and no synced fields; it reads the board after each change. Part of the Chess Board View prefab
-    // (Prefabs/Chess Board View.prefab, docs/prefabs.md), which holds every object it uses.
+    // (Prefabs/Chess Board View.prefab, docs/prefabs.md), which holds every object it uses, nested with its board and UI
+    // in the Chess Table prefab.
     //
     // The view's local space: the playing surface at y = 0, files a to h along +x, ranks 1 to 8 along +z (White at
     // -z), the board's centre at the origin. Everything is placed in it, so the view can be scaled as a whole, and

@@ -8,7 +8,7 @@ Until step 14.13 the **Tools > Chess Board** builders make each prefab when it's
 
 Every chess prefab shares one `I18n`, the **Chess Language** prefab (step 14.10), placed once per scene as a sibling or on a parent of the chess objects, so the `I18n` sanity check links them to it ([architecture](architecture.md), languages).
 
-**The minimum a world needs:** one **Chess Arbiter**, and per board a **Chess Board** wired to it with a **Chess Board View** and a **Chess Board UI** on it (the UI holds the buttons: without it, nobody can join or start a game). Add one **Game Archive** per world to keep finished games (for the history wall and **Load it here**), listed in the arbiter's **Archives**; without one, games are only logged. A **Game History Wall** on it lists those games for players to pick, export and load. The **Personal Game Archive** and the **Personal History Wall** on it keep and show each player's own games across visits. A **Chess Settings Menu** on the arbiter lets organizers change the settings in-world. A **2D Chess Board View** (or the **Movable 2D Chess Board View**) on the boards lets spectators watch them from afar.
+**The minimum a world needs:** one **Chess Arbiter**, and per board a **Chess Table** wired to it (or, placed one by one, a **Chess Board** with a **Chess Board View** and a **Chess Board UI** on it; the UI holds the buttons: without it, nobody can join or start a game). Add one **Game Archive** per world to keep finished games (for the history wall and **Load it here**), listed in the arbiter's **Archives**; without one, games are only logged. A **Game History Wall** on it lists those games for players to pick, export and load. The **Personal Game Archive** and the **Personal History Wall** on it keep and show each player's own games across visits. A **Chess Settings Menu** on the arbiter lets organizers change the settings in-world. A **2D Chess Board View** (or the **Movable 2D Chess Board View**) on the boards lets spectators watch them from afar.
 
 ## Chess Pieces
 
@@ -52,7 +52,7 @@ The PGN Event and Site tags of its games are the arbiter's (the board's own fiel
 
 `Prefabs/Chess Board View.prefab` (step 14.3): the physical board, a `ChessBoardView` ([physical pieces](physical-pieces.md), [player input](player-input.md)) with everything it places: the placeholder **Table**, **Board** and **Squares**, the **Player Blocker**, the 32 **Pieces** (each a `VRCPickup` with a `ChessPiece`), the 64 **Square Targets** for desktop clicks, the **Highlights** (last move, check lines, legal targets), the **Promotion Ghosts**, the **Captured Places** and its **Sounds**. Its meshes and materials are the generated ones in `Models/`; its pieces wear the arbiter's piece sets once the game starts ([customizing](customizing.md#chess-piece-sets-steps-123-1210-and-136)), so the view holds no set of its own. It has no buttons or status display: those are the board's UI (step 14.4).
 
-Its origin is the board's centre on the playing surface, with files along +x and White's end at −z; the table reaches 0.8 m down from there, so raise a placed view 0.8 m above the floor (step 14.9's Chess Table does that for you).
+Its origin is the board's centre on the playing surface, with files along +x and White's end at −z; the table reaches 0.8 m down from there, so raise a placed view 0.8 m above the floor (the [Chess Table](#chess-table) does that for you).
 
 Place one per board. After placing it, set:
 
@@ -73,6 +73,22 @@ Place one per board. After placing it, set:
 - **I18n**: nothing. The `I18n` sanity check fills it from the Chess Language on build and before Play Mode.
 
 **Clock Bases** and **Clock Increments** are the time controls the Clock button steps through. A world that wants its own UI can leave this prefab out and write a `ChessBoardListener` of its own; the view works without it.
+
+## Chess Table
+
+`Prefabs/Chess Table.prefab` (step 14.9): a playable board in one drag. Its root, **Chess Table**, holds nothing itself; its children are nested instances of the three prefabs above, already wired to each other:
+
+- **Chess Board** at the root's origin;
+- **Chess Board View** and **Chess Board UI** 0.8 m above it, their origin on the playing surface (so the table stands on the floor where the root is), both with **Board** set to the table's own Chess Board.
+
+Since they're nested instances, a later change to the board, view or UI prefab reaches every table. Drop it onto the ground, as many as you need (one per board). After placing it, set on its **Chess Board** child:
+
+- **Arbiter**: the scene's **Chess Arbiter**.
+- **Board Number**: 0 for the first table, 1 for the next, and so on (as for [Chess Board](#chess-board)).
+
+Nothing else: the view and UI add themselves to the board's listeners, the archives are on the arbiter, "Load it here" uses the arbiter's pick, and the `I18n` fields are the sanity check's. Customize the view on the table as on a placed view ([customizing](customizing.md#the-board-model-and-scale-step-122)): the changes are overrides on the table instance. Step 14.11 will fill in the arbiter and board numbers by itself.
+
+The table is a plain object holding the three, not a variant of the Chess Board prefab, so the board, view and UI stay siblings, as they are when placed one by one, and each is reached the same way whichever was used.
 
 ## Game Archive
 

@@ -9,6 +9,8 @@ namespace SiggiChessBoard {
     // input here. Its state fields are the synced fields of docs/networking.md: each change made here takes ownership
     // and sends them, packed into the synced* fields (_PackState), and a client receiving them unpacks them
     // (_ReceiveState) and tells its listeners.
+    // Placed from the Chess Board prefab (docs/prefabs.md), on its own or nested with its view and UI in the Chess
+    // Table prefab.
     [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
     public class ChessBoard : UdonSharpBehaviour {
         // Lifecycle states (docs/board-lifecycle.md).

@@ -12,7 +12,8 @@ namespace SiggiChessBoard {
     // listener of its own, holding no game state and no synced fields: it reads the board after each change and acts
     // through the board's methods, never through the physical board (ChessBoardView), which it doesn't know. It plays
     // every sound but the move sounds (step 12.12), so a UI of a world's own replaces them all with it. Placed from
-    // the Chess Board UI prefab (step 14.4, docs/prefabs.md), its board set on the instance.
+    // the Chess Board UI prefab (step 14.4, docs/prefabs.md), its board set on the instance; the Chess Table prefab
+    // (step 14.9) nests it with its board and view, already on that board.
     //
     // Its local space is the view's: it stands at the board's centre, files along +x, White's end at -z, so the PGN box
     // (and _LocalEnd) need nothing from the table. The prefab places its parts around that origin.

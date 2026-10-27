@@ -18,35 +18,18 @@ public static class ChessBoardBuilder {
     const string BoardProgramPath = "Assets/Siggi/ChessBoard/ChessBoard.asset";
     const string ImporterScriptPath = "Assets/Siggi/ChessBoard/ChessPgnImporter.cs";
     const string ImporterProgramPath = "Assets/Siggi/ChessBoard/ChessPgnImporter.asset";
-    const string BoardPrefabPath = PrefabsFolder + "/Chess Board.prefab";
+    internal const string BoardPrefabPath = PrefabsFolder + "/Chess Board.prefab";
     const string ImporterName = "ChessPgnImporter";
     // How far along x a new board stands from the last one: clear of its table and its debug view.
-    const float Spacing = 2.5f;
+    internal const float Spacing = 2.5f;
 
     [MenuItem("Tools/Chess Board/Create Board")]
     static void Create() {
-        if (!EnsureProgramAssets("Create Board", BoardScriptPath, BoardProgramPath, ImporterScriptPath,
-            ImporterProgramPath)) return;
+        if (!EnsureBoardProgramAssets("Create Board")) return;
         string prefabNote = EnsureBoardPrefab();
-        ChessBoard[] boards = Object.FindObjectsOfType<ChessBoard>(true);
-        ChessArbiter arbiter = null;
-        ChessBoard last = null;
-        int number = 0;
-        for (int i = 0; i < boards.Length; i++) {
-            if (arbiter == null) arbiter = boards[i].arbiter;
-            if (boards[i].boardNumber >= number) {
-                number = boards[i].boardNumber + 1;
-                last = boards[i];
-            }
-        }
-        if (arbiter == null) {
-            ChessArbiter[] arbiters = Object.FindObjectsOfType<ChessArbiter>(true);
-            if (arbiters.Length > 0) arbiter = arbiters[0];
-        }
-        if (arbiter != null && number >= arbiter.boardCount) {
-            Debug.LogWarning("[ChessBoardBuilder] Board number " + number + " has no per-board overrides: the arbiter's "
-                + "Board Count is " + arbiter.boardCount + ". Raise it to give the new board its own.");
-        }
+        ChessArbiter arbiter;
+        ChessBoard last;
+        int number = NextBoard(out arbiter, out last);
 
         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(BoardPrefabPath);
         GameObject root = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
@@ -70,10 +53,39 @@ public static class ChessBoardBuilder {
             + "Chess Board > Create Board View and Create Debug View, then save the scene.");
     }
 
+    internal static bool EnsureBoardProgramAssets(string menuItem) {
+        return EnsureProgramAssets(menuItem, BoardScriptPath, BoardProgramPath, ImporterScriptPath, ImporterProgramPath);
+    }
+
+    // The number a new board takes (one past the highest in the scene), the scene's arbiter (the first board's, or the
+    // scene's first) and the board with the highest number (null when there's none), which a new board stands beside.
+    // Warns when the number has no per-board overrides on the arbiter.
+    internal static int NextBoard(out ChessArbiter arbiter, out ChessBoard last) {
+        ChessBoard[] boards = Object.FindObjectsOfType<ChessBoard>(true);
+        arbiter = null;
+        last = null;
+        int number = 0;
+        for (int i = 0; i < boards.Length; i++) {
+            if (arbiter == null) arbiter = boards[i].arbiter;
+            if (boards[i].boardNumber >= number) {
+                number = boards[i].boardNumber + 1;
+                last = boards[i];
+            }
+        }
+        if (arbiter == null) {
+            ChessArbiter[] arbiters = Object.FindObjectsOfType<ChessArbiter>(true);
+            if (arbiters.Length > 0) arbiter = arbiters[0];
+        }
+        if (arbiter != null && number >= arbiter.boardCount) {
+            Debug.LogWarning("[ChessBoardBuilder] Board number " + number + " has no per-board overrides: the arbiter's "
+                + "Board Count is " + arbiter.boardCount + ". Raise it to give the new board its own.");
+        }
+        return number;
+    }
+
     [MenuItem("Tools/Chess Board/Update Board Prefab")]
     static void UpdateBoardPrefab() {
-        if (!EnsureProgramAssets("Update Board Prefab", BoardScriptPath, BoardProgramPath, ImporterScriptPath,
-            ImporterProgramPath)) return;
+        if (!EnsureBoardProgramAssets("Update Board Prefab")) return;
         string note = EnsureBoardPrefab();
         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(BoardPrefabPath);
         foreach (ChessBoard board in Object.FindObjectsOfType<ChessBoard>(true)) {
@@ -86,7 +98,7 @@ public static class ChessBoardBuilder {
     // (a prefab can't point into a scene), and a ChessPgnImporter child as its importer. Otherwise adds the importer
     // if the prefab lacks one, keeping everything already there (rule 1 of docs/compatibility.md). Returns a note for
     // the log ("" when nothing changed).
-    static string EnsureBoardPrefab() {
+    internal static string EnsureBoardPrefab() {
         string note = "";
         EnsurePrefabsFolder();
         if (AssetDatabase.LoadAssetAtPath<GameObject>(BoardPrefabPath) == null) {
