@@ -52,8 +52,8 @@ Each board is split into behaviours that never reach into each other's domain.
   - `Checks(checkers, kings)`: the checks in the position shown, for the check lines (step 12.7); `FallenKingSquare()`: the king checkmated, or the resigning side's, in the position shown, for the falling king (step 12.8).
   - `LegalMovesFrom(square, moves)`: the game's legal moves from a square (for the legal-target highlights), none unless a game is in progress, not in replay and the side to move's flag hasn't fallen.
   - `ResultText()`: `1-0`, `0-1`, `1/2-1/2` or `*`.
-  - `MayTouchPieces()` (and `MayTouchPiecesAs`, `PlayerMayTouchPieces`): whether the local player may touch the pieces, for `pickupable` and the pieces' ownership check (step 9.2, [Physical pieces](physical-pieces.md#pickups-step-92)).
-  - `CanPickUp(square)` (and `CanPickUpAs(name, organizer, square)`): whether `PiecePickedUp` would accept the pickup, without touching the board or telling anyone, for desktop mode's clickable pieces (step 9.3c, [Desktop mode](player-input.md#desktop-mode-step-93c)).
+  - `MayTouchPieces()` (and `MayTouchPiecesAs`, `PlayerMayTouchPieces`): whether the local player may touch the pieces, for the pieces' ownership check and captured pieces' `pickupable` in replay (step 9.2, [Physical pieces](physical-pieces.md#pickups-step-92)).
+  - `CanPickUp(square)` (and `CanPickUpAs(name, organizer, square)`): whether `PiecePickedUp` would accept the pickup, without touching the board or telling anyone, for desktop mode's clickable pieces (step 9.3c, [Desktop mode](player-input.md#desktop-mode-step-93c)) and the pieces' `pickupable` (step 14.14); `_CanPickUpColor(color)` (`_CanPickUpColorAs`) gives the same answer for any piece of a colour on a square, so the view asks once per side.
 
 **Benefits:** the logical board can be driven entirely by test behaviours with no world objects (see [Testing](testing.md)), and the world presentation can be redesigned without touching the rules.
 

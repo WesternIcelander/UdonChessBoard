@@ -1207,6 +1207,9 @@ namespace SiggiChessBoard {
         public void _UpdateClickables() {
             bool clicks = !_UsesPickups() && Utilities.IsValid(board) && promotionObject == NoObject;
             bool capturedClicks = clicks && shownReplay && board.MayTouchPieces();
+            // As for the pickups, CanPickUp asked once per side.
+            bool white = clicks && board._CanPickUpColor(ChessRules.White);
+            bool black = clicks && board._CanPickUpColor(ChessRules.Black);
             for (int obj = 0; obj < PieceCount; obj++) {
                 ChessPiece behaviour = pieceBehaviours[obj];
                 if (!Utilities.IsValid(behaviour)) continue;
@@ -1217,7 +1220,7 @@ namespace SiggiChessBoard {
                         text = hoverPutBack;
                     } else if (PlacesOn(obj)) {
                         text = _ObjectColor(obj) == _ObjectColor(selectedObject) ? hoverCastle : hoverCapture;
-                    } else if (board.CanPickUp(square)) {
+                    } else if (_ObjectColor(obj) == ChessRules.White ? white : black) {
                         text = hoverSelect;
                     }
                 } else if (capturedClicks && CapturedLiftable(obj)) {
@@ -1279,23 +1282,30 @@ namespace SiggiChessBoard {
             return Utilities.IsValid(board) && board.PlayerMayTouchPieces(player);
         }
 
-        // Makes the pieces on the board pickups for the local player while they use pickups and may touch the pieces;
-        // pieces off the board only in replay, standing in their captured places (step 13.4: put back as free moves),
-        // and none while the promotion ghosts show. Called after every change, once a second and when a promotion
-        // starts or stops waiting.
+        // Makes a piece a pickup for the local player only where the board would let them pick it up, so VRChat
+        // highlights no other (step 14.14): while they use pickups, on a square where CanPickUp holds (the side to
+        // move's pieces for its player in a game, any piece for whoever may make free moves in replay); off the board
+        // only in replay, standing in its captured place (step 13.4: put back as free moves), while they may touch
+        // the pieces; and none while the promotion ghosts show. Called after every change, once a second and when a
+        // promotion starts or stops waiting.
         public void _UpdatePickupable() {
             nextPickupCheck = Time.time + PickupCheckInterval;
-            bool allowed = _UsesPickups() && Utilities.IsValid(board) && board.MayTouchPieces()
-                && promotionObject == NoObject;
-            // A piece the local player may no longer touch leaves their hand.
-            if (!allowed && heldObject != NoObject) {
-                LetGo();
-                dirty = true;
-            }
+            bool allowed = _UsesPickups() && Utilities.IsValid(board) && promotionObject == NoObject;
+            // CanPickUp depends only on the piece's colour, so it's asked once per side rather than per piece.
+            bool white = allowed && board._CanPickUpColor(ChessRules.White);
+            bool black = allowed && board._CanPickUpColor(ChessRules.Black);
+            bool captured = allowed && shownReplay && board.MayTouchPieces();
             for (int obj = 0; obj < PieceCount; obj++) {
                 VRCPickup pickup = piecePickups[obj];
                 if (!Utilities.IsValid(pickup)) continue;
-                bool pickupable = allowed && (objectSquare[obj] != ChessRules.NoSquare || CapturedLiftable(obj));
+                bool pickupable = objectSquare[obj] != ChessRules.NoSquare
+                    ? (_ObjectColor(obj) == ChessRules.White ? white : black)
+                    : captured && CapturedLiftable(obj);
+                // A piece the local player may no longer pick up leaves their hand.
+                if (!pickupable && obj == heldObject) {
+                    LetGo();
+                    dirty = true;
+                }
                 if (pickup.pickupable != pickupable) pickup.pickupable = pickupable;
             }
             // Desktop mode's selection and click targets depend on the same things (and on whose turn it is).

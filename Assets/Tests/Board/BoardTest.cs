@@ -6275,19 +6275,28 @@ public class BoardTest : ChessTest {
         board._ClearState();
     }
 
-    // Whether CanPickUpAs (no organizer) agrees with the pickup itself on every square for name, and allows count.
+    // Whether CanPickUpAs (no organizer) agrees with the pickup itself on every square for name, and allows count;
+    // and _CanPickUpColorAs (step 14.14) with CanPickUpAs on every square with a piece.
     void CheckPickUps(string name, int count, string label) {
         int wrong = 0;
         int allowed = 0;
         string first = "";
+        int wrongColor = 0;
+        byte[] shown = board.replayMode ? board.replayBoard : board.board;
         for (int square = 0; square < 64; square++) {
             bool can = board.CanPickUpAs(name, false, square);
+            int piece = shown[square];
+            if (piece != ChessRules.Empty
+                && board._CanPickUpColorAs(name, false, ChessRules.PieceColorOf(piece)) != can) {
+                wrongColor++;
+            }
             int result = board.replayMode ? board._ReplayPiecePickedUpAs(name, false, square)
                 : board.PiecePickedUpAs(name, square);
             if (can) allowed++;
             if (can != (result == ChessBoard.InputAccepted) && wrong++ == 0) first = ChessRules.SquareName(square);
         }
         Check(wrong == 0, label + ": agrees with the pickup on every square", wrong + " differ, first " + first);
+        CheckInt(wrongColor, 0, label + ": per colour agrees on every piece");
         CheckInt(allowed, count, label + ": " + count + " pieces");
     }
 

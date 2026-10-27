@@ -235,11 +235,11 @@ public class ViewTest : ChessTest {
         bool inVR = local.IsUserInVR();
         Check(view._UsesPickups() == inVR, "Auto: pickups exactly in VR (in VR: " + inVR + ")",
             "uses pickups: " + view._UsesPickups());
-        CheckPickupable(inVR ? 32 : 0, "Auto: a reset board");
+        CheckPickupable(0, "Auto: a reset board");
 
         view._SetInputStyle(ChessBoardView.InputPickups);
         Check(view._UsesPickups(), "Pickups: pickups", "no pickups");
-        CheckPickupable(32, "Pickups: a reset board, anyone");
+        CheckPickupable(0, "Pickups: a reset board, no one (step 14.14)");
         CheckOwnership(true, "a reset board");
 
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "Ana joined White");
@@ -260,23 +260,23 @@ public class ViewTest : ChessTest {
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "pickups game: Bob joined Black");
         CheckInt(board.StartGameAs(localName), ChessBoard.InputAccepted, "pickups game: started");
         Redraw();
-        CheckPickupable(32, "Pickups: own game");
+        // Step 14.14: only the side to move's pieces, and only for its player.
+        CheckPickupableColor(16, ChessRules.White, "Pickups: own game, White to move: White's");
         CheckOwnership(true, "own game");
         CheckInt(board.PieceDroppedAs(localName, Sq("e2"), Sq("e4")), ChessBoard.InputAccepted, "e4: played");
         Redraw();
-        CheckPickupable(32, "Pickups: own game, the other side to move");
+        CheckPickupable(0, "Pickups: own game, the other side to move");
+        CheckOwnership(true, "own game, the other side to move");
         CheckInt(board.PieceDroppedAs("Bob", Sq("d7"), Sq("d5")), ChessBoard.InputAccepted, "d5: played");
+        Redraw();
+        CheckPickupableColor(16, ChessRules.White, "Pickups: own game, White to move again");
         CheckInt(board.PieceDroppedAs(localName, Sq("e4"), Sq("d5")), ChessBoard.InputAccepted, "exd5: played");
         Redraw();
-        CheckPickupable(31, "Pickups: the captured pawn isn't a pickup");
+        CheckPickupable(0, "Pickups: exd5, Black to move");
         CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, "pickups game: resigned");
         Redraw();
-        CheckPickupable(31, "Pickups: own ended game");
+        CheckPickupable(0, "Pickups: own ended game");
         CheckOwnership(true, "own ended game");
-        view._SetInputStyle(ChessBoardView.InputClicks);
-        CheckPickupable(0, "Clicks: own ended game");
-        view._SetInputStyle(ChessBoardView.InputPickups);
-        CheckPickupable(31, "Pickups again: own ended game");
 
         board._ClearState();
         view._SetInputStyle(savedStyle);
@@ -333,11 +333,14 @@ public class ViewTest : ChessTest {
         view._OnPiecePickedUp(d2);
         CheckInt(view.heldObject, d2, "d2 picked up");
         CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, "White resigned while holding d2");
+        int ended = board.lastChange;
         Redraw();
-        CheckInt(view.heldObject, d2, "d2 still held after the game ended, its square unchanged");
+        // Step 14.14: no longer a piece the local player may pick up, so it leaves their hand.
+        CheckInt(view.heldObject, ChessBoardView.NoObject, "d2 let go once the game ended");
+        Check(!view.piecePickups[d2].pickupable, "d2 no pickup once the game ended", "a pickup");
         view.pieces[d2].localPosition = Over("d4");
         view._OnPieceDropped(d2);
-        CheckDropped(2, ChessBoard.ChangeRejected, "d2 dropped over d4 after the game ended: rejected, put back");
+        CheckDropped(2, ended, "d2's drop over d4 after the game ended: ignored, put back");
 
         // In replay: free moves, and a held piece whose square another free move takes.
         CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, "entered replay");
@@ -679,7 +682,7 @@ public class ViewTest : ChessTest {
         Redraw();
         CheckUnselected(0, "pickups, no clicks: switched to Pickups: e2 put back");
         CheckClickables("", "", "pickups, no clicks: Pickups");
-        CheckPickupable(32, "pickups, no clicks: Pickups");
+        CheckPickupableColor(16, ChessRules.White, "pickups, no clicks: Pickups: White's");
         view._OnPieceClicked(view.squareObject[Sq("e2")]);
         CheckInt(view.selectedObject, ChessBoardView.NoObject, "pickups, no clicks: a click selects nothing");
 
@@ -1281,8 +1284,9 @@ public class ViewTest : ChessTest {
         CheckGhosts(true, "e8", p + ": still waiting after the refused choice");
         ClickGhost(ChessRules.Queen, p + ": the queen clicked");
         CheckGhosts(false, "", p + ": the queen clicked");
-        CheckPickupable(3, p + ": the ghosts gone");
+        CheckPickupableColor(2, ChessRules.White, p + ": the ghosts gone, e8=Q not shown yet: White's");
         CheckDropped(1, ChessBoard.ChangeMove, p + ": e8=Q");
+        CheckPickupableColor(1, ChessRules.Black, p + ": e8=Q shown: Black's king");
         CheckInt(view.objectType[promoting], ChessRules.Queen, p + ": e8=Q: the pawn's object is a queen");
         CheckLastMove("e7", "e8", p + ": e8=Q");
 
@@ -2473,7 +2477,7 @@ public class ViewTest : ChessTest {
         StartGame(ChessGame.ModeStandard, b);
         PlayMoves("e2e4 d7d5 e4d5 d8d5", b);
         CheckPlaces("P", "P", b + ": exd5 Qxd5");
-        CheckPickupable(30, b + ": in game, not the captured pieces");
+        CheckPickupableColor(15, ChessRules.White, b + ": in game, White's on the board");
         CheckInt(board.EnterReplayAs(localName, true), ChessBoard.InputAccepted, b + ": replay");
         Redraw();
         CheckPickupableOff(32, 2, b + ": replay, the captured pieces too");
@@ -2555,7 +2559,7 @@ public class ViewTest : ChessTest {
             && !view._IsPieceClickable(PlaceObject(ChessRules.Black, 0)), b + ": left replay: captured pieces not "
             + "clickable", "clickable");
         view._SetInputStyle(ChessBoardView.InputPickups);
-        CheckPickupable(30, b + ": left replay: pickups");
+        CheckPickupableColor(15, ChessRules.White, b + ": left replay: White's on the board");
         view._SetInputStyle(savedStyle);
     }
 
@@ -4095,6 +4099,19 @@ public class ViewTest : ChessTest {
     // Whether exactly count of the pieces are pickups for the local player, all of them on the board.
     void CheckPickupable(int count, string name) {
         CheckPickupableOff(count, 0, name);
+    }
+
+    // Whether exactly count of the pieces are pickups for the local player, all of them color's on the board.
+    void CheckPickupableColor(int count, int color, string name) {
+        int pickupable = 0;
+        int ofColor = 0;
+        for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
+            if (!Utilities.IsValid(view.piecePickups[obj]) || !view.piecePickups[obj].pickupable) continue;
+            pickupable++;
+            if (view.objectSquare[obj] != ChessRules.NoSquare && view._ObjectColor(obj) == color) ofColor++;
+        }
+        Check(pickupable == count && ofColor == count, name + ": " + count + " pickupable, all of colour " + color,
+            pickupable + " pickupable, " + ofColor + " of them of colour " + color + " on the board");
     }
 
     // Whether exactly count of the pieces are pickups for the local player, off of them off the board (captured

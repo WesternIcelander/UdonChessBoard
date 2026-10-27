@@ -1698,8 +1698,9 @@ namespace SiggiChessBoard {
         // even one that changes nothing keeps the board from going idle. The *As methods take any name, for tests and
         // the debug view; in replay they don't count name as an organizer.
 
-        // Whether the local player may touch the pieces (docs/physical-pieces.md): the view makes the pieces pickups
-        // for them only while this holds, and the pieces' OnOwnershipRequest asks PlayerMayTouchPieces.
+        // Whether the local player may touch the pieces (docs/physical-pieces.md): the pieces' OnOwnershipRequest asks
+        // PlayerMayTouchPieces, and the view makes captured pieces pickups in replay only while this holds (those on
+        // squares only where CanPickUp holds, step 14.14).
         public bool MayTouchPieces() {
             return MayTouchPiecesAs(ChessUtil._LocalName(""), LocalIsOrganizer());
         }
@@ -1745,6 +1746,18 @@ namespace SiggiChessBoard {
         public bool CanPickUpAs(string name, bool organizer, int square) {
             if (replayMode) return MayPickUpInReplay(name, organizer, square);
             return MayPickUp(name, square);
+        }
+
+        public bool _CanPickUpColor(int color) {
+            return _CanPickUpColorAs(ChessUtil._LocalName(""), LocalIsOrganizer(), color);
+        }
+
+        // Whether CanPickUpAs would accept name's pickup of a piece of color standing on a square of the position
+        // shown: worked out once per side, so the view needn't ask for every piece (step 14.14: only these are
+        // pickups, and click targets in desktop mode).
+        public bool _CanPickUpColorAs(string name, bool organizer, int color) {
+            if (replayMode) return MayControlReplay(name, organizer);
+            return MayMove(name) && color == state[ChessPosition.StateSideToMove];
         }
 
         bool MayPickUp(string name, int square) {
