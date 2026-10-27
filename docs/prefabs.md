@@ -20,9 +20,9 @@ It's nested in the Chess Arbiter prefab, so a world doesn't need to place it for
 
 1. Drag **Chess Pieces** into the scene.
 2. Right-click it and choose **Prefab > Unpack Completely**. Don't make a prefab variant instead: whatever a variant doesn't override follows the package's set, so a package update could change your pieces (a Black slot you left to the fallback would take a mesh the package later gives its own default).
-3. Rename it, change its templates as [customizing](customizing.md#chess-piece-sets-steps-123-1210-and-136) says, and add it to the arbiter's **Piece Sets**.
+3. Rename it, change its templates as the [piece set guide](api/piece-sets.md) says, and add it to the arbiter's **Piece Sets**.
 
-A world's set never changes when the package updates. The full guide is step 15.5's.
+A world's set never changes when the package updates. The full guide is [Piece sets](api/piece-sets.md).
 
 ## Chess Arbiter
 
