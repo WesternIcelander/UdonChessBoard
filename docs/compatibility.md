@@ -11,6 +11,7 @@ A world that uses the package has:
 - **Prefab instances** of our prefabs (step 14), with the world creator's **overrides**: changed field values, moved or scaled objects, a replaced board model, captured-piece places moved, their own piece sets assigned. Unity stores each override against the overridden object's internal ID (its file ID inside the prefab) and the field's serialized name.
 - **References between instances** in the scene (a board to its arbiter, a view to its board, …), set by the wiring script (14.11) or by hand.
 - **Its own scripts** calling our public API: `SetPieceSet`, `ChessBoardListener` subclasses, the board's input methods and getters (step 15's API documents), and perhaps `SendCustomEvent` with our method names.
+- **Its own language packs** on its Chess Language, holding our text keys ([Text](api/text.md)), and perhaps its own scripts reading them.
 - **Asset references** to our scripts, UdonSharp program assets, meshes and materials, by the GUID in each asset's `.meta` file.
 - Possibly **unpacked** prefabs, or objects built without prefabs: no prefab link, so prefab changes don't reach them.
 
@@ -31,6 +32,7 @@ Anything that changes one of these identities, IDs, names or signatures without 
 7. **Changes that do reach every world are deliberate.** A changed default in a prefab reaches every instance that didn't override it, and a changed behaviour reaches every world. Both are allowed when they're improvements every world wants (better pieces, a bug fix), but never by accident: list them in the changelog.
 8. **Every release has a changelog entry.** `CHANGELOG.md` in the package: what changed, what reaches an existing world, and anything the world creator must do by hand (ideally nothing), with the version number.
 9. **Every release is tested against the previous one.** A test scene saved with the previous release (instances with typical overrides) is opened under the new version: it must open and wire with no error, nothing it overrode may be lost, and every Play Mode test must pass on it (step 16.1).
+10. **Text keys are never renamed or removed.** A world's language pack holds our keys ([Text](api/text.md#the-keys-are-api)); a key renamed or removed leaves its text in that pack unread, and the players fall back to English with no error. A text whose meaning changes gets a new key (the old one stays in `en.json`), and a key keeps its placeholders: a new value to show is a new key. New keys need nothing from a world: a pack without them shows them in English.
 
 ## Not a concern
 

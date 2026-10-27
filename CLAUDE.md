@@ -20,6 +20,7 @@ From the first release (PLAN 16.1) on, worlds use the package, and updating must
 - **Keep asset GUIDs:** move or rename assets only inside Unity (or with their `.meta`), never delete and recreate one worlds can reference.
 - **New required parts come with a default** (in the prefab, found at run time, or filled in by the wiring script); a world shouldn't have to set anything.
 - **Keep the public API:** names, parameters, return codes and constants stay; a changed signature gets a new method and the old one forwards to it.
+- **Keep the text keys:** a key of `en.json` is never renamed or removed, and a text whose meaning changes gets a new key ([docs/api/text.md](docs/api/text.md#the-keys-are-api)).
 - **Changed defaults and behaviour that reach every world are deliberate**, and every release has a `CHANGELOG.md` entry saying what changed, what reaches existing worlds, and anything a world must do by hand.
 - **Test every release against the previous one** (the compatibility fixture, PLAN 16.1).
 
