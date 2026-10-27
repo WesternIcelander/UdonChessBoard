@@ -62,7 +62,7 @@ MonoBehaviour:
       Data: 3|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.GameArchive, Assembly-CSharp
+      Data: SiggiChessBoard.InstanceGameArchive, Assembly-CSharp
     - Name: 
       Entry: 8
       Data: 
@@ -98,7 +98,7 @@ MonoBehaviour:
       Data: 6|UnityEngine.TooltipAttribute, UnityEngine.CoreModule
     - Name: tooltip
       Entry: 1
-      Data: The GameArchive this holder belongs to.
+      Data: The InstanceGameArchive this holder belongs to.
     - Name: 
       Entry: 8
       Data: 
