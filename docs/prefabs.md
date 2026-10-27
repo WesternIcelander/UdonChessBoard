@@ -6,9 +6,9 @@ A prefab can't reference objects in the scene, so the links between the chess ob
 
 Until step 14.13 the **Tools > Chess Board** builders make each prefab when it's missing and otherwise update it in place, keeping its objects ([compatibility](compatibility.md), rule 1). From then on the prefabs are the source, changed in place in Unity.
 
-Every chess prefab shares one `I18n`, the **Chess Language** prefab (step 14.10), placed once per scene as a sibling or on a parent of the chess objects, so the `I18n` sanity check links them to it ([architecture](architecture.md), languages).
+Every chess prefab shares one `I18n`, the [Chess Language](#chess-language) prefab (step 14.10), placed once per scene beside the chess objects (or beside one of their parents), so the `I18n` sanity check links them to it ([architecture](architecture.md#player-text-step-135)).
 
-**The minimum a world needs:** one **Chess Arbiter**, and per board a **Chess Table** wired to it (or, placed one by one, a **Chess Board** with a **Chess Board View** and a **Chess Board UI** on it; the UI holds the buttons: without it, nobody can join or start a game). Add one **Game Archive** per world to keep finished games (for the history wall and **Load it here**), listed in the arbiter's **Archives**; without one, games are only logged. A **Game History Wall** on it lists those games for players to pick, export and load. The **Personal Game Archive** and the **Personal History Wall** on it keep and show each player's own games across visits. A **Chess Settings Menu** on the arbiter lets organizers change the settings in-world. A **2D Chess Board View** (or the **Movable 2D Chess Board View**) on the boards lets spectators watch them from afar.
+**The minimum a world needs:** one **Chess Arbiter**, one **Chess Language** (without it every text shows its key), and per board a **Chess Table** wired to it (or, placed one by one, a **Chess Board** with a **Chess Board View** and a **Chess Board UI** on it; the UI holds the buttons: without it, nobody can join or start a game). Add one **Game Archive** per world to keep finished games (for the history wall and **Load it here**), listed in the arbiter's **Archives**; without one, games are only logged. A **Game History Wall** on it lists those games for players to pick, export and load. The **Personal Game Archive** and the **Personal History Wall** on it keep and show each player's own games across visits. A **Chess Settings Menu** on the arbiter lets organizers change the settings in-world. A **2D Chess Board View** (or the **Movable 2D Chess Board View**) on the boards lets spectators watch them from afar.
 
 ## Chess Pieces
 
@@ -151,6 +151,19 @@ After placing it, set the nested view's **Boards** (or **Locked Board**) and **S
 **Synced and `VRCObjectSync`:** with **Synced** on, the grip needs a `VRCObjectSync` (so everyone sees the view move), and with it off it must have none. The prefab's grip has none, as its view isn't synced; before every VRChat build, `ChessBoard2DViewSyncCheck` adds one to an instance's grip whose view is synced (an added component, an override on the instance) and removes it when Synced is turned off again, so ticking **Synced** is all a world does. Decided in 14.8: that is enough for instances, so there's no prefab variant per case. In Play Mode (ClientSim, one player) the missing component changes nothing.
 
 **Which to pick:** the fixed view for a view that stays put (one locked beside each table, a wall of games); the movable one for a view players carry around or resize.
+
+## Chess Language
+
+`Prefabs/Chess Language.prefab` (step 14.10): the chess objects' shared `I18n` ([architecture](architecture.md#player-text-step-135)), on an object of its own with no children, holding the package's language packs (`Languages/en.json` first, the fallback, then any other pack in `Languages/` by file name). It isn't **Main I18n**, so it doesn't clash with a world's own main `I18n`, which switches it with `SetLanguageGlobally`.
+
+Place one per scene. Every behaviour of ours with an **I18n** field (the board's view and UI, the history walls, the settings menu, the 2D views and the movable view's holder) leaves it empty in its prefab: the `I18n` sanity check of `io.siggi.ustools` fills it on build and before Play Mode, after asking in a dialog (answer **Yes**), with the `I18n` closest to the behaviour: one beside it (a sibling), else one beside its parent, and so on up to the scene's root objects. So put Chess Language:
+
+- **beside the chess objects**, e.g. all at the scene's root; or
+- **beside one of their parents:** at the root with the chess objects inside objects of your own (a **Chess Table**'s view and UI find it this way: nothing is beside them inside the table, so the table's own level counts).
+
+**A world `I18n` of its own at the same level is ambiguous:** two `I18n`s beside each other are equally close, so the sanity check can't pick one for the objects there and cancels the build (and Play Mode), naming that level. Group the chess objects under an empty parent of their own (e.g. **Chess**) with Chess Language beside them inside it; the world's `I18n` stays elsewhere for the world's objects, which then get theirs. Or add an `I18nLock` to an object to keep its fields as you set them by hand.
+
+**Adding or changing a language:** add a pack to the placed Chess Language's **Language Packs** (an override on the instance, after the package's), as [customizing](customizing.md#languages-step-135) says. Every board, wall, menu and 2D view uses that one Chess Language, so the pack reaches them all, and a package update that adds packs or keys still reaches the instance. Don't put your pack first: the first pack is the fallback for keys a pack leaves out.
 
 ## Sync methods
 

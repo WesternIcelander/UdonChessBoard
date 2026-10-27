@@ -242,36 +242,92 @@ public static class ChessBuilderUtil {
 
     // ---- Player text (PLAN.md 13.5) ----
 
-    // The package's language pack, and the name of the object holding the chess system's I18n.
-    public const string LanguagePackPath = "Assets/Siggi/ChessBoard/Languages/en.json";
+    // The package's language packs (en.json the fallback), and the name of the object holding the chess system's I18n,
+    // the Chess Language prefab (step 14.10, docs/prefabs.md).
+    public const string LanguagesFolder = "Assets/Siggi/ChessBoard/Languages";
+    public const string LanguagePackPath = LanguagesFolder + "/en.json";
     public const string ChessLanguageName = "Chess Language";
+    public const string LanguagePrefabPath = PrefabsFolder + "/" + ChessLanguageName + ".prefab";
 
     // The chess system's shared I18n in scene: the I18n with the package's language pack, or, when there's none, a new
-    // one on its own object (Chess Language) at the scene's root, where the I18n sanity check (I18nSanityChecks)
-    // finds it as the closest I18n of every object in the scene that has none nearer, and fills their empty I18n
-    // fields with it on build and before Play Mode (the builders leave them empty). Not main: a world's own main I18n
-    // switches it with SetLanguageGlobally.
+    // instance of the Chess Language prefab (EnsureLanguagePrefab) at the scene's root, where the I18n sanity check
+    // (I18nSanityChecks) finds it as the closest I18n of every object in the scene that has none nearer, and fills
+    // their empty I18n fields with it on build and before Play Mode (the builders leave them empty). Not main: a
+    // world's own main I18n switches it with SetLanguageGlobally.
     public static I18n EnsureChessLanguage(Scene scene) {
+        I18n[] existing = SceneChessLanguages(scene);
+        if (existing.Length > 0) return existing[0];
+        string prefabNote = EnsureLanguagePrefab();
+        GameObject languageObject = (GameObject)PrefabUtility.InstantiatePrefab(
+            AssetDatabase.LoadAssetAtPath<GameObject>(LanguagePrefabPath), scene);
+        Undo.RegisterCreatedObjectUndo(languageObject, "Create Chess Language");
+        Debug.Log("[ChessBuilderUtil] Created " + ChessLanguageName + " (the chess system's I18n) at the scene's root"
+            + prefabNote + ".");
+        return languageObject.GetComponent<I18n>();
+    }
+
+    // The I18ns in scene that hold the package's language pack (Chess Language, placed or built before 14.10).
+    static I18n[] SceneChessLanguages(Scene scene) {
         TextAsset pack = AssetDatabase.LoadAssetAtPath<TextAsset>(LanguagePackPath);
+        var found = new System.Collections.Generic.List<I18n>();
         foreach (I18n i18n in Object.FindObjectsOfType<I18n>(true)) {
             if (i18n.gameObject.scene != scene) continue;
             SerializedProperty packs = new SerializedObject(i18n).FindProperty("languagePacks");
             for (int i = 0; i < packs.arraySize; i++) {
-                if (packs.GetArrayElementAtIndex(i).objectReferenceValue == pack) return i18n;
+                if (packs.GetArrayElementAtIndex(i).objectReferenceValue != pack) continue;
+                found.Add(i18n);
+                break;
             }
         }
-        GameObject languageObject = new GameObject(ChessLanguageName);
-        Undo.RegisterCreatedObjectUndo(languageObject, "Create Chess Language");
-        SceneManager.MoveGameObjectToScene(languageObject, scene);
-        I18n created = UdonSharpUndo.AddComponent<I18n>(languageObject);
-        SerializedObject serialized = new SerializedObject(created);
+        return found.ToArray();
+    }
+
+    // ---- The Chess Language prefab (step 14.10, docs/prefabs.md) ----
+
+    // Updates the prefab and makes the open scene's Chess Language built before 14.10 an instance of it, keeping its
+    // packs (the test pack, as an override).
+    [MenuItem("Tools/Chess Board/Update Language Prefab")]
+    static void UpdateLanguagePrefab() {
+        string note = EnsureLanguagePrefab();
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(LanguagePrefabPath);
+        foreach (I18n i18n in SceneChessLanguages(SceneManager.GetActiveScene())) {
+            if (ConvertToInstance(i18n.gameObject, prefab)) note += ", " + i18n.gameObject.name + " made an instance";
+        }
+        Debug.Log("[ChessBuilderUtil] Language prefab: " + (note.Length > 0 ? note.Substring(2) : "unchanged"));
+    }
+
+    // Makes the Chess Language prefab when it's missing (BuildLanguage), and otherwise saves it again in place. Returns
+    // a note for the log ("" when it was there).
+    public static string EnsureLanguagePrefab() {
+        return EnsurePrefab(LanguagePrefabPath, ChessLanguageName, BuildLanguage);
+    }
+
+    // The Chess Language (the prefab's contents): an I18n, not main, with the package's packs (LanguagePacks).
+    static GameObject BuildLanguage() {
+        GameObject root = new GameObject(ChessLanguageName);
+        I18n i18n = UdonSharpUndo.AddComponent<I18n>(root);
+        SerializedObject serialized = new SerializedObject(i18n);
         SerializedProperty languagePacks = serialized.FindProperty("languagePacks");
-        languagePacks.arraySize = 1;
-        languagePacks.GetArrayElementAtIndex(0).objectReferenceValue = pack;
+        TextAsset[] packs = LanguagePacks();
+        languagePacks.arraySize = packs.Length;
+        for (int i = 0; i < packs.Length; i++) languagePacks.GetArrayElementAtIndex(i).objectReferenceValue = packs[i];
         serialized.ApplyModifiedProperties();
-        UdonSharpEditorUtility.CopyProxyToUdon(created);
-        Debug.Log("[ChessBuilderUtil] Created " + ChessLanguageName + " (the chess system's I18n, with " + LanguagePackPath
-            + ") at the scene's root.");
-        return created;
+        UdonSharpEditorUtility.CopyProxyToUdon(i18n);
+        return root;
+    }
+
+    // Every pack in Languages/, en.json first (the fallback for keys another pack leaves out), the rest by file name.
+    public static TextAsset[] LanguagePacks() {
+        var packs = new System.Collections.Generic.List<TextAsset> {
+            AssetDatabase.LoadAssetAtPath<TextAsset>(LanguagePackPath) };
+        string[] guids = AssetDatabase.FindAssets("t:TextAsset", new[] { LanguagesFolder });
+        var paths = new System.Collections.Generic.List<string>();
+        foreach (string guid in guids) paths.Add(AssetDatabase.GUIDToAssetPath(guid));
+        paths.Sort(System.StringComparer.Ordinal);
+        foreach (string path in paths) {
+            if (path == LanguagePackPath || !path.EndsWith(".json")) continue;
+            packs.Add(AssetDatabase.LoadAssetAtPath<TextAsset>(path));
+        }
+        return packs.ToArray();
     }
 }

@@ -11,7 +11,9 @@ using static ChessBuilderUtil;
 // (step 12.1), the scene's BoardTest to wait for, an importer of its own (a child), the two PGNs and a second piece
 // set (steps 12.3 and 13.6, a child: BuildTestPieceSet) and a third (Test Colours), both listed on the board's arbiter
 // after its own (ListTestSets), and the language packs (step 13.5): the test pack is added
-// to the Chess Language after the package's own, so English stays the fallback. An existing ViewTest is replaced.
+// to the Chess Language after the package's own, so English stays the fallback; the other boards' UIs and a world
+// I18n of its own (step 14.10, a child: BuildWorldLanguage; an I18nLock keeps the sanity check off its field). An
+// existing ViewTest is replaced.
 // Menu: Tools > Chess Board > Create View Test. Plain editor C#, not Udon.
 public static class ViewTestBuilder {
     const string TestScriptPath = "Assets/Tests/View/ViewTest.cs";
@@ -19,6 +21,7 @@ public static class ViewTestBuilder {
     const string Chess960Path = "Assets/Tests/PGN/chess960.pgn.txt";
     const string PromotionsPath = "Assets/Tests/PGN/promotions.pgn.txt";
     const string TestLanguagePath = "Assets/Tests/View/test-language.json";
+    const string WorldLanguagePath = "Assets/Tests/View/test-world-language.json";
 
     [MenuItem("Tools/Chess Board/Create View Test")]
     static void Create() {
@@ -57,6 +60,15 @@ public static class ViewTestBuilder {
         test.languagePack = AssetDatabase.LoadAssetAtPath<TextAsset>(LanguagePackPath);
         test.testLanguagePack = AssetDatabase.LoadAssetAtPath<TextAsset>(TestLanguagePath);
         AddTestLanguagePack(EnsureChessLanguage(root.scene), test.testLanguagePack);
+        var others = new System.Collections.Generic.List<ChessBoardUI>();
+        foreach (ChessBoardUI other in uis) {
+            if (other != ui) others.Add(other);
+        }
+        test.otherUIs = others.ToArray();
+        test.worldI18n = BuildWorldLanguage(root.transform);
+        // worldI18n is an I18n field too, which the I18n sanity check would point at the Chess Language (the closest):
+        // the lock keeps it as set here.
+        Undo.AddComponent<I18nLock>(root);
         UdonSharpEditorUtility.CopyProxyToUdon(test);
 
         for (int i = 0; i < olds.Length; i++) {
@@ -76,6 +88,24 @@ public static class ViewTestBuilder {
                 : ", with no BoardTest to wait for") + setNote + ". Save the scene.");
     }
 
+    // "World Language (test)" under parent: a world's own I18n (step 14.10), main, with one pack of another language
+    // (View/test-world-language.json, x-chess-test). Under the test's object, not beside the chess objects at the
+    // scene's root, so the I18n sanity check still finds the Chess Language closest to them.
+    static I18n BuildWorldLanguage(Transform parent) {
+        GameObject child = new GameObject("World Language (test)");
+        child.transform.SetParent(parent, false);
+        I18n i18n = UdonSharpUndo.AddComponent<I18n>(child);
+        SerializedObject serialized = new SerializedObject(i18n);
+        serialized.FindProperty("mainI18n").boolValue = true;
+        SerializedProperty packs = serialized.FindProperty("languagePacks");
+        packs.arraySize = 1;
+        packs.GetArrayElementAtIndex(0).objectReferenceValue =
+            AssetDatabase.LoadAssetAtPath<TextAsset>(WorldLanguagePath);
+        serialized.ApplyModifiedProperties();
+        UdonSharpEditorUtility.CopyProxyToUdon(i18n);
+        return i18n;
+    }
+
     // Adds the test language pack to the Chess Language's packs, after the others, unless it's there.
     static void AddTestLanguagePack(I18n language, TextAsset pack) {
         SerializedObject serialized = new SerializedObject(language);
@@ -86,8 +116,8 @@ public static class ViewTestBuilder {
         packs.arraySize++;
         packs.GetArrayElementAtIndex(packs.arraySize - 1).objectReferenceValue = pack;
         serialized.ApplyModifiedProperties();
-        UdonSharpEditorUtility.CopyProxyToUdon(language);
-        EditorUtility.SetDirty(language);
+        // An override on the Chess Language instance (step 14.10), as a world adds a pack.
+        RecordInstance(language);
     }
 
     // The view to test: the scene's only one; with several, the one an existing ViewTest has, or else the selected

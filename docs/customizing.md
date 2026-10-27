@@ -83,9 +83,9 @@ A 2D board view ([2D board view](board-2d.md)) stays where it's placed unless it
 
 ## Languages (step 13.5)
 
-The chess objects' text comes from **Chess Language**, an `I18n` at the scene's root with the package's `Languages/en.json` (see [Architecture](architecture.md#player-text-step-135)). Each player sees the language of their VRChat client when a pack has it, English otherwise; a world whose own main `I18n` switches language (`SetLanguageGlobally`) switches the chess text too.
+The chess objects' text comes from **Chess Language**, an `I18n` with the package's packs (`Languages/en.json`), placed once per scene from its prefab beside the chess objects (see [Prefabs](prefabs.md#chess-language) for where it goes, and [Architecture](architecture.md#player-text-step-135)). Each player sees the language of their VRChat client when a pack has it, English otherwise; a world whose own main `I18n` switches language (`SetLanguageGlobally`) switches the chess text too, where Chess Language has a pack of that language.
 
-- **Adding a language:** write a pack with your language's `languageCode` (`de`, `ja`, …) and `languageName`, and the keys of `en.json` translated, keeping each `${name}` placeholder (they may move within the sentence), and add it to Chess Language's **Language Packs**. A key the pack leaves out shows in English. No code changes.
+- **Adding a language:** write a pack with your language's `languageCode` (`de`, `ja`, …) and `languageName`, and the keys of `en.json` translated, keeping each `${name}` placeholder (they may move within the sentence), and add it to the end of your placed Chess Language's **Language Packs** (an override on the instance; every board, wall, menu and 2D view uses it). A key the pack leaves out shows in English. No code changes. With a world `I18n` of your own, give the chess pack the same `languageCode` as the world's, so its `SetLanguageGlobally` finds both.
 - **Changing some English texts:** add a pack with `languageCode` `en` and only the keys to change, after the package's: a pack with a code already loaded overrides only the strings it has.
 - **Keep `en.json` first:** the first pack is the fallback for missing keys.
 - Text that goes into a PGN export (tags, results, SAN) stays English, as PGN requires.

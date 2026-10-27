@@ -35,6 +35,11 @@ public class ViewTest : ChessTest {
     // (View/test-language.json), which Tools > Chess Board > Create View Test adds to the Chess Language (step 13.5).
     public TextAsset languagePack;
     public TextAsset testLanguagePack;
+    // The other boards' UIs, which share the Chess Language (step 14.10), and a world's own main I18n
+    // (View/test-world-language.json, its code x-chess-test), elsewhere in the scene, switching it with
+    // SetLanguageGlobally. Both from Create View Test.
+    public ChessBoardUI[] otherUIs;
+    public I18n worldI18n;
 
     const string Files = "abcdefgh";
     const string Ranks = "12345678";
@@ -3004,11 +3009,53 @@ public class ViewTest : ChessTest {
         CheckString(PickupTexts(), "Shift (test)", s + ": test pack: the pieces' pickups");
         CheckString(ui.pgnImportText.text + "|" + ui.pgnCloseText.text, "Bring in (test)|Close",
             s + ": test pack: the PGN box's buttons");
+        CheckString(OtherStartTexts(), "Begin (test)", s + ": test pack: Start on every other board");
         i18n.SetLanguage("en");
         CheckString(i18n.GetCurrentLanguage(), "en", s + ": English again");
         CheckString(ui._ButtonText(ChessBoardUI.ButtonStart), "Start", s + ": English again: Start");
         CheckString(PickupTexts(), "Move", s + ": English again: the pieces' pickups");
         CheckString(ui.pgnImportText.text, "Import", s + ": English again: the PGN box's Import");
+        CheckString(OtherStartTexts(), "Start", s + ": English again: Start on every other board");
+        TestWorldLanguage(i18n);
+    }
+
+    // 14.10: a world's own main I18n (worldI18n, elsewhere in the scene, its one pack x-chess-test) switches the Chess
+    // Language with SetLanguageGlobally, as the sanity check linked them: every board's texts follow, from our pack
+    // of that code. Back with "en", which only ours has (so the call returns false). In one frame, as above.
+    void TestWorldLanguage(I18n i18n) {
+        string s = "world language";
+        if (!Utilities.IsValid(worldI18n) || worldI18n == i18n) {
+            Check(false, s, "no world I18n of its own (Tools > Chess Board > Create View Test)");
+            return;
+        }
+        Check(worldI18n.SetLanguageGlobally("x-chess-test"), s + ": SetLanguageGlobally(x-chess-test) on the "
+            + "world's I18n", "it returned false");
+        CheckString(worldI18n._("world_greeting"), "Hello (world test)", s + ": the world's own text");
+        CheckString(i18n.GetCurrentLanguage(), "x-chess-test", s + ": the Chess Language switched");
+        CheckString(ui._ButtonText(ChessBoardUI.ButtonStart), "Begin (test)", s + ": Start");
+        CheckString(PickupTexts(), "Shift (test)", s + ": the pieces' pickups");
+        CheckString(OtherStartTexts(), "Begin (test)", s + ": Start on every other board");
+        Check(!worldI18n.SetLanguageGlobally("en"), s + ": SetLanguageGlobally(en) false (the world has no en)",
+            "it returned true");
+        CheckString(i18n.GetCurrentLanguage(), "en", s + ": the Chess Language English again");
+        CheckString(ui._ButtonText(ChessBoardUI.ButtonStart), "Start", s + ": English again: Start");
+        CheckString(OtherStartTexts(), "Start", s + ": English again: Start on every other board");
+    }
+
+    // The Start button's text on every board's UI but this one's, when they're all the same; otherwise each,
+    // separated by |. "(none)" without other boards.
+    string OtherStartTexts() {
+        if (otherUIs == null || otherUIs.Length == 0) return "(none)";
+        string first = null;
+        string all = "";
+        bool same = true;
+        for (int i = 0; i < otherUIs.Length; i++) {
+            string text = Utilities.IsValid(otherUIs[i]) ? otherUIs[i]._ButtonText(ChessBoardUI.ButtonStart) : "(none)";
+            if (first == null) first = text;
+            else if (text != first) same = false;
+            all += (i > 0 ? "|" : "") + text;
+        }
+        return same ? first : all;
     }
 
     // The pieces' pickups' hover text, when every one has the same; otherwise each, separated by |.

@@ -4,6 +4,7 @@ using SiggiUSTools;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UdonSharp;
 using UdonSharpEditor;
 using UnityEngine.SceneManagement;
 using VRC.SDKBase.Editor.BuildPipeline;
@@ -30,6 +31,9 @@ using VRC.Udon;
 // scene's 2D views instances of them, Board2DTest on a movable one. 14.9: the Chess Table, its board, view and UI
 // nested instances of their prefabs (the view and UI 0.8 m above the board, on it), two placed and wired by hand, a
 // change to the view prefab reaching it (undone), and the open scene's boards each in a table with its view and UI.
+// 14.10: the Chess Language with the package's packs, the I18n sanity check's rule wiring a table's, a wall's, a
+// menu's and a 2D view's I18n fields to it beside them and grouped beside a world's own main I18n, ambiguous beside it
+// at the root, a pack added to it an override; and the open scene's Chess Language an instance, every field on it.
 // Every prefab: nothing it uses is under Assets/Tests/.
 // Logs "[PrefabTest] PASS: <check>" or "[PrefabTest] FAIL: <check>: <details>" per check, then a summary line.
 public static class PrefabTest {
@@ -46,6 +50,7 @@ public static class PrefabTest {
     const string View2DPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/2D Chess Board View.prefab";
     const string Movable2DPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Movable 2D Chess Board View.prefab";
     const string TablePrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Table.prefab";
+    const string LanguagePrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Language.prefab";
 
     static int passed;
     static int failed;
@@ -80,10 +85,12 @@ public static class PrefabTest {
         Check(movable2DPrefab != null, "the Movable 2D Chess Board View prefab at " + Movable2DPrefabPath, "missing");
         GameObject tablePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(TablePrefabPath);
         Check(tablePrefab != null, "the Chess Table prefab at " + TablePrefabPath, "missing");
+        GameObject languagePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(LanguagePrefabPath);
+        Check(languagePrefab != null, "the Chess Language prefab at " + LanguagePrefabPath, "missing");
         if (setPrefab == null || arbiterPrefab == null || boardPrefab == null || viewPrefab == null
             || uiPrefab == null || archivePrefab == null || personalPrefab == null || wallPrefab == null
             || personalWallPrefab == null || menuPrefab == null || view2DPrefab == null || movable2DPrefab == null
-            || tablePrefab == null) {
+            || tablePrefab == null || languagePrefab == null) {
             Summary();
             return;
         }
@@ -102,6 +109,7 @@ public static class PrefabTest {
             CheckMenu(menuPrefab, arbiterPrefab, boardPrefab, scene);
             Check2DView(view2DPrefab, boardPrefab, scene);
             CheckMovable2DView(movable2DPrefab, view2DPrefab, scene);
+            CheckLanguage(languagePrefab, tablePrefab, wallPrefab, menuPrefab, view2DPrefab, scene);
         } finally {
             EditorSceneManager.CloseScene(scene, true);
         }
@@ -114,10 +122,11 @@ public static class PrefabTest {
         CheckSceneWalls(wallPrefab, personalWallPrefab);
         CheckSceneMenu(menuPrefab);
         CheckScene2DViews(view2DPrefab, movable2DPrefab);
+        CheckSceneLanguage(languagePrefab);
         foreach (string path in new[] {
             PieceSetPrefabPath, ArbiterPrefabPath, BoardPrefabPath, ViewPrefabPath, UIPrefabPath, ArchivePrefabPath,
             PersonalPrefabPath, WallPrefabPath, PersonalWallPrefabPath, MenuPrefabPath,
-            View2DPrefabPath, Movable2DPrefabPath, TablePrefabPath,
+            View2DPrefabPath, Movable2DPrefabPath, TablePrefabPath, LanguagePrefabPath,
         }) {
             CheckNoTests(path);
             CheckSyncMethods(path);
@@ -1411,6 +1420,207 @@ public static class PrefabTest {
         Check(tests.Length == 1 && tests[0].view != null && tests[0].holder != null
             && tests[0].holder == ChessBoard2DViewBuilder.HolderOf(tests[0].view),
             "Board2DTest is on a scene's movable 2D view and its holder", "it isn't");
+    }
+
+    // ---- 14.10: Chess Language ----
+
+    // The I18n sanity check's own rules (I18nSanityChecks, in the io.siggi.ustools package), called by reflection:
+    // they're private, and its public entry points ask in a dialog before wiring.
+    static readonly System.Type SanityChecks =
+        System.Type.GetType("SiggiUSTools.SimpleI18nEditor.I18nSanityChecks, SiggiUSTools.SimpleI18nEditor");
+
+    static object CallSanityCheck(string method, params object[] args) {
+        System.Reflection.MethodInfo info = SanityChecks?.GetMethod(method,
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        if (info == null) {
+            Check(false, "I18nSanityChecks." + method + " found", "missing (has the package changed?)");
+            return null;
+        }
+        object result = info.Invoke(null, args);
+        return result;
+    }
+
+    // The I18n the sanity check would wire into the I18n fields of behaviour's object (FindClosest), or null; ambiguous
+    // set to the level where it found several.
+    static I18n Closest(Component behaviour, I18n[] instances, out string ambiguous) {
+        object[] args = { behaviour.transform, instances, null };
+        I18n found = CallSanityCheck("FindClosest", args) as I18n;
+        ambiguous = args[2] as string;
+        return found;
+    }
+
+    // Every behaviour of ours under root with an i18n field.
+    static List<Component> WithI18nField(GameObject root) {
+        List<Component> found = new List<Component>();
+        foreach (UdonSharpBehaviour behaviour in root.GetComponentsInChildren<UdonSharpBehaviour>(true)) {
+            if (behaviour is I18n) continue;
+            if (new SerializedObject(behaviour).FindProperty("i18n") != null) found.Add(behaviour);
+        }
+        return found;
+    }
+
+    // The behaviours in found whose closest I18n isn't expected (or is ambiguous), or "".
+    static string WiredElsewhere(List<Component> found, I18n[] instances, I18n expected) {
+        string wrong = "";
+        foreach (Component behaviour in found) {
+            I18n closest = Closest(behaviour, instances, out string ambiguous);
+            if (closest != expected) {
+                wrong += " " + behaviour.GetType().Name + " on " + behaviour.gameObject.name + ": "
+                    + (closest != null ? closest.gameObject.name : ambiguous ?? "none") + ";";
+            }
+        }
+        return wrong;
+    }
+
+    static string PackNames(I18n i18n) {
+        SerializedProperty packs = new SerializedObject(i18n).FindProperty("languagePacks");
+        string names = "";
+        for (int i = 0; i < packs.arraySize; i++) {
+            Object pack = packs.GetArrayElementAtIndex(i).objectReferenceValue;
+            names += (i > 0 ? "|" : "") + (pack != null ? pack.name : "(none)");
+        }
+        return names;
+    }
+
+    static bool IsMain(I18n i18n) {
+        return new SerializedObject(i18n).FindProperty("mainI18n").boolValue;
+    }
+
+    // The Chess Language placed: an I18n alone, not main, with the package's packs (en first); beside a table, a wall, a
+    // settings menu and a 2D view, the sanity check wires every one of their I18n fields to it. Grouped under a parent
+    // with them, beside a world's own main I18n (with a pack of another language) and a world object at the scene's
+    // root: the chess fields still get ours, the world's object its own, the packs and main pass (the build isn't
+    // blocked), and the world's I18n is main for ours, so its SetLanguageGlobally reaches ours (ViewTest switches it
+    // in Play Mode). Ours moved to the root beside the world's: ambiguous, as docs/prefabs.md warns. A pack added to
+    // the instance is an override: the prefab keeps its own.
+    static void CheckLanguage(GameObject languagePrefab, GameObject tablePrefab, GameObject wallPrefab,
+            GameObject menuPrefab, GameObject view2DPrefab, Scene scene) {
+        List<string> logged = new List<string>();
+        Application.LogCallback listener = (text, stack, type) => logged.Add(type + ": " + text);
+        Application.logMessageReceived += listener;
+        GameObject placed;
+        try {
+            placed = (GameObject)PrefabUtility.InstantiatePrefab(languagePrefab, scene);
+        } finally {
+            Application.logMessageReceived -= listener;
+        }
+        Check(logged.Count == 0, "the Chess Language placed logs nothing", string.Join("; ", logged));
+        I18n language = placed.GetComponent<I18n>();
+        Check(language != null, "the Chess Language has an I18n", "none");
+        if (language == null) return;
+        CheckString(placed.name, "Chess Language", "the Chess Language's name");
+        CheckIntValue(placed.transform.childCount, 0, "the Chess Language has no children");
+        Check(!IsMain(language), "the Chess Language isn't main", "it is");
+        string expected = "";
+        TextAsset[] packs = ChessBuilderUtil.LanguagePacks();
+        for (int i = 0; i < packs.Length; i++) expected += (i > 0 ? "|" : "") + packs[i].name;
+        Check(expected.StartsWith("en"), "the package's packs start with en.json", expected);
+        CheckString(PackNames(language), expected, "the Chess Language holds the package's packs, en first");
+        Check(Equals(CallSanityCheck("ValidateLanguagePacks", new I18n[] { language }, "test"), true),
+            "the sanity check passes the Chess Language's packs", "it doesn't");
+
+        // Beside a table, a wall, a settings menu and a 2D view, as dropped into a scene.
+        GameObject[] chess = {
+            (GameObject)PrefabUtility.InstantiatePrefab(tablePrefab, scene),
+            (GameObject)PrefabUtility.InstantiatePrefab(wallPrefab, scene),
+            (GameObject)PrefabUtility.InstantiatePrefab(menuPrefab, scene),
+            (GameObject)PrefabUtility.InstantiatePrefab(view2DPrefab, scene),
+        };
+        List<Component> fields = new List<Component>();
+        foreach (GameObject root in chess) fields.AddRange(WithI18nField(root));
+        CheckIntValue(fields.Count, 5, "a table, a wall, a menu and a 2D view have 5 I18n fields");
+        I18n[] alone = { language };
+        CheckString(WiredElsewhere(fields, alone, language), "",
+            "beside them, the sanity check wires every chess I18n field to the Chess Language");
+
+        // Grouped under a parent with them, a world's own main I18n and object at the root.
+        GameObject group = new GameObject("Chess");
+        SceneManager.MoveGameObjectToScene(group, scene);
+        placed.transform.SetParent(group.transform, false);
+        foreach (GameObject root in chess) root.transform.SetParent(group.transform, false);
+        GameObject worldObject = new GameObject("World Language");
+        SceneManager.MoveGameObjectToScene(worldObject, scene);
+        I18n world = UdonSharpUndo.AddComponent<I18n>(worldObject);
+        SerializedObject worldFields = new SerializedObject(world);
+        worldFields.FindProperty("mainI18n").boolValue = true;
+        SerializedProperty worldPacks = worldFields.FindProperty("languagePacks");
+        worldPacks.arraySize = 1;
+        worldPacks.GetArrayElementAtIndex(0).objectReferenceValue =
+            AssetDatabase.LoadAssetAtPath<TextAsset>("Assets/Tests/View/test-world-language.json");
+        worldFields.ApplyModifiedProperties();
+        GameObject worldUI = new GameObject("World UI");
+        SceneManager.MoveGameObjectToScene(worldUI, scene);
+        I18n[] both = { language, world };
+        CheckString(WiredElsewhere(fields, both, language), "",
+            "grouped with a world I18n elsewhere, every chess I18n field is wired to the Chess Language");
+        Check(Closest(worldUI.transform, both, out _) == world, "grouped: the world's object gets the world's I18n",
+            "it doesn't");
+        Check(Equals(CallSanityCheck("ValidateLanguagePacks", both, "test"), true)
+            && Equals(CallSanityCheck("ValidateMainI18n", both, "test"), true),
+            "grouped: the packs and the one main pass (the build isn't blocked)", "they don't");
+        CallSanityCheck("LinkMainI18n", new object[] { both });
+        SerializedObject linked = new SerializedObject(language);
+        SerializedProperty all = new SerializedObject(world).FindProperty("allI18ns");
+        bool listed = false;
+        for (int i = 0; i < all.arraySize; i++) listed |= all.GetArrayElementAtIndex(i).objectReferenceValue == language;
+        Check(linked.FindProperty("main").objectReferenceValue == world && listed,
+            "grouped: the world's I18n is main for the Chess Language, which it lists for SetLanguageGlobally",
+            "it isn't");
+
+        // Ours beside the world's at the root: neither is closer.
+        placed.transform.SetParent(null, false);
+        Closest(fields[0], both, out string ambiguous);
+        Check(ambiguous != null && ambiguous.Contains("root objects"),
+            "the Chess Language beside a world I18n at the root: ambiguous for the chess objects",
+            ambiguous ?? "not ambiguous");
+        placed.transform.SetParent(group.transform, false);
+
+        // A pack added to the instance, as a world adds a language: an override, the prefab keeps its own.
+        SerializedObject instanceFields = new SerializedObject(language);
+        SerializedProperty instancePacks = instanceFields.FindProperty("languagePacks");
+        instancePacks.arraySize++;
+        instancePacks.GetArrayElementAtIndex(instancePacks.arraySize - 1).objectReferenceValue =
+            AssetDatabase.LoadAssetAtPath<TextAsset>("Assets/Tests/View/test-language.json");
+        instanceFields.ApplyModifiedProperties();
+        CheckString(PackNames(language), expected + "|test-language", "a pack added to the Chess Language instance");
+        Check(PrefabUtility.HasPrefabInstanceAnyOverrides(placed, false), "the added pack is an instance override",
+            "no override");
+        CheckString(PackNames(languagePrefab.GetComponent<I18n>()), expected,
+            "a pack added to the instance: the prefab keeps its own packs");
+        CheckString(WiredElsewhere(fields, both, language), "",
+            "a pack added: every chess I18n field still wired to the one Chess Language");
+        Object.DestroyImmediate(group);
+        Object.DestroyImmediate(worldObject);
+        Object.DestroyImmediate(worldUI);
+    }
+
+    // The open scene's Chess Language (the test scene's) is an instance of the prefab, not main, with the test pack
+    // added after the package's (ViewTestBuilder), and every chess I18n field is on it.
+    static void CheckSceneLanguage(GameObject languagePrefab) {
+        TextAsset en = AssetDatabase.LoadAssetAtPath<TextAsset>(ChessBuilderUtil.LanguagePackPath);
+        List<I18n> found = new List<I18n>();
+        foreach (I18n i18n in Object.FindObjectsOfType<I18n>(true)) {
+            if (PackNames(i18n).Split('|')[0] == en.name) found.Add(i18n);
+        }
+        CheckIntValue(found.Count, 1, "the open scene has one Chess Language");
+        if (found.Count == 0) return;
+        I18n language = found[0];
+        Check(PrefabUtility.IsAnyPrefabInstanceRoot(language.gameObject)
+            && PrefabUtility.GetCorrespondingObjectFromOriginalSource(language.gameObject) == languagePrefab,
+            "the scene's " + language.gameObject.name + " is a Chess Language instance", "it isn't");
+        Check(!IsMain(language), "the scene's Chess Language isn't main", "it is");
+        CheckString(PackNames(language), PackNames(languagePrefab.GetComponent<I18n>()) + "|test-language",
+            "the scene's Chess Language has the test pack after the package's");
+        string wrong = "";
+        int count = 0;
+        foreach (GameObject root in language.gameObject.scene.GetRootGameObjects()) {
+            foreach (Component behaviour in WithI18nField(root)) {
+                count++;
+                Object value = new SerializedObject(behaviour).FindProperty("i18n").objectReferenceValue;
+                if (value != language) wrong += " " + behaviour.gameObject.name + ";";
+            }
+        }
+        Check(count > 0 && wrong == "", "the scene's " + count + " chess I18n fields are on the Chess Language", wrong);
     }
 
     // Every UdonBehaviour in a prefab (nested prefabs' too) has the sync method its script asks for, so a placed
