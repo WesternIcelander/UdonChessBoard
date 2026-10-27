@@ -524,7 +524,7 @@ MonoBehaviour:
     - Name: tooltip
       Entry: 1
       Data: The smallest and largest size, as a share of the size the view has in
-        the scene. The builder fits the bar to the smallest, so it doesn't reach
+        the scene. The prefab's bar is fitted to the smallest, so it doesn't reach
         the corner.
     - Name: 
       Entry: 8
