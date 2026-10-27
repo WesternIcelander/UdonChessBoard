@@ -26,10 +26,13 @@ namespace SiggiChessBoard {
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class PersonalGameArchive : GameArchive {
         public const string DefaultKeyPrefix = "siggi.chess.personal.";
+        // capacity's default, the Personal Game Archive prefab's (and so the entries the Personal History Wall
+        // prefab has).
+        public const int DefaultCapacity = 20;
 
         [Tooltip("How many of the local player's games are kept (the oldest goes once full). Lowered later, the games "
             + "saved past it are no longer read; raised, they're read again.")]
-        public int capacity = 20;
+        public int capacity = DefaultCapacity;
         [Tooltip("The start of every PlayerData key the archive writes, so a world's own keys don't clash.")]
         public string keyPrefix = DefaultKeyPrefix;
 

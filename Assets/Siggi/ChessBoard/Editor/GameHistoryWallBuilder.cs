@@ -12,11 +12,16 @@ using VRC.SDK3.Components;
 using VRC.Udon;
 using static ChessBuilderUtil;
 
-// Builds a history wall (docs/archive.md, GameHistoryWall.cs) in the open scene: Create History Wall for its only
+// Places a history wall (docs/archive.md, GameHistoryWall.cs) in the open scene: Create History Wall for its only
 // instance archive (InstanceGameArchive), Create Personal History Wall (step 13.10) for its only PersonalGameArchive.
-// Each is a portrait world-space canvas with a title, an Export PGN button beside it, and a vertical scroll view
-// holding one two-line entry per game the archive can hold, newest first from the top (the wall hides those it has no
-// game for and sizes the content to the rest, and makes more at run time if the archive's capacity grows). Each entry
+// Each is an instance of its own prefab (step 14.6, docs/prefabs.md: Game History Wall and Personal History Wall;
+// BuildWall makes them when missing, EnsureWallPrefab), its archive set on the instance; Tools > Chess Board > Update
+// History Wall Prefabs updates both and makes the scene's walls built before 14.6 instances of them. The personal
+// wall isn't a variant of the instance's: every entry differs (a delete button, a narrower label) and so does their
+// count, so a variant would override nearly everything it has. Each wall is a portrait world-space canvas with a
+// title, an Export PGN button beside it, and a vertical scroll view holding one two-line entry per game the archive
+// can hold, newest first from the top (the wall hides those it has no game for and sizes the content to the rest,
+// and makes more at run time if the archive's capacity grows). Each entry
 // is a UI Button (step 10.2b) covering both its lines, whose GameHistoryRow picks its game, so the canvas takes the
 // pointer (VRCUiShape, a trigger collider); dragging or the wheel over the entries scrolls them. On the personal wall
 // each entry also has a delete button. The PGN box (Export PGN, step 13.10) covers the list's lower half while open.
@@ -66,7 +71,7 @@ public static class GameHistoryWallBuilder {
                 : "There are several GameArchives in the scene; the wall needs exactly one.", "OK");
             return;
         }
-        Build(archives[0], false);
+        Place(archives[0], false);
     }
 
     [MenuItem("Tools/Chess Board/Create Personal History Wall")]
@@ -79,35 +84,105 @@ public static class GameHistoryWallBuilder {
                 : "There are several PersonalGameArchives in the scene; the wall needs exactly one.", "OK");
             return;
         }
-        Build(archives[0], true);
+        Place(archives[0], true);
     }
 
-    // Builds a wall for archive (the personal kind with its delete buttons and title), replacing the scene's wall of
-    // the same kind in place.
-    static void Build(GameArchive archive, bool personal) {
+    // Places an instance of the wall prefab of its kind (the personal one with its delete buttons and title) for
+    // archive, the archive set on the instance, replacing the scene's wall of the same kind in place.
+    static void Place(GameArchive archive, bool personal) {
         string menuItem = personal ? "Create Personal History Wall" : "Create History Wall";
-        if (!EnsureProgramAssets(menuItem, WallScriptPath, WallProgramPath, RowScriptPath, RowProgramPath)) return;
-        int rowCount = archive.Capacity();
-        if (archive is InstanceGameArchive instance) rowCount = instance.holders.Length * GameArchiveHolder.Capacity;
-        if (archive is PersonalGameArchive own) rowCount = Mathf.Max(1, own.capacity);
-
-        TMP_FontAsset font = DefaultFont();
+        if (!EnsureWallProgramAssets(menuItem)) return;
+        string prefabNote = EnsureWallPrefab(personal);
         GameHistoryWall[] olds = WallsOf(personal);
-        GameObject root = new GameObject(personal ? "PersonalHistoryWall" : "GameHistoryWall");
+        GameObject root = (GameObject)PrefabUtility.InstantiatePrefab(
+            AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath(personal)));
         Undo.RegisterCreatedObjectUndo(root, menuItem);
+        root.name = personal ? "PersonalHistoryWall" : "GameHistoryWall";
+        Transform rootTransform = root.transform;
+        // Facing the boards: seen from them, looking along -x.
+        rootTransform.rotation = Quaternion.Euler(0, -90, 0);
+        rootTransform.position = personal ? NewPersonalWallPosition() : NewWallPosition();
+        if (personal) {
+            GameHistoryWall[] instanceWalls = WallsOf(false);
+            if (instanceWalls.Length > 0) rootTransform.rotation = instanceWalls[0].transform.rotation;
+        }
+        GameHistoryWall wall = root.GetComponent<GameHistoryWall>();
+        wall.archive = archive;
+        RecordInstance(wall);
+
+        for (int i = 0; i < olds.Length; i++) {
+            if (i == 0) {
+                rootTransform.SetParent(olds[i].transform.parent, false);
+                rootTransform.SetSiblingIndex(olds[i].transform.GetSiblingIndex());
+                rootTransform.position = olds[i].transform.position;
+                rootTransform.rotation = olds[i].transform.rotation;
+                rootTransform.localScale = olds[i].transform.localScale;
+            }
+            // ArchiveTest's walls, and anything else pointing at the old one.
+            ChessBoardViewBuilder.RepointReferences(olds[i], wall);
+            Undo.DestroyObjectImmediate(olds[i].gameObject);
+        }
+        PrefabUtility.RecordPrefabInstancePropertyModifications(root);
+        PrefabUtility.RecordPrefabInstancePropertyModifications(rootTransform);
+        // The wall's text comes from the shared Chess Language (PLAN.md 13.5), made when the scene has
+        // none; the I18n fields are left empty, for the I18n sanity check to fill on build and before Play Mode.
+        EnsureChessLanguage(root.scene);
+        EditorSceneManager.MarkSceneDirty(root.scene);
+        Selection.activeGameObject = root;
+        Debug.Log("[GameHistoryWallBuilder] " + (olds.Length > 0 ? "Replaced" : "Created") + " the "
+            + (personal ? "personal " : "") + "history wall with " + wall.rows.Length + " entries" + prefabNote
+            + ". Move it where you like and save the scene.");
+    }
+
+    // ---- The Game History Wall and Personal History Wall prefabs (step 14.6, docs/prefabs.md) ----
+
+    const string WallPrefabName = "Game History Wall";
+    const string PersonalPrefabName = "Personal History Wall";
+
+    static string PrefabPath(bool personal) {
+        return PrefabsFolder + "/" + (personal ? PersonalPrefabName : WallPrefabName) + ".prefab";
+    }
+
+    [MenuItem("Tools/Chess Board/Update History Wall Prefabs")]
+    static void UpdateWallPrefabs() {
+        if (!EnsureWallProgramAssets("Update History Wall Prefabs")) return;
+        string note = EnsureWallPrefab(false) + EnsureWallPrefab(true);
+        foreach (bool personal in new[] { false, true }) {
+            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath(personal));
+            foreach (GameHistoryWall wall in WallsOf(personal)) {
+                if (ConvertToInstance(wall.gameObject, prefab)) note += ", " + wall.gameObject.name + " made an instance";
+            }
+        }
+        Debug.Log("[GameHistoryWallBuilder] History wall prefabs: "
+            + (note.Length > 0 ? note.Substring(2) : "unchanged"));
+    }
+
+    static bool EnsureWallProgramAssets(string menuItem) {
+        return EnsureProgramAssets(menuItem, WallScriptPath, WallProgramPath, RowScriptPath, RowProgramPath);
+    }
+
+    // Makes the wall prefab of its kind when it's missing (BuildWall), and otherwise saves it again in place. Returns
+    // a note for the log ("" when it was there).
+    static string EnsureWallPrefab(bool personal) {
+        return EnsurePrefab(PrefabPath(personal), personal ? PersonalPrefabName : WallPrefabName,
+            () => BuildWall(personal));
+    }
+
+    // A wall without an archive (a prefab's contents), at the origin facing +z: an entry per game its kind of archive
+    // holds as the archive prefabs come (the instance archive's holders' games, or the personal archive's default
+    // capacity; the wall makes more at run time for a larger capacity), and on the personal wall the delete buttons
+    // and its own title.
+    static GameObject BuildWall(bool personal) {
+        int rowCount = personal ? PersonalGameArchive.DefaultCapacity
+            : GameArchiveBuilder.HolderCount * GameArchiveHolder.Capacity;
+        TMP_FontAsset font = DefaultFont();
+        GameObject root = new GameObject(personal ? PersonalPrefabName : WallPrefabName);
         root.layer = LayerMask.NameToLayer("Default");
         Canvas canvas = root.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
         RectTransform rootRect = root.GetComponent<RectTransform>();
         rootRect.sizeDelta = new Vector2(CanvasWidth, CanvasHeight);
         rootRect.localScale = Vector3.one * 0.001f;
-        // Facing the boards: seen from them, looking along -x.
-        rootRect.rotation = Quaternion.Euler(0, -90, 0);
-        rootRect.position = personal ? NewPersonalWallPosition() : NewWallPosition();
-        if (personal) {
-            GameHistoryWall[] instanceWalls = WallsOf(false);
-            if (instanceWalls.Length > 0) rootRect.rotation = instanceWalls[0].transform.rotation;
-        }
         root.AddComponent<CanvasScaler>();
         root.AddComponent<GraphicRaycaster>();
         root.AddComponent<VRCUiShape>();
@@ -118,7 +193,6 @@ public static class GameHistoryWallBuilder {
 
         GameHistoryWall wall = UdonSharpUndo.AddComponent<GameHistoryWall>(root);
         UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(wall);
-        wall.archive = archive;
         wall.titleKey = personal ? "wall_title_personal" : "wall_title";
         wall.title = NewText(root, "Title", font, TitleFontSize, new Vector2(Margin, Margin),
             new Vector2(CanvasWidth - 3 * Margin - ExportWidth, TitleHeight));
@@ -149,27 +223,7 @@ public static class GameHistoryWallBuilder {
         AddPgnBox(root, wall, font, new Vector2(Margin, listTop + listHeight / 2),
             new Vector2(CanvasWidth - 2 * Margin, listHeight / 2));
         UdonSharpEditorUtility.CopyProxyToUdon(wall);
-
-        for (int i = 0; i < olds.Length; i++) {
-            if (i == 0) {
-                root.transform.SetParent(olds[i].transform.parent, false);
-                root.transform.SetSiblingIndex(olds[i].transform.GetSiblingIndex());
-                rootRect.position = olds[i].transform.position;
-                rootRect.rotation = olds[i].transform.rotation;
-                rootRect.localScale = olds[i].transform.localScale;
-            }
-            // ArchiveTest's walls, and anything else pointing at the old one.
-            ChessBoardViewBuilder.RepointReferences(olds[i], wall);
-            Undo.DestroyObjectImmediate(olds[i].gameObject);
-        }
-        // The wall's text comes from the shared Chess Language (PLAN.md 13.5), made when the scene has
-        // none; the I18n fields are left empty, for the I18n sanity check to fill on build and before Play Mode.
-        EnsureChessLanguage(root.scene);
-        EditorSceneManager.MarkSceneDirty(root.scene);
-        Selection.activeGameObject = root;
-        Debug.Log("[GameHistoryWallBuilder] " + (olds.Length > 0 ? "Replaced" : "Created") + " the "
-            + (personal ? "personal " : "") + "history wall with " + rowCount + " entries. Move it where you like and "
-            + "save the scene.");
+        return root;
     }
 
     // The scene's walls on the instance's archive, or on a personal one.

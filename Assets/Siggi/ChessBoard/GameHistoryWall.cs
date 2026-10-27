@@ -13,9 +13,8 @@ namespace SiggiChessBoard {
     // Its archive tells it of every change (_OnArchiveChanged) and of every change to the arbiter's pick
     // (_OnSelectionChanged); it registers with the archive on Start. Picking an entry (step 10.2b) picks its game on
     // the arbiter for the local player only, nothing synced: every board's UI then offers "Load it here". Export PGN
-    // shows the picked game's PGN in a box on the wall; on the personal wall each entry has a delete button. Built in
-    // the scene by Tools > Chess Board > Create History Wall and Create Personal History Wall
-    // (Editor/GameHistoryWallBuilder.cs).
+    // shows the picked game's PGN in a box on the wall; on the personal wall each entry has a delete button. Placed
+    // from the Game History Wall and Personal History Wall prefabs (docs/prefabs.md), its archive set after placing it.
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class GameHistoryWall : UdonSharpBehaviour {
         // A delete button's press arms it for this long (seconds): a second press within it deletes.

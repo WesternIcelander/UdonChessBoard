@@ -8,7 +8,7 @@ Until step 14.13 the **Tools > Chess Board** builders make each prefab when it's
 
 Every chess prefab shares one `I18n`, the **Chess Language** prefab (step 14.10), placed once per scene as a sibling or on a parent of the chess objects, so the `I18n` sanity check links them to it ([architecture](architecture.md), languages).
 
-**The minimum a world needs:** one **Chess Arbiter**, and per board a **Chess Board** wired to it with a **Chess Board View** and a **Chess Board UI** on it (the UI holds the buttons: without it, nobody can join or start a game). Add one **Game Archive** per world to keep finished games (for the history wall and **Load it here**), listed in the arbiter's **Archives**; without one, games are only logged. The **Personal Game Archive** and its wall (step 14.6) keep each player's own games across visits.
+**The minimum a world needs:** one **Chess Arbiter**, and per board a **Chess Board** wired to it with a **Chess Board View** and a **Chess Board UI** on it (the UI holds the buttons: without it, nobody can join or start a game). Add one **Game Archive** per world to keep finished games (for the history wall and **Load it here**), listed in the arbiter's **Archives**; without one, games are only logged. A **Game History Wall** on it lists those games for players to pick, export and load. The **Personal Game Archive** and the **Personal History Wall** on it keep and show each player's own games across visits.
 
 ## Chess Pieces
 
@@ -79,6 +79,29 @@ Place one per board. After placing it, set:
 `Prefabs/Game Archive.prefab` (step 14.5): the instance's archive of finished games, an `InstanceGameArchive` ([archive](archive.md); the script was `GameArchive` before step 13.10, renamed with its GUID kept, so the prefab didn't change) with its 10 synced `GameArchiveHolder`s (**Holder 0** to **Holder 9**, 5 games each, so the last 50 games) and the local-only **Recent (local only)** holder as its children, already in its **Holders** and **Recent** fields, each holder's **Archive** pointing back. Its holders and the archive itself are synced objects ([networking](networking.md)): only the archive's owner writes to them.
 
 Place one per world. It needs nothing set after placing it; the arbiter lists it (its **Archives**, [Chess Arbiter](#chess-arbiter)), and the history wall reads it (step 14.6). Don't change its holders: the archive logs an error on start when one is missing or the recent holder isn't local only, and reverting the fields and objects to the prefab's mends it.
+
+## Personal Game Archive
+
+`Prefabs/Personal Game Archive.prefab` (step 14.6): the local player's own games, a `PersonalGameArchive` ([archive](archive.md#personal-archive-step-1310)) on its own, kept in their VRChat PlayerData across visits and instances; nothing synced. **Capacity** (20 games) and **Key Prefix** (`siggi.chess.personal.`) are at their defaults.
+
+Place at most one per world. After placing it, list it in the arbiter's **Archives** beside the Game Archive, so every board's games reach it too. Change **Key Prefix** only when the world's own PlayerData keys could clash with it: games saved under the old prefix are no longer read.
+
+## Game History Wall
+
+`Prefabs/Game History Wall.prefab` (step 14.6): a portrait world-space canvas (1.2 m by 1.6 m) with a `GameHistoryWall` ([archive](archive.md#history-wall-step-102a)): the **Title**, the hidden **Export PGN** button at its right end, the **Games** scroll view with 50 entries (one per game the Game Archive holds, each with its `GameHistoryRow`, which picks the entry's game), and the hidden **PGN Box** that Export PGN opens over the list's lower half. Its labels are written from the language pack at run time. It takes the pointer through a trigger collider and `VRCUiShape`, so players walk through it.
+
+Place one per world, where players can read it; it faces +z, and its origin is its centre. After placing it, set:
+
+- **Archive**: the scene's **Game Archive**. Left empty, the wall logs an error on start and shows nothing.
+- **I18n**: nothing. The `I18n` sanity check fills it from the Chess Language on build and before Play Mode.
+
+A game picked on it is offered by every board's **Load it here** (the pick is on the arbiter), so it needs no board.
+
+## Personal History Wall
+
+`Prefabs/Personal History Wall.prefab` (step 14.6): the same wall for the **Personal Game Archive**, with 20 entries (its default capacity), each with a **Delete** button at its right end (pressed twice within 3 s), and its title from `wall_title_personal` (`My games`). The wall makes more entries at run time when its archive's **Capacity** is raised, so it needs no change for that. Set **Archive** to the scene's **Personal Game Archive** after placing it.
+
+It's a prefab of its own, not a variant of the Game History Wall: every entry differs (the delete button, a narrower label) and so does their number, so a variant would override nearly all of it, and a change to the instance wall's entries could leave the delete buttons out of place.
 
 ## Sync methods
 

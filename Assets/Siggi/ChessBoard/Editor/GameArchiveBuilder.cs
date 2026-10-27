@@ -12,11 +12,14 @@ using static ChessBuilderUtil;
 // 13.10; each board's Archive field before). An existing archive is replaced in place, whatever pointed at it (the
 // arbiter, the history wall, tests) pointed at the new one. Tools > Chess Board > Update Archive Prefab updates the
 // prefab and makes the scene's archives built before 14.5 instances of it, keeping their objects and values. Tools >
-// Chess Board > Create Personal Game Archive (step 13.10) adds the local player's own archive (PersonalGameArchive)
-// beside it and lists it on the arbiter too. Menu: Tools > Chess Board > Create Game Archive. Plain editor C#, not
+// Chess Board > Create Personal Game Archive (step 13.10) adds the local player's own archive (PersonalGameArchive),
+// an instance of the Personal Game Archive prefab (step 14.6), beside it and lists it on the arbiter too; Update
+// Archive Prefab updates that prefab as well. Menu: Tools > Chess Board > Create Game Archive. Plain editor C#, not
 // Udon.
 public static class GameArchiveBuilder {
-    const int HolderCount = 10;
+    // The instance archive's synced holders (GameHistoryWallBuilder gives the instance's wall an entry per game they
+    // hold).
+    public const int HolderCount = 10;
     const string ArchiveScriptPath = "Assets/Siggi/ChessBoard/InstanceGameArchive.cs";
     const string ArchiveProgramPath = "Assets/Siggi/ChessBoard/InstanceGameArchive.asset";
     const string HolderScriptPath = "Assets/Siggi/ChessBoard/GameArchiveHolder.cs";
@@ -25,6 +28,8 @@ public static class GameArchiveBuilder {
     const string PersonalProgramPath = "Assets/Siggi/ChessBoard/PersonalGameArchive.asset";
     const string ArchivePrefabName = "Game Archive";
     const string ArchivePrefabPath = PrefabsFolder + "/" + ArchivePrefabName + ".prefab";
+    const string PersonalPrefabName = "Personal Game Archive";
+    const string PersonalPrefabPath = PrefabsFolder + "/" + PersonalPrefabName + ".prefab";
 
     [MenuItem("Tools/Chess Board/Create Game Archive")]
     static void Create() {
@@ -62,16 +67,20 @@ public static class GameArchiveBuilder {
 
     // ---- The personal archive (step 13.10) ----
 
-    // Adds a PersonalGameArchive (capacity and key prefix at their defaults) as the instance archive's next sibling,
-    // or replaces the scene's in place (keeping its capacity and key prefix), and lists it in the arbiter's Archives.
-    // Its prefab is step 14.6's.
+    // Adds an instance of the Personal Game Archive prefab (step 14.6; BuildPersonal makes it when missing,
+    // EnsurePersonalPrefab), a PersonalGameArchive with its capacity and key prefix at their defaults, as the instance
+    // archive's next sibling, or replaces the scene's in place (keeping its capacity and key prefix, as overrides),
+    // and lists it in the arbiter's Archives.
     [MenuItem("Tools/Chess Board/Create Personal Game Archive")]
     static void CreatePersonal() {
         if (!EnsureProgramAssets("Create Personal Game Archive", PersonalScriptPath, PersonalProgramPath)) return;
+        string prefabNote = EnsurePersonalPrefab();
         PersonalGameArchive[] olds = Object.FindObjectsOfType<PersonalGameArchive>(true);
-        GameObject root = new GameObject("PersonalGameArchive");
+        GameObject root = (GameObject)PrefabUtility.InstantiatePrefab(
+            AssetDatabase.LoadAssetAtPath<GameObject>(PersonalPrefabPath));
         Undo.RegisterCreatedObjectUndo(root, "Create Personal Game Archive");
-        PersonalGameArchive archive = UdonSharpUndo.AddComponent<PersonalGameArchive>(root);
+        root.name = "PersonalGameArchive";
+        PersonalGameArchive archive = root.GetComponent<PersonalGameArchive>();
         InstanceGameArchive[] instances = Object.FindObjectsOfType<InstanceGameArchive>(true);
         if (instances.Length > 0) {
             root.transform.SetParent(instances[0].transform.parent, false);
@@ -88,14 +97,16 @@ public static class GameArchiveBuilder {
             repointed += ChessBoardViewBuilder.RepointReferences(olds[i], archive);
             Undo.DestroyObjectImmediate(olds[i].gameObject);
         }
-        UdonSharpEditorUtility.CopyProxyToUdon(archive);
+        RecordInstance(archive);
+        PrefabUtility.RecordPrefabInstancePropertyModifications(root);
+        PrefabUtility.RecordPrefabInstancePropertyModifications(root.transform);
         int arbiters = AddToArbiters(archive);
         EditorSceneManager.MarkSceneDirty(root.scene);
         Selection.activeGameObject = root;
         Debug.Log("[GameArchiveBuilder] " + (olds.Length > 0 ? "Replaced" : "Created") + " the PersonalGameArchive ("
             + archive.capacity + " games), on " + arbiters + " arbiter(s)"
             + (olds.Length > 0 ? " (" + repointed + " behaviour(s) pointed at the new archive)" : "")
-            + ". Save the scene.");
+            + prefabNote + ". Save the scene.");
     }
 
     // Lists archive in every arbiter's Archives that doesn't list it yet, in an empty entry if there is one (a
@@ -126,17 +137,27 @@ public static class GameArchiveBuilder {
 
     // ---- The Game Archive prefab (step 14.5, docs/prefabs.md) ----
 
+    // Also the Personal Game Archive prefab (step 14.6), and the scene's personal archives built before it.
     [MenuItem("Tools/Chess Board/Update Archive Prefab")]
     static void UpdateArchivePrefab() {
-        if (!EnsureArchiveProgramAssets("Update Archive Prefab")) return;
-        string note = EnsureArchivePrefab();
+        if (!EnsureArchiveProgramAssets("Update Archive Prefab")
+            || !EnsureProgramAssets("Update Archive Prefab", PersonalScriptPath, PersonalProgramPath)) {
+            return;
+        }
+        string note = EnsureArchivePrefab() + EnsurePersonalPrefab();
         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(ArchivePrefabPath);
         foreach (InstanceGameArchive archive in Object.FindObjectsOfType<InstanceGameArchive>(true)) {
             if (ConvertToInstance(archive.gameObject, prefab)) {
                 note += ", " + archive.gameObject.name + " made an instance";
             }
         }
-        Debug.Log("[GameArchiveBuilder] Archive prefab: " + (note.Length > 0 ? note.Substring(2) : "unchanged"));
+        GameObject personalPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PersonalPrefabPath);
+        foreach (PersonalGameArchive archive in Object.FindObjectsOfType<PersonalGameArchive>(true)) {
+            if (ConvertToInstance(archive.gameObject, personalPrefab)) {
+                note += ", " + archive.gameObject.name + " made an instance";
+            }
+        }
+        Debug.Log("[GameArchiveBuilder] Archive prefabs: " + (note.Length > 0 ? note.Substring(2) : "unchanged"));
     }
 
     static bool EnsureArchiveProgramAssets(string menuItem) {
@@ -171,5 +192,22 @@ public static class GameArchiveBuilder {
         holder.localOnly = localOnly;
         UdonSharpEditorUtility.CopyProxyToUdon(holder);
         return holder;
+    }
+
+    // ---- The Personal Game Archive prefab (step 14.6, docs/prefabs.md) ----
+
+    // Makes the Personal Game Archive prefab when it's missing (BuildPersonal), and otherwise saves it again in place.
+    // Returns a note for the log ("" when it was there).
+    static string EnsurePersonalPrefab() {
+        return EnsurePrefab(PersonalPrefabPath, PersonalPrefabName, BuildPersonal);
+    }
+
+    // The personal archive (the prefab's contents): a PersonalGameArchive, its capacity and key prefix at their
+    // defaults.
+    static GameObject BuildPersonal() {
+        GameObject root = new GameObject(PersonalPrefabName);
+        PersonalGameArchive archive = UdonSharpUndo.AddComponent<PersonalGameArchive>(root);
+        UdonSharpEditorUtility.CopyProxyToUdon(archive);
+        return root;
     }
 }

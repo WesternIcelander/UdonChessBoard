@@ -18,8 +18,10 @@ using VRC.Udon;
 // its pieces standing on their starting squares, pointed at a placed board, and the open scene's views instances of
 // it. 14.4: the Chess Board UI with its buttons (each calling its own UI), status panels, PGN box and sounds, pointed
 // at a placed board, and the open scene's UIs instances of it. 14.5: the Game Archive with its own holders, a board
-// pointed at it, and the open scene's archive an instance of it, every board on it. Every prefab: nothing it uses is
-// under Assets/Tests/.
+// pointed at it, and the open scene's archive an instance of it, every board on it. 14.6: the Personal Game Archive
+// at its defaults, the Game History Wall and Personal History Wall with their entries (the personal one's with delete
+// buttons), Export PGN and PGN box, each pointed at a placed archive of its kind, and the open scene's personal archive
+// and walls instances of them. Every prefab: nothing it uses is under Assets/Tests/.
 // Logs "[PrefabTest] PASS: <check>" or "[PrefabTest] FAIL: <check>: <details>" per check, then a summary line.
 public static class PrefabTest {
     const string PieceSetPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Pieces.prefab";
@@ -28,6 +30,9 @@ public static class PrefabTest {
     const string ViewPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Board View.prefab";
     const string UIPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Board UI.prefab";
     const string ArchivePrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Game Archive.prefab";
+    const string PersonalPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Personal Game Archive.prefab";
+    const string WallPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Game History Wall.prefab";
+    const string PersonalWallPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Personal History Wall.prefab";
 
     static int passed;
     static int failed;
@@ -48,8 +53,15 @@ public static class PrefabTest {
         Check(uiPrefab != null, "the Chess Board UI prefab at " + UIPrefabPath, "missing");
         GameObject archivePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(ArchivePrefabPath);
         Check(archivePrefab != null, "the Game Archive prefab at " + ArchivePrefabPath, "missing");
+        GameObject personalPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PersonalPrefabPath);
+        Check(personalPrefab != null, "the Personal Game Archive prefab at " + PersonalPrefabPath, "missing");
+        GameObject wallPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(WallPrefabPath);
+        Check(wallPrefab != null, "the Game History Wall prefab at " + WallPrefabPath, "missing");
+        GameObject personalWallPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PersonalWallPrefabPath);
+        Check(personalWallPrefab != null, "the Personal History Wall prefab at " + PersonalWallPrefabPath, "missing");
         if (setPrefab == null || arbiterPrefab == null || boardPrefab == null || viewPrefab == null
-            || uiPrefab == null || archivePrefab == null) {
+            || uiPrefab == null || archivePrefab == null || personalPrefab == null || wallPrefab == null
+            || personalWallPrefab == null) {
             Summary();
             return;
         }
@@ -61,6 +73,9 @@ public static class PrefabTest {
             CheckView(viewPrefab, boardPrefab, scene);
             CheckUI(uiPrefab, boardPrefab, scene);
             CheckArchive(archivePrefab, arbiterPrefab, scene);
+            CheckPersonalArchive(personalPrefab, arbiterPrefab, scene);
+            CheckWall(wallPrefab, archivePrefab, false, scene);
+            CheckWall(personalWallPrefab, personalPrefab, true, scene);
         } finally {
             EditorSceneManager.CloseScene(scene, true);
         }
@@ -68,8 +83,11 @@ public static class PrefabTest {
         CheckSceneViews(viewPrefab);
         CheckSceneUIs(uiPrefab);
         CheckSceneArchive(archivePrefab);
+        CheckScenePersonalArchive(personalPrefab);
+        CheckSceneWalls(wallPrefab, personalWallPrefab);
         foreach (string path in new[] {
             PieceSetPrefabPath, ArbiterPrefabPath, BoardPrefabPath, ViewPrefabPath, UIPrefabPath, ArchivePrefabPath,
+            PersonalPrefabPath, WallPrefabPath, PersonalWallPrefabPath,
         }) {
             CheckNoTests(path);
             CheckSyncMethods(path);
@@ -617,6 +635,171 @@ public static class PrefabTest {
                 "the scene's " + arbiter.gameObject.name + " lists the scene's archives",
                 "missing:" + missing + ", " + arbiter.archives.Length + " entries");
         }
+    }
+
+    // ---- 14.6: Personal Game Archive ----
+
+    static void CheckPersonalArchive(GameObject personalPrefab, GameObject arbiterPrefab, Scene scene) {
+        List<string> logged = new List<string>();
+        Application.LogCallback listener = (text, stack, type) => logged.Add(type + ": " + text);
+        Application.logMessageReceived += listener;
+        GameObject placed;
+        try {
+            placed = (GameObject)PrefabUtility.InstantiatePrefab(personalPrefab, scene);
+        } finally {
+            Application.logMessageReceived -= listener;
+        }
+        Check(logged.Count == 0, "the Personal Game Archive placed logs nothing", string.Join("; ", logged));
+        PersonalGameArchive archive = placed.GetComponent<PersonalGameArchive>();
+        Check(archive != null, "the Personal Game Archive has a PersonalGameArchive", "none");
+        if (archive == null) return;
+        CheckIntValue(archive.capacity, PersonalGameArchive.DefaultCapacity,
+            "the personal archive's capacity is the default");
+        CheckString(archive.keyPrefix, PersonalGameArchive.DefaultKeyPrefix,
+            "the personal archive's key prefix is the default");
+        Check(UdonSharpEditorUtility.GetBackingUdonBehaviour(archive).SyncMethod == VRC.SDKBase.Networking.SyncType.None,
+            "the personal archive syncs nothing", "it does");
+        CheckIntValue(placed.transform.childCount, 0, "the personal archive has no children");
+
+        // A placed arbiter listing it by hand, as a world creator would set it in the Inspector.
+        GameObject arbiterObject = (GameObject)PrefabUtility.InstantiatePrefab(arbiterPrefab, scene);
+        ChessArbiter arbiter = arbiterObject.GetComponent<ChessArbiter>();
+        SerializedObject fields = new SerializedObject(arbiter);
+        SerializedProperty list = fields.FindProperty("archives");
+        list.arraySize = 1;
+        list.GetArrayElementAtIndex(0).objectReferenceValue = archive;
+        fields.ApplyModifiedProperties();
+        Check(arbiter.archives.Length == 1 && arbiter.archives[0] == archive,
+            "an arbiter listing the placed personal archive", arbiter.archives.Length + " entries");
+        CheckIntValue(arbiterPrefab.GetComponent<ChessArbiter>().archives.Length, 0,
+            "an arbiter listing the personal archive: the arbiter prefab still lists none");
+        Object.DestroyImmediate(placed);
+        Object.DestroyImmediate(arbiterObject);
+    }
+
+    // The open scene's one personal archive (the test scene's) is an instance of the Personal Game Archive prefab.
+    static void CheckScenePersonalArchive(GameObject personalPrefab) {
+        PersonalGameArchive[] archives = Object.FindObjectsOfType<PersonalGameArchive>(true);
+        CheckIntValue(archives.Length, 1, "the open scene has one personal archive");
+        if (archives.Length == 0) return;
+        Check(PrefabUtility.IsAnyPrefabInstanceRoot(archives[0].gameObject)
+            && PrefabUtility.GetCorrespondingObjectFromOriginalSource(archives[0].gameObject) == personalPrefab,
+            "the scene's " + archives[0].gameObject.name + " is a Personal Game Archive instance", "it isn't");
+    }
+
+    // ---- 14.6: Game History Wall, Personal History Wall ----
+
+    static void CheckWall(GameObject wallPrefab, GameObject archivePrefab, bool personal, Scene scene) {
+        string kind = personal ? "the Personal History Wall" : "the Game History Wall";
+        List<string> logged = new List<string>();
+        Application.LogCallback listener = (text, stack, type) => logged.Add(type + ": " + text);
+        Application.logMessageReceived += listener;
+        GameObject placed;
+        try {
+            placed = (GameObject)PrefabUtility.InstantiatePrefab(wallPrefab, scene);
+        } finally {
+            Application.logMessageReceived -= listener;
+        }
+        Check(logged.Count == 0, kind + " placed logs nothing", string.Join("; ", logged));
+        GameHistoryWall wall = placed.GetComponent<GameHistoryWall>();
+        Check(wall != null, kind + " has a GameHistoryWall", "none");
+        if (wall == null) return;
+        Check(wall.archive == null, kind + "'s archive is left to set", "on " + wall.archive);
+        Check(wall.i18n == null, kind + "'s I18n is left for the sanity check", "on " + wall.i18n);
+        CheckString(wall.titleKey, personal ? "wall_title_personal" : "wall_title", kind + "'s title key");
+        Canvas canvas = placed.GetComponent<Canvas>();
+        BoxCollider box = placed.GetComponent<BoxCollider>();
+        Check(canvas != null && canvas.renderMode == RenderMode.WorldSpace
+            && placed.GetComponent<VRC.SDK3.Components.VRCUiShape>() != null && box != null && box.isTrigger,
+            kind + " is a world-space canvas taking the pointer through a trigger", "it isn't");
+        Check(wall.title != null && wall.title.transform.IsChildOf(placed.transform), kind + "'s title", "missing");
+
+        int expected = personal ? PersonalGameArchive.DefaultCapacity
+            : GameArchiveBuilder.HolderCount * GameArchiveHolder.Capacity;
+        CheckIntValue(wall.rowTargets != null ? wall.rowTargets.Length : -1, expected,
+            kind + " has an entry per game of its archive's default capacity");
+        string entries = "";
+        int count = wall.rowTargets != null ? wall.rowTargets.Length : 0;
+        if (wall.rows == null || wall.rows.Length != count
+            || wall.deleteButtons == null || wall.deleteButtons.Length != (personal ? count : 0)
+            || wall.deleteLabels == null || wall.deleteLabels.Length != (personal ? count : 0)) {
+            entries += " the arrays' lengths differ;";
+            count = 0;
+        }
+        for (int i = 0; i < count; i++) {
+            GameHistoryRow row = wall.rowTargets[i];
+            if (row == null || row.wall != wall || row.index != i || row.transform.parent != wall.content) {
+                entries += " " + i + " missing or not the wall's;";
+                continue;
+            }
+            UdonBehaviour rowUdon = UdonSharpEditorUtility.GetBackingUdonBehaviour(row);
+            if (PressEvent(row.GetComponent<UnityEngine.UI.Button>(), rowUdon) != "_Press") {
+                entries += " " + i + "'s press;";
+            }
+            if (wall.rows[i] == null || wall.rows[i].transform.parent != row.transform) entries += " " + i + "'s text;";
+            if (!personal) continue;
+            GameObject delete = wall.deleteButtons[i];
+            if (delete == null || delete.transform.parent != row.transform
+                || PressEvent(delete.GetComponent<UnityEngine.UI.Button>(), rowUdon) != "_PressDelete"
+                || wall.deleteLabels[i] == null || !wall.deleteLabels[i].transform.IsChildOf(delete.transform)) {
+                entries += " " + i + "'s delete button;";
+            }
+        }
+        Check(count > 0 && entries == "", kind + "'s " + count + " entries, each picking its game"
+            + (personal ? ", with its delete button" : ", without delete buttons"), entries);
+        Check(wall.scroll != null && wall.viewport != null && wall.content != null && wall.scrollbar != null
+            && wall.content.IsChildOf(wall.viewport) && wall.scroll.content == wall.content
+            && wall.scroll.verticalScrollbar == wall.scrollbar, kind + "'s scroll view", "missing");
+
+        UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(wall);
+        Check(wall.exportButton != null && wall.exportButton.transform.IsChildOf(placed.transform)
+            && !wall.exportButton.activeSelf && wall.exportLabel != null,
+            kind + "'s Export PGN button (hidden)", "missing");
+        if (wall.exportButton != null) {
+            CheckString(PressEvent(wall.exportButton.GetComponent<UnityEngine.UI.Button>(), udon), "_PressExport",
+                kind + "'s Export PGN calls the wall's own event");
+        }
+        Check(wall.pgnBox != null && wall.pgnBox.transform.IsChildOf(placed.transform) && !wall.pgnBox.activeSelf
+            && wall.pgnField != null && wall.pgnField.readOnly && wall.pgnHint != null,
+            kind + "'s PGN box (hidden, read only)", "missing");
+
+        // Pointed at a placed archive of its kind by hand, as a world creator would set it in the Inspector.
+        GameObject archiveObject = (GameObject)PrefabUtility.InstantiatePrefab(archivePrefab, scene);
+        GameArchive archive = archiveObject.GetComponent<GameArchive>();
+        SerializedObject fields = new SerializedObject(wall);
+        fields.FindProperty("archive").objectReferenceValue = archive;
+        fields.ApplyModifiedProperties();
+        Check(wall.archive == archive, kind + " pointed at a placed archive", "on " + wall.archive);
+        Check(wallPrefab.GetComponent<GameHistoryWall>().archive == null,
+            kind + " pointed at an archive: the prefab still points at none", "it doesn't");
+        Object.DestroyImmediate(placed);
+        Object.DestroyImmediate(archiveObject);
+    }
+
+    // The open scene's walls (the test scene's) are instances of their kind's prefab: one on the instance's archive
+    // and one on the personal one, each with its entries its own.
+    static void CheckSceneWalls(GameObject wallPrefab, GameObject personalWallPrefab) {
+        GameHistoryWall[] walls = Object.FindObjectsOfType<GameHistoryWall>(true);
+        int instanceWalls = 0;
+        int personalWalls = 0;
+        foreach (GameHistoryWall wall in walls) {
+            string name = "the scene's " + wall.gameObject.name;
+            bool personal = wall.archive is PersonalGameArchive;
+            if (personal) personalWalls++;
+            else if (wall.archive is InstanceGameArchive) instanceWalls++;
+            Check(wall.archive != null, name + " has its archive", "empty");
+            GameObject prefab = personal ? personalWallPrefab : wallPrefab;
+            Check(PrefabUtility.IsAnyPrefabInstanceRoot(wall.gameObject)
+                && PrefabUtility.GetCorrespondingObjectFromOriginalSource(wall.gameObject) == prefab,
+                name + " is a " + prefab.name + " instance", "it isn't");
+            int own = 0;
+            foreach (GameHistoryRow row in wall.rowTargets) {
+                if (row != null && row.wall == wall && row.transform.IsChildOf(wall.transform)) own++;
+            }
+            CheckIntValue(own, wall.rowTargets.Length, name + "'s entries are its own");
+        }
+        CheckIntValue(instanceWalls, 1, "the open scene has one wall on the instance's archive");
+        CheckIntValue(personalWalls, 1, "the open scene has one wall on the personal archive");
     }
 
     // Every UdonBehaviour in a prefab (nested prefabs' too) has the sync method its script asks for, so a placed
