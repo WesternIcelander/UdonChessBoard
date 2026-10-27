@@ -719,6 +719,8 @@ public static class PrefabTest {
     static void CheckSceneTables() {
         ChessBoard[] boards = Object.FindObjectsOfType<ChessBoard>(true);
         foreach (ChessBoard board in boards) {
+            // Not the inactive spare board SettingsTest numbers 2 (14.11, SpareBoardBuilder), which has no table.
+            if (!board.gameObject.activeInHierarchy) continue;
             string name = "the scene's " + board.gameObject.name + " (board " + board.boardNumber + ")";
             GameObject table = ChessBoardViewBuilder.TableOf(board);
             Check(table != null, name + " is in a Chess Table instance", "it isn't");
@@ -1109,8 +1111,9 @@ public static class PrefabTest {
         Check(arbiters.Length == 1 && menu.arbiter == arbiters[0], "the scene's settings menu is on its arbiter",
             "on " + menu.arbiter);
         int onArbiter = 0;
+        // The inactive spare board (14.11) isn't listed: it isn't played.
         foreach (ChessBoard board in Object.FindObjectsOfType<ChessBoard>(true)) {
-            if (board.arbiter == menu.arbiter) onArbiter++;
+            if (board.arbiter == menu.arbiter && board.gameObject.activeInHierarchy) onArbiter++;
         }
         bool every = menu.boards.Length == onArbiter;
         foreach (ChessBoard board in menu.boards) {

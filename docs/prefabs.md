@@ -2,7 +2,7 @@
 
 World creators add the chess objects by dragging prefabs from `Assets/Siggi/ChessBoard/Prefabs/` into their scene (step 14). Each prefab is self-contained: its meshes, materials and Udon programs are saved as assets, so it works in a fresh scene, and it holds nothing for tests or debugging. Placed instances get their network IDs from the VRChat SDK as other scene objects do.
 
-A prefab can't reference objects in the scene, so the links between the chess objects (a board to its arbiter and archive, a view to its board, …) are set after placing them: by hand in the Inspector, until step 14.11 fills them in automatically. Each section below says what to set.
+A prefab can't reference objects in the scene, so the links between the chess objects (a board to its arbiter and archive, a view to its board, …) are set after placing them. Most of them fill themselves in: the [wiring script](#wiring) (step 14.11) links each empty one to the one object of its kind in the scene when the scene is saved, when Play Mode starts and before every build, and numbers the boards. Each section below says what it sets and what is left to you.
 
 Until step 14.13 the **Tools > Chess Board** builders make each prefab when it's missing and otherwise update it in place, keeping its objects ([compatibility](compatibility.md), rule 1). From then on the prefabs are the source, changed in place in Unity.
 
@@ -30,7 +30,7 @@ A world's set never changes when the package updates. The full guide is step 15.
 - a nested instance of **Chess Pieces** as its child, listed alone in **Piece Sets**, so it's the default set;
 - **Board Count** (4), first in its Inspector, the **PGN** tags **PGN Event** and **PGN Site** (empty and `VRChat`, step 13.11: the Event and Site tags of every board's games, `?` when empty) and the instance defaults (rules, inactivity, forced lobby settings) at their defaults.
 
-Place one per world. After placing it, set **Archives** (step 13.10, empty in the prefab): the scene's **Game Archive** and **Personal Game Archive**, where every board's logged games go. Left empty, games are only logged. Change **PGN Event** and **PGN Site** to name your world's event and site in its games' PGN, if you like. The boards and the settings menu point at it (steps 14.2 and 14.7).
+Place one per world. Its **Archives** (step 13.10, empty in the prefab) are the scene's **Game Archive** and **Personal Game Archive**, where every board's logged games go: the wiring fills an empty list with every archive in the scene, and warns about an archive in the scene that a list already set leaves out. With no archive, games are only logged. Its **Board Count** is set by the wiring to the highest board number on it plus one. Change **PGN Event** and **PGN Site** to name your world's event and site in its games' PGN, if you like. The boards and the settings menu point at it (steps 14.2 and 14.7).
 
 **Choosing the organizers:** to use another rule, add `InstanceMasterAuth` (whoever is instance master), `NoOneAuth` (nobody; the editor defaults apply unchanged) or your own `SimpleAuth` subclass to the arbiter's object, drag it into **Simple Auth**, and remove the `FirstJoinerAuth` if you like. Simple Auth must not be left empty: a build is cancelled while it is.
 
@@ -43,10 +43,10 @@ Place one per world. After placing it, set **Archives** (step 13.10, empty in th
 Place one per board. After placing it, set:
 
 - **Arbiter**: the scene's **Chess Arbiter**. Left empty, the board logs an error on start and plays with every setting off.
-- **Board Number**: 0 for the first board, 1 for the next, and so on, each board its own. It picks the board's per-board setting overrides on the arbiter ([settings](settings.md#per-board-overrides)), so two boards with the same number share them; numbers from the arbiter's **Board Count** (4) up have none and always use the instance defaults. Raise **Board Count** for more boards with overrides of their own.
+- **Board Number**: 0 for the first board, 1 for the next, and so on, each board its own. It picks the board's per-board setting overrides on the arbiter ([settings](settings.md#per-board-overrides)), so two boards with the same number share them; numbers from the arbiter's **Board Count** (4) up have none and always use the instance defaults. The wiring keeps **Board Count** at the highest board number plus one, inactive boards included, so every board has overrides of its own.
 - **Listeners**: nothing for the package's own views. The view, the UI and the 2D view add themselves when they start (`AddListener`); list here only a behaviour of your own that doesn't.
 
-The PGN Event and Site tags of its games are the arbiter's (the board's own fields went in step 13.11). Its games go to the arbiter's **Archives** (the board's own **Archive** field went in step 13.10). Step 14.11 will fill in the arbiter and board numbers by itself.
+The PGN Event and Site tags of its games are the arbiter's (the board's own fields went in step 13.11). Its games go to the arbiter's **Archives** (the board's own **Archive** field went in step 13.10). The wiring fills in **Arbiter** and gives a board without a number of its own the lowest free one, so a placed board needs nothing set.
 
 ## Chess Board View
 
@@ -86,7 +86,7 @@ Since they're nested instances, a later change to the board, view or UI prefab r
 - **Arbiter**: the scene's **Chess Arbiter**.
 - **Board Number**: 0 for the first table, 1 for the next, and so on (as for [Chess Board](#chess-board)).
 
-Nothing else: the view and UI add themselves to the board's listeners, the archives are on the arbiter, "Load it here" uses the arbiter's pick, and the `I18n` fields are the sanity check's. Customize the view on the table as on a placed view ([customizing](customizing.md#the-board-model-and-scale-step-122)): the changes are overrides on the table instance. Step 14.11 will fill in the arbiter and board numbers by itself.
+Nothing else: the view and UI add themselves to the board's listeners, the archives are on the arbiter, "Load it here" uses the arbiter's pick, and the `I18n` fields are the sanity check's. Customize the view on the table as on a placed view ([customizing](customizing.md#the-board-model-and-scale-step-122)): the changes are overrides on the table instance. The wiring fills in **Arbiter** and gives a board without a number of its own the lowest free one, so a placed board needs nothing set.
 
 The table is a plain object holding the three, not a variant of the Chess Board prefab, so the board, view and UI stay siblings, as they are when placed one by one, and each is reached the same way whichever was used.
 
@@ -108,14 +108,14 @@ Place at most one per world. After placing it, list it in the arbiter's **Archiv
 
 Place one per world, where players can read it; it faces +z, and its origin is its centre. After placing it, set:
 
-- **Archive**: the scene's **Game Archive**. Left empty, the wall logs an error on start and shows nothing.
+- **Archive**: the scene's **Game Archive**. Left empty, the wall logs an error on start and shows nothing. The wiring fills it in.
 - **I18n**: nothing. The `I18n` sanity check fills it from the Chess Language on build and before Play Mode.
 
 A game picked on it is offered by every board's **Load it here** (the pick is on the arbiter), so it needs no board.
 
 ## Personal History Wall
 
-`Prefabs/Personal History Wall.prefab` (step 14.6): the same wall for the **Personal Game Archive**, with 20 entries (its default capacity), each with a **Delete** button at its right end (pressed twice within 3 s), and its title from `wall_title_personal` (`My games`). The wall makes more entries at run time when its archive's **Capacity** is raised, so it needs no change for that. Set **Archive** to the scene's **Personal Game Archive** after placing it.
+`Prefabs/Personal History Wall.prefab` (step 14.6): the same wall for the **Personal Game Archive**, with 20 entries (its default capacity), each with a **Delete** button at its right end (pressed twice within 3 s), and its title from `wall_title_personal` (`My games`). The wall makes more entries at run time when its archive's **Capacity** is raised, so it needs no change for that. The wiring sets its **Archive** to the scene's **Personal Game Archive** (a wall with delete buttons gets the personal archive, one without the Game Archive).
 
 It's a prefab of its own, not a variant of the Game History Wall: every entry differs (the delete button, a narrower label) and so does their number, so a variant would override nearly all of it, and a change to the instance wall's entries could leave the delete buttons out of place.
 
@@ -129,7 +129,7 @@ Place at most one per world, where organizers can reach it; it stands at its cen
 - **Boards**: every **Chess Board** on that arbiter, in board-number order, for **Apply now** (re-snapshots). A board left out isn't re-snapshotted from the menu; its settings still change for its next game.
 - **I18n**: nothing. The `I18n` sanity check fills it from the Chess Language on build and before Play Mode.
 
-Without it, nobody can change the settings in-world: the arbiter's Inspector values hold for the whole instance. Step 14.11 will fill in the arbiter and boards by itself.
+Without it, nobody can change the settings in-world: the arbiter's Inspector values hold for the whole instance. The wiring fills in **Arbiter** and an empty **Boards** (every board on the arbiter, by number), and warns about a board a list already set leaves out.
 
 ## 2D Chess Board View
 
@@ -137,7 +137,7 @@ Without it, nobody can change the settings in-world: the arbiter's Inspector val
 
 Place as many as you like; it faces +z (read looking along +z), and its origin is its centre. After placing it, set:
 
-- **Boards**: the **Chess Board**s it steps through, in the order Left and Right go (by board number, as the settings menu numbers them). Left empty, the view logs an error on start and shows nothing.
+- **Boards**: the **Chess Board**s it steps through, in the order Left and Right go (by board number, as the settings menu numbers them). Left empty, the view logs an error on start and shows nothing. The wiring fills an empty list (without a **Locked Board**) with every board in the scene, by number; a list already set is yours, so add a board placed later to it, or empty it to have it filled again.
 - or **Locked Board**: one board, for a view beside its table; the selector is then hidden and **Boards** isn't read.
 - **Synced**: your choice, off in the prefab. On, everyone sees the board and position last chosen by anyone, late joiners included; off, each player chooses for themselves.
 - **I18n**: nothing. The `I18n` sanity check fills it from the Chess Language on build and before Play Mode.
@@ -164,6 +164,24 @@ Place one per scene. Every behaviour of ours with an **I18n** field (the board's
 **A world `I18n` of its own at the same level is ambiguous:** two `I18n`s beside each other are equally close, so the sanity check can't pick one for the objects there and cancels the build (and Play Mode), naming that level. Group the chess objects under an empty parent of their own (e.g. **Chess**) with Chess Language beside them inside it; the world's `I18n` stays elsewhere for the world's objects, which then get theirs. Or add an `I18nLock` to an object to keep its fields as you set them by hand.
 
 **Adding or changing a language:** add a pack to the placed Chess Language's **Language Packs** (an override on the instance, after the package's), as [customizing](customizing.md#languages-step-135) says. Every board, wall, menu and 2D view uses that one Chess Language, so the pack reaches them all, and a package update that adds packs or keys still reaches the instance. Don't put your pack first: the first pack is the fallback for keys a pack leaves out.
+
+## Wiring
+
+`ChessSceneWiring` (`Editor/ChessSceneWiring.cs`, step 14.11) links the placed prefabs to each other, so a world drops them in and sets nothing. It runs on each loaded scene when the scene is saved (`EditorSceneManager.sceneSaving`), when Play Mode is entered (`playModeStateChanged`, on `ExitingEditMode`, so the first test already has everything) and before every VRChat build (`IVRCSDKBuildRequestedCallback`, before the build check), and on demand from **Tools > Chess Board > Wire Chess Objects**. Each empty reference takes the one object of its kind in the same scene (inactive ones included):
+
+| Field | Filled with |
+|---|---|
+| a board's **Arbiter**, the settings menu's **Arbiter** | the scene's **Chess Arbiter** |
+| the arbiter's **Archives** (when empty) | every archive in the scene, the Game Archive and the Personal Game Archive |
+| a history wall's **Archive** | the **Personal Game Archive** for a wall with delete buttons (the Personal History Wall), the **Game Archive** for one without |
+| the settings menu's **Boards** (when empty) | every board on its arbiter, by board number |
+| a 2D view's **Boards** (when empty and without a **Locked Board**) | every board in the scene, by board number |
+
+It also gives each board without a number of its own (one another board on the same arbiter has, or a negative one) the lowest free number: of boards sharing a number, one whose number was set (an override, not the prefab's untouched 0) keeps it, then one wired before (its **Arbiter** already set), so a table dropped in beside wired ones takes the next number and theirs stay, wherever it lands in the hierarchy; otherwise the first in the hierarchy keeps it. And it sets each arbiter's **Board Count** to its highest board number plus one, inactive boards counted too, raising or lowering it (logged), so every board has per-board overrides of its own.
+
+A list that's already set (the arbiter's **Archives**, the menu's **Boards**, a 2D view's **Boards**) is the world's choice and stays as it is; for the arbiter's and the menu's, the wiring warns about an archive or an active board in the scene the list leaves out. Empty a list to have it filled again. The view's and UI's **Board** come set in the Chess Table, and the `I18n` fields are the `I18n` sanity check's ([Chess Language](#chess-language)).
+
+Every change is logged (`[ChessSceneWiring] <object>: <field> set to …`), undoable, recorded as an override on the prefab instance and copied to its Udon data, and it marks the scene dirty, so it's saved with the scene. A reference it can't fill, because the scene has no object of that kind or several (two arbiters, say), is logged as an error naming the candidates; before a build it also cancels the build, selects the object and explains in a dialog. Saving and Play Mode go ahead, with the error logged. Drag the right object into the field by hand to choose among several: a reference that's set is never changed.
 
 ## Sync methods
 
