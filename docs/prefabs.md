@@ -8,7 +8,7 @@ Until step 14.13 the **Tools > Chess Board** builders make each prefab when it's
 
 Every chess prefab shares one `I18n`, the **Chess Language** prefab (step 14.10), placed once per scene as a sibling or on a parent of the chess objects, so the `I18n` sanity check links them to it ([architecture](architecture.md), languages).
 
-**The minimum a world needs:** one **Chess Arbiter**, and per board a **Chess Board** wired to it with a **Chess Board View** and a **Chess Board UI** on it (the UI holds the buttons: without it, nobody can join or start a game). Add one **Game Archive** per world to keep finished games (for the history wall and **Load it here**), listed in the arbiter's **Archives**; without one, games are only logged. A **Game History Wall** on it lists those games for players to pick, export and load. The **Personal Game Archive** and the **Personal History Wall** on it keep and show each player's own games across visits.
+**The minimum a world needs:** one **Chess Arbiter**, and per board a **Chess Board** wired to it with a **Chess Board View** and a **Chess Board UI** on it (the UI holds the buttons: without it, nobody can join or start a game). Add one **Game Archive** per world to keep finished games (for the history wall and **Load it here**), listed in the arbiter's **Archives**; without one, games are only logged. A **Game History Wall** on it lists those games for players to pick, export and load. The **Personal Game Archive** and the **Personal History Wall** on it keep and show each player's own games across visits. A **Chess Settings Menu** on the arbiter lets organizers change the settings in-world.
 
 ## Chess Pieces
 
@@ -102,6 +102,18 @@ A game picked on it is offered by every board's **Load it here** (the pick is on
 `Prefabs/Personal History Wall.prefab` (step 14.6): the same wall for the **Personal Game Archive**, with 20 entries (its default capacity), each with a **Delete** button at its right end (pressed twice within 3 s), and its title from `wall_title_personal` (`My games`). The wall makes more entries at run time when its archive's **Capacity** is raised, so it needs no change for that. Set **Archive** to the scene's **Personal Game Archive** after placing it.
 
 It's a prefab of its own, not a variant of the Game History Wall: every entry differs (the delete button, a narrower label) and so does their number, so a variant would override nearly all of it, and a change to the instance wall's entries could leave the delete buttons out of place.
+
+## Chess Settings Menu
+
+`Prefabs/Chess Settings Menu.prefab` (step 14.7): the organizers' settings menu, a landscape world-space canvas (1.5 m by 1.42 m) with a `ChessSettingsMenu` ([settings](settings.md#settings-menu-step-111a), [organizers](organizers.md)): the **Title**, the **Notice** everyone but organizers sees, and the **Controls** only organizers see: the scope row (All boards or one board, and All default), a row per setting with its label, its value and its three buttons, and **Apply now** with its outcome below it. Each button has a `ChessSettingsButton` of its own, which passes its row and action to the menu. Its labels are written from the language pack at run time. It takes the pointer through a trigger collider and `VRCUiShape`, so players walk through it.
+
+Place at most one per world, where organizers can reach it; it stands at its centre, unrotated, read from its −z side. After placing it, set:
+
+- **Arbiter**: the scene's **Chess Arbiter**. Left empty, the controls stay hidden from everyone and the menu shows only its notice.
+- **Boards**: every **Chess Board** on that arbiter, in board-number order, for **Apply now** (re-snapshots). A board left out isn't re-snapshotted from the menu; its settings still change for its next game.
+- **I18n**: nothing. The `I18n` sanity check fills it from the Chess Language on build and before Play Mode.
+
+Without it, nobody can change the settings in-world: the arbiter's Inspector values hold for the whole instance. Step 14.11 will fill in the arbiter and boards by itself.
 
 ## Sync methods
 

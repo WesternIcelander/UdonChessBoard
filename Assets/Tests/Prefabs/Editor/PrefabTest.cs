@@ -21,7 +21,9 @@ using VRC.Udon;
 // pointed at it, and the open scene's archive an instance of it, every board on it. 14.6: the Personal Game Archive
 // at its defaults, the Game History Wall and Personal History Wall with their entries (the personal one's with delete
 // buttons), Export PGN and PGN box, each pointed at a placed archive of its kind, and the open scene's personal archive
-// and walls instances of them. Every prefab: nothing it uses is under Assets/Tests/.
+// and walls instances of them. 14.7: the Chess Settings Menu with its rows and buttons (each passing its row and
+// action to the menu), pointed at a placed arbiter and board, and the open scene's menu an instance of it on its
+// arbiter with every board. Every prefab: nothing it uses is under Assets/Tests/.
 // Logs "[PrefabTest] PASS: <check>" or "[PrefabTest] FAIL: <check>: <details>" per check, then a summary line.
 public static class PrefabTest {
     const string PieceSetPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Pieces.prefab";
@@ -33,6 +35,7 @@ public static class PrefabTest {
     const string PersonalPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Personal Game Archive.prefab";
     const string WallPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Game History Wall.prefab";
     const string PersonalWallPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Personal History Wall.prefab";
+    const string MenuPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Settings Menu.prefab";
 
     static int passed;
     static int failed;
@@ -59,9 +62,11 @@ public static class PrefabTest {
         Check(wallPrefab != null, "the Game History Wall prefab at " + WallPrefabPath, "missing");
         GameObject personalWallPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PersonalWallPrefabPath);
         Check(personalWallPrefab != null, "the Personal History Wall prefab at " + PersonalWallPrefabPath, "missing");
+        GameObject menuPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(MenuPrefabPath);
+        Check(menuPrefab != null, "the Chess Settings Menu prefab at " + MenuPrefabPath, "missing");
         if (setPrefab == null || arbiterPrefab == null || boardPrefab == null || viewPrefab == null
             || uiPrefab == null || archivePrefab == null || personalPrefab == null || wallPrefab == null
-            || personalWallPrefab == null) {
+            || personalWallPrefab == null || menuPrefab == null) {
             Summary();
             return;
         }
@@ -76,6 +81,7 @@ public static class PrefabTest {
             CheckPersonalArchive(personalPrefab, arbiterPrefab, scene);
             CheckWall(wallPrefab, archivePrefab, false, scene);
             CheckWall(personalWallPrefab, personalPrefab, true, scene);
+            CheckMenu(menuPrefab, arbiterPrefab, boardPrefab, scene);
         } finally {
             EditorSceneManager.CloseScene(scene, true);
         }
@@ -85,9 +91,10 @@ public static class PrefabTest {
         CheckSceneArchive(archivePrefab);
         CheckScenePersonalArchive(personalPrefab);
         CheckSceneWalls(wallPrefab, personalWallPrefab);
+        CheckSceneMenu(menuPrefab);
         foreach (string path in new[] {
             PieceSetPrefabPath, ArbiterPrefabPath, BoardPrefabPath, ViewPrefabPath, UIPrefabPath, ArchivePrefabPath,
-            PersonalPrefabPath, WallPrefabPath, PersonalWallPrefabPath,
+            PersonalPrefabPath, WallPrefabPath, PersonalWallPrefabPath, MenuPrefabPath,
         }) {
             CheckNoTests(path);
             CheckSyncMethods(path);
@@ -800,6 +807,152 @@ public static class PrefabTest {
         }
         CheckIntValue(instanceWalls, 1, "the open scene has one wall on the instance's archive");
         CheckIntValue(personalWalls, 1, "the open scene has one wall on the personal archive");
+    }
+
+    // ---- 14.7: Chess Settings Menu ----
+
+    static void CheckMenu(GameObject menuPrefab, GameObject arbiterPrefab, GameObject boardPrefab, Scene scene) {
+        List<string> logged = new List<string>();
+        Application.LogCallback listener = (text, stack, type) => logged.Add(type + ": " + text);
+        Application.logMessageReceived += listener;
+        GameObject placed;
+        try {
+            placed = (GameObject)PrefabUtility.InstantiatePrefab(menuPrefab, scene);
+        } finally {
+            Application.logMessageReceived -= listener;
+        }
+        Check(logged.Count == 0, "the Chess Settings Menu placed logs nothing", string.Join("; ", logged));
+        ChessSettingsMenu menu = placed.GetComponent<ChessSettingsMenu>();
+        Check(menu != null, "the Chess Settings Menu has a ChessSettingsMenu", "none");
+        if (menu == null) return;
+        Check(menu.arbiter == null, "the menu's arbiter is left to set", "on " + menu.arbiter);
+        Check(menu.boards != null && menu.boards.Length == 0, "the menu's boards are left to set",
+            menu.boards == null ? "null" : menu.boards.Length + " boards");
+        Check(menu.i18n == null, "the menu's I18n is left for the sanity check", "on " + menu.i18n);
+        Canvas canvas = placed.GetComponent<Canvas>();
+        BoxCollider box = placed.GetComponent<BoxCollider>();
+        Check(canvas != null && canvas.renderMode == RenderMode.WorldSpace
+            && placed.GetComponent<VRC.SDK3.Components.VRCUiShape>() != null && box != null && box.isTrigger,
+            "the menu is a world-space canvas taking the pointer through a trigger", "it isn't");
+        Check(menu.title != null && menu.notice != null && menu.title.transform.IsChildOf(placed.transform)
+            && menu.notice.transform.IsChildOf(placed.transform), "the menu's title and notice", "missing");
+        Check(menu.controls != null && menu.controls.transform.parent == placed.transform
+            && menu.notice != null && !menu.notice.transform.IsChildOf(menu.controls.transform),
+            "the menu's controls, its own child, the notice outside them", "missing");
+        bool under = menu.controls != null && menu.scopeLabel != null && menu.scopeTitle != null
+            && menu.resnapshotTitle != null && menu.resnapshotLabel != null
+            && menu.scopeLabel.transform.IsChildOf(menu.controls.transform)
+            && menu.scopeTitle.transform.IsChildOf(menu.controls.transform)
+            && menu.resnapshotTitle.transform.IsChildOf(menu.controls.transform)
+            && menu.resnapshotLabel.transform.IsChildOf(menu.controls.transform);
+        Check(under, "the menu's scope and re-snapshot rows among the controls", "missing");
+        string rows = "";
+        if (menu.values == null || menu.values.Length != ChessSettingsMenu.ItemCount || menu.itemLabels == null
+            || menu.itemLabels.Length != ChessSettingsMenu.ItemCount) {
+            rows = " the arrays' lengths differ";
+        } else {
+            for (int item = 0; item < ChessSettingsMenu.ItemCount; item++) {
+                if (menu.values[item] == null || menu.itemLabels[item] == null || menu.controls == null
+                    || !menu.values[item].transform.IsChildOf(menu.controls.transform)
+                    || !menu.itemLabels[item].transform.IsChildOf(menu.controls.transform)) {
+                    rows += " " + item + ";";
+                }
+            }
+        }
+        Check(rows == "", "the menu's " + ChessSettingsMenu.ItemCount + " rows, each with its label and value", rows);
+
+        // Three buttons per row and the scope row, and Apply now; each calling its own ChessSettingsButton, which
+        // passes its row and action to the placed menu.
+        int expectedButtons = 3 * (ChessSettingsMenu.ItemCount + 1) + 1;
+        int count = menu.buttons != null ? menu.buttons.Length : 0;
+        string buttons = "";
+        if (menu.buttonImages == null || menu.buttonImages.Length != count || menu.buttonItems == null
+            || menu.buttonItems.Length != count || menu.buttonActions == null || menu.buttonActions.Length != count
+            || menu.buttonLabels == null || menu.buttonLabels.Length != count) {
+            buttons += " the arrays' lengths differ;";
+            count = 0;
+        }
+        bool resnapshot = false;
+        for (int i = 0; i < count; i++) {
+            GameObject button = menu.buttons[i];
+            if (button == null || menu.controls == null || !button.transform.IsChildOf(menu.controls.transform)) {
+                buttons += " " + i + " missing;";
+                continue;
+            }
+            ChessSettingsButton target = button.GetComponent<ChessSettingsButton>();
+            if (target == null || target.menu != menu || target.item != menu.buttonItems[i]
+                || target.action != menu.buttonActions[i]) {
+                buttons += " " + button.name + "'s ChessSettingsButton;";
+                continue;
+            }
+            if (target.item == ChessSettingsMenu.ItemResnapshot && target.action == ChessSettingsMenu.ActionOn) {
+                resnapshot = true;
+            }
+            string pressed = PressEvent(button.GetComponent<UnityEngine.UI.Button>(),
+                UdonSharpEditorUtility.GetBackingUdonBehaviour(target));
+            if (pressed != "_Press") buttons += " " + button.name + " calls " + pressed + ";";
+            if (menu.buttonImages[i] == null || menu.buttonImages[i].gameObject != button) {
+                buttons += " " + button.name + "'s image;";
+            }
+            if (menu.buttonLabels[i] == null || !menu.buttonLabels[i].transform.IsChildOf(button.transform)) {
+                buttons += " " + button.name + "'s label;";
+            }
+        }
+        CheckIntValue(count, expectedButtons, "the menu has three buttons per row, the scope row's and Apply now");
+        Check(count > 0 && buttons == "", "the menu's " + count + " buttons, each passing its row and action to the "
+            + "placed menu", buttons);
+        Check(resnapshot, "the menu's Apply now button", "missing");
+
+        // Pointed at a placed arbiter and board by hand, as a world creator would set them in the Inspector.
+        GameObject arbiterObject = (GameObject)PrefabUtility.InstantiatePrefab(arbiterPrefab, scene);
+        GameObject boardObject = (GameObject)PrefabUtility.InstantiatePrefab(boardPrefab, scene);
+        ChessArbiter arbiter = arbiterObject.GetComponent<ChessArbiter>();
+        ChessBoard board = boardObject.GetComponent<ChessBoard>();
+        SerializedObject fields = new SerializedObject(menu);
+        fields.FindProperty("arbiter").objectReferenceValue = arbiter;
+        SerializedProperty boards = fields.FindProperty("boards");
+        boards.arraySize = 1;
+        boards.GetArrayElementAtIndex(0).objectReferenceValue = board;
+        fields.ApplyModifiedProperties();
+        Check(menu.arbiter == arbiter && menu.boards.Length == 1 && menu.boards[0] == board,
+            "the menu pointed at a placed arbiter and board", "it isn't");
+        ChessSettingsMenu prefabMenu = menuPrefab.GetComponent<ChessSettingsMenu>();
+        Check(prefabMenu.arbiter == null && prefabMenu.boards.Length == 0,
+            "the menu pointed at an arbiter and board: the prefab still points at none", "it doesn't");
+        Object.DestroyImmediate(placed);
+        Object.DestroyImmediate(arbiterObject);
+        Object.DestroyImmediate(boardObject);
+    }
+
+    // The open scene's settings menu (the test scene's) is an instance of the prefab, on the scene's arbiter with
+    // every board on it, its buttons its own.
+    static void CheckSceneMenu(GameObject menuPrefab) {
+        ChessSettingsMenu[] menus = Object.FindObjectsOfType<ChessSettingsMenu>(true);
+        CheckIntValue(menus.Length, 1, "the open scene has one settings menu");
+        if (menus.Length != 1) return;
+        ChessSettingsMenu menu = menus[0];
+        Check(PrefabUtility.IsAnyPrefabInstanceRoot(menu.gameObject)
+            && PrefabUtility.GetCorrespondingObjectFromOriginalSource(menu.gameObject) == menuPrefab,
+            "the scene's settings menu is a Chess Settings Menu instance", "it isn't");
+        ChessArbiter[] arbiters = Object.FindObjectsOfType<ChessArbiter>(true);
+        Check(arbiters.Length == 1 && menu.arbiter == arbiters[0], "the scene's settings menu is on its arbiter",
+            "on " + menu.arbiter);
+        int onArbiter = 0;
+        foreach (ChessBoard board in Object.FindObjectsOfType<ChessBoard>(true)) {
+            if (board.arbiter == menu.arbiter) onArbiter++;
+        }
+        bool every = menu.boards.Length == onArbiter;
+        foreach (ChessBoard board in menu.boards) {
+            if (board == null || board.arbiter != menu.arbiter) every = false;
+        }
+        Check(onArbiter > 0 && every, "the scene's settings menu lists every board on the arbiter",
+            menu.boards.Length + " listed, " + onArbiter + " on the arbiter");
+        int own = 0;
+        foreach (GameObject button in menu.buttons) {
+            ChessSettingsButton target = button != null ? button.GetComponent<ChessSettingsButton>() : null;
+            if (target != null && target.menu == menu && button.transform.IsChildOf(menu.transform)) own++;
+        }
+        CheckIntValue(own, menu.buttons.Length, "the scene's settings menu's buttons are its own");
     }
 
     // Every UdonBehaviour in a prefab (nested prefabs' too) has the sync method its script asks for, so a placed

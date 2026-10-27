@@ -14,8 +14,8 @@ namespace SiggiChessBoard {
     // says when the arbiter's Simple Auth field is empty. Each change goes through the arbiter's BeginChange and
     // EndChange, so it reaches every client, and the menu redraws whenever the arbiter tells it of a settings change
     // (_OnArbiterChanged: a change here, or one arriving; polled before step 13.10). Holds no settings and no synced
-    // fields: which board it shows is the local player's own. Built in the scene by Tools > Chess Board > Create
-    // Settings Menu (Editor/ChessSettingsMenuBuilder.cs).
+    // fields: which board it shows is the local player's own. Placed from the Chess Settings Menu prefab
+    // (docs/prefabs.md), whose arbiter and boards are set after placing it.
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class ChessSettingsMenu : UdonSharpBehaviour {
         // The menu's items, one row each. Setting items are on/off (one or several setting bits), number items step

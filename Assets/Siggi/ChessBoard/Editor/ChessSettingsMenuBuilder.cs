@@ -12,14 +12,17 @@ using VRC.SDK3.Components;
 using VRC.Udon;
 using static ChessBuilderUtil;
 
-// Builds the settings menu (docs/settings.md, ChessSettingsMenu.cs) in the open scene for its only ChessArbiter: a
-// world-space canvas with a title, a notice, and the controls only organizers see: the scope row (All boards or one
-// board, and All default to clear a board's overrides), then one row per setting with its value and its buttons (On,
-// Off and Default for a setting, < > and Default for a time or the forced mode). Below them, Apply now re-snapshots
-// the boards shown (every board on the arbiter for All boards; step 11.1b), with its outcome on the line under it.
-// Every button has a ChessSettingsButton calling the menu's Press. Placed to the right of the boards (along +x), facing
-// them; an existing menu is replaced in place (same parent, position, rotation and scale), and whatever pointed at it
-// (SettingsTest's menu) is pointed at the new one; an empty ChessSettingsMenu field (SettingsTest's menu) gets it.
+// Places the settings menu (docs/settings.md, ChessSettingsMenu.cs) in the open scene for its only ChessArbiter: an
+// instance of the Chess Settings Menu prefab (step 14.7, docs/prefabs.md; BuildMenu makes it when missing,
+// EnsureMenuPrefab), its arbiter and boards set on the instance; Tools > Chess Board > Update Settings Menu Prefab
+// updates it and makes the scene's menu built before 14.7 an instance of it. The menu is a world-space canvas with a
+// title, a notice, and the controls only organizers see: the scope row (All boards or one board, and All default to
+// clear a board's overrides), then one row per setting with its value and its buttons (On, Off and Default for a
+// setting, < > and Default for a time or the forced mode). Below them, Apply now re-snapshots the boards shown (every
+// board on the arbiter for All boards; step 11.1b), with its outcome on the line under it. Every button has a
+// ChessSettingsButton calling the menu's Press. Placed to the right of the boards (along +x), facing them; an existing
+// menu is replaced in place (same parent, position, rotation and scale), and whatever pointed at it (SettingsTest's
+// menu) is pointed at the new one; an empty ChessSettingsMenu field (SettingsTest's menu) gets it.
 // Menu: Tools > Chess Board > Create Settings Menu. Plain editor C#, not Udon.
 public static class ChessSettingsMenuBuilder {
     const string MenuScriptPath = "Assets/Siggi/ChessBoard/ChessSettingsMenu.cs";
@@ -56,26 +59,89 @@ public static class ChessSettingsMenuBuilder {
                 : "There are several ChessArbiters in the scene; the menu needs exactly one.", "OK");
             return;
         }
-        if (!EnsureProgramAssets("Create Settings Menu", MenuScriptPath, MenuProgramPath, ButtonScriptPath,
-            ButtonProgramPath)) return;
+        if (!EnsureMenuProgramAssets("Create Settings Menu")) return;
         ChessArbiter arbiter = arbiters[0];
+        string prefabNote = EnsureMenuPrefab();
+        ChessSettingsMenu[] olds = Object.FindObjectsOfType<ChessSettingsMenu>(true);
+        GameObject root = (GameObject)PrefabUtility.InstantiatePrefab(
+            AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath));
+        Undo.RegisterCreatedObjectUndo(root, "Create Settings Menu");
+        root.name = "ChessSettingsMenu";
+        Transform rootTransform = root.transform;
+        rootTransform.position = NewMenuPosition();
+        // Facing the boards: seen from them, looking along +x.
+        rootTransform.rotation = Quaternion.Euler(0, 90, 0);
+        ChessSettingsMenu menu = root.GetComponent<ChessSettingsMenu>();
+        menu.arbiter = arbiter;
+        menu.boards = BoardsOn(arbiter);
+        RecordInstance(menu);
+
+        int repointed = 0;
+        for (int i = 0; i < olds.Length; i++) {
+            if (i == 0) {
+                rootTransform.SetParent(olds[i].transform.parent, false);
+                rootTransform.SetSiblingIndex(olds[i].transform.GetSiblingIndex());
+                rootTransform.position = olds[i].transform.position;
+                rootTransform.rotation = olds[i].transform.rotation;
+                rootTransform.localScale = olds[i].transform.localScale;
+            }
+            repointed += ChessBoardViewBuilder.RepointReferences(olds[i], menu);
+            Undo.DestroyObjectImmediate(olds[i].gameObject);
+        }
+        PrefabUtility.RecordPrefabInstancePropertyModifications(root);
+        PrefabUtility.RecordPrefabInstancePropertyModifications(rootTransform);
+        int filled = FillEmptyFields(menu);
+        // The menu's text comes from the shared Chess Language (PLAN.md 13.5), made when the scene has
+        // none; the I18n fields are left empty, for the I18n sanity check to fill on build and before Play Mode.
+        EnsureChessLanguage(root.scene);
+        EditorSceneManager.MarkSceneDirty(root.scene);
+        Selection.activeGameObject = root;
+        Debug.Log("[ChessSettingsMenuBuilder] " + (olds.Length > 0 ? "Replaced" : "Created") + " the settings menu for "
+            + arbiter.gameObject.name + " (" + menu.boards.Length + " board(s); " + (repointed + filled)
+            + " behaviour(s) pointed at it" + prefabNote + "). Move it where you like and save the scene.");
+    }
+
+    // ---- The Chess Settings Menu prefab (step 14.7, docs/prefabs.md) ----
+
+    const string PrefabName = "Chess Settings Menu";
+    const string PrefabPath = PrefabsFolder + "/" + PrefabName + ".prefab";
+
+    [MenuItem("Tools/Chess Board/Update Settings Menu Prefab")]
+    static void UpdateMenuPrefab() {
+        if (!EnsureMenuProgramAssets("Update Settings Menu Prefab")) return;
+        string note = EnsureMenuPrefab();
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
+        foreach (ChessSettingsMenu menu in Object.FindObjectsOfType<ChessSettingsMenu>(true)) {
+            if (ConvertToInstance(menu.gameObject, prefab)) note += ", " + menu.gameObject.name + " made an instance";
+        }
+        Debug.Log("[ChessSettingsMenuBuilder] Settings menu prefab: "
+            + (note.Length > 0 ? note.Substring(2) : "unchanged"));
+    }
+
+    static bool EnsureMenuProgramAssets(string menuItem) {
+        return EnsureProgramAssets(menuItem, MenuScriptPath, MenuProgramPath, ButtonScriptPath, ButtonProgramPath);
+    }
+
+    // Makes the menu prefab when it's missing (BuildMenu), and otherwise saves it again in place. Returns a note for
+    // the log ("" when it was there).
+    static string EnsureMenuPrefab() {
+        return EnsurePrefab(PrefabPath, PrefabName, BuildMenu);
+    }
+
+    // A menu without an arbiter or boards (a prefab's contents), at the origin facing +z.
+    static GameObject BuildMenu() {
         float itemsTop = Margin + TitleHeight + NoticeHeight + ScopeHeight;
         float resnapshotTop = itemsTop + ChessSettingsMenu.ItemCount * RowHeight + SectionGap;
         float canvasHeight = resnapshotTop + 2 * RowHeight + Margin;
 
         TMP_FontAsset font = DefaultFont();
-        ChessSettingsMenu[] olds = Object.FindObjectsOfType<ChessSettingsMenu>(true);
-        GameObject root = new GameObject("ChessSettingsMenu");
-        Undo.RegisterCreatedObjectUndo(root, "Create Settings Menu");
+        GameObject root = new GameObject(PrefabName);
         root.layer = LayerMask.NameToLayer("Default");
         Canvas canvas = root.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
         RectTransform rootRect = root.GetComponent<RectTransform>();
         rootRect.sizeDelta = new Vector2(CanvasWidth, canvasHeight);
         rootRect.localScale = Vector3.one * 0.001f;
-        rootRect.position = NewMenuPosition();
-        // Facing the boards: seen from them, looking along +x.
-        rootRect.rotation = Quaternion.Euler(0, 90, 0);
         root.AddComponent<CanvasScaler>();
         root.AddComponent<GraphicRaycaster>();
         root.AddComponent<VRCUiShape>();
@@ -85,7 +151,6 @@ public static class ChessSettingsMenuBuilder {
         background.raycastTarget = false;
 
         ChessSettingsMenu menu = UdonSharpUndo.AddComponent<ChessSettingsMenu>(root);
-        menu.arbiter = arbiter;
         menu.title = NewText(root, "Title", font, TitleFontSize, new Vector2(Margin, Margin),
             new Vector2(CanvasWidth - 2 * Margin, TitleHeight));
         menu.title.fontStyle = FontStyles.Bold;
@@ -133,30 +198,8 @@ public static class ChessSettingsMenuBuilder {
             new Vector2(Margin + LabelWidth + ValueWidth, resnapshotTop + (RowHeight - ButtonHeight) / 2), next++);
         menu.resnapshotLabel = NewText(controls, "Value resnapshot", font, TextFontSize,
             new Vector2(Margin, resnapshotTop + RowHeight), new Vector2(CanvasWidth - 2 * Margin, RowHeight));
-        menu.boards = BoardsOn(arbiter);
         UdonSharpEditorUtility.CopyProxyToUdon(menu);
-
-        int repointed = 0;
-        for (int i = 0; i < olds.Length; i++) {
-            if (i == 0) {
-                root.transform.SetParent(olds[i].transform.parent, false);
-                root.transform.SetSiblingIndex(olds[i].transform.GetSiblingIndex());
-                rootRect.position = olds[i].transform.position;
-                rootRect.rotation = olds[i].transform.rotation;
-                rootRect.localScale = olds[i].transform.localScale;
-            }
-            repointed += ChessBoardViewBuilder.RepointReferences(olds[i], menu);
-            Undo.DestroyObjectImmediate(olds[i].gameObject);
-        }
-        int filled = FillEmptyFields(menu);
-        // The menu's text comes from the shared Chess Language (PLAN.md 13.5), made when the scene has
-        // none; the I18n fields are left empty, for the I18n sanity check to fill on build and before Play Mode.
-        EnsureChessLanguage(root.scene);
-        EditorSceneManager.MarkSceneDirty(root.scene);
-        Selection.activeGameObject = root;
-        Debug.Log("[ChessSettingsMenuBuilder] " + (olds.Length > 0 ? "Replaced" : "Created") + " the settings menu for "
-            + arbiter.gameObject.name + " (" + menu.boards.Length + " board(s); " + (repointed + filled)
-            + " behaviour(s) pointed at it). Move it where you like and save the scene.");
+        return root;
     }
 
     // Every board on the arbiter, by board number, for re-snapshots (step 11.1b).
