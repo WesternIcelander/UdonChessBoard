@@ -438,14 +438,15 @@ public class ChessDebugView : ChessBoardListener {
             Networking.IsOwner(board.gameObject));
     }
 
-    // ---- Archive (10.1b): the board's GameArchive. The text's Archive line shows its games, owner, holders and the
-    // recent games waiting; each change to it (made here or arriving) is logged as "archive: …". ----
+    // ---- Archive (10.1b): the board's instance archive (the InstanceGameArchive in its arbiter's Archives since
+    // 13.10). The text's Archive line shows its games, owner, holders and the recent games waiting; each change to it
+    // (made here or arriving) is logged as "archive: …". ----
 
     // Asks VRChat for ownership of the archive's first holder directly, to see that a holder refuses anyone but the
     // archive's owner. The owner is reported now and again after a few seconds, once the current owner has answered.
     public void TakeHolder() {
         if (!HasArchive("Take holder")) return;
-        GameArchiveHolder holder = board.archive.holders[0];
+        GameArchiveHolder holder = Archive().holders[0];
         Networking.SetOwner(Networking.LocalPlayer, holder.gameObject);
         ReportDone("Take holder (owner now " + ChessUtil._OwnerName(holder.gameObject, "nobody") + ")",
             Networking.IsOwner(holder.gameObject));
@@ -453,7 +454,7 @@ public class ChessDebugView : ChessBoardListener {
     }
 
     public void ReportHolderOwner() {
-        GameArchiveHolder holder = board.archive.holders[0];
+        GameArchiveHolder holder = Archive().holders[0];
         ReportDone("Take holder, 3 s later (owner " + ChessUtil._OwnerName(holder.gameObject, "nobody") + ")",
             Networking.IsOwner(holder.gameObject));
     }
@@ -463,7 +464,7 @@ public class ChessDebugView : ChessBoardListener {
     // has the next owner archive them. Pressed again, it lets go and archives what waited.
     public void HoldArchive() {
         if (!HasArchive("Hold archive")) return;
-        GameArchive archive = board.archive;
+        InstanceGameArchive archive = Archive();
         archive.held = !archive.held;
         if (archive.held) {
             ReportDone("Hold archive: held, games logged here wait in the recent games", true);
@@ -496,7 +497,7 @@ public class ChessDebugView : ChessBoardListener {
     // Logs every archived game, oldest first, and the recent games.
     public void CheckArchive() {
         if (!HasArchive("Check archive")) return;
-        GameArchive archive = board.archive;
+        InstanceGameArchive archive = Archive();
         string text = "[ChessDebugView] archive games:";
         int count = archive.GameCount();
         for (int i = 0; i < count; i++) text += "\n  " + ArchivedGameText(i);
@@ -532,7 +533,7 @@ public class ChessDebugView : ChessBoardListener {
         }
         fillLeft = FillGames;
         ReportDone("Add 10 games: adding one a frame"
-            + (Networking.IsOwner(board.archive.gameObject) ? "" : " (not the archive's owner)"), true);
+            + (Networking.IsOwner(Archive().gameObject) ? "" : " (not the archive's owner)"), true);
         SendCustomEventDelayedFrames(nameof(AddFillGame), 1);
     }
 
@@ -546,8 +547,8 @@ public class ChessDebugView : ChessBoardListener {
         string gameId = board._NewGameIdAt(board._NetworkDateTime());
         string white = "Fill White " + fillNumber;
         string black = "Fill Black " + fillNumber;
-        bool added = board.archive._AddGame(gameId, "", white, black, ChessGame.ModeStandard, ending, winner,
-            ChessFen.StartFen, ChessArbiter.NoClock, 0, fillMoves, fillClocks, count);
+        bool added = Archive()._AddGame(gameId, "", white, black, ChessGame.ModeStandard, ending, winner,
+            ChessFen.StartFen, ChessArbiter.NoClock, 0, fillMoves, fillClocks, count, "");
         Debug.Log("[ChessDebugView] Add 10 games: " + gameId + " (" + white + " vs " + black + ", "
             + ChessPgn.ResultText(ending, winner) + ", " + count + " plies) " + (added ? "added" : "REFUSED")
             + (fillLeft > 0 ? ", " + fillLeft + " to go" : ", done"));
@@ -587,15 +588,122 @@ public class ChessDebugView : ChessBoardListener {
         return count;
     }
 
+    // ---- Filling the personal archive (13.10): Fill my games hands the local player's personal archive 20 random
+    // legal games of up to PersonalMaxPlies plies with millisecond clocks, the local player as White, one a frame, each
+    // with its PGN, so its log shows the PlayerData each save uses. It replaces the player's own games in this world.
+
+    const int PersonalFillGames = 20;
+    const int PersonalMaxPlies = 300;
+    int personalLeft;
+    int[] longMoves = new int[PersonalMaxPlies];
+    int[] longClocks = new int[PersonalMaxPlies];
+    string[] longSans = new string[PersonalMaxPlies];
+    int[] longScratch = new int[ChessMoves.MaxMoves];
+
+    public void FillMyGames() {
+        PersonalGameArchive personal = PersonalArchive();
+        if (!Utilities.IsValid(personal) || !personal.restored) {
+            ReportDone("Fill my games (no personal archive on the arbiter, or not restored yet)", false);
+            return;
+        }
+        if (personalLeft > 0) {
+            ReportDone("Fill my games (still adding)", false);
+            return;
+        }
+        personalLeft = PersonalFillGames;
+        ReportDone("Fill my games: adding " + PersonalFillGames + " games of up to " + PersonalMaxPlies + " plies, one "
+            + "a frame", true);
+        SendCustomEventDelayedFrames(nameof(AddPersonalGame), 1);
+    }
+
+    public void AddPersonalGame() {
+        if (personalLeft <= 0) return;
+        PersonalGameArchive personal = PersonalArchive();
+        if (!Utilities.IsValid(personal)) return;
+        personalLeft--;
+        int ending;
+        int winner;
+        int count = LongRandomGame(out ending, out winner);
+        string gameId = board._NewGameIdAt(board._NetworkDateTime());
+        string me = ChessUtil._LocalName("");
+        string opponent = "Fill Opponent " + (PersonalFillGames - personalLeft);
+        string pgn = ChessPgn.WriteGame("", "VRChat", me, opponent, ending, winner, ChessGame.ModeStandard,
+            ChessFen.StartFen, 600, 0, gameId, "", longSans, longClocks, count, 1, ChessRules.White);
+        bool added = personal._AddGame(gameId, "", me, opponent, ChessGame.ModeStandard, ending, winner,
+            ChessFen.StartFen, 600, 0, longMoves, longClocks, count, pgn);
+        Debug.Log("[ChessDebugView] Fill my games: " + gameId + ", " + count + " plies, PGN " + pgn.Length
+            + " characters, " + (added ? "added" : "REFUSED") + (personalLeft > 0 ? ", " + personalLeft + " to go"
+            : ", done: the archive logs the PlayerData used once the client reports it"));
+        if (personalLeft > 0) SendCustomEventDelayedFrames(nameof(AddPersonalGame), 1);
+        else Refresh();
+    }
+
+    // Plays random legal moves from the standard start into longMoves, their SAN into longSans and a clock into
+    // longClocks (milliseconds, falling from 10 minutes with odd thousandths), until the game ends or reaches
+    // PersonalMaxPlies; returns the count, the ending and winner as RandomGame does.
+    int LongRandomGame(out int ending, out int winner) {
+        int halfmoveClock;
+        int fullmoveNumber;
+        ChessFen.ParseFen(ChessFen.StartFen, fillBoard, fillState, out halfmoveClock, out fullmoveNumber);
+        ending = ChessGame.EndingUnterminated;
+        winner = ChessRules.NoColor;
+        int count = 0;
+        while (true) {
+            int legal = ChessMoves.GenerateLegalMoves(fillBoard, fillState, legalMoves, true);
+            if (legal == 0) {
+                int side = fillState[ChessPosition.StateSideToMove];
+                if (ChessMoves.IsInCheck(fillBoard, fillState, side)) {
+                    ending = ChessGame.EndingCheckmate;
+                    winner = ChessRules.OtherColor(side);
+                } else {
+                    ending = ChessGame.EndingStalemate;
+                }
+                break;
+            }
+            if (count >= PersonalMaxPlies) break;
+            int move = legalMoves[Random.Range(0, legal)];
+            longSans[count] = ChessNotation.MoveToSan(fillBoard, fillState, move, legalMoves, legal, longScratch, true);
+            ChessPosition.MakeMove(fillBoard, fillState, move);
+            longMoves[count] = move;
+            longClocks[count] = Mathf.Max(0, 600000 - (count / 2) * 1900 - Random.Range(0, 1000));
+            count++;
+        }
+        return count;
+    }
+
+    // The first PersonalGameArchive in the board's arbiter's Archives (step 13.10), null for none.
+    PersonalGameArchive PersonalArchive() {
+        if (!Utilities.IsValid(board) || !Utilities.IsValid(board.arbiter)) return null;
+        GameArchive[] archives = board.arbiter.archives;
+        for (int i = 0; i < archives.Length; i++) {
+            if (!Utilities.IsValid(archives[i])) continue;
+            PersonalGameArchive found = archives[i].GetComponent<PersonalGameArchive>();
+            if (Utilities.IsValid(found)) return found;
+        }
+        return null;
+    }
+
+    // The first InstanceGameArchive in the board's arbiter's Archives (step 13.10), null for none.
+    InstanceGameArchive Archive() {
+        if (!Utilities.IsValid(board) || !Utilities.IsValid(board.arbiter)) return null;
+        GameArchive[] archives = board.arbiter.archives;
+        for (int i = 0; i < archives.Length; i++) {
+            if (!Utilities.IsValid(archives[i])) continue;
+            InstanceGameArchive found = archives[i].GetComponent<InstanceGameArchive>();
+            if (Utilities.IsValid(found)) return found;
+        }
+        return null;
+    }
+
     bool HasArchive(string label) {
-        if (Utilities.IsValid(board.archive) && board.archive.holders.Length > 0) return true;
+        if (Utilities.IsValid(Archive()) && Archive().holders.Length > 0) return true;
         ReportDone(label + " (the board has no archive)", false);
         return false;
     }
 
     // Logs the archive when its games or its owner change (polled on each redraw), with the newest games.
     void LogArchive() {
-        GameArchive archive = board.archive;
+        InstanceGameArchive archive = Archive();
         if (!Utilities.IsValid(archive)) return;
         string owner = ChessUtil._OwnerName(archive.gameObject, "nobody");
         if (archive.changes == lastArchiveChanges && owner == lastArchiveOwner) return;
@@ -612,7 +720,7 @@ public class ChessDebugView : ChessBoardListener {
     // The archive in one line: games, owner, holders ready and their owners, the recent games and how many of them
     // aren't archived.
     string ArchiveText() {
-        GameArchive archive = board.archive;
+        InstanceGameArchive archive = Archive();
         if (!Utilities.IsValid(archive)) return "none";
         int ready = 0;
         string[] owners = new string[archive.holders.Length];
@@ -649,7 +757,7 @@ public class ChessDebugView : ChessBoardListener {
 
     // The index-th archived game (0 the oldest): its sequence, ID, players, result, move count and ContinuedFrom.
     string ArchivedGameText(int index) {
-        GameArchive archive = board.archive;
+        InstanceGameArchive archive = Archive();
         return "#" + archive._SequenceAt(index) + " " + archive.GameIdAt(index) + " (" + archive.WhiteAt(index) + " vs "
             + archive.BlackAt(index) + ", " + ChessPgn.ResultText(archive.EndingAt(index), archive.WinnerAt(index))
             + ", " + archive.MoveCountAt(index) + " plies"

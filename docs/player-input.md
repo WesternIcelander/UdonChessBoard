@@ -81,7 +81,7 @@ Like the input methods, each check has a plain form for the local player and an 
 
 ### The board's UI (step 12.1)
 
-The buttons below (their `Button*` actions, `_Press…` events, `_PressButton`, `_ButtonApplies`, `_ButtonText`, `_ButtonColor`, `_ClockText`, `clockBases`/`clockIncrements`, `historyWall`) and the PGN box were built on `ChessBoardView`; since 12.1 they are `ChessBoardUI`'s (see [Architecture](architecture.md#logical-board-and-physical-board)), and "the view" in the sections below means the UI for them. The UI brings its buttons, the PGN box and the status display up to date on the frame after each change (`_Refresh`, public for tests), its buttons once a second too, and on its own `OnNotationFilled` and `OnImportChanged`; the view no longer does any of it.
+The buttons below (their `Button*` actions, `_Press…` events, `_PressButton`, `_ButtonApplies`, `_ButtonText`, `_ButtonColor`, `_ClockText`, `clockBases`/`clockIncrements`, and until 13.10 `historyWall`) and the PGN box were built on `ChessBoardView`; since 12.1 they are `ChessBoardUI`'s (see [Architecture](architecture.md#logical-board-and-physical-board)), and "the view" in the sections below means the UI for them. The UI brings its buttons, the PGN box and the status display up to date on the frame after each change (`_Refresh`, public for tests), its buttons once a second too, and on its own `OnNotationFilled` and `OnImportChanged`; the view no longer does any of it.
 
 ### Board buttons (step 9.4a)
 
@@ -104,7 +104,7 @@ The buttons below (their `Button*` actions, `_Press…` events, `_PressButton`, 
 
 ### Load it here (step 10.2b)
 
-- `ButtonLoadHere` (label `Load it here`, event `_PressLoadHere`), on both ends' panels after the Join buttons: shown while `CanLoadGame()` holds and the local player has picked a game on the history wall (the view's `historyWall`); pressing it calls `LoadArchivedGame` with the picked game and clears the pick. See [Archive](archive.md#loading-a-game-step-102b).
+- `ButtonLoadHere` (label `Load it here`, event `_PressLoadHere`), on both ends' panels after the Join buttons: shown while `CanLoadGame()` holds and the local player has picked a game on a history wall (the board's arbiter `HasSelection()`, step 13.10; the view's `historyWall` before); pressing it calls `LoadSelectedGame`, which loads the picked game (or imports a personal game saved in an earlier session) and clears the pick. See [Archive](archive.md#loading-a-game-step-102b).
 
 ### PGN (step 11.2a)
 

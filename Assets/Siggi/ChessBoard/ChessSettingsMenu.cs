@@ -12,10 +12,10 @@ namespace SiggiChessBoard {
     // inactivity times (with Never) and the forced mode and time control, and makes the boards in use take the new
     // settings (a re-snapshot, step 11.1b). Only organizers see the controls; everyone else sees a notice, which also
     // says when the arbiter's Simple Auth field is empty. Each change goes through the arbiter's BeginChange and
-    // EndChange, so it reaches every client, and the menu redraws whenever the arbiter's changes count moves on (a
-    // change here, or one arriving). Holds no settings and no synced fields: which board it shows is the local
-    // player's own. Built in the scene by Tools > Chess Board > Create Settings Menu
-    // (Editor/ChessSettingsMenuBuilder.cs).
+    // EndChange, so it reaches every client, and the menu redraws whenever the arbiter tells it of a settings change
+    // (_OnArbiterChanged: a change here, or one arriving; polled before step 13.10). Holds no settings and no synced
+    // fields: which board it shows is the local player's own. Built in the scene by Tools > Chess Board > Create
+    // Settings Menu (Editor/ChessSettingsMenuBuilder.cs).
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class ChessSettingsMenu : UdonSharpBehaviour {
         // The menu's items, one row each. Setting items are on/off (one or several setting bits), number items step
@@ -96,6 +96,8 @@ namespace SiggiChessBoard {
         [NonSerialized] public int scope = ScopeAllBoards;
         // The arbiter's changes count when last drawn; -1 to draw on the first frame.
         [NonSerialized] public int drawnChanges = -1;
+        // How many times the menu has been drawn (_Refresh), for tests.
+        [NonSerialized] public int refreshes;
         // Whether the controls are shown to the local player (an organizer).
         [NonSerialized] public bool controlsShown;
         // The last re-snapshot's outcome ("" before any, and again once the scope or the settings change), and its
@@ -145,6 +147,7 @@ namespace SiggiChessBoard {
 
         void Start() {
             if (Utilities.IsValid(i18n)) i18n.AddLanguageChangeListener(this);
+            if (Utilities.IsValid(arbiter)) arbiter._AddSettingsMenu(this);
         }
 
         // Reads every string the menu shows from i18n into its fields: one call into the I18n each, here only, so a
@@ -202,7 +205,13 @@ namespace SiggiChessBoard {
                 nextOrganizerCheck = Time.time + OrganizerCheckInterval;
                 _UpdateVisibility();
             }
-            _RefreshIfChanged();
+            // The first drawing; later ones come from the arbiter (_OnArbiterChanged).
+            if (drawnChanges < 0) _RefreshIfChanged();
+        }
+
+        // The arbiter changed (ChessArbiter.Change*): a settings change redraws the menu at once.
+        public void _OnArbiterChanged(int change) {
+            if (change == ChessArbiter.ChangeSettings) _RefreshIfChanged();
         }
 
         // Shows the controls only to an organizer, with the notice saying why when they're hidden.
@@ -224,6 +233,7 @@ namespace SiggiChessBoard {
         public void _Refresh() {
             if (!Utilities.IsValid(arbiter)) return;
             drawnChanges = arbiter.changes;
+            refreshes++;
             FixScope();
             SetFixedTexts();
             ChessUtil._SetText(scopeLabel, _ScopeText());

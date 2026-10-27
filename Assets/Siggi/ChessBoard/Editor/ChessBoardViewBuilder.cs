@@ -90,8 +90,8 @@ public static class ChessBoardViewBuilder {
 
         // The UI (step 12.1), a behaviour of its own on an object beside the view, standing where the view does (the
         // board's centre), so the view's local space is its too: its parts are placed around the table as before, and
-        // neither behaviour knows the other. An instance of the Chess Board UI prefab (step 14.4), its board and
-        // history wall set on the instance.
+        // neither behaviour knows the other. An instance of the Chess Board UI prefab (step 14.4), its board set on
+        // the instance.
         GameObject uiObject = (GameObject)PrefabUtility.InstantiatePrefab(
             AssetDatabase.LoadAssetAtPath<GameObject>(UIPrefabPath));
         Undo.RegisterCreatedObjectUndo(uiObject, "Create Board View");
@@ -99,7 +99,6 @@ public static class ChessBoardViewBuilder {
         uiObject.transform.position = root.transform.position;
         ChessBoardUI ui = uiObject.GetComponent<ChessBoardUI>();
         ui.board = board;
-        ui.historyWall = HistoryWallFor(board);
         RecordInstance(ui);
 
         // Read before old is destroyed, after which Unity compares it equal to null.
@@ -142,7 +141,7 @@ public static class ChessBoardViewBuilder {
         Debug.Log("[ChessBoardViewBuilder] " + (replacing ? "Replaced " : "Created ") + root.name + " for "
             + board.gameObject.name + (replacing ? " (" + repointed + " behaviour(s) pointed at the new view" + kept
                 + ")" : "")
-            + " and " + uiObject.name + (ui.historyWall != null ? ", with the history wall" : "") + setNote
+            + " and " + uiObject.name + setNote
             + prefabNote + ". Move them where you like (the UI's origin at the board's centre) and save the scene.");
     }
 
@@ -187,7 +186,7 @@ public static class ChessBoardViewBuilder {
         return EnsurePrefab(UIPrefabPath, UIPrefabName, BuildUI);
     }
 
-    // The UI without a board or history wall (the prefab's contents), its origin at the board's centre on the playing
+    // The UI without a board (the prefab's contents), its origin at the board's centre on the playing
     // surface, with the view's axes: the button panels, the status panels and the PGN box around the table, and the
     // UI's sounds, wired to a ChessBoardUI.
     static GameObject BuildUI() {
@@ -998,25 +997,29 @@ public static class ChessBoardViewBuilder {
         ui.pgnImportButton = importButton;
     }
 
-    // The PGN box's hint line, along the top of part, empty: the UI writes it from the language pack.
-    static TextMeshProUGUI AddPgnHint(GameObject part, TMP_FontAsset font) {
+    // The PGN box's hint line, along the top of part, height tall in size text, empty: the UI writes it from the
+    // language pack. The history wall's PGN box (GameHistoryWallBuilder) uses it too, larger.
+    public static TextMeshProUGUI AddPgnHint(GameObject part, TMP_FontAsset font, float height = PgnHintHeight,
+        float size = 12) {
         GameObject hintObject = AddAnchored(part, "Hint", new Vector2(0, 1), Vector2.one,
-            new Vector2(10, -PgnHintHeight), new Vector2(-10, 0));
-        TextMeshProUGUI hint = AddText(hintObject, font, 12, TextAlignmentOptions.Left, PaleText);
+            new Vector2(10, -height), new Vector2(-10, 0));
+        TextMeshProUGUI hint = AddText(hintObject, font, size, TextAlignmentOptions.Left, PaleText);
         hint.text = "";
         return hint;
     }
 
-    // The PGN box's multi-line text field, filling part under the hint line down to bottom: read-only for copying,
-    // editable for pasting. The text sits in a masked text area (the field's viewport), which it scrolls in.
-    static TMP_InputField AddPgnField(GameObject part, TMP_FontAsset font, float bottom, bool readOnly) {
-        GameObject fieldObject = AddStretched(part, "Field", new Vector2(8, bottom), new Vector2(-8, -PgnHintHeight));
+    // The PGN box's multi-line text field, filling part under the hint line (top) down to bottom, in size text:
+    // read-only for copying, editable for pasting. The text sits in a masked text area (the field's viewport), which it
+    // scrolls in. The history wall's PGN box uses it too.
+    public static TMP_InputField AddPgnField(GameObject part, TMP_FontAsset font, float bottom, bool readOnly,
+        float top = PgnHintHeight, float size = 10) {
+        GameObject fieldObject = AddStretched(part, "Field", new Vector2(8, bottom), new Vector2(-8, -top));
         Image fieldImage = fieldObject.AddComponent<Image>();
         fieldImage.color = new Color(0.95f, 0.95f, 0.93f);
         GameObject areaObject = AddStretched(fieldObject, "Text Area", new Vector2(6, 4), new Vector2(-6, -4));
         areaObject.AddComponent<RectMask2D>();
         GameObject textObject = AddStretched(areaObject, "Text", Vector2.zero, Vector2.zero);
-        TextMeshProUGUI text = AddText(textObject, font, 10, TextAlignmentOptions.TopLeft, Color.black);
+        TextMeshProUGUI text = AddText(textObject, font, size, TextAlignmentOptions.TopLeft, Color.black);
         // The field scrolls its text in the text area, so it isn't cut off at its rect, and it takes the pointer.
         text.overflowMode = TextOverflowModes.Overflow;
         text.raycastTarget = true;
@@ -1026,7 +1029,7 @@ public static class ChessBoardViewBuilder {
         field.textViewport = areaObject.GetComponent<RectTransform>();
         field.textComponent = text;
         field.fontAsset = font;
-        field.pointSize = 10;
+        field.pointSize = size;
         field.richText = false;
         field.targetGraphic = fieldImage;
         field.lineType = TMP_InputField.LineType.MultiLineNewline;
@@ -1221,17 +1224,6 @@ public static class ChessBoardViewBuilder {
         ChessBoardUI[] uis = Object.FindObjectsOfType<ChessBoardUI>(true);
         for (int i = 0; i < uis.Length; i++) {
             if (uis[i] != ui && uis[i].board == board) return uis[i];
-        }
-        return null;
-    }
-
-    // The scene's history wall on the board's archive (step 10.2b), or null; Create History Wall wires views built
-    // before the wall.
-    static GameHistoryWall HistoryWallFor(ChessBoard board) {
-        if (board.archive == null) return null;
-        GameHistoryWall[] walls = Object.FindObjectsOfType<GameHistoryWall>(true);
-        for (int i = 0; i < walls.Length; i++) {
-            if (walls[i].archive == board.archive) return walls[i];
         }
         return null;
     }

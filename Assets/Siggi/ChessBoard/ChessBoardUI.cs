@@ -8,11 +8,11 @@ using VRC.SDKBase;
 
 namespace SiggiChessBoard {
     // The board's UI (docs/architecture.md, docs/player-input.md; PLAN.md 12.1): the button panels, the status
-    // display, the PGN box (copying a game out, pasting one in) and Load it here for the history wall's pick. A
+    // display, the PGN box (copying a game out, pasting one in) and Load it here for the arbiter's pick. A
     // listener of its own, holding no game state and no synced fields: it reads the board after each change and acts
     // through the board's methods, never through the physical board (ChessBoardView), which it doesn't know. It plays
     // every sound but the move sounds (step 12.12), so a UI of a world's own replaces them all with it. Placed from
-    // the Chess Board UI prefab (step 14.4, docs/prefabs.md), its board and history wall set on the instance.
+    // the Chess Board UI prefab (step 14.4, docs/prefabs.md), its board set on the instance.
     //
     // Its local space is the view's: it stands at the board's centre, files along +x, White's end at -z, so the PGN box
     // (and _LocalEnd) need nothing from the table. The prefab places its parts around that origin.
@@ -97,7 +97,7 @@ namespace SiggiChessBoard {
         public const int ButtonAcceptTakebackBlack = 25;
         public const int ButtonDeclineTakebackWhite = 26;
         public const int ButtonDeclineTakebackBlack = 27;
-        // Step 10.2b: loads the game picked on the history wall onto this (reset) board.
+        // Step 10.2b: loads the game picked on a history wall (the arbiter's pick) onto this (reset) board.
         public const int ButtonLoadHere = 28;
         // Step 11.2a: opens or closes the PGN box for the local player.
         public const int ButtonPgn = 29;
@@ -116,10 +116,6 @@ namespace SiggiChessBoard {
         // The time controls the Clock button steps through, in seconds (base ChessArbiter.NoClock for none).
         public int[] clockBases = { ChessArbiter.NoClock, 60, 180, 300, 600, 900, 1800 };
         public int[] clockIncrements = { 0, 0, 2, 3, 0, 10, 0 };
-        // The history wall whose picked game Load it here loads (step 10.2b); none hides the button.
-        public GameHistoryWall historyWall;
-        // The wall's selectionChanges when the buttons last saw it.
-        int seenSelectionChanges;
         // The status display (step 9.5c): any number of panels (the prefab has one at each end of the table), each
         // with a players text (both seats, with their clocks during and after a game) and a status text (whose turn,
         // check, the result, pending offers and requests, a loaded game's names, the replay position), at the same
@@ -226,9 +222,6 @@ namespace SiggiChessBoard {
                 _Refresh();
             } else if (Time.time >= nextButtonCheck) {
                 _UpdateButtons();
-            } else if (Utilities.IsValid(historyWall) && historyWall.selectionChanges != seenSelectionChanges) {
-                // A game picked on the wall shows Load it here at once.
-                _UpdateButtons();
             }
             // The clocks run without the board changing.
             if (Time.time >= nextStatusUpdate) _UpdateStatus();
@@ -268,6 +261,12 @@ namespace SiggiChessBoard {
                 _PlacePgnBox(_LocalEnd());
             }
             _UpdatePgnBox();
+            _UpdateButtons();
+        }
+
+        // The board's arbiter changed (step 13.10): a game picked or unpicked on a history wall shows or hides Load it
+        // here at once, and a settings change brings the buttons up to date.
+        public override void OnArbiterChanged(ChessBoard changed, int change) {
             _UpdateButtons();
         }
 
@@ -791,11 +790,12 @@ namespace SiggiChessBoard {
             } else if (action == ButtonReset) {
                 result = board.ResetBoard();
             } else if (action == ButtonLoadHere) {
-                if (Utilities.IsValid(historyWall) && historyWall._HasSelection()) {
-                    result = board.LoadArchivedGame(historyWall.selectedGameId);
-                }
-                // Loaded once: the other boards stop offering it.
-                if (result == ChessBoard.InputAccepted) historyWall._ClearSelection();
+                // The board clears the pick once loaded. A game it has to import (a personal game from an earlier
+                // session) shows its progress and failure as a pasted one's: set first, since the board tells its
+                // listeners the import started before it returns.
+                importWatched = true;
+                result = board.LoadSelectedGame();
+                if (board.importStatus != ChessBoard.ImportRunning) importWatched = false;
             } else if (action == ButtonPgn) {
                 // Local to this player: nothing on the board changes.
                 if (_ButtonApplies(ButtonPgn)) {
@@ -838,7 +838,7 @@ namespace SiggiChessBoard {
             if (action == ButtonContinue) return board.CanContinue();
             if (action == ButtonReset) return board.CanReset();
             if (action == ButtonLoadHere) {
-                return board.CanLoadGame() && Utilities.IsValid(historyWall) && historyWall._HasSelection();
+                return board.CanLoadGame() && Utilities.IsValid(board.arbiter) && board.arbiter.HasSelection();
             }
             if (action == ButtonPgn) return board.moveCount > 0;
             if (action == ButtonLoadPgn) return board.CanImport();
@@ -931,7 +931,6 @@ namespace SiggiChessBoard {
         // every Refresh, once a second and after every press.
         public void _UpdateButtons() {
             nextButtonCheck = Time.time + ButtonCheckInterval;
-            if (Utilities.IsValid(historyWall)) seenSelectionChanges = historyWall.selectionChanges;
             for (int i = 0; i < buttons.Length; i++) {
                 GameObject button = buttons[i];
                 if (!Utilities.IsValid(button) || i >= buttonActions.Length) continue;

@@ -48,6 +48,11 @@ namespace SiggiChessBoard {
         public const int OverrideSettingsMask = (1 << SettingCount) - 1;
         public const int OverrideNumbersMask = ((1 << NumberCount) - 1) << SettingCount;
 
+        // What changed, as the arbiter tells it (_OnArbiterChanged, step 13.10): the settings (a setter here, or an
+        // update received), or the local player's pick of an archived game.
+        public const int ChangeSettings = 1;
+        public const int ChangeSelection = 2;
+
         // ---- Instance defaults, set in the editor ----
         // Read once on Start into the synced defaults below; changing them afterwards does nothing.
 
@@ -98,6 +103,19 @@ namespace SiggiChessBoard {
         // The board views told when an override changes (SetPieceSetOverride); each adds itself on Start.
         [NonSerialized] public ChessBoardView[] pieceSetListeners = new ChessBoardView[0];
 
+        [Header("Archives")]
+        [Tooltip("Where the boards' logged games go (docs/archive.md): the scene's Game Archive and Personal Game "
+            + "Archive, set after placing them. Every board hands each game it logs to each of them.")]
+        public GameArchive[] archives = new GameArchive[0];
+        // The game the local player picked on a history wall (step 13.10): its archive (null for none) and ID. Not
+        // synced: each player's pick is their own. Every board's UI offers Load it here while there is one.
+        [NonSerialized] public GameArchive selectedArchive;
+        [NonSerialized] public string selectedGameId = "";
+        // Who is told of every change (_OnArbiterChanged): the boards and settings menus add themselves on Start; the
+        // archives are the list above.
+        [NonSerialized] public ChessBoard[] boards = new ChessBoard[0];
+        [NonSerialized] public ChessSettingsMenu[] menus = new ChessSettingsMenu[0];
+
         [Header("Boards")]
         [Tooltip("How many boards can have their own overrides: board numbers 0 to this minus 1.")]
         public int boardCount = 4;
@@ -119,8 +137,8 @@ namespace SiggiChessBoard {
         // and the settings menu (step 11) shows a message.
         [NonSerialized] public bool simpleAuthMissing;
 
-        // Counts every change to the settings seen here: a setter below, or a serialization arriving. The settings menu
-        // (step 11.1a) redraws when it moves on.
+        // Counts every change to the settings seen here: a setter below, or a serialization arriving. Each is also told
+        // to the archives, boards and menus (ChangeSettings), which the settings menu (step 11.1a) redraws on.
         [NonSerialized] public int changes;
 
         // Whether a serialization has arrived; the editor values then mustn't overwrite it.
@@ -133,6 +151,10 @@ namespace SiggiChessBoard {
                 Debug.LogError("[ChessArbiter] " + gameObject.name + ": the Simple Auth field is empty. Set it to an "
                     + "authorization behaviour (NoOneAuth if nobody should be an organizer). Until then nobody is "
                     + "an organizer.");
+            }
+            // The archives and their walls reach the arbiter through this, with no field of their own.
+            for (int i = 0; i < archives.Length; i++) {
+                if (Utilities.IsValid(archives[i])) archives[i]._SetArbiter(this);
             }
             if (received) return;
             defaultSettings = _EditorSettings();
@@ -154,7 +176,92 @@ namespace SiggiChessBoard {
 
         public override void OnDeserialization() {
             received = true;
+            SettingsChanged();
+        }
+
+        // ---- Telling (step 13.10) ----
+
+        // Tells board of every change from now on (each board adds itself on Start; it tells its listeners).
+        public void _AddBoard(ChessBoard board) {
+            if (!Utilities.IsValid(board)) return;
+            int count = boards.Length;
+            for (int i = 0; i < count; i++) {
+                if (boards[i] == board) return;
+            }
+            ChessBoard[] grown = new ChessBoard[count + 1];
+            for (int i = 0; i < count; i++) grown[i] = boards[i];
+            grown[count] = board;
+            boards = grown;
+        }
+
+        // Tells menu of every change from now on (each settings menu adds itself on Start).
+        public void _AddSettingsMenu(ChessSettingsMenu menu) {
+            if (!Utilities.IsValid(menu)) return;
+            int count = menus.Length;
+            for (int i = 0; i < count; i++) {
+                if (menus[i] == menu) return;
+            }
+            ChessSettingsMenu[] grown = new ChessSettingsMenu[count + 1];
+            for (int i = 0; i < count; i++) grown[i] = menus[i];
+            grown[count] = menu;
+            menus = grown;
+        }
+
+        // Tells every archive, board and settings menu of a change (Change*).
+        void TellChanged(int change) {
+            for (int i = 0; i < archives.Length; i++) {
+                if (Utilities.IsValid(archives[i])) archives[i]._OnArbiterChanged(change);
+            }
+            for (int i = 0; i < boards.Length; i++) {
+                if (Utilities.IsValid(boards[i])) boards[i]._OnArbiterChanged(change);
+            }
+            for (int i = 0; i < menus.Length; i++) {
+                if (Utilities.IsValid(menus[i])) menus[i]._OnArbiterChanged(change);
+            }
+        }
+
+        // The settings changed: counted and told.
+        void SettingsChanged() {
             changes++;
+            TellChanged(ChangeSettings);
+        }
+
+        // ---- The pick (step 13.10, docs/archive.md) ----
+
+        // A history wall's entry pressed: picks the game with this ID in archive, or clears the pick when it's the game
+        // already picked. A pick in another archive replaces the earlier one.
+        public void _SelectGame(GameArchive archive, string gameId) {
+            if (!Utilities.IsValid(archive) || gameId == null || gameId.Length == 0) return;
+            if (archive == selectedArchive && gameId == selectedGameId) {
+                _ClearSelection();
+                return;
+            }
+            selectedArchive = archive;
+            selectedGameId = gameId;
+            TellChanged(ChangeSelection);
+        }
+
+        // Clears the pick (loaded, or its game gone from its archive), telling everyone; nothing if there's none.
+        public void _ClearSelection() {
+            if (!Utilities.IsValid(selectedArchive) && selectedGameId.Length == 0) return;
+            selectedArchive = null;
+            selectedGameId = "";
+            TellChanged(ChangeSelection);
+        }
+
+        // Whether the local player has picked a game.
+        public bool HasSelection() {
+            return Utilities.IsValid(selectedArchive) && selectedGameId.Length > 0;
+        }
+
+        // The PGN Event and Site tags for a game exported from a history wall: the first board's (registered with
+        // _AddBoard), "" with none. The boards hold them until step 13.11 moves them here.
+        public string _PgnEvent() {
+            return boards.Length > 0 && Utilities.IsValid(boards[0]) ? boards[0].pgnEvent : "";
+        }
+
+        public string _PgnSite() {
+            return boards.Length > 0 && Utilities.IsValid(boards[0]) ? boards[0].pgnSite : "";
         }
 
         // ---- Piece sets (step 13.6, docs/customizing.md) ----
@@ -329,7 +436,7 @@ namespace SiggiChessBoard {
             settings &= OverrideSettingsMask;
             if (on) defaultSettings |= settings;
             else defaultSettings &= ~settings;
-            changes++;
+            SettingsChanged();
         }
 
         // Sets a numeric setting's instance default, corrected by _FixNumbers (which can change another one: an
@@ -338,7 +445,7 @@ namespace SiggiChessBoard {
             if (number < 0 || number >= NumberCount) return false;
             defaultNumbers[number] = value;
             _FixNumbers(defaultNumbers);
-            changes++;
+            SettingsChanged();
             return true;
         }
 
@@ -372,7 +479,7 @@ namespace SiggiChessBoard {
             overrideMask[board] |= settings;
             if (on) overrideSettings[board] |= settings;
             else overrideSettings[board] &= ~settings;
-            changes++;
+            SettingsChanged();
             return true;
         }
 
@@ -382,7 +489,7 @@ namespace SiggiChessBoard {
             settings &= OverrideSettingsMask;
             overrideMask[board] &= ~settings;
             overrideSettings[board] &= ~settings;
-            changes++;
+            SettingsChanged();
             return true;
         }
 
@@ -391,7 +498,7 @@ namespace SiggiChessBoard {
             if (!HasBoard(board) || number < 0 || number >= NumberCount) return false;
             overrideMask[board] |= _OverrideNumberBit(number);
             overrideNumbers[board * NumberCount + number] = value;
-            changes++;
+            SettingsChanged();
             return true;
         }
 
@@ -400,7 +507,7 @@ namespace SiggiChessBoard {
             if (!HasBoard(board) || number < 0 || number >= NumberCount) return false;
             overrideMask[board] &= ~_OverrideNumberBit(number);
             overrideNumbers[board * NumberCount + number] = 0;
-            changes++;
+            SettingsChanged();
             return true;
         }
 
@@ -410,7 +517,7 @@ namespace SiggiChessBoard {
             overrideMask[board] = 0;
             overrideSettings[board] = 0;
             for (int i = 0; i < NumberCount; i++) overrideNumbers[board * NumberCount + i] = 0;
-            changes++;
+            SettingsChanged();
             return true;
         }
 

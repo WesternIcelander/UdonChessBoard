@@ -1,253 +1,36 @@
 using System;
 using UdonSharp;
-using UnityEngine;
 using VRC.SDKBase;
 
 namespace SiggiChessBoard {
-    // The instance's archive of played games (docs/archive.md): a circular log of the last games logged, in holders
-    // of GameArchiveHolder.Capacity games each. Every board on every client hands each game it logs here (_AddGame).
-    // Only the archive's owner writes to the holders, so additions never race; every client also keeps its own last
-    // games in a local-only holder (recent), and whoever owns the archive adds those missing from it, so a game
-    // ending as the owner leaves isn't lost. Reading gives the games oldest first. Holds no board and touches no
-    // world objects; the history wall (step 10.2) is a view of it. Placed from the Game Archive prefab (step 14.5,
-    // docs/prefabs.md), which holds the holders as its children.
-    [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
-    public class GameArchive : UdonSharpBehaviour {
-        // The synced holders, in slot order: the archive holds holders.Length * GameArchiveHolder.Capacity games.
-        [Tooltip("The synced holders of archived games (children of this object).")]
-        public GameArchiveHolder[] holders = new GameArchiveHolder[0];
-        // This client's last games logged, never synced (its localOnly set).
-        [Tooltip("The local-only holder of this client's recent games.")]
-        public GameArchiveHolder recent;
-
-        // Counts every change to the archived games (an addition here or a holder update arriving), for views.
+    // An archive of played games (docs/archive.md), the base of both kinds: the instance's (InstanceGameArchive,
+    // synced, every game played in the instance) and the local player's own (PersonalGameArchive, in their PlayerData).
+    // Udon has no interfaces, so this is an abstract behaviour with virtual methods, as ChessBoardListener is: the
+    // arbiter, the boards and the history walls hold either kind through a field of this type. Reading gives the games
+    // oldest first. It also holds what both kinds share: the walls shown on it, told of every change, and the arbiter
+    // (set by the arbiter on its Start, _SetArbiter), whose pick it clears when the picked game leaves it.
+    public abstract class GameArchive : UdonSharpBehaviour {
+        // Counts every change to the games held, for views and tests.
         [NonSerialized] public int changes;
-        // For tests (the debug view's Hold archive): while set, this client archives nothing, even as the owner, and
-        // the games it's handed wait in the recent games, as if the owner had left before archiving them.
-        [NonSerialized] public bool held;
-        // Per recent slot: whether this client has seen that game in the archive (archived here or in a holder
-        // update). A seen game is never archived again, though it may have left the archive since: once full, the
-        // archive overwrites its oldest games, and a client becoming the owner mustn't add them back as the newest
-        // (found in 10.3).
-        bool[] recentSeen = new bool[GameArchiveHolder.Capacity];
+        // The history walls showing this archive (each adds itself on Start), told of every change (_OnArchiveChanged)
+        // and of every change to the arbiter's pick (_OnSelectionChanged).
+        [NonSerialized] public GameHistoryWall[] walls = new GameHistoryWall[0];
+        // The arbiter listing this archive in its archives, set by it on its Start; null until then or without one.
+        [NonSerialized] public ChessArbiter arbiter;
 
-        // The holders' slots (holder * Capacity + slot) holding games, oldest first; rebuilt when orderDirty.
-        int[] order = new int[0];
-        int orderCount;
-        bool orderDirty = true;
-        // Scratch for copying a game from the recent holder.
-        int[] scratchMoves = new int[256];
-        int[] scratchClocks = new int[256];
+        // ---- Reading, oldest first (index 0 the oldest game) ----
 
-        void Start() {
-            for (int i = 0; i < holders.Length; i++) {
-                if (!Utilities.IsValid(holders[i])) {
-                    Debug.LogError("[GameArchive] " + gameObject.name + ": holder " + i + " is missing. Revert the "
-                        + "Holders field and the holder objects to the Game Archive prefab's, or place the prefab "
-                        + "again.");
-                }
-            }
-            if (!Utilities.IsValid(recent) || !recent.localOnly) {
-                Debug.LogError("[GameArchive] " + gameObject.name + ": the recent holder is missing or not local "
-                    + "only. Revert the Recent field and its object to the Game Archive prefab's, or place the prefab "
-                    + "again.");
-            }
+        // How many games the archive can hold.
+        public virtual int Capacity() {
+            return 0;
         }
 
-        public int Capacity() {
-            return holders.Length * GameArchiveHolder.Capacity;
+        public virtual int GameCount() {
+            return 0;
         }
 
-        // ---- Adding ----
-
-        // A game logged by a board on this client: its Game ID, ContinuedFrom ("" for none), players, mode
-        // (ChessGame.Mode*), ending (ChessGame.Ending*) and winner (ChessRules colour, NoColor for none), starting
-        // FEN, time control (seconds, base ChessArbiter.NoClock for no clock) and the first count of its moves
-        // (packed) and clocks (milliseconds, -1 unknown). Kept in the recent games, then archived if this client owns
-        // the archive (Flush). Returns false for a game with no ID or no moves, or one already in the recent games.
-        public bool _AddGame(string gameId, string continuedFrom, string white, string black, int mode, int ending,
-            int winner, string startFen, int baseTime, int increment, int[] moves, int[] clocks, int count) {
-            if (!_StoreRecent(gameId, continuedFrom, white, black, mode, ending, winner, startFen, baseTime, increment,
-                    moves, clocks, count)) {
-                return false;
-            }
-            _Flush();
-            return true;
-        }
-
-        // _AddGame without archiving: the game goes only into the recent games, replacing the oldest when they're
-        // full. Public for tests, which use it as a client that doesn't own the archive.
-        public bool _StoreRecent(string gameId, string continuedFrom, string white, string black, int mode,
-            int ending, int winner, string startFen, int baseTime, int increment, int[] moves, int[] clocks,
-            int count) {
-            if (!Utilities.IsValid(recent) || string.IsNullOrEmpty(gameId) || moves == null || clocks == null
-                || count <= 0 || count > moves.Length || count > clocks.Length) {
-                return false;
-            }
-            if (recent._SlotOf(gameId) >= 0) return false;
-            int slot = OldestSlot(recent);
-            recent._WriteSlot(slot, HighestSequence(recent) + 1, gameId, continuedFrom, white, black, mode, ending,
-                winner, startFen, baseTime, increment, moves, clocks, count);
-            recentSeen[slot] = IsArchived(gameId);
-            return true;
-        }
-
-        // On the archive's owner, once every holder is ready (and unless held): archives each recent game, oldest
-        // first, that no holder has and this client hasn't seen archived (recentSeen). Returns how many were added.
-        public int _Flush() {
-            MarkRecentSeen();
-            if (held || !Utilities.IsValid(recent) || !Networking.IsOwner(gameObject) || !_AllReady()) return 0;
-            int added = 0;
-            int last = 0;
-            // The recent games by sequence, oldest first.
-            while (true) {
-                int next = -1;
-                for (int i = 0; i < GameArchiveHolder.Capacity; i++) {
-                    int sequence = recent.sequences[i];
-                    if (sequence > last && (next < 0 || sequence < recent.sequences[next])) next = i;
-                }
-                if (next < 0) break;
-                last = recent.sequences[next];
-                if (!recentSeen[next] && !IsArchived(recent.gameIds[next]) && Archive(next)) {
-                    recentSeen[next] = true;
-                    added++;
-                }
-            }
-            return added;
-        }
-
-        // Marks each recent game found in the archive as seen.
-        void MarkRecentSeen() {
-            if (!Utilities.IsValid(recent)) return;
-            for (int i = 0; i < GameArchiveHolder.Capacity; i++) {
-                if (!recentSeen[i] && recent.sequences[i] > 0 && IsArchived(recent.gameIds[i])) recentSeen[i] = true;
-            }
-        }
-
-        // Whether the recent game in slot still waits to be archived: there, not in the archive and never seen in it.
-        public bool _IsRecentWaiting(int slot) {
-            return Utilities.IsValid(recent) && slot >= 0 && slot < GameArchiveHolder.Capacity
-                && recent.sequences[slot] > 0 && !recentSeen[slot] && !IsArchived(recent.gameIds[slot]);
-        }
-
-        // Whether every holder has the instance's games (GameArchiveHolder.ready).
-        public bool _AllReady() {
-            for (int i = 0; i < holders.Length; i++) {
-                if (!Utilities.IsValid(holders[i]) || !holders[i].ready) return false;
-            }
-            return true;
-        }
-
-        public bool IsArchived(string gameId) {
-            for (int i = 0; i < holders.Length; i++) {
-                if (Utilities.IsValid(holders[i]) && holders[i]._SlotOf(gameId) >= 0) return true;
-            }
-            return false;
-        }
-
-        // Archives the recent game in recentSlot: the next sequence, in the slot after the newest one's (the oldest
-        // game's once the archive is full), sending only that holder.
-        bool Archive(int recentSlot) {
-            int capacity = Capacity();
-            if (capacity == 0) return false;
-            int sequence = 0;
-            for (int i = 0; i < holders.Length; i++) {
-                int highest = HighestSequence(holders[i]);
-                if (highest > sequence) sequence = highest;
-            }
-            sequence++;
-            int slot = (sequence - 1) % capacity;
-            GameArchiveHolder holder = holders[slot / GameArchiveHolder.Capacity];
-            int holderSlot = slot % GameArchiveHolder.Capacity;
-
-            int count = recent._MoveCount(recentSlot);
-            if (scratchMoves.Length < count) {
-                scratchMoves = new int[count];
-                scratchClocks = new int[count];
-            }
-            recent._CopyMoves(recentSlot, scratchMoves);
-            recent._CopyClocks(recentSlot, scratchClocks);
-            holder._WriteSlot(holderSlot, sequence, recent.gameIds[recentSlot], recent.continuedFroms[recentSlot],
-                recent.whites[recentSlot], recent.blacks[recentSlot],
-                recent._Info(recentSlot, GameArchiveHolder.InfoMode),
-                recent._Info(recentSlot, GameArchiveHolder.InfoEnding),
-                recent._Info(recentSlot, GameArchiveHolder.InfoWinner), recent.startFens[recentSlot],
-                recent._Info(recentSlot, GameArchiveHolder.InfoBaseTime),
-                recent._Info(recentSlot, GameArchiveHolder.InfoIncrement), scratchMoves, scratchClocks, count);
-            holder._Send();
-            Debug.Log("[GameArchive] archived game " + sequence + ", " + recent.gameIds[recentSlot] + " ("
-                + recent.whites[recentSlot] + " vs " + recent.blacks[recentSlot] + "), in " + holder.gameObject.name
-                + " slot " + holderSlot);
-            // Not _OnHolderChanged: it flushes, and Udon methods mustn't recurse.
-            orderDirty = true;
-            changes++;
-            return true;
-        }
-
-        static int HighestSequence(GameArchiveHolder holder) {
-            int highest = 0;
-            if (!Utilities.IsValid(holder)) return highest;
-            for (int i = 0; i < GameArchiveHolder.Capacity; i++) {
-                if (holder.sequences[i] > highest) highest = holder.sequences[i];
-            }
-            return highest;
-        }
-
-        // An empty slot of holder, or else the one with the oldest game.
-        static int OldestSlot(GameArchiveHolder holder) {
-            int oldest = 0;
-            for (int i = 0; i < GameArchiveHolder.Capacity; i++) {
-                if (holder.sequences[i] == 0) return i;
-                if (holder.sequences[i] < holder.sequences[oldest]) oldest = i;
-            }
-            return oldest;
-        }
-
-        // A holder's games changed: an update arrived or this client wrote one. Waiting recent games may now go in.
-        public void _OnHolderChanged() {
-            orderDirty = true;
-            changes++;
-            _Flush();
-        }
-
-        // The previous owner left (nobody asks for the archive): this client's recent games missing from the archive go
-        // in, perhaps a game that ended as the owner left. Logged, so the clients' logs show the handover.
-        public override void OnOwnershipTransferred(VRCPlayerApi player) {
-            if (!Utilities.IsValid(player) || !player.isLocal) return;
-            int added = _Flush();
-            Debug.Log("[GameArchive] " + gameObject.name + " now owned here: " + added + " recent game(s) added"
-                + (_AllReady() ? "" : ", waiting for holders") + (held ? ", held" : ""));
-        }
-
-        // Nobody asks for the archive: VRChat hands it on when its owner leaves.
-        public override bool OnOwnershipRequest(VRCPlayerApi requestingPlayer, VRCPlayerApi requestedOwner) {
-            return false;
-        }
-
-        // Empties every holder and the recent games, for tests. Only the archive's owner; returns whether it did.
-        public bool _ClearArchive() {
-            if (!Networking.IsOwner(gameObject)) return false;
-            for (int i = 0; i < holders.Length; i++) {
-                if (!Utilities.IsValid(holders[i])) continue;
-                holders[i]._Clear();
-                holders[i]._Send();
-            }
-            if (Utilities.IsValid(recent)) recent._Clear();
-            recentSeen = new bool[GameArchiveHolder.Capacity];
-            orderDirty = true;
-            changes++;
-            return true;
-        }
-
-        // ---- Reading, oldest first ----
-
-        public int GameCount() {
-            UpdateOrder();
-            return orderCount;
-        }
-
-        // The index (oldest first) of the archived game with this ID, -1 when it isn't archived.
-        public int IndexOf(string gameId) {
+        // The index (oldest first) of the game with this ID, -1 when the archive doesn't hold it.
+        public virtual int IndexOf(string gameId) {
             if (gameId == null || gameId.Length == 0) return -1;
             int count = GameCount();
             for (int i = 0; i < count; i++) {
@@ -256,107 +39,148 @@ namespace SiggiChessBoard {
             return -1;
         }
 
-        // The holder slot (holder * Capacity + slot) of the index-th game, oldest first.
-        public int _SlotAt(int index) {
-            UpdateOrder();
-            return order[index];
+        public virtual string GameIdAt(int index) {
+            return "";
         }
 
-        GameArchiveHolder HolderAt(int index) {
-            return holders[_SlotAt(index) / GameArchiveHolder.Capacity];
+        public virtual string ContinuedFromAt(int index) {
+            return "";
         }
 
-        int HolderSlotAt(int index) {
-            return _SlotAt(index) % GameArchiveHolder.Capacity;
+        public virtual string WhiteAt(int index) {
+            return "";
         }
 
-        public int _SequenceAt(int index) {
-            return HolderAt(index).sequences[HolderSlotAt(index)];
+        public virtual string BlackAt(int index) {
+            return "";
         }
 
-        public string GameIdAt(int index) {
-            return Text(HolderAt(index).gameIds[HolderSlotAt(index)]);
+        public virtual string StartFenAt(int index) {
+            return "";
         }
 
-        public string ContinuedFromAt(int index) {
-            return Text(HolderAt(index).continuedFroms[HolderSlotAt(index)]);
+        // ChessGame.Mode*.
+        public virtual int ModeAt(int index) {
+            return ChessGame.ModeStandard;
         }
 
-        public string WhiteAt(int index) {
-            return Text(HolderAt(index).whites[HolderSlotAt(index)]);
+        // ChessGame.Ending*, and the winner as a ChessRules colour (NoColor for none).
+        public virtual int EndingAt(int index) {
+            return ChessGame.EndingNone;
         }
 
-        public string BlackAt(int index) {
-            return Text(HolderAt(index).blacks[HolderSlotAt(index)]);
+        public virtual int WinnerAt(int index) {
+            return ChessRules.NoColor;
         }
 
-        public string StartFenAt(int index) {
-            return Text(HolderAt(index).startFens[HolderSlotAt(index)]);
+        // The time control in seconds: base ChessArbiter.NoClock for no clock (ChessBoard.UnknownClock unknown).
+        public virtual int BaseTimeAt(int index) {
+            return ChessArbiter.NoClock;
         }
 
-        public int ModeAt(int index) {
-            return HolderAt(index)._Info(HolderSlotAt(index), GameArchiveHolder.InfoMode);
+        public virtual int IncrementAt(int index) {
+            return 0;
         }
 
-        public int EndingAt(int index) {
-            return HolderAt(index)._Info(HolderSlotAt(index), GameArchiveHolder.InfoEnding);
+        // The number of plies.
+        public virtual int MoveCountAt(int index) {
+            return 0;
         }
 
-        public int WinnerAt(int index) {
-            return HolderAt(index)._Info(HolderSlotAt(index), GameArchiveHolder.InfoWinner);
+        // The order the game was archived in, from 1; 0 on an archive without sequence numbers (the personal one),
+        // whose wall shows the game's date instead.
+        public virtual int _SequenceAt(int index) {
+            return 0;
         }
 
-        public int BaseTimeAt(int index) {
-            return HolderAt(index)._Info(HolderSlotAt(index), GameArchiveHolder.InfoBaseTime);
+        // Whether CopyMovesAt and CopyClocksAt can give the game's moves and clocks (always on the instance's archive;
+        // on the personal one only for games handed in this session).
+        public virtual bool HasMovesAt(int index) {
+            return false;
         }
 
-        public int IncrementAt(int index) {
-            return HolderAt(index)._Info(HolderSlotAt(index), GameArchiveHolder.InfoIncrement);
+        // Copies the index-th game's moves (packed) or clocks (milliseconds, -1 unknown) into destination, which needs
+        // room for MoveCountAt(index). Only when HasMovesAt(index).
+        public virtual void CopyMovesAt(int index, int[] destination) {
         }
 
-        public int MoveCountAt(int index) {
-            return HolderAt(index)._MoveCount(HolderSlotAt(index));
+        public virtual void CopyClocksAt(int index, int[] destination) {
         }
 
-        // Copies the index-th game's moves (or clocks) into destination, which needs room for MoveCountAt(index).
-        public void CopyMovesAt(int index, int[] destination) {
-            HolderAt(index)._CopyMoves(HolderSlotAt(index), destination);
+        // The game's PGN as the board logged it, when the archive keeps it; "" otherwise (the instance's archive).
+        public virtual string PgnAt(int index) {
+            return "";
         }
 
-        public void CopyClocksAt(int index, int[] destination) {
-            HolderAt(index)._CopyClocks(HolderSlotAt(index), destination);
+        // The text a board imports to load the game when HasMovesAt is false: PgnAt, unless the archive saves more
+        // with it (the personal archive's PlyCount and Ending tags, which the import reads).
+        public virtual string _LoadPgnAt(int index) {
+            return PgnAt(index);
         }
 
-        static string Text(string value) {
-            return value == null ? "" : value;
+        // ---- Changing ----
+
+        // A game logged by a board on this client (ChessBoard.LogGame hands every game to every archive on the
+        // arbiter): its Game ID, ContinuedFrom ("" for none), players, mode (ChessGame.Mode*), ending
+        // (ChessGame.Ending*) and winner (ChessRules colour, NoColor for none), starting FEN, time control (seconds,
+        // base ChessArbiter.NoClock for no clock), the first count of its moves (packed) and clocks (milliseconds, -1
+        // unknown), and the PGN the board logged. Each kind keeps what it wants; returns whether it kept the game.
+        public virtual bool _AddGame(string gameId, string continuedFrom, string white, string black, int mode,
+            int ending, int winner, string startFen, int baseTime, int increment, int[] moves, int[] clocks, int count,
+            string pgn) {
+            return false;
         }
 
-        // Rebuilds order: every filled slot, sorted by sequence (an insertion sort; there are few).
-        void UpdateOrder() {
-            if (!orderDirty) return;
-            orderDirty = false;
-            int capacity = Capacity();
-            if (order.Length != capacity) order = new int[capacity];
-            orderCount = 0;
-            for (int h = 0; h < holders.Length; h++) {
-                GameArchiveHolder holder = holders[h];
-                if (!Utilities.IsValid(holder)) continue;
-                for (int s = 0; s < GameArchiveHolder.Capacity; s++) {
-                    int sequence = holder.sequences[s];
-                    if (sequence <= 0) continue;
-                    int at = orderCount;
-                    while (at > 0 && SequenceOfSlot(order[at - 1]) > sequence) {
-                        order[at] = order[at - 1];
-                        at--;
-                    }
-                    order[at] = h * GameArchiveHolder.Capacity + s;
-                    orderCount++;
-                }
+        // Whether the local player may delete games from this archive (only from their own).
+        public virtual bool CanDelete() {
+            return false;
+        }
+
+        // Deletes the game with this ID; returns whether it did.
+        public virtual bool DeleteGame(string gameId) {
+            return false;
+        }
+
+        // ---- Telling ----
+
+        // The arbiter introduces itself on its Start.
+        public void _SetArbiter(ChessArbiter value) {
+            arbiter = value;
+        }
+
+        // Tells wall of every change from now on (each history wall adds itself on Start); adding one twice changes
+        // nothing.
+        public void _AddWall(GameHistoryWall wall) {
+            if (!Utilities.IsValid(wall)) return;
+            int count = walls.Length;
+            for (int i = 0; i < count; i++) {
+                if (walls[i] == wall) return;
+            }
+            GameHistoryWall[] grown = new GameHistoryWall[count + 1];
+            for (int i = 0; i < count; i++) grown[i] = walls[i];
+            grown[count] = wall;
+            walls = grown;
+        }
+
+        // The games held changed: counted, the arbiter's pick cleared when it was a game of this archive that's gone
+        // (deleted, or overwritten as the oldest), and every wall told. Each kind calls it on every change.
+        public void _Changed() {
+            changes++;
+            if (Utilities.IsValid(arbiter) && arbiter.selectedArchive == this && IndexOf(arbiter.selectedGameId) < 0) {
+                arbiter._ClearSelection();
+            }
+            for (int i = 0; i < walls.Length; i++) {
+                if (Utilities.IsValid(walls[i])) walls[i]._OnArchiveChanged();
             }
         }
 
-        int SequenceOfSlot(int slot) {
-            return holders[slot / GameArchiveHolder.Capacity].sequences[slot % GameArchiveHolder.Capacity];
+        // The arbiter changed (ChessArbiter.Change*): on a change to the pick, every wall redraws which entry is
+        // picked.
+        public void _OnArbiterChanged(int change) {
+            if (change != ChessArbiter.ChangeSelection) return;
+            for (int i = 0; i < walls.Length; i++) {
+                if (Utilities.IsValid(walls[i])) walls[i]._OnSelectionChanged();
+            }
         }
     }
 }

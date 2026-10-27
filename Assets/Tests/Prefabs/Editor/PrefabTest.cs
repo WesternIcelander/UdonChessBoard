@@ -60,7 +60,7 @@ public static class PrefabTest {
             CheckBoard(boardPrefab, scene);
             CheckView(viewPrefab, boardPrefab, scene);
             CheckUI(uiPrefab, boardPrefab, scene);
-            CheckArchive(archivePrefab, boardPrefab, scene);
+            CheckArchive(archivePrefab, arbiterPrefab, scene);
         } finally {
             EditorSceneManager.CloseScene(scene, true);
         }
@@ -146,6 +146,8 @@ public static class PrefabTest {
         Check(isNested, "the arbiter's Piece Sets hold only its nested Chess Pieces",
             arbiter.pieceSets == null ? "null" : arbiter.pieceSets.Length + " entries");
         Check(arbiter.boardCount == 4, "the arbiter's boardCount is the default", arbiter.boardCount.ToString());
+        CheckIntValue(arbiter.archives != null ? arbiter.archives.Length : -1, 0,
+            "the arbiter's Archives are left to set (13.10)");
 
         Check(!ChessArbiterBuildCheck.Blocking(VRCSDKRequestedBuildType.Scene).Contains(arbiter),
             "the build check passes on the arbiter", "it blocks");
@@ -233,8 +235,7 @@ public static class PrefabTest {
         Check(board.importer != null && board.importer.transform.parent == first.transform,
             "the board's importer is its own ChessPgnImporter child",
             board.importer == null ? "empty" : "on " + board.importer.gameObject.name);
-        Check(board.arbiter == null && board.archive == null, "the board's arbiter and archive are left to set",
-            "arbiter " + board.arbiter + ", archive " + board.archive);
+        Check(board.arbiter == null, "the board's arbiter is left to set", "arbiter " + board.arbiter);
         CheckIntValue(board.boardNumber, 0, "the board's number is 0");
         CheckIntValue(board.listeners != null ? board.listeners.Length : -1, 0, "the board has no listeners");
         Check(board.pgnSite == "VRChat" && board.pgnEvent == "", "the board's PGN tags are the defaults",
@@ -266,8 +267,7 @@ public static class PrefabTest {
             Check(PrefabUtility.IsAnyPrefabInstanceRoot(board.gameObject)
                 && PrefabUtility.GetCorrespondingObjectFromOriginalSource(board.gameObject) == boardPrefab,
                 name + " is a Chess Board instance", "it isn't");
-            Check(board.arbiter != null && board.archive != null, name + " has its arbiter and archive",
-                "arbiter " + board.arbiter + ", archive " + board.archive);
+            Check(board.arbiter != null, name + " has its arbiter", "empty");
             Check(board.importer != null && board.importer.transform.parent == board.transform,
                 name + " has its own importer", board.importer == null ? "empty" : "on " + board.importer.name);
             Check(numbers.Add(board.boardNumber), name + "'s number " + board.boardNumber + " is its own",
@@ -424,8 +424,7 @@ public static class PrefabTest {
         ChessBoardUI ui = placed.GetComponent<ChessBoardUI>();
         Check(ui != null, "the Chess Board UI has a ChessBoardUI", "none");
         if (ui == null) return;
-        Check(ui.board == null && ui.historyWall == null, "the UI's board and history wall are left to set",
-            "board " + ui.board + ", wall " + ui.historyWall);
+        Check(ui.board == null, "the UI's board is left to set", "board " + ui.board);
         Check(ui.i18n == null, "the UI's I18n is left for the sanity check", "on " + ui.i18n);
 
         // Each panel has every action but the other colour's: the colourless ones twice, each colour's once.
@@ -507,11 +506,10 @@ public static class PrefabTest {
     }
 
     // The open scene's UIs (the test scene's) are instances of the Chess Board UI prefab, each on its own board, with
-    // the history wall on its board's archive, and its buttons its own.
+    // its buttons its own.
     static void CheckSceneUIs(GameObject uiPrefab) {
         ChessBoardUI[] uis = Object.FindObjectsOfType<ChessBoardUI>(true);
         Check(uis.Length > 0, "the open scene has UIs", "none");
-        GameHistoryWall[] walls = Object.FindObjectsOfType<GameHistoryWall>(true);
         HashSet<ChessBoard> boards = new HashSet<ChessBoard>();
         foreach (ChessBoardUI ui in uis) {
             string name = "the scene's " + ui.gameObject.name;
@@ -520,12 +518,6 @@ public static class PrefabTest {
                 name + " is a Chess Board UI instance", "it isn't");
             Check(ui.board != null && boards.Add(ui.board), name + " has a board of its own",
                 ui.board == null ? "empty" : "shared");
-            GameHistoryWall wall = null;
-            foreach (GameHistoryWall w in walls) {
-                if (ui.board != null && ui.board.archive != null && w.archive == ui.board.archive) wall = w;
-            }
-            Check(ui.historyWall == wall, name + "'s history wall is its board's archive's",
-                "on " + ui.historyWall + ", expected " + wall);
             UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(ui);
             int own = 0;
             for (int i = 0; i < ui.buttons.Length; i++) {
@@ -540,7 +532,7 @@ public static class PrefabTest {
 
     // ---- 14.5: Game Archive ----
 
-    static void CheckArchive(GameObject archivePrefab, GameObject boardPrefab, Scene scene) {
+    static void CheckArchive(GameObject archivePrefab, GameObject arbiterPrefab, Scene scene) {
         List<string> logged = new List<string>();
         Application.LogCallback listener = (text, stack, type) => logged.Add(type + ": " + text);
         Application.logMessageReceived += listener;
@@ -551,8 +543,8 @@ public static class PrefabTest {
             Application.logMessageReceived -= listener;
         }
         Check(logged.Count == 0, "the Game Archive placed logs nothing", string.Join("; ", logged));
-        GameArchive archive = placed.GetComponent<GameArchive>();
-        Check(archive != null, "the Game Archive has a GameArchive", "none");
+        InstanceGameArchive archive = placed.GetComponent<InstanceGameArchive>();
+        Check(archive != null, "the Game Archive has an InstanceGameArchive (GameArchive before 13.10)", "none");
         if (archive == null) return;
         Check(UdonSharpEditorUtility.GetBackingUdonBehaviour(archive).SyncMethod == VRC.SDKBase.Networking.SyncType.Manual,
             "the archive syncs manually", "it doesn't");
@@ -579,26 +571,29 @@ public static class PrefabTest {
             "the archive's recent holder is its own local-only child, pointing back", recent == null ? "empty"
                 : "on " + recent.gameObject.name + ", local only " + recent.localOnly);
 
-        // A placed board pointed at it by hand, as a world creator would set it in the Inspector.
-        GameObject boardObject = (GameObject)PrefabUtility.InstantiatePrefab(boardPrefab, scene);
-        ChessBoard board = boardObject.GetComponent<ChessBoard>();
-        SerializedObject fields = new SerializedObject(board);
-        fields.FindProperty("archive").objectReferenceValue = archive;
+        // A placed arbiter listing it by hand, as a world creator would set it in the Inspector (13.10).
+        GameObject arbiterObject = (GameObject)PrefabUtility.InstantiatePrefab(arbiterPrefab, scene);
+        ChessArbiter arbiter = arbiterObject.GetComponent<ChessArbiter>();
+        SerializedObject fields = new SerializedObject(arbiter);
+        SerializedProperty list = fields.FindProperty("archives");
+        list.arraySize = 1;
+        list.GetArrayElementAtIndex(0).objectReferenceValue = archive;
         fields.ApplyModifiedProperties();
-        Check(board.archive == archive, "a board pointed at the placed archive", "on " + board.archive);
-        Check(boardPrefab.GetComponent<ChessBoard>().archive == null,
-            "a board pointed at the archive: the board prefab still points at none", "it doesn't");
+        Check(arbiter.archives.Length == 1 && arbiter.archives[0] == archive, "an arbiter listing the placed archive",
+            arbiter.archives.Length + " entries");
+        CheckIntValue(arbiterPrefab.GetComponent<ChessArbiter>().archives.Length, 0,
+            "an arbiter listing the archive: the arbiter prefab still lists none");
         Object.DestroyImmediate(placed);
-        Object.DestroyImmediate(boardObject);
+        Object.DestroyImmediate(arbiterObject);
     }
 
-    // The open scene's one archive (the test scene's) is an instance of the Game Archive prefab, with its own holders,
-    // and every board archives to it.
+    // The open scene's one instance archive (the test scene's) is an instance of the Game Archive prefab, with its own
+    // holders, and the arbiter's Archives hold the scene's archives (the personal one too, 13.10).
     static void CheckSceneArchive(GameObject archivePrefab) {
-        GameArchive[] archives = Object.FindObjectsOfType<GameArchive>(true);
-        CheckIntValue(archives.Length, 1, "the open scene has one archive");
+        InstanceGameArchive[] archives = Object.FindObjectsOfType<InstanceGameArchive>(true);
+        CheckIntValue(archives.Length, 1, "the open scene has one instance archive");
         if (archives.Length == 0) return;
-        GameArchive archive = archives[0];
+        InstanceGameArchive archive = archives[0];
         string name = "the scene's " + archive.gameObject.name;
         Check(PrefabUtility.IsAnyPrefabInstanceRoot(archive.gameObject)
             && PrefabUtility.GetCorrespondingObjectFromOriginalSource(archive.gameObject) == archivePrefab,
@@ -608,11 +603,16 @@ public static class PrefabTest {
             if (holder != null && holder.archive == archive && holder.transform.parent == archive.transform) own++;
         }
         CheckIntValue(own, archive.holders.Length, name + "'s holders are its own");
-        string boards = "";
-        foreach (ChessBoard board in Object.FindObjectsOfType<ChessBoard>(true)) {
-            if (board.archive != archive) boards += " " + board.gameObject.name;
+        GameArchive[] all = Object.FindObjectsOfType<GameArchive>(true);
+        foreach (ChessArbiter arbiter in Object.FindObjectsOfType<ChessArbiter>(true)) {
+            string missing = "";
+            foreach (GameArchive each in all) {
+                if (System.Array.IndexOf(arbiter.archives, each) < 0) missing += " " + each.gameObject.name;
+            }
+            Check(missing == "" && arbiter.archives.Length == all.Length,
+                "the scene's " + arbiter.gameObject.name + " lists the scene's archives",
+                "missing:" + missing + ", " + arbiter.archives.Length + " entries");
         }
-        Check(boards == "", "every board in the scene archives to " + name, "not:" + boards);
     }
 
     // Every UdonBehaviour in a prefab (nested prefabs' too) has the sync method its script asks for, so a placed

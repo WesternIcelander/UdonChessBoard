@@ -574,11 +574,18 @@ public class SettingsTest : ChessTest {
         }
 
         // Redrawing.
-        Check(menu._RefreshIfChanged(), "menu: redrawn after the settings changed", "");
+        Check(menu.drawnChanges == arbiter.changes, "menu: redrawn after the settings changed (told by the arbiter)",
+            "drawn at " + menu.drawnChanges + ", arbiter at " + arbiter.changes);
         Check(!menu._RefreshIfChanged(), "menu: not redrawn again without a change", "");
         int changesBefore = arbiter.changes;
+        int refreshesBefore = menu.refreshes;
         arbiter.SetDefaultSetting(ChessArbiter.SettingDeadPosition, false);
-        Check(arbiter.changes != changesBefore && menu._RefreshIfChanged(), "menu: a setter counts as a change", "");
+        Check(arbiter.changes != changesBefore, "menu: a setter counts as a change", "");
+        // Step 13.10: the arbiter tells the menu, which no longer polls in Update.
+        Check(menu.refreshes == refreshesBefore + 1 && menu.drawnChanges == arbiter.changes,
+            "menu: redrawn at once on a settings change, told by the arbiter",
+            "drawn " + (menu.refreshes - refreshesBefore) + " times");
+        Check(!menu._RefreshIfChanged(), "menu: told, nothing left to redraw", "");
 
         // All boards: on and off.
         int t = ChessSettingsMenu.ItemTakebacks;

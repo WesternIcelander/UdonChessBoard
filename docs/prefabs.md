@@ -8,7 +8,7 @@ Until step 14.13 the **Tools > Chess Board** builders make each prefab when it's
 
 Every chess prefab shares one `I18n`, the **Chess Language** prefab (step 14.10), placed once per scene as a sibling or on a parent of the chess objects, so the `I18n` sanity check links them to it ([architecture](architecture.md), languages).
 
-**The minimum a world needs:** one **Chess Arbiter**, and per board a **Chess Board** wired to it with a **Chess Board View** and a **Chess Board UI** on it (the UI holds the buttons: without it, nobody can join or start a game). Add one **Game Archive** per world to keep finished games (for the history wall and **Load it here**); without one, games are only logged.
+**The minimum a world needs:** one **Chess Arbiter**, and per board a **Chess Board** wired to it with a **Chess Board View** and a **Chess Board UI** on it (the UI holds the buttons: without it, nobody can join or start a game). Add one **Game Archive** per world to keep finished games (for the history wall and **Load it here**), listed in the arbiter's **Archives**; without one, games are only logged. The **Personal Game Archive** and its wall (step 14.6) keep each player's own games across visits.
 
 ## Chess Pieces
 
@@ -30,7 +30,7 @@ A world's set never changes when the package updates. The full guide is step 15.
 - a nested instance of **Chess Pieces** as its child, listed alone in **Piece Sets**, so it's the default set;
 - `boardCount` (4) and the instance defaults (rules, inactivity, forced lobby settings) at their defaults.
 
-Place one per world. It needs nothing set after placing it; the boards and the settings menu point at it (steps 14.2 and 14.7).
+Place one per world. After placing it, set **Archives** (step 13.10, empty in the prefab): the scene's **Game Archive** and **Personal Game Archive**, where every board's logged games go. Left empty, games are only logged. The boards and the settings menu point at it (steps 14.2 and 14.7).
 
 **Choosing the organizers:** to use another rule, add `InstanceMasterAuth` (whoever is instance master), `NoOneAuth` (nobody; the editor defaults apply unchanged) or your own `SimpleAuth` subclass to the arbiter's object, drag it into **Simple Auth**, and remove the `FirstJoinerAuth` if you like. Simple Auth must not be left empty: a build is cancelled while it is.
 
@@ -44,10 +44,9 @@ Place one per board. After placing it, set:
 
 - **Arbiter**: the scene's **Chess Arbiter**. Left empty, the board logs an error on start and plays with every setting off.
 - **Board Number**: 0 for the first board, 1 for the next, and so on, each board its own. It picks the board's per-board setting overrides on the arbiter ([settings](settings.md#per-board-overrides)), so two boards with the same number share them; numbers from the arbiter's **Board Count** (4) up have none and always use the instance defaults. Raise **Board Count** for more boards with overrides of their own.
-- **Archive**: the scene's game archive (step 14.5), where the board's finished games go ([archive](archive.md)). Left empty, games are still logged but not archived.
 - **Listeners**: nothing for the package's own views. The view, the UI and the 2D view add themselves when they start (`AddListener`); list here only a behaviour of your own that doesn't.
 
-**PGN Event** and **PGN Site** (empty and `VRChat`) are the tags of the board's exported and logged games. Step 14.11 will fill in the arbiter, archive and board numbers by itself.
+**PGN Event** and **PGN Site** (empty and `VRChat`) are the tags of the board's exported and logged games. Its games go to the arbiter's **Archives** (the board's own **Archive** field went in step 13.10). Step 14.11 will fill in the arbiter and board numbers by itself.
 
 ## Chess Board View
 
@@ -71,16 +70,15 @@ Its origin is the board's centre on the playing surface with the view's axes, as
 Place one per board. After placing it, set:
 
 - **Board**: the board it shows and acts on, the same **Chess Board** as the view's. The UI adds itself to the board's listeners when it starts; left empty, it logs an error and shows nothing.
-- **History Wall**: the scene's game history wall (step 14.6) on the board's archive, for **Load it here**. Left empty, the button never shows.
 - **I18n**: nothing. The `I18n` sanity check fills it from the Chess Language on build and before Play Mode.
 
 **Clock Bases** and **Clock Increments** are the time controls the Clock button steps through. A world that wants its own UI can leave this prefab out and write a `ChessBoardListener` of its own; the view works without it.
 
 ## Game Archive
 
-`Prefabs/Game Archive.prefab` (step 14.5): the instance's archive of finished games, a `GameArchive` ([archive](archive.md)) with its 10 synced `GameArchiveHolder`s (**Holder 0** to **Holder 9**, 5 games each, so the last 50 games) and the local-only **Recent (local only)** holder as its children, already in its **Holders** and **Recent** fields, each holder's **Archive** pointing back. Its holders and the archive itself are synced objects ([networking](networking.md)): only the archive's owner writes to them.
+`Prefabs/Game Archive.prefab` (step 14.5): the instance's archive of finished games, an `InstanceGameArchive` ([archive](archive.md); the script was `GameArchive` before step 13.10, renamed with its GUID kept, so the prefab didn't change) with its 10 synced `GameArchiveHolder`s (**Holder 0** to **Holder 9**, 5 games each, so the last 50 games) and the local-only **Recent (local only)** holder as its children, already in its **Holders** and **Recent** fields, each holder's **Archive** pointing back. Its holders and the archive itself are synced objects ([networking](networking.md)): only the archive's owner writes to them.
 
-Place one per world. It needs nothing set after placing it; the boards point at it (their **Archive**, [Chess Board](#chess-board)), and the history wall reads it (step 14.6). Don't change its holders: the archive logs an error on start when one is missing or the recent holder isn't local only, and reverting the fields and objects to the prefab's mends it.
+Place one per world. It needs nothing set after placing it; the arbiter lists it (its **Archives**, [Chess Arbiter](#chess-arbiter)), and the history wall reads it (step 14.6). Don't change its holders: the archive logs an error on start when one is missing or the recent holder isn't local only, and reverting the fields and objects to the prefab's mends it.
 
 ## Sync methods
 

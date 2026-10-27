@@ -83,11 +83,6 @@ namespace SiggiChessBoard {
         // under way on the same importer.
         [Tooltip("The ChessPgnImporter that runs this board's PGN imports. Give each board its own.")]
         public ChessPgnImporter importer;
-        // Where this board's logged games go (docs/archive.md): every client hands each game it logs to its own
-        // archive.
-        [Tooltip("The GameArchive this board's games are archived in: the scene's Game Archive, set after placing "
-            + "the Chess Board prefab.")]
-        public GameArchive archive;
         // The PGN Event and Site tags of this board's games (docs/pgn.md, Export tags); empty is written "?".
         [Tooltip("The PGN Event tag of games played on this board. Empty is written \"?\".")]
         public string pgnEvent = "";
@@ -276,7 +271,9 @@ namespace SiggiChessBoard {
             if (!Utilities.IsValid(arbiter)) {
                 Debug.LogError("[ChessBoard] " + gameObject.name + ": the Arbiter field is empty. Set it to "
                     + "the world's ChessArbiter. Until then the board plays with every setting off: no takebacks, no "
-                    + "draws, nothing forced, never reset for inactivity.");
+                    + "draws, nothing forced, never reset for inactivity. Its games aren't archived either.");
+            } else {
+                arbiter._AddBoard(this);
             }
             if (received) return;
             _ClearState();
@@ -319,6 +316,16 @@ namespace SiggiChessBoard {
                 if (listeners[i] != listener) kept[k++] = listeners[i];
             }
             listeners = kept;
+        }
+
+        // The arbiter changed (ChessArbiter.Change*: its settings, or the local player's pick of an archived game;
+        // step 13.10): passed on to every listener (OnArbiterChanged), so a UI shows Load it here at once. Nothing on
+        // the board changes.
+        public void _OnArbiterChanged(int change) {
+            if (listeners == null) return;
+            for (int i = 0; i < listeners.Length; i++) {
+                if (Utilities.IsValid(listeners[i])) listeners[i].OnArbiterChanged(this, change);
+            }
         }
 
         // A change made on this client: sends it (unless it's a rejection, which changes nothing), stamped as the
@@ -1510,7 +1517,7 @@ namespace SiggiChessBoard {
 
         // ---- PGN (docs/pgn.md, Export and Logging) ----
 
-        // The game's PGN as it stands: its tags (ChessPgn.WriteTags), a blank line and its move text.
+        // The game's PGN as it stands (ChessPgn.WriteGame): its tags, a blank line and its move text.
         public string GamePgn() {
             return PgnWith(ending, winner);
         }
@@ -1519,35 +1526,42 @@ namespace SiggiChessBoard {
         // logged as ChessGame.EndingUnterminated (a reset, 7.10, or a takeback, 7.8b) without ending it. The Date is
         // the start date in the Game ID; the first move's number and side come from the starting position. A loaded
         // game is written with its own players and time control, not the seats and the clock chosen for continuing.
-        // Missing notation is filled in first.
+        // Missing notation is filled in first. Written by ChessPgn.WriteGame, as the history wall writes an archived
+        // game.
         string PgnWith(int pgnEnding, int pgnWinner) {
             _FillNotationFor(float.MaxValue);
             int firstSide = state[ChessPosition.StateSideToMove];
             if (moveCount % 2 == 1) firstSide = ChessRules.OtherColor(firstSide);
             bool loaded = lifecycle == LifecycleLoaded;
             int pgnBase = loaded ? replaySourceBaseTime : baseTime;
-            // ChessPgn's convention: 0 for no clock, below 0 for unknown.
-            int pgnBaseSeconds = pgnBase == ChessArbiter.NoClock ? 0 : pgnBase == UnknownClock ? -1 : pgnBase;
-            string tags = ChessPgn.WriteTags(pgnEvent, pgnSite, ChessGame._DateFromGameId(gameId),
-                loaded ? replaySourceWhite : whitePlayer, loaded ? replaySourceBlack : blackPlayer, pgnEnding,
-                pgnWinner, mode, startFen, pgnBaseSeconds, loaded ? replaySourceIncrement : increment, gameId,
-                continuedFrom);
-            return tags + "\n" + ChessPgn.WriteMoveText(notation, clockHistory, moveCount, startMoveNumber, firstSide,
-                pgnEnding, pgnWinner, ChessPgn.LineWidth);
+            return ChessPgn.WriteGame(pgnEvent, pgnSite, loaded ? replaySourceWhite : whitePlayer,
+                loaded ? replaySourceBlack : blackPlayer, pgnEnding, pgnWinner, mode, startFen,
+                _PgnBaseSeconds(pgnBase), loaded ? replaySourceIncrement : increment, gameId, continuedFrom, notation,
+                clockHistory, moveCount, startMoveNumber, firstSide);
+        }
+
+        // A base time (seconds, ChessArbiter.NoClock or UnknownClock) as ChessPgn writes it: 0 for no clock, below 0
+        // for unknown.
+        public static int _PgnBaseSeconds(int seconds) {
+            return seconds == ChessArbiter.NoClock ? 0 : seconds == UnknownClock ? -1 : seconds;
         }
 
         // Writes the game's PGN, with this ending and winner, to the log as one entry: a "[ChessPGN]" line, then the
         // PGN, so a bot reading the output log finds every game (docs/game-endings.md: each client logs once, on the
-        // transition), and hands it to the archive (docs/archive.md). A game with no moves isn't logged, nor is a game
-        // played on untimed after a flag fall with no move since the flag fell (step 12.9): the timed game holds them.
+        // transition), and hands it with that PGN to every archive on the arbiter (docs/archive.md), each keeping what
+        // it wants. A game with no moves isn't logged, nor is a game played on untimed after a flag fall with no move
+        // since the flag fell (step 12.9): the timed game holds them.
         void LogGame(int logEnding, int logWinner) {
             if (moveCount == 0 || moveCount == flagFallPly) return;
             lastLoggedPgn = PgnWith(logEnding, logWinner);
             loggedGames++;
             Debug.Log("[ChessPGN]\n" + lastLoggedPgn);
-            if (Utilities.IsValid(archive)) {
-                archive._AddGame(gameId, continuedFrom, whitePlayer, blackPlayer, mode, logEnding, logWinner, startFen,
-                    baseTime, increment, moveHistory, clockHistory, moveCount);
+            if (!Utilities.IsValid(arbiter)) return;
+            GameArchive[] archives = arbiter.archives;
+            for (int i = 0; i < archives.Length; i++) {
+                if (!Utilities.IsValid(archives[i])) continue;
+                archives[i]._AddGame(gameId, continuedFrom, whitePlayer, blackPlayer, mode, logEnding, logWinner,
+                    startFen, baseTime, increment, moveHistory, clockHistory, moveCount, lastLoggedPgn);
             }
         }
 
@@ -2374,6 +2388,8 @@ namespace SiggiChessBoard {
         [NonSerialized] public string importFailedAt = "";
         // The import's time per frame in milliseconds (at least one step per frame).
         [NonSerialized] public float importBudgetMs = ChessPgnImporter.DefaultBudgetMs;
+        // Who started the import under way, and loads it (_StartImportAs).
+        [NonSerialized] public string importBy = "";
 
         // Whether an import can start: onto a reset board (CanLoadGame), by anyone, with an importer assigned.
         public bool CanImport() {
@@ -2383,7 +2399,13 @@ namespace SiggiChessBoard {
         // The import button: starts importing the PGN text over the next frames (CanImport), replacing an import
         // already under way. Nothing changes on the board until it finishes.
         public int StartImport(string text) {
+            return _StartImportAs(ChessUtil._LocalName(""), text);
+        }
+
+        // StartImport, the game to be loaded by the player with this display name (_LoadImportAs). Public for tests.
+        public int _StartImportAs(string name, string text) {
             if (!CanImport()) return InputRejected;
+            importBy = name == null ? "" : name;
             importer._StartImport(text, ImportCapacity, importBudgetMs, this, nameof(_ImportFinished));
             SetImportStatus(ImportRunning, ChessPgn.ImportMore, "");
             return InputAccepted;
@@ -2402,7 +2424,9 @@ namespace SiggiChessBoard {
             }
             // Not running any more, so the load's own change doesn't abandon it.
             importStatus = ImportLoaded;
-            if (_LoadImport(importer) == InputAccepted) SetImportStatus(ImportLoaded, ChessPgn.ImportDone, "");
+            if (_LoadImportAs(importBy, importer) == InputAccepted) {
+                SetImportStatus(ImportLoaded, ChessPgn.ImportDone, "");
+            }
             else SetImportStatus(ImportFailed, ChessPgn.ImportDone, "");
         }
 
@@ -2452,9 +2476,10 @@ namespace SiggiChessBoard {
             } else if (baseSeconds == 0) {
                 loadedBase = ChessArbiter.NoClock;
             }
-            return _LoadGameAs(name, importer._StartFen(), importer.moves, importer.sans, importer.clocks,
-                importer.MoveCount(), ChessPgn._ModeFromVariant(tags[ChessPgn.TagVariant]), tags[ChessPgn.TagWhite], tags[ChessPgn.TagBlack],
-                tags[ChessPgn.TagResult], tags[ChessPgn.TagGameId], loadedBase, loadedIncrement);
+            return _LoadGameEndingAs(name, importer._StartFen(), importer.moves, importer.sans, importer.clocks,
+                importer.MoveCount(), ChessPgn._ModeFromVariant(tags[ChessPgn.TagVariant]), tags[ChessPgn.TagWhite],
+                tags[ChessPgn.TagBlack], tags[ChessPgn.TagResult], tags[ChessPgn.TagGameId], loadedBase,
+                loadedIncrement, ChessGame.EndingFromName(tags[ChessPgn.TagEnding]));
         }
 
         // Loads a game onto the board (CanLoadGame: only a reset board): the position fen ("" or null for the
@@ -2481,6 +2506,17 @@ namespace SiggiChessBoard {
         public int _LoadGameAs(string name, string fen, int[] moves, string[] sans, int[] clocks, int count,
             int loadedMode, string white, string black, string result, string loadedGameId, int loadedBaseTime,
             int loadedIncrement) {
+            return _LoadGameEndingAs(name, fen, moves, sans, clocks, count, loadedMode, white, black, result,
+                loadedGameId, loadedBaseTime, loadedIncrement, -1);
+        }
+
+        // _LoadGameAs with the ending the game was logged with (ChessGame.Ending*; step 13.10): from an archive, or an
+        // import's Ending tag. The game keeps it, with the Result tag's winner, instead of the ending worked out from
+        // the position and the result, unless it's -1 (unknown), EndingNone or EndingUnterminated (an unfinished game,
+        // which loads as one without an ending, as before). Public for tests.
+        public int _LoadGameEndingAs(string name, string fen, int[] moves, string[] sans, int[] clocks, int count,
+            int loadedMode, string white, string black, string result, string loadedGameId, int loadedBaseTime,
+            int loadedIncrement, int loadedEnding) {
             if (!CanLoadGame()) return InputRejected;
             if (moves == null || sans == null || clocks == null || count < 0 || count > moves.Length
                 || count > sans.Length || count > clocks.Length) {
@@ -2528,7 +2564,12 @@ namespace SiggiChessBoard {
             int status = ChessMoves.PositionStatus(board, state,
                 ChessMoves.GenerateLegalMoves(board, state, legalMoves, true), true);
             int resultWinner;
-            if (status == ChessMoves.StatusCheckmate) {
+            if (loadedEnding > ChessGame.EndingNone && loadedEnding < ChessGame.EndingCount
+                && loadedEnding != ChessGame.EndingUnterminated) {
+                ending = loadedEnding;
+                ChessPgn._ParseResult(replaySourceResult, out resultWinner);
+                winner = resultWinner;
+            } else if (status == ChessMoves.StatusCheckmate) {
                 ending = ChessGame.EndingCheckmate;
                 winner = ChessRules.OtherColor(state[ChessPosition.StateSideToMove]);
             } else if (status == ChessMoves.StatusStalemate) {
@@ -2561,31 +2602,79 @@ namespace SiggiChessBoard {
             return InputAccepted;
         }
 
-        // The "Load it here" button (step 10.2b, docs/archive.md): loads the game with this ID from the board's
-        // archive (_LoadGame), its moves and clocks copied straight from it, its ending as its PGN result. The archive
-        // keeps no notation: every entry starts empty and the fill-in works it out over the next frames, on this
-        // client and on each one receiving the load. Refused unless CanLoadGame, and for a game not in the archive.
-        // Loaded by the local player (LoadArchivedGameAs).
+        // The "Load it here" button (step 10.2b, docs/archive.md; the pick on the arbiter since 13.10): loads the game
+        // the local player picked on a history wall (the arbiter's selectedArchive and selectedGameId). When its
+        // archive has its moves (HasMovesAt) it's copied at once (LoadArchivedGameFrom); otherwise (a personal game
+        // saved in an earlier session) its saved PGN is imported (_StartImportAs, told through OnImportChanged as any
+        // import). Once the load is accepted or the import started, the pick is cleared. Refused unless CanLoadGame
+        // and there's a pick still in its archive (an import also needs CanImport). Loaded by the local player
+        // (LoadSelectedGameAs).
+        public int LoadSelectedGame() {
+            return LoadSelectedGameAs(ChessUtil._LocalName(""));
+        }
+
+        // LoadSelectedGame, by the player with this display name, who keeps the board (_LoadGameAs). Public for tests.
+        public int LoadSelectedGameAs(string name) {
+            if (!CanLoadGame() || !Utilities.IsValid(arbiter) || !arbiter.HasSelection()) return InputRejected;
+            GameArchive source = arbiter.selectedArchive;
+            string selectedId = arbiter.selectedGameId;
+            int index = source.IndexOf(selectedId);
+            if (index < 0) return InputRejected;
+            int result = source.HasMovesAt(index) ? LoadArchivedGameFromAs(name, source, selectedId)
+                : _StartImportAs(name, source._LoadPgnAt(index));
+            // Loaded (or on its way) once: the other boards stop offering it.
+            if (result == InputAccepted) arbiter._ClearSelection();
+            return result;
+        }
+
+        // Loads the game with this ID from the arbiter's archives (the first holding it with its moves), as
+        // LoadArchivedGameFrom. Loaded by the local player (LoadArchivedGameAs).
         public int LoadArchivedGame(string archivedGameId) {
             return LoadArchivedGameAs(ChessUtil._LocalName(""), archivedGameId);
         }
 
         // LoadArchivedGame, by the player with this display name, who keeps the board (_LoadGameAs). Public for tests.
         public int LoadArchivedGameAs(string name, string archivedGameId) {
-            if (!CanLoadGame() || !Utilities.IsValid(archive)) return InputRejected;
-            int index = archive.IndexOf(archivedGameId);
-            if (index < 0) return InputRejected;
-            int count = archive.MoveCountAt(index);
+            if (!Utilities.IsValid(arbiter)) return InputRejected;
+            GameArchive[] archives = arbiter.archives;
+            for (int i = 0; i < archives.Length; i++) {
+                GameArchive source = archives[i];
+                if (!Utilities.IsValid(source)) continue;
+                int index = source.IndexOf(archivedGameId);
+                if (index >= 0 && source.HasMovesAt(index)) {
+                    return LoadArchivedGameFromAs(name, source, archivedGameId);
+                }
+            }
+            return InputRejected;
+        }
+
+        // Loads the game with this ID from source (_LoadGame), its moves and clocks copied straight from it, with the
+        // ending it was logged with and its PGN result. Archives keep no notation in this form: every entry starts
+        // empty and the fill-in works it out over the next frames, on this client and on each one receiving the load.
+        // Refused unless CanLoadGame, and for a game source doesn't hold or has no moves for (HasMovesAt). Loaded by
+        // the local player (LoadArchivedGameFromAs).
+        public int LoadArchivedGameFrom(GameArchive source, string archivedGameId) {
+            return LoadArchivedGameFromAs(ChessUtil._LocalName(""), source, archivedGameId);
+        }
+
+        // LoadArchivedGameFrom, by the player with this display name, who keeps the board (_LoadGameAs). Public for
+        // tests.
+        public int LoadArchivedGameFromAs(string name, GameArchive source, string archivedGameId) {
+            if (!CanLoadGame() || !Utilities.IsValid(source)) return InputRejected;
+            int index = source.IndexOf(archivedGameId);
+            if (index < 0 || !source.HasMovesAt(index)) return InputRejected;
+            int count = source.MoveCountAt(index);
             int[] moves = new int[count];
             int[] clocks = new int[count];
             string[] sans = new string[count];
             for (int i = 0; i < count; i++) sans[i] = "";
-            archive.CopyMovesAt(index, moves);
-            archive.CopyClocksAt(index, clocks);
-            return _LoadGameAs(name, archive.StartFenAt(index), moves, sans, clocks, count, archive.ModeAt(index),
-                archive.WhiteAt(index), archive.BlackAt(index),
-                ChessPgn.ResultText(archive.EndingAt(index), archive.WinnerAt(index)), archive.GameIdAt(index),
-                archive.BaseTimeAt(index), archive.IncrementAt(index));
+            source.CopyMovesAt(index, moves);
+            source.CopyClocksAt(index, clocks);
+            int archivedEnding = source.EndingAt(index);
+            return _LoadGameEndingAs(name, source.StartFenAt(index), moves, sans, clocks, count, source.ModeAt(index),
+                source.WhiteAt(index), source.BlackAt(index),
+                ChessPgn.ResultText(archivedEnding, source.WinnerAt(index)), source.GameIdAt(index),
+                source.BaseTimeAt(index), source.IncrementAt(index), archivedEnding);
         }
 
         public int ContinueGame() {

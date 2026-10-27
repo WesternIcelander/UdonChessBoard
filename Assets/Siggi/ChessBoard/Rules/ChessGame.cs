@@ -165,6 +165,37 @@ namespace SiggiChessBoard {
             return winner == ChessRules.NoColor ? "ending_draw" : "ending_" + side + "_wins";
         }
 
+        // The ending's stable name (docs/game-endings.md), as the personal archive saves it in its custom Ending tag
+        // (step 13.10): "checkmate", "resignation", "agreement"..., never translated or changed, since saved games
+        // keep it. "" for EndingNone or an unknown value.
+        public static string EndingName(int ending) {
+            switch (ending) {
+                case EndingCheckmate: return "checkmate";
+                case EndingResignation: return "resignation";
+                case EndingTimeForfeit: return "time-forfeit";
+                case EndingStalemate: return "stalemate";
+                case EndingDrawAgreement: return "agreement";
+                case EndingThreefoldRepetition: return "threefold-repetition";
+                case EndingFivefoldRepetition: return "fivefold-repetition";
+                case EndingFiftyMoveRule: return "fifty-move-rule";
+                case EndingSeventyFiveMoveRule: return "seventy-five-move-rule";
+                case EndingInsufficientMaterial: return "insufficient-material";
+                case EndingUnterminated: return "unterminated";
+                case EndingKingCaptured: return "king-captured";
+                case EndingUnknown: return "unknown";
+            }
+            return "";
+        }
+
+        // The ending an EndingName names, -1 for a name that's none of them (and for "").
+        public static int EndingFromName(string name) {
+            if (name == null || name.Length == 0) return -1;
+            for (int ending = EndingNone + 1; ending < EndingCount; ending++) {
+                if (EndingName(ending) == name) return ending;
+            }
+            return -1;
+        }
+
         // value (not negative) in decimal, zero-padded to at least count digits.
         static string Digits(int value, int count) {
             string text = value.ToString();

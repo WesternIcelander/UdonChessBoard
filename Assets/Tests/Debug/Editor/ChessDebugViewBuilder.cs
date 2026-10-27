@@ -43,6 +43,7 @@ public static class ChessDebugViewBuilder {
         { "Take holder", "TakeHolder" }, { "Hold archive", "HoldArchive" }, { "Resign at :00", "ResignAtMinute" },
         { "Check archive", "CheckArchive" }, { "Add 10 games", "AddTenGames" },
         { "Preferred set", "CyclePreferredSet" }, { "Override sets", "CycleSetOverride" },
+        { "Fill my games", "FillMyGames" },
     };
     const int ButtonColumns = 7;
 

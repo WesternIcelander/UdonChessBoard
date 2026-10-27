@@ -48,6 +48,21 @@ namespace SiggiChessBoard {
             return sb.ToString();
         }
 
+        // A whole game's PGN (docs/pgn.md, Export): its tags (WriteTags, the Date from the Game ID as
+        // ChessGame._DateFromGameId gives it), a blank line and its move text (WriteMoveText, LineWidth wide). The
+        // board's GamePgn and the history wall's Export PGN (step 13.10) both write with it, so a game exported from
+        // the archive reads as the board wrote it. baseSeconds is 0 for no clock and below 0 for unknown, as
+        // WriteTags takes it; firstMoveNumber and firstSideToMove are the starting position's.
+        public static string WriteGame(string eventName, string site, string white, string black, int ending,
+            int winner, int mode, string startFen, int baseSeconds, int incrementSeconds, string gameId,
+            string continuedFrom, string[] sans, int[] clocks, int moveCount, int firstMoveNumber,
+            int firstSideToMove) {
+            string tags = WriteTags(eventName, site, ChessGame._DateFromGameId(gameId), white, black, ending, winner,
+                mode, startFen, baseSeconds, incrementSeconds, gameId, continuedFrom);
+            return tags + "\n" + WriteMoveText(sans, clocks, moveCount, firstMoveNumber, firstSideToMove, ending,
+                winner, LineWidth);
+        }
+
         // The move text of a game's PGN (docs/pgn.md, Export move text): moveCount moves from sans (their recorded
         // SAN), each followed by "{ [%clk H:MM:SS] }" when clocks (null for none) holds a known time for it, then the
         // result worked out from ending and winner. Moves are numbered from the starting position's fullmove number
@@ -218,6 +233,8 @@ namespace SiggiChessBoard {
             @"\[%clk\s+(?<h>[0-9]{1,9}):(?<m>[0-9]{1,2}):(?<s>[0-9]{1,2})(?:\.(?<f>[0-9]+))?\s*\]";
 
         // The tags import reads, as indices into the tags array _ReadNext fills. All other tags are ignored.
+        // ContinuedFrom, PlyCount and Ending (step 13.10) are for the personal archive, which reads its saved games'
+        // tags (_ReadTags); an import also takes the ending from Ending (ChessGame.EndingName) when it's there.
         public const int TagFen = 0;
         public const int TagVariant = 1;
         public const int TagWhite = 2;
@@ -225,7 +242,10 @@ namespace SiggiChessBoard {
         public const int TagResult = 4;
         public const int TagGameId = 5;
         public const int TagTimeControl = 6;
-        public const int TagCount = 7;
+        public const int TagContinuedFrom = 7;
+        public const int TagPlyCount = 8;
+        public const int TagEnding = 9;
+        public const int TagCount = 10;
 
         // The reading state _ReadNext keeps between calls (an int[CursorLength]), so an import can stop after any move
         // and go on in a later frame: where in the text it is, how deep in variations, how many main-line moves it
@@ -258,6 +278,9 @@ namespace SiggiChessBoard {
                 case TagResult: return "Result";
                 case TagGameId: return "GameID";
                 case TagTimeControl: return "TimeControl";
+                case TagContinuedFrom: return "ContinuedFrom";
+                case TagPlyCount: return "PlyCount";
+                case TagEnding: return "Ending";
             }
             return "";
         }
@@ -291,10 +314,10 @@ namespace SiggiChessBoard {
         // - ReadError: text that is no PGN token, an unclosed { or (, a ) with no (, or the end of the move text
         //   inside a variation. cursor[CursorPosition] is where the bad token starts (before its whitespace), and
         //   cursor[CursorMoves] the number of main-line moves read before it, i.e. the failing ply.
-        // Tag pairs (FEN, Variant, White, Black, Result, GameID, TimeControl) are stored in tags as they are read,
-        // unescaped; all come before the first move, so a FEN tag is known before the first ReadMove. A tag read
-        // twice keeps its last value. Move numbers, NAGs, annotations, ; comments and % lines are skipped, and so
-        // are variations with everything in them. Move numbers aren't checked against the moves.
+        // Tag pairs import reads (the Tag* constants) are stored in tags as they are read, unescaped; all come before
+        // the first move, so a FEN tag is known before the first ReadMove. A tag read twice keeps its last value.
+        // Move numbers, NAGs, annotations, ; comments and % lines are skipped, and so are variations with everything
+        // in them. Move numbers aren't checked against the moves.
         public static int _ReadNext(Regex tokenRegex, Regex clockRegex, string pgn, int[] cursor, string[] tags,
             out string san, out int clock) {
             san = "";
@@ -346,6 +369,25 @@ namespace SiggiChessBoard {
                     || match.Groups["open"].Success || match.Groups["close"].Success) {
                     cursor[CursorInMoveText] = 1;
                 }
+            }
+        }
+
+        // Reads only the tag section of pgn into tags (string[TagCount], each "" first), with tokenRegex
+        // (TokenPattern), stopping at the first token that isn't a tag, so the move text is never read (the personal
+        // archive's saved games, step 13.10). Returns how many tag pairs there were, those import doesn't read
+        // included.
+        public static int _ReadTags(Regex tokenRegex, string pgn, string[] tags) {
+            for (int i = 0; i < TagCount; i++) tags[i] = "";
+            if (pgn == null) return 0;
+            int position = 0;
+            int count = 0;
+            while (true) {
+                Match match = tokenRegex.Match(pgn, position);
+                if (!match.Success || !match.Groups["tag"].Success) return count;
+                int tag = _TagIndex(match.Groups["name"].Value);
+                if (tag >= 0) tags[tag] = _UnescapeTagValue(match.Groups["value"].Value);
+                position = match.Index + match.Length;
+                count++;
             }
         }
 

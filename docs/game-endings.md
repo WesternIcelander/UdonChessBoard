@@ -31,6 +31,7 @@
   | Reset of an unfinished game | `unterminated` |
   | Continued from an earlier position (unfinished) | `unterminated` |
   | King capture (Fog of War, later) | `king captured` |
+- **Stable names** (step 13.10): `ChessGame.EndingName(ending)` gives each ending a name that's never translated or changed, since saved games keep it: the personal archive writes it in its custom `Ending` tag ([Archive](archive.md#personal-archive-step-1310), [PGN](pgn.md)), and `ChessGame.EndingFromName(name)` reads it back (-1 for an unknown name). `Result` and the English `Termination` sentence can't tell a resignation from an agreed draw by the winner alone, and `Termination` is for people. The names: `checkmate`, `resignation`, `time-forfeit`, `stalemate`, `agreement`, `threefold-repetition`, `fivefold-repetition`, `fifty-move-rule`, `seventy-five-move-rule`, `insufficient-material`, `unterminated`, `king-captured`, `unknown` (a loaded game whose result is known but not how it ended); none for a game in progress.
 
 ## Draw rules
 

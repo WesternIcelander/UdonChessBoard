@@ -21,5 +21,11 @@ namespace SiggiChessBoard {
         // import is also an OnBoardChanged (ChangeLoaded), told first.
         public virtual void OnImportChanged() {
         }
+
+        // Called when the arbiter of a board this listens to changes (step 13.10): change is
+        // ChessArbiter.ChangeSettings (its settings, here or received) or ChangeSelection (the local player picked or
+        // unpicked an archived game, so a UI shows or hides Load it here). Nothing on the board changed.
+        public virtual void OnArbiterChanged(ChessBoard board, int change) {
+        }
     }
 }

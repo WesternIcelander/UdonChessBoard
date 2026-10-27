@@ -17,6 +17,7 @@ UdonSharp compiles only part of C#. The ones that matter here:
 ## Consequences
 
 - No exceptions: errors become return codes / `bool` + `out` values (e.g. PGN import reports "failed at move N").
+- No interfaces: where several behaviours share a shape, it's an abstract `UdonSharpBehaviour` with virtual methods, which the others derive from: `ChessBoardListener` (the board's listeners) and, since step 13.10, `GameArchive` (the instance's and the personal archive). A call through a field typed as the base reaches the subclass's override, return values and parameters included (checked by `ArchiveTest` through the arbiter's `archives`). The base can also hold fields and methods both kinds share (the archive's walls, its `_Changed`).
 - Regex: the Java patterns in `PGN` and `MovePredicates` need two changes for .NET.
   - `TOKEN_PATTERN` uses possessive quantifiers (`*+`), which .NET doesn't support; use atomic groups `(?>...)`.
   - Java's `matcher.matches()` requires the whole string to match; in .NET add `^...$` anchors.

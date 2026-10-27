@@ -4,10 +4,10 @@ using UnityEngine;
 using VRC.SDKBase;
 
 namespace SiggiChessBoard {
-    // Up to Capacity archived games (docs/archive.md), one holder of the GameArchive's. Its games are synced, written
-    // only by the archive's owner, who alone may own a holder. A localOnly holder (the archive's recent games) never
-    // sends or takes anything. Udon can't sync arrays of arrays, so the games' moves and clocks are flattened: back to
-    // back in slot order, each slot's length in its infos.
+    // Up to Capacity archived games (docs/archive.md), one holder of the InstanceGameArchive's. Its games are synced,
+    // written only by the archive's owner, who alone may own a holder. A localOnly holder (the archive's recent games)
+    // never sends or takes anything. Udon can't sync arrays of arrays, so the games' moves and clocks are flattened:
+    // back to back in slot order, each slot's length in its infos.
     [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
     public class GameArchiveHolder : UdonSharpBehaviour {
         public const int Capacity = 5;
@@ -22,8 +22,8 @@ namespace SiggiChessBoard {
         public const int InfoLength = 6;
 
         // The archive this holder belongs to: only its owner may own the holder.
-        [Tooltip("The GameArchive this holder belongs to.")]
-        public GameArchive archive;
+        [Tooltip("The InstanceGameArchive this holder belongs to.")]
+        public InstanceGameArchive archive;
         // The recent games of this client: never sent, never taken from an update.
         [Tooltip("Keeps this client's recent games: never synced.")]
         public bool localOnly;
@@ -105,7 +105,7 @@ namespace SiggiChessBoard {
         }
 
         // Puts a game in slot, replacing what was there: its sequence (its place in the archive's order), the first
-        // count of gameMoves and gameClocks, and the rest as GameArchive._AddGame takes them. null strings are kept as
+        // count of gameMoves and gameClocks, and the rest as InstanceGameArchive._AddGame takes them. null strings are kept as
         // "". Nothing is sent (Send).
         public void _WriteSlot(int slot, int sequence, string gameId, string continuedFrom, string white, string black,
             int mode, int ending, int winner, string startFen, int baseTime, int increment, int[] gameMoves,

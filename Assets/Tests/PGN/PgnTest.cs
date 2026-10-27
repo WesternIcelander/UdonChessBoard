@@ -415,9 +415,11 @@ public class PgnTest : ChessTest {
         Check(errors == "", name + " (" + moveCount + " moves)", errors);
     }
 
+    // The tags import reads, in ChessPgn.Tag* order; ContinuedFrom, PlyCount and Ending (13.10) empty, as no test
+    // PGN has them.
     string[] Tags(string fen, string variant, string white, string black, string result, string gameId,
         string timeControl) {
-        return new string[] { fen, variant, white, black, result, gameId, timeControl };
+        return new string[] { fen, variant, white, black, result, gameId, timeControl, "", "", "" };
     }
 
     string JoinSans(string[] sans) {
@@ -939,7 +941,7 @@ public class PgnTest : ChessTest {
 
         // A hand-written game exported and re-imported: names with " and \ and an emoji, a Chess960 start, a clock
         // history with tenths, hours and unknown entries, a Game ID and a continued game's ContinuedFrom (which the
-        // import doesn't read).
+        // import reads since 13.10, for the personal archive).
         string pgn = ChessPgn.WriteTags("Casual game", "VRChat", "2026.10.11", "Ana \"The Rook\" \\ Ñandú 🐴",
                 "\\\"\\", ChessGame.EndingResignation, ChessRules.White, ChessGame.ModeChess960,
                 "qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w GBgb - 0 1", 5400, 30, "20261011120000-000001",
@@ -968,6 +970,7 @@ public class PgnTest : ChessTest {
         }
         string[] expectedTags = Tags("qrkbbnrn/pppppppp/8/8/8/8/PPPPPPPP/QRKBBNRN w GBgb - 0 1", "Chess960",
             "Ana \"The Rook\" \\ Ñandú 🐴", "\\\"\\", "1-0", "20261011120000-000001", "5400+30");
+        expectedTags[ChessPgn.TagContinuedFrom] = "20261010120000-000002/4";
         for (int tag = 0; tag < ChessPgn.TagCount; tag++) {
             if (tags[tag] != expectedTags[tag]) errors += " " + ChessPgn._TagName(tag) + " \"" + tags[tag] + "\"";
         }
