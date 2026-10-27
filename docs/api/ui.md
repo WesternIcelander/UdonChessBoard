@@ -142,7 +142,7 @@ Read in `OnBoardChanged` (and on a timer for the clocks):
 
 ### Readable state
 
-These public fields of `ChessBoard` are API to **read**, never to write (writing one bypasses the board's checks and sync, and the next update overwrites it); any other `[NonSerialized]` field isn't API ([index](README.md#whats-supported)):
+These public fields of `ChessBoard` are API to **read**, never to write (writing one bypasses the board's checks and sync, and the next update overwrites it); so are the position's arrays [board input](board-input.md#reading-the-position) names (`board`, `state`, `replayBoard`, `moveHistory`, `halfmoveClock`, `moveNumber`). Any other `[NonSerialized]` field isn't API ([index](README.md#whats-supported)):
 
 `lifecycle`, `mode`, `baseTime`, `increment`, `whitePlayer`, `blackPlayer`, `loadedBy`, `ending`, `winner`, `drawOfferColor`, `takebackColor`, `takebackPly`, `replayMode`, `replayIndex`, `replayCustom`, `moveCount`, `notation` (entries below `moveCount`), `startMoveNumber`, `replaySourceWhite`, `replaySourceBlack`, `replaySourceResult`, `gameId`, `continuedFrom`, `lastChange`, `lastChangeReceived`, `importStatus`, `importResult`, `importFailedAt`.
 

@@ -72,7 +72,7 @@ A world's own UI uses the **plain forms**. The `As` forms decide as if that play
 - **Static methods are called on their class:** the rules (`ChessFen.ParseFen(…)`, `ChessRules.SquareName(…)`) take everything through parameters and need no object.
 - **Return codes, not exceptions.** UdonSharp has no `try` / `catch`, so nothing here throws: a refused call returns `InputRejected` or `false`, and a method that fills arrays returns a count or a `bool` with `out` values ([udon-constraints](../udon-constraints.md)).
 - **Listen by deriving from `ChessBoardListener`** and overriding the methods you need; the others do nothing.
-- **Read the board, don't write it.** The documents name some of the board's public fields as readable state (such as `lifecycle`, `ending`, `winner`, `replayMode`, as [UI](ui.md) lists them). Writing one bypasses the board's checks and sync, and the next update overwrites it.
+- **Read the board, don't write it.** The documents name some of the board's public fields as readable state (such as `lifecycle`, `ending`, `winner`, `replayMode`, as [UI](ui.md#readable-state) lists them, and the position's arrays in [board input](board-input.md#reading-the-position)). Writing one bypasses the board's checks and sync, and the next update overwrites it.
 - **Calls into another behaviour are slow** in Udon. Read what a redraw needs once in `OnBoardChanged` rather than every frame, and keep a rules search on local arrays.
 
 ```csharp
@@ -110,7 +110,7 @@ public class TurnSign : ChessBoardListener {
 The API is exactly what these documents name: the classes, public methods, Inspector fields, readable fields, constants and return values they describe, which [compatibility](../compatibility.md) (rule 6) keeps across releases from the first one on. Everything else is internal and may change or go in any release, in particular:
 
 - **public methods starting with `_`** (`_PackState`, `_LoadImport`, `_Press…`, …): public only because another of the package's behaviours, a test, a UI event or `SendCustomEvent` calls them (step 13.7);
-- **public fields not shown in the Inspector** (`[NonSerialized]` ones such as the board's history arrays or synced fields, the arbiter's `boards`), unless a document names one as readable;
+- **public fields not shown in the Inspector** (`[NonSerialized]` ones such as the board's synced fields, its clock history, the arbiter's `boards`), unless a document names one as readable;
 - the editor scripts, the test behaviours and debug views under `Assets/Tests/`, and the inner objects of the prefabs.
 
 Unity's and Udon's events (`Start`, `OnDeserialization`, …) aren't calls for a world to make. A world's own text uses the keys [Text](text.md) lists, which are kept as the API is.
