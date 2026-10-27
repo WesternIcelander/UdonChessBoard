@@ -12,20 +12,28 @@ using VRC.SDK3.Components;
 using VRC.Udon;
 using static ChessBuilderUtil;
 
-// Builds the 2D board view (PLAN.md 12.13 to 12.15, ChessBoard2DView.cs, docs/board-2d.md) in the open scene: a
-// world-space canvas with the selector (left, "Board N", right), the 8x8 board with a piece image on each square, the
-// players and status texts under it, the step buttons (<<, <, >, >>) along the bottom, and the move list (12.15) to the
-// right, the full height. The pieces wear the sprites
-// in Sprites2D/ (KingW.png ... PawnB.png), whose import is set to Sprite here when it isn't. Its boards are every board
-// in the scene by board number.
-// - Create 2D Board View: the selected 2D view, or the scene's only one, is replaced where it stands, keeping its
-//   boards, locked board and Synced; otherwise a new one stands behind the boards, facing them.
+// Places the 2D board view (PLAN.md 12.13 to 12.16, ChessBoard2DView.cs, docs/board-2d.md) in the open scene, as an
+// instance of one of its two prefabs (step 14.8, docs/prefabs.md; made when missing, EnsureViewPrefabs):
+// - 2D Chess Board View (BuildView): the fixed view, a world-space canvas with the selector (left, "Board N", right),
+//   the 8x8 board with a piece image on each square, the players and status texts under it, the step buttons (<<, <,
+//   >, >>) along the bottom, and the move list (12.15) to the right, the full height. The pieces wear the sprites in
+//   Sprites2D/ (KingW.png ... PawnB.png), whose import is set to Sprite here when it isn't.
+// - Movable 2D Chess Board View (BuildMovable): a holder (ChessBoard2DViewHolder.cs, 12.16) with a nested instance of
+//   the fixed prefab, so a change to that reaches both, and the grip and corner to move and resize it. The grip has no
+//   VRCObjectSync in the prefab, as its view isn't synced; ChessBoard2DViewSyncCheck gives an instance's grip one (an
+//   added component, an override) before every build when its view's Synced is on, so neither prefab needs a variant
+//   per case (decided in 14.8).
+// The instance's boards (every board in the scene by board number), locked board and Synced are set on it.
+// - Create 2D Board View: the selected 2D view, or the scene's only one, is replaced where it stands (in a holder, by a
+//   movable one), keeping its boards, locked board and Synced; otherwise a new one stands behind the boards, facing
+//   them.
 // - Create Locked 2D Board View: a view locked to the selected board (12.14), replacing one already locked to it where
 //   it stands, or new behind that board.
-// - Create Movable 2D Board View (12.16): the selected view (or the selected holder's) put in a holder with a grip and
-//   a corner to move and resize it (ChessBoard2DViewHolder.cs), its grip and corner rebuilt where the view stands;
-//   with nothing selected, a new view beside the others, in a new holder.
-// Plain editor C#, not Udon.
+// - Create Movable 2D Board View (12.16): the selected view (or the selected holder's) replaced by a movable one where
+//   it stands; with nothing selected, a new movable view beside the others.
+// - Update 2D View Prefabs: saves both prefabs again in place, and replaces the scene's views and holders built before
+//   14.8 with instances of them.
+// Whatever pointed at a replaced view or holder (Board2DTest's) is pointed at the new one. Plain editor C#, not Udon.
 public static class ChessBoard2DViewBuilder {
     const string ViewScriptPath = "Assets/Siggi/ChessBoard/ChessBoard2DView.cs";
     const string ViewProgramPath = "Assets/Siggi/ChessBoard/ChessBoard2DView.asset";
@@ -76,7 +84,8 @@ public static class ChessBoard2DViewBuilder {
     [MenuItem("Tools/Chess Board/Create 2D Board View")]
     static void Create() {
         ChessBoard2DView old = ExistingView();
-        Build("Create 2D Board View", old, old != null ? old.lockedBoard : null, NewViewPosition());
+        Place("Create 2D Board View", old, old != null ? old.lockedBoard : null, NewViewPosition(),
+            old != null && HolderOf(old) != null);
     }
 
     // A view locked to the selected board (12.14).
@@ -96,40 +105,143 @@ public static class ChessBoard2DViewBuilder {
             if (views[i].lockedBoard == board) old = views[i];
         }
         Vector3 position = board.transform.position + new Vector3(0, ViewHeight, LockedViewDistance);
-        Build("Create Locked 2D Board View", old, board, position);
+        Place("Create Locked 2D Board View", old, board, position, old != null && HolderOf(old) != null);
     }
 
     // One more view, whatever is selected: beside the new view's place, a view's width (and a gap) along +x per view
     // already in the scene (e.g. one synced and one not, 12.14's several-client run).
     [MenuItem("Tools/Chess Board/Create Another 2D Board View")]
     static void CreateAnother() {
-        int count = Object.FindObjectsOfType<ChessBoard2DView>(true).Length;
-        Build("Create Another 2D Board View", null, null,
-            NewViewPosition() + Vector3.right * (count * (CanvasWidth * 0.001f + 0.2f)));
+        Place("Create Another 2D Board View", null, null, AnotherViewPosition(), false);
     }
 
-    // Builds a view locked to locked (none when null), replacing old where it stands (keeping its name, boards and
-    // Synced), or new at position, named ChessBoard2DView, or ChessBoard2DView (N) beside N - 1 others.
-    static ChessBoard2DView Build(string menuItem, ChessBoard2DView old, ChessBoard locked, Vector3 position) {
+    // A view players can move and resize (12.16): the selected view (or the view of the selected holder) replaced by
+    // a movable one where it stands; otherwise a new movable view beside the others.
+    [MenuItem("Tools/Chess Board/Create Movable 2D Board View")]
+    static void CreateMovable() {
+        ChessBoard2DView old = null;
+        GameObject selected = Selection.activeGameObject;
+        if (selected != null) {
+            ChessBoard2DViewHolder holder = selected.GetComponent<ChessBoard2DViewHolder>();
+            old = holder != null ? holder.view : selected.GetComponent<ChessBoard2DView>();
+        }
+        Place("Create Movable 2D Board View", old, old != null ? old.lockedBoard : null, AnotherViewPosition(), true);
+    }
+
+    // Places an instance of the view prefab (movable: the movable one) locked to locked (none when null), replacing old
+    // where it stands (old's holder too, when it has one), keeping its name, boards and Synced (and the holder's name
+    // and Movable), or new at position, named ChessBoard2DView, or ChessBoard2DView (N) beside N - 1 others (a movable
+    // one's holder that name and Holder). Whatever pointed at old and its holder is pointed at the new ones.
+    static ChessBoard2DView Place(string menuItem, ChessBoard2DView old, ChessBoard locked, Vector3 position,
+            bool movable) {
         if (!ProgramAssetsReady(menuItem)) return null;
-        Sprite[] whiteSprites = LoadPieceSprites(ChessRules.White);
-        Sprite[] blackSprites = LoadPieceSprites(ChessRules.Black);
+        string prefabNote = EnsureViewPrefabs();
+        ChessBoard2DViewHolder oldHolder = old != null ? HolderOf(old) : null;
         int others = Object.FindObjectsOfType<ChessBoard2DView>(true).Length;
         string name = old != null ? old.gameObject.name
             : others == 0 ? "ChessBoard2DView" : "ChessBoard2DView (" + (others + 1) + ")";
 
+        GameObject root = (GameObject)PrefabUtility.InstantiatePrefab(
+            AssetDatabase.LoadAssetAtPath<GameObject>(movable ? MovablePrefabPath : ViewPrefabPath));
+        Undo.RegisterCreatedObjectUndo(root, menuItem);
+        ChessBoard2DViewHolder holder = movable ? root.GetComponent<ChessBoard2DViewHolder>() : null;
+        ChessBoard2DView view = movable ? holder.view : root.GetComponent<ChessBoard2DView>();
+        view.gameObject.name = name;
+        root.name = movable ? (oldHolder != null ? oldHolder.gameObject.name : name + " Holder") : name;
+        view.boards = old != null ? old.boards : SceneBoards();
+        view.lockedBoard = locked;
+        view.synced = old != null && old.synced;
+        RecordInstance(view);
+        if (holder != null) {
+            holder.movable = oldHolder == null || oldHolder.movable;
+            RecordInstance(holder);
+        }
+
+        // The old view's (or its holder's) place: a holder's origin is its view's centre, as the fixed view's is.
+        Transform rootTransform = root.transform;
+        Transform oldRoot = oldHolder != null ? oldHolder.transform : old != null ? old.transform : null;
+        // Facing the boards: seen from them, looking along +z.
+        rootTransform.SetPositionAndRotation(position, Quaternion.identity);
+        int repointed = 0;
+        bool replaced = oldRoot != null;
+        if (replaced) {
+            rootTransform.SetParent(oldRoot.parent, false);
+            rootTransform.SetSiblingIndex(oldRoot.GetSiblingIndex());
+            rootTransform.SetPositionAndRotation(old.transform.position, old.transform.rotation);
+            // The canvas's own scale when it stands alone; a holder's scale when replacing one by one.
+            if (!movable) {
+                rootTransform.localScale = oldHolder != null ? old.transform.lossyScale : old.transform.localScale;
+            } else if (oldHolder != null) {
+                rootTransform.localScale = oldHolder.transform.localScale;
+            }
+            if (oldHolder != null && holder != null) repointed += ChessBoardViewBuilder.RepointReferences(oldHolder, holder);
+            repointed += ChessBoardViewBuilder.RepointReferences(old, view);
+            Undo.DestroyObjectImmediate(oldRoot.gameObject);
+        }
+        PrefabUtility.RecordPrefabInstancePropertyModifications(root);
+        PrefabUtility.RecordPrefabInstancePropertyModifications(rootTransform);
+        PrefabUtility.RecordPrefabInstancePropertyModifications(view.gameObject);
+        if (holder != null) MatchObjectSync(holder);
+        // The view's text comes from the shared Chess Language (PLAN.md 13.5), made when the scene has
+        // none; the I18n fields are left empty, for the I18n sanity check to fill on build and before Play Mode.
+        EnsureChessLanguage(root.scene);
+        EditorSceneManager.MarkSceneDirty(root.scene);
+        Selection.activeGameObject = root;
+        Debug.Log("[ChessBoard2DViewBuilder] " + (replaced ? "Replaced" : "Created") + " the "
+            + (movable ? "movable " : "") + "2D board view " + name + " ("
+            + (locked != null ? "locked to Board " + (locked.boardNumber + 1) : view.boards.Length + " board(s)")
+            + ", " + (view.synced ? "synced" : "not synced")
+            + (holder != null ? (view.synced ? ", with" : ", no") + " VRCObjectSync on its grip" : "")
+            + (replaced ? ", " + repointed + " behaviour(s) pointed at it" : "") + prefabNote
+            + "). Move it where you like and save the scene.");
+        return view;
+    }
+
+    // ---- The 2D Chess Board View and Movable 2D Chess Board View prefabs (step 14.8, docs/prefabs.md) ----
+
+    const string ViewPrefabName = "2D Chess Board View";
+    const string ViewPrefabPath = PrefabsFolder + "/" + ViewPrefabName + ".prefab";
+    const string MovablePrefabName = "Movable 2D Chess Board View";
+    const string MovablePrefabPath = PrefabsFolder + "/" + MovablePrefabName + ".prefab";
+
+    [MenuItem("Tools/Chess Board/Update 2D View Prefabs")]
+    static void UpdateViewPrefabs() {
+        if (!ProgramAssetsReady("Update 2D View Prefabs")) return;
+        string note = EnsureViewPrefabs();
+        GameObject viewPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(ViewPrefabPath);
+        GameObject movablePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(MovablePrefabPath);
+        foreach (ChessBoard2DView view in Object.FindObjectsOfType<ChessBoard2DView>(true)) {
+            ChessBoard2DViewHolder holder = HolderOf(view);
+            GameObject root = holder != null ? holder.gameObject : view.gameObject;
+            if (PrefabUtility.IsPartOfPrefabInstance(root)) continue;
+            string name = root.name;
+            Place("Update 2D View Prefabs", view, view.lockedBoard, view.transform.position, holder != null);
+            note += ", " + name + " replaced by an instance";
+        }
+        Debug.Log("[ChessBoard2DViewBuilder] 2D view prefabs: " + (note.Length > 0 ? note.Substring(2) : "unchanged")
+            + (viewPrefab != null && movablePrefab != null ? "" : " (a prefab is missing)"));
+    }
+
+    // Makes the fixed view's prefab when it's missing (BuildView), then the movable one's (BuildMovable, nesting the
+    // fixed one), and otherwise saves each again in place. Returns a note for the log ("" when both were there).
+    static string EnsureViewPrefabs() {
+        return EnsurePrefab(ViewPrefabPath, ViewPrefabName, BuildView)
+            + EnsurePrefab(MovablePrefabPath, MovablePrefabName, BuildMovable);
+    }
+
+    // A view without boards (a prefab's contents), not locked or synced, at the origin facing +z (seen looking along
+    // +z), its origin the canvas's centre.
+    static GameObject BuildView() {
+        Sprite[] whiteSprites = LoadPieceSprites(ChessRules.White);
+        Sprite[] blackSprites = LoadPieceSprites(ChessRules.Black);
         TMP_FontAsset font = DefaultFont();
-        GameObject root = new GameObject(name);
-        Undo.RegisterCreatedObjectUndo(root, "Create 2D Board View");
+        GameObject root = new GameObject(ViewPrefabName);
         root.layer = LayerMask.NameToLayer("Default");
         Canvas canvas = root.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
         RectTransform rootRect = root.GetComponent<RectTransform>();
         rootRect.sizeDelta = new Vector2(CanvasWidth, CanvasHeight);
         rootRect.localScale = Vector3.one * 0.001f;
-        // Facing the boards: seen from them, looking along +z.
-        rootRect.position = position;
-        rootRect.rotation = Quaternion.identity;
         root.AddComponent<CanvasScaler>();
         root.AddComponent<GraphicRaycaster>();
         root.AddComponent<VRCUiShape>();
@@ -139,9 +251,6 @@ public static class ChessBoard2DViewBuilder {
         background.raycastTarget = false;
 
         ChessBoard2DView view = UdonSharpUndo.AddComponent<ChessBoard2DView>(root);
-        view.boards = old != null ? old.boards : SceneBoards();
-        view.lockedBoard = locked;
-        view.synced = old != null && old.synced;
         view.whiteSprites = whiteSprites;
         view.blackSprites = blackSprites;
         UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(view);
@@ -195,53 +304,7 @@ public static class ChessBoard2DViewBuilder {
 
         BuildMoveList(root, view, udon, font);
         UdonSharpEditorUtility.CopyProxyToUdon(view);
-
-        int repointed = 0;
-        bool replaced = old != null;
-        if (old != null) {
-            root.transform.SetParent(old.transform.parent, false);
-            root.transform.SetSiblingIndex(old.transform.GetSiblingIndex());
-            rootRect.position = old.transform.position;
-            rootRect.rotation = old.transform.rotation;
-            rootRect.localScale = old.transform.localScale;
-            repointed = ChessBoardViewBuilder.RepointReferences(old, view);
-            Undo.DestroyObjectImmediate(old.gameObject);
-        }
-        // The view's text comes from the shared Chess Language (PLAN.md 13.5), made when the scene has
-        // none; the I18n fields are left empty, for the I18n sanity check to fill on build and before Play Mode.
-        EnsureChessLanguage(root.scene);
-        EditorSceneManager.MarkSceneDirty(root.scene);
-        Selection.activeGameObject = root;
-        Debug.Log("[ChessBoard2DViewBuilder] " + (replaced ? "Replaced" : "Created") + " the 2D board view ("
-            + (locked != null ? "locked to Board " + (locked.boardNumber + 1) : view.boards.Length + " board(s)")
-            + ", " + (view.synced ? "synced" : "not synced")
-            + (replaced ? ", " + repointed + " behaviour(s) pointed at it" : "")
-            + "). Move it where you like and save the scene.");
-        return view;
-    }
-
-    // ---- The movable view (12.16) ----
-
-    // A view players can move and resize: the selected view (or the view of the selected holder) in a holder, its
-    // grip and corner rebuilt where the view stands; otherwise a new view beside the others, in a new holder.
-    [MenuItem("Tools/Chess Board/Create Movable 2D Board View")]
-    static void CreateMovable() {
-        if (!ProgramAssetsReady("Create Movable 2D Board View")) return;
-        ChessBoard2DView view = null;
-        ChessBoard2DViewHolder holder = null;
-        GameObject selected = Selection.activeGameObject;
-        if (selected != null) {
-            holder = selected.GetComponent<ChessBoard2DViewHolder>();
-            view = holder != null ? holder.view : selected.GetComponent<ChessBoard2DView>();
-            if (holder == null && view != null) holder = HolderOf(view);
-        }
-        if (view == null) {
-            int count = Object.FindObjectsOfType<ChessBoard2DView>(true).Length;
-            view = Build("Create Movable 2D Board View", null, null,
-                NewViewPosition() + Vector3.right * (count * (CanvasWidth * 0.001f + 0.2f)));
-            if (view == null) return;
-        }
-        BuildHolder(view, holder);
+        return root;
     }
 
     // The holder whose view this is (its parent's), or null.
@@ -258,29 +321,21 @@ public static class ChessBoard2DViewBuilder {
     const float GripGap = 0.04f;
     const float CornerSize = 0.08f;
 
-    // Puts view in holder (a new one, named after the view, when null), replacing the holder's grip and corner with
-    // new ones placed from where the view stands: the grip centred under its bottom edge, the corner just outside its
-    // bottom right. Keeps the holder's Movable; its Min Size and Max Size go back to the defaults, as the grip's width is
-    // fitted to the smallest size. The grip has a VRCObjectSync when the view is synced.
-    static void BuildHolder(ChessBoard2DView view, ChessBoard2DViewHolder holder) {
-        Transform viewTransform = view.transform;
-        bool created = holder == null;
-        if (created) {
-            GameObject root = new GameObject(view.gameObject.name + " Holder");
-            Undo.RegisterCreatedObjectUndo(root, "Create Movable 2D Board View");
-            root.transform.SetParent(viewTransform.parent, false);
-            root.transform.SetSiblingIndex(viewTransform.GetSiblingIndex());
-            root.transform.SetPositionAndRotation(viewTransform.position, viewTransform.rotation);
-            holder = UdonSharpUndo.AddComponent<ChessBoard2DViewHolder>(root);
-            Undo.SetTransformParent(viewTransform, root.transform, "Create Movable 2D Board View");
-        } else {
-            if (holder.grip != null) Undo.DestroyObjectImmediate(holder.grip.gameObject);
-            if (holder.corner != null) Undo.DestroyObjectImmediate(holder.corner.gameObject);
-            if (viewTransform.parent != holder.transform) {
-                Undo.SetTransformParent(viewTransform, holder.transform, "Create Movable 2D Board View");
-            }
-        }
-        Undo.RecordObject(holder, "Create Movable 2D Board View");
+    // A movable view (a prefab's contents, 12.16): the holder at the origin, a nested instance of the fixed view's
+    // prefab as its child at its origin, and the grip and corner placed from where the view stands: the grip centred
+    // under its bottom edge, the corner just outside its bottom right. Min Size and Max Size are the defaults, as the
+    // grip's width is fitted to the smallest size. The view isn't synced, so the grip has no VRCObjectSync.
+    static GameObject BuildMovable() {
+        GameObject root = new GameObject(MovablePrefabName);
+        root.layer = LayerMask.NameToLayer("Default");
+        ChessBoard2DViewHolder holder = UdonSharpUndo.AddComponent<ChessBoard2DViewHolder>(root);
+        GameObject viewObject = (GameObject)PrefabUtility.InstantiatePrefab(
+            AssetDatabase.LoadAssetAtPath<GameObject>(ViewPrefabPath));
+        Transform viewTransform = viewObject.transform;
+        viewTransform.SetParent(root.transform, false);
+        viewTransform.localPosition = Vector3.zero;
+        viewTransform.localRotation = Quaternion.identity;
+        ChessBoard2DView view = viewObject.GetComponent<ChessBoard2DView>();
         holder.view = view;
         holder.minSize = ChessBoard2DViewHolder.DefaultMinSize;
         holder.maxSize = 3;
@@ -310,16 +365,7 @@ public static class ChessBoard2DViewBuilder {
         holder.handleRenderers = new[] { gripRenderer, cornerRenderer };
         MatchObjectSync(holder);
         UdonSharpEditorUtility.CopyProxyToUdon(holder);
-        // The handles' hover texts come from the shared Chess Language (PLAN.md 13.5), made when the scene has
-        // none; the I18n fields are left empty, for the I18n sanity check to fill on build and before Play Mode.
-        EnsureChessLanguage(holder.gameObject.scene);
-
-        EditorSceneManager.MarkSceneDirty(holder.gameObject.scene);
-        Selection.activeGameObject = holder.gameObject;
-        Debug.Log("[ChessBoard2DViewBuilder] " + (created ? "Put " : "Rebuilt the grip and corner of ") + view.gameObject.name
-            + (created ? " in " + holder.gameObject.name : "") + " (" + (view.synced ? "synced, with" : "not synced, no")
-            + " VRCObjectSync; " + (holder.movable ? "movable" : "not movable") + ", " + (half.x * 2).ToString("0.00")
-            + " m wide, a " + gripSize.x.ToString("0.00") + " m bar). Save the scene.");
+        return root;
     }
 
     // A handle to pick up: an object with a trigger box collider of size, a kinematic rigidbody without gravity (it
@@ -550,6 +596,12 @@ public static class ChessBoard2DViewBuilder {
         }
         Vector3 middle = sum / boards.Length;
         return new Vector3(middle.x, middle.y + ViewHeight, maxZ + ViewDistance);
+    }
+
+    // Beside the new view's place: a view's width (and a gap) along +x per view already in the scene.
+    static Vector3 AnotherViewPosition() {
+        int count = Object.FindObjectsOfType<ChessBoard2DView>(true).Length;
+        return NewViewPosition() + Vector3.right * (count * (CanvasWidth * 0.001f + 0.2f));
     }
 
     // A button calling eventName on the view, greyed while not interactable.

@@ -10,8 +10,8 @@ namespace SiggiChessBoard {
     // A flat 2D view of one board at a time (docs/board-2d.md; PLAN.md 12.13, 12.14): a UI canvas with the 8x8 board,
     // which board it is ("Board N"), and its players and status lines as the board's UI writes them
     // (ChessBoardUI._PlayersTextFor, _GameStatusTextFor). Left and right step through the boards in use; nothing on it
-    // acts on a board. It listens to the board it shows, switching listener as it steps. Built in the scene by
-    // Tools > Chess Board > Create 2D Board View (Editor/ChessBoard2DViewBuilder.cs).
+    // acts on a board. It listens to the board it shows, switching listener as it steps. Placed in the scene as the
+    // 2D Chess Board View prefab, or inside the Movable 2D Chess Board View prefab's holder (docs/prefabs.md).
     //
     // It has a replay of its own (12.14): it shows a ply of the board's game (viewPly), building that position itself
     // from the board's history on a scratch position, whatever the board's own replay shows. On the latest position it

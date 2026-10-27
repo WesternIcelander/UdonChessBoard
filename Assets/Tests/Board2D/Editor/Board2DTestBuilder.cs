@@ -72,7 +72,8 @@ public static class Board2DTestBuilder {
         for (int i = 0; i < views.Length; i++) {
             Undo.RecordObject(views[i], "Toggle 2D View Synced");
             views[i].synced = !views[i].synced;
-            UdonSharpEditorUtility.CopyProxyToUdon(views[i]);
+            // An override on a prefab instance (14.8); RecordInstance copies it to the Udon data either way.
+            RecordInstance(views[i]);
             ChessBoard2DViewHolder holder = ChessBoard2DViewBuilder.HolderOf(views[i]);
             if (holder != null) ChessBoard2DViewBuilder.MatchObjectSync(holder);
             EditorSceneManager.MarkSceneDirty(views[i].gameObject.scene);

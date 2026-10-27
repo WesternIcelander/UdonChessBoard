@@ -11,8 +11,8 @@ namespace SiggiChessBoard {
     // The view follows the grip, turning as it turns (a VR player's hand tilts it freely; after a desktop player picks
     // it up, it stands upright: the synced upright flag), its bottom edge staying where it was from the grip in the
     // scene and the view sized about it; the corner stays where it was from the view's bottom right corner. Holding
-    // the corner sets the size (minSize to maxSize) from how far along the view's bottom edge it is. Built by Tools >
-    // Chess Board > Create Movable 2D Board View (Editor/ChessBoard2DViewBuilder.cs).
+    // the corner sets the size (minSize to maxSize) from how far along the view's bottom edge it is. The root of the
+    // Movable 2D Chess Board View prefab, whose view is a nested 2D Chess Board View (docs/prefabs.md).
     //
     // With the view's Synced on, the grip's VRCObjectSync carries the place to everyone (picking it up takes ownership,
     // as any pickup), and the size is a synced field here. VRCObjectSync forces continuous sync on behaviours on its own
@@ -24,7 +24,7 @@ namespace SiggiChessBoard {
         public const float SendInterval = 0.2f;
         // How fast another player's resize is followed (per second, exponential).
         const float FollowRate = 12;
-        // The default smallest size, which the builder fits the grip to (so it doesn't reach the corner).
+        // The default smallest size, which the prefab's grip is fitted to (so it doesn't reach the corner).
         public const float DefaultMinSize = 0.25f;
 
         [Tooltip("On: players can move the view (the bar under it) and resize it (the corner at its bottom right). "
@@ -39,8 +39,8 @@ namespace SiggiChessBoard {
         public Renderer[] handleRenderers = new Renderer[0];
         // The grip's visible bar, turned upright under an upright view (found as the grip's first child when empty).
         public Transform gripModel;
-        [Tooltip("The smallest and largest size, as a share of the size the view has in the scene. The builder fits "
-            + "the bar to the smallest, so it doesn't reach the corner.")]
+        [Tooltip("The smallest and largest size, as a share of the size the view has in the scene. The prefab's bar "
+            + "is fitted to the smallest, so it doesn't reach the corner.")]
         public float minSize = DefaultMinSize;
         public float maxSize = 3f;
         [Tooltip("How near (m) a VR hand must be to grab the bar or the corner. Desktop players keep the pickups' own "
@@ -84,7 +84,7 @@ namespace SiggiChessBoard {
             if (!Utilities.IsValid(view) || !Utilities.IsValid(grip) || !Utilities.IsValid(corner)
                 || !Utilities.IsValid(gripPickup) || !Utilities.IsValid(cornerPickup)) {
                 Debug.LogError("[ChessBoard2DViewHolder] " + gameObject.name + ": View, Grip, Grip Pickup, Corner or "
-                    + "Corner Pickup is empty (Tools > Chess Board > Create Movable 2D Board View).");
+                    + "Corner Pickup is empty (revert them to the Movable 2D Chess Board View prefab's).");
                 return;
             }
             Transform v = view.transform;

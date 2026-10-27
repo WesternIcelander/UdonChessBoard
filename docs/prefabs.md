@@ -8,7 +8,7 @@ Until step 14.13 the **Tools > Chess Board** builders make each prefab when it's
 
 Every chess prefab shares one `I18n`, the **Chess Language** prefab (step 14.10), placed once per scene as a sibling or on a parent of the chess objects, so the `I18n` sanity check links them to it ([architecture](architecture.md), languages).
 
-**The minimum a world needs:** one **Chess Arbiter**, and per board a **Chess Board** wired to it with a **Chess Board View** and a **Chess Board UI** on it (the UI holds the buttons: without it, nobody can join or start a game). Add one **Game Archive** per world to keep finished games (for the history wall and **Load it here**), listed in the arbiter's **Archives**; without one, games are only logged. A **Game History Wall** on it lists those games for players to pick, export and load. The **Personal Game Archive** and the **Personal History Wall** on it keep and show each player's own games across visits. A **Chess Settings Menu** on the arbiter lets organizers change the settings in-world.
+**The minimum a world needs:** one **Chess Arbiter**, and per board a **Chess Board** wired to it with a **Chess Board View** and a **Chess Board UI** on it (the UI holds the buttons: without it, nobody can join or start a game). Add one **Game Archive** per world to keep finished games (for the history wall and **Load it here**), listed in the arbiter's **Archives**; without one, games are only logged. A **Game History Wall** on it lists those games for players to pick, export and load. The **Personal Game Archive** and the **Personal History Wall** on it keep and show each player's own games across visits. A **Chess Settings Menu** on the arbiter lets organizers change the settings in-world. A **2D Chess Board View** (or the **Movable 2D Chess Board View**) on the boards lets spectators watch them from afar.
 
 ## Chess Pieces
 
@@ -115,6 +115,27 @@ Place at most one per world, where organizers can reach it; it stands at its cen
 
 Without it, nobody can change the settings in-world: the arbiter's Inspector values hold for the whole instance. Step 14.11 will fill in the arbiter and boards by itself.
 
+## 2D Chess Board View
+
+`Prefabs/2D Chess Board View.prefab` (step 14.8): a flat view of one board at a time for watching, a landscape world-space canvas (1.36 m by 1.41 m) with a `ChessBoard2DView` ([2D board view](board-2d.md)): the selector (`<`, **Board N**, `>`), the 8×8 board with a piece image on each square (the sprites in `Sprites2D/`), the players and status texts, the step buttons (`<<` `<` `>` `>>`) of its own replay, and the move list on the right, each cell with its `ChessMoveListCell`. It takes the pointer through a trigger collider and `VRCUiShape`, so players walk through it. It has no pickup: it stays where it's placed.
+
+Place as many as you like; it faces +z (read looking along +z), and its origin is its centre. After placing it, set:
+
+- **Boards**: the **Chess Board**s it steps through, in the order Left and Right go (by board number, as the settings menu numbers them). Left empty, the view logs an error on start and shows nothing.
+- or **Locked Board**: one board, for a view beside its table; the selector is then hidden and **Boards** isn't read.
+- **Synced**: your choice, off in the prefab. On, everyone sees the board and position last chosen by anyone, late joiners included; off, each player chooses for themselves.
+- **I18n**: nothing. The `I18n` sanity check fills it from the Chess Language on build and before Play Mode.
+
+## Movable 2D Chess Board View
+
+`Prefabs/Movable 2D Chess Board View.prefab` (step 14.8): the same view that players can move and resize ([Moving and resizing](board-2d.md#moving-and-resizing-step-1216)): a `ChessBoard2DViewHolder` at its root with a nested instance of the **2D Chess Board View** prefab as its child (so a change to that prefab reaches both), the **Grip** (a bar under the view, a `VRCPickup`) and the **Corner** (a cube at its bottom right, a second pickup, for resizing). Its origin is the view's centre, as the fixed one's is.
+
+After placing it, set the nested view's **Boards** (or **Locked Board**) and **Synced** as for the fixed view; the holder needs nothing. **Movable** on the holder (on by default) turns moving off (the bar and corner hidden). **Min Size** and **Max Size** (0.25 and 3) are the sizes the corner allows; the bar is fitted to the smallest, so after lowering it check that the bar stays clear of the corner.
+
+**Synced and `VRCObjectSync`:** with **Synced** on, the grip needs a `VRCObjectSync` (so everyone sees the view move), and with it off it must have none. The prefab's grip has none, as its view isn't synced; before every VRChat build, `ChessBoard2DViewSyncCheck` adds one to an instance's grip whose view is synced (an added component, an override on the instance) and removes it when Synced is turned off again, so ticking **Synced** is all a world does. Decided in 14.8: that is enough for instances, so there's no prefab variant per case. In Play Mode (ClientSim, one player) the missing component changes nothing.
+
+**Which to pick:** the fixed view for a view that stays put (one locked beside each table, a wall of games); the movable one for a view players carry around or resize.
+
 ## Sync methods
 
-Each prefab saves every `UdonBehaviour` with the sync method its script asks for (`UdonBehaviourSyncMode`: Manual for the board, arbiter and archive, None for the views, Continuous for the pieces' and squares' `NoVariableSync`), as UdonSharp sets it on scene objects. UdonSharp doesn't set it on an object saved straight to a prefab, so before step 14.5 the built prefabs held Continuous everywhere; the builders now set it whenever they save a prefab (`ChessBuilderUtil.SetSyncMethods`), and **Test Prefabs** checks it.
+Each prefab saves every `UdonBehaviour` with the sync method its script asks for (`UdonBehaviourSyncMode`: Manual for the board, arbiter, archive, 2D view and holder, None for the views, Continuous for the pieces' and squares' `NoVariableSync`), as UdonSharp sets it on scene objects. UdonSharp doesn't set it on an object saved straight to a prefab, so before step 14.5 the built prefabs held Continuous everywhere; the builders now set it whenever they save a prefab (`ChessBuilderUtil.SetSyncMethods`), and **Test Prefabs** checks it.

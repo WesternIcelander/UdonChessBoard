@@ -23,7 +23,11 @@ using VRC.Udon;
 // buttons), Export PGN and PGN box, each pointed at a placed archive of its kind, and the open scene's personal archive
 // and walls instances of them. 14.7: the Chess Settings Menu with its rows and buttons (each passing its row and
 // action to the menu), pointed at a placed arbiter and board, and the open scene's menu an instance of it on its
-// arbiter with every board. Every prefab: nothing it uses is under Assets/Tests/.
+// arbiter with every board. 14.8: the 2D Chess Board View with its squares, sprites, buttons (each calling its own
+// view) and move list, not grabbable, pointed at two placed boards; the Movable 2D Chess Board View, its view a nested
+// 2D Chess Board View, its grip and corner pickups, Synced ticked on an instance giving the grip a VRCObjectSync as an
+// added component and unticked taking it away, a change to the fixed prefab reaching it (undone); and the open
+// scene's 2D views instances of them, Board2DTest on a movable one. Every prefab: nothing it uses is under Assets/Tests/.
 // Logs "[PrefabTest] PASS: <check>" or "[PrefabTest] FAIL: <check>: <details>" per check, then a summary line.
 public static class PrefabTest {
     const string PieceSetPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Pieces.prefab";
@@ -36,6 +40,8 @@ public static class PrefabTest {
     const string WallPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Game History Wall.prefab";
     const string PersonalWallPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Personal History Wall.prefab";
     const string MenuPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Settings Menu.prefab";
+    const string View2DPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/2D Chess Board View.prefab";
+    const string Movable2DPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Movable 2D Chess Board View.prefab";
 
     static int passed;
     static int failed;
@@ -64,9 +70,13 @@ public static class PrefabTest {
         Check(personalWallPrefab != null, "the Personal History Wall prefab at " + PersonalWallPrefabPath, "missing");
         GameObject menuPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(MenuPrefabPath);
         Check(menuPrefab != null, "the Chess Settings Menu prefab at " + MenuPrefabPath, "missing");
+        GameObject view2DPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(View2DPrefabPath);
+        Check(view2DPrefab != null, "the 2D Chess Board View prefab at " + View2DPrefabPath, "missing");
+        GameObject movable2DPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(Movable2DPrefabPath);
+        Check(movable2DPrefab != null, "the Movable 2D Chess Board View prefab at " + Movable2DPrefabPath, "missing");
         if (setPrefab == null || arbiterPrefab == null || boardPrefab == null || viewPrefab == null
             || uiPrefab == null || archivePrefab == null || personalPrefab == null || wallPrefab == null
-            || personalWallPrefab == null || menuPrefab == null) {
+            || personalWallPrefab == null || menuPrefab == null || view2DPrefab == null || movable2DPrefab == null) {
             Summary();
             return;
         }
@@ -82,6 +92,8 @@ public static class PrefabTest {
             CheckWall(wallPrefab, archivePrefab, false, scene);
             CheckWall(personalWallPrefab, personalPrefab, true, scene);
             CheckMenu(menuPrefab, arbiterPrefab, boardPrefab, scene);
+            Check2DView(view2DPrefab, boardPrefab, scene);
+            CheckMovable2DView(movable2DPrefab, view2DPrefab, scene);
         } finally {
             EditorSceneManager.CloseScene(scene, true);
         }
@@ -92,9 +104,11 @@ public static class PrefabTest {
         CheckScenePersonalArchive(personalPrefab);
         CheckSceneWalls(wallPrefab, personalWallPrefab);
         CheckSceneMenu(menuPrefab);
+        CheckScene2DViews(view2DPrefab, movable2DPrefab);
         foreach (string path in new[] {
             PieceSetPrefabPath, ArbiterPrefabPath, BoardPrefabPath, ViewPrefabPath, UIPrefabPath, ArchivePrefabPath,
             PersonalPrefabPath, WallPrefabPath, PersonalWallPrefabPath, MenuPrefabPath,
+            View2DPrefabPath, Movable2DPrefabPath,
         }) {
             CheckNoTests(path);
             CheckSyncMethods(path);
@@ -953,6 +967,302 @@ public static class PrefabTest {
             if (target != null && target.menu == menu && button.transform.IsChildOf(menu.transform)) own++;
         }
         CheckIntValue(own, menu.buttons.Length, "the scene's settings menu's buttons are its own");
+    }
+
+    // ---- 14.8: 2D Chess Board View, Movable 2D Chess Board View ----
+
+    static void Check2DView(GameObject viewPrefab, GameObject boardPrefab, Scene scene) {
+        List<string> logged = new List<string>();
+        Application.LogCallback listener = (text, stack, type) => logged.Add(type + ": " + text);
+        Application.logMessageReceived += listener;
+        GameObject placed;
+        try {
+            placed = (GameObject)PrefabUtility.InstantiatePrefab(viewPrefab, scene);
+        } finally {
+            Application.logMessageReceived -= listener;
+        }
+        Check(logged.Count == 0, "the 2D Chess Board View placed logs nothing", string.Join("; ", logged));
+        ChessBoard2DView view = placed.GetComponent<ChessBoard2DView>();
+        Check(view != null, "the 2D Chess Board View has a ChessBoard2DView", "none");
+        if (view == null) return;
+        Check(view.boards != null && view.boards.Length == 0, "the 2D view's boards are left to set",
+            view.boards == null ? "null" : view.boards.Length + " boards");
+        Check(view.lockedBoard == null, "the 2D view isn't locked", "on " + view.lockedBoard);
+        Check(!view.synced, "the 2D view's Synced is off, for the world creator to choose", "on");
+        Check(view.i18n == null, "the 2D view's I18n is left for the sanity check", "on " + view.i18n);
+        Canvas canvas = placed.GetComponent<Canvas>();
+        BoxCollider box = placed.GetComponent<BoxCollider>();
+        Check(canvas != null && canvas.renderMode == RenderMode.WorldSpace
+            && placed.GetComponent<VRC.SDK3.Components.VRCUiShape>() != null && box != null && box.isTrigger,
+            "the 2D view is a world-space canvas taking the pointer through a trigger", "it isn't");
+        Check(placed.GetComponentsInChildren<VRC.SDK3.Components.VRCPickup>(true).Length == 0
+            && placed.GetComponentsInChildren<Rigidbody>(true).Length == 0
+            && placed.GetComponentsInChildren<ChessBoard2DViewHolder>(true).Length == 0,
+            "the fixed 2D view has no pickup, rigidbody or holder: it can't be grabbed", "it has one");
+
+        string squares = "";
+        if (view.squareImages == null || view.squareImages.Length != 64 || view.pieceImages == null
+            || view.pieceImages.Length != 64) {
+            squares = " the arrays aren't 64 long";
+        } else {
+            for (int square = 0; square < 64; square++) {
+                if (view.squareImages[square] == null || view.pieceImages[square] == null
+                    || !view.squareImages[square].transform.IsChildOf(placed.transform)
+                    || view.pieceImages[square].transform.parent != view.squareImages[square].transform) {
+                    squares += " " + square + ";";
+                }
+            }
+        }
+        Check(squares == "", "the 2D view's 64 squares, each with its piece image", squares);
+        HashSet<Sprite> sprites = new HashSet<Sprite>();
+        bool sixEach = view.whiteSprites != null && view.whiteSprites.Length == 6 && view.blackSprites != null
+            && view.blackSprites.Length == 6;
+        if (sixEach) {
+            foreach (Sprite sprite in view.whiteSprites) if (sprite != null) sprites.Add(sprite);
+            foreach (Sprite sprite in view.blackSprites) if (sprite != null) sprites.Add(sprite);
+        }
+        Check(sixEach && sprites.Count == 12, "the 2D view's 6 sprites per colour, all 12 different",
+            sprites.Count + " different");
+        Check(view.boardLabel != null && view.playersLabel != null && view.statusLabel != null
+            && view.boardLabel.transform.IsChildOf(placed.transform)
+            && view.playersLabel.transform.IsChildOf(placed.transform)
+            && view.statusLabel.transform.IsChildOf(placed.transform), "the 2D view's board label and texts", "missing");
+
+        UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(view);
+        CheckString(PressEvent(view.leftButton, udon), nameof(ChessBoard2DView.PressLeft),
+            "the 2D view's left button calls its own view");
+        CheckString(PressEvent(view.rightButton, udon), nameof(ChessBoard2DView.PressRight),
+            "the 2D view's right button calls its own view");
+        string[] stepEvents = {
+            nameof(ChessBoard2DView.PressFirst), nameof(ChessBoard2DView.PressBack),
+            nameof(ChessBoard2DView.PressForward), nameof(ChessBoard2DView.PressLast),
+        };
+        string steps = "";
+        if (view.stepButtons == null || view.stepButtons.Length != 4 || view.stepLabels == null
+            || view.stepLabels.Length != 4) {
+            steps = " the arrays aren't 4 long";
+        } else {
+            for (int i = 0; i < 4; i++) {
+                string pressed = PressEvent(view.stepButtons[i], udon);
+                if (pressed != stepEvents[i]) steps += " " + i + " calls " + pressed + ";";
+                if (view.stepLabels[i] == null || view.stepButtons[i] == null
+                    || !view.stepLabels[i].transform.IsChildOf(view.stepButtons[i].transform)) {
+                    steps += " " + i + "'s label;";
+                }
+            }
+        }
+        Check(steps == "", "the 2D view's four step buttons, each calling its own view, with their labels", steps);
+
+        // The move list (12.15): its scroll rect calling the view, and its pooled cells, each passing its index to the
+        // placed view through its own ChessMoveListCell.
+        Check(view.moveList != null && view.moveListViewport != null && view.moveListContent != null
+            && view.moveListRows != null && view.moveList.content == view.moveListContent
+            && view.moveList.viewport == view.moveListViewport && view.moveListRows.IsChildOf(view.moveListViewport),
+            "the 2D view's move list, its viewport, content and rows", "missing");
+        if (view.moveList != null) {
+            UnityEngine.UI.ScrollRect.ScrollRectEvent scrolled = view.moveList.onValueChanged;
+            Check(scrolled.GetPersistentEventCount() == 1 && scrolled.GetPersistentTarget(0) == udon
+                && new SerializedObject(view.moveList).FindProperty(
+                    "m_OnValueChanged.m_PersistentCalls.m_Calls.Array.data[0].m_Arguments.m_StringArgument")
+                    .stringValue == nameof(ChessBoard2DView._OnMoveListScrolled),
+                "the 2D view's move list scrolling calls its own view", "it doesn't");
+        }
+        int cells = view.moveCells != null ? view.moveCells.Length : 0;
+        string cellProblems = "";
+        if (view.moveNumbers == null || 2 * view.moveNumbers.Length != cells || view.moveCellImages == null
+            || view.moveCellImages.Length != cells || view.moveCellLabels == null
+            || view.moveCellLabels.Length != cells) {
+            cellProblems = " the arrays' lengths differ;";
+            cells = 0;
+        }
+        for (int i = 0; i < cells; i++) {
+            UnityEngine.UI.Button button = view.moveCells[i];
+            ChessMoveListCell cell = button != null ? button.GetComponent<ChessMoveListCell>() : null;
+            if (cell == null || cell.view != view || cell.cell != i || view.moveListRows == null
+                || !button.transform.IsChildOf(view.moveListRows)) {
+                cellProblems += " " + i + " missing or not the view's;";
+                continue;
+            }
+            string pressed = PressEvent(button, UdonSharpEditorUtility.GetBackingUdonBehaviour(cell));
+            if (pressed != nameof(ChessMoveListCell._Press)) cellProblems += " " + i + " calls " + pressed + ";";
+            if (view.moveCellImages[i] == null || view.moveCellImages[i].gameObject != button.gameObject
+                || view.moveCellLabels[i] == null || !view.moveCellLabels[i].transform.IsChildOf(button.transform)) {
+                cellProblems += " " + i + "'s image or label;";
+            }
+        }
+        Check(cells > 0 && cellProblems == "", "the 2D view's " + cells + " move list cells, each passing its index to "
+            + "the placed view", cellProblems);
+
+        // Pointed at two placed boards by hand, as a world creator would set them in the Inspector.
+        GameObject first = (GameObject)PrefabUtility.InstantiatePrefab(boardPrefab, scene);
+        GameObject second = (GameObject)PrefabUtility.InstantiatePrefab(boardPrefab, scene);
+        SerializedObject fields = new SerializedObject(view);
+        SerializedProperty boards = fields.FindProperty("boards");
+        boards.arraySize = 2;
+        boards.GetArrayElementAtIndex(0).objectReferenceValue = first.GetComponent<ChessBoard>();
+        boards.GetArrayElementAtIndex(1).objectReferenceValue = second.GetComponent<ChessBoard>();
+        fields.FindProperty("synced").boolValue = true;
+        fields.ApplyModifiedProperties();
+        Check(view.boards.Length == 2 && view.boards[0] == first.GetComponent<ChessBoard>()
+            && view.boards[1] == second.GetComponent<ChessBoard>() && view.synced,
+            "the 2D view pointed at two placed boards and synced", "it isn't");
+        ChessBoard2DView prefabView = viewPrefab.GetComponent<ChessBoard2DView>();
+        Check(prefabView.boards.Length == 0 && !prefabView.synced,
+            "the 2D view pointed at boards and synced: the prefab still has none and isn't synced", "it changed");
+        Object.DestroyImmediate(placed);
+        Object.DestroyImmediate(first);
+        Object.DestroyImmediate(second);
+    }
+
+    static void CheckMovable2DView(GameObject movablePrefab, GameObject viewPrefab, Scene scene) {
+        List<string> logged = new List<string>();
+        Application.LogCallback listener = (text, stack, type) => logged.Add(type + ": " + text);
+        Application.logMessageReceived += listener;
+        GameObject placed;
+        try {
+            placed = (GameObject)PrefabUtility.InstantiatePrefab(movablePrefab, scene);
+        } finally {
+            Application.logMessageReceived -= listener;
+        }
+        Check(logged.Count == 0, "the Movable 2D Chess Board View placed logs nothing", string.Join("; ", logged));
+        ChessBoard2DViewHolder holder = placed.GetComponent<ChessBoard2DViewHolder>();
+        Check(holder != null, "the Movable 2D Chess Board View has a ChessBoard2DViewHolder", "none");
+        if (holder == null) return;
+        ChessBoard2DView view = holder.view;
+        bool nested = view != null && view.transform.parent == placed.transform
+            && PrefabUtility.IsAnyPrefabInstanceRoot(view.gameObject)
+            && PrefabUtility.GetCorrespondingObjectFromOriginalSource(view.gameObject) == viewPrefab;
+        Check(nested, "the holder's view is its child, a nested 2D Chess Board View", "it isn't");
+        ChessBoard2DViewHolder prefabHolder = movablePrefab.GetComponent<ChessBoard2DViewHolder>();
+        Check(prefabHolder != null && prefabHolder.view != null
+            && PrefabUtility.GetCorrespondingObjectFromSource(prefabHolder.view.gameObject) == viewPrefab,
+            "the Movable 2D Chess Board View prefab nests the 2D Chess Board View prefab", "it doesn't");
+        if (view == null) return;
+        Check(view.boards.Length == 0 && view.lockedBoard == null && !view.synced && view.i18n == null,
+            "the movable view's boards are left to set, not locked or synced, its I18n left for the sanity check",
+            "it isn't");
+        Check(holder.i18n == null, "the holder's I18n is left for the sanity check", "on " + holder.i18n);
+        Check(holder.movable && holder.minSize == ChessBoard2DViewHolder.DefaultMinSize && holder.maxSize == 3,
+            "the holder is movable, sizes 0.25 to 3", holder.movable + ", " + holder.minSize + " to " + holder.maxSize);
+        Check(view.GetComponentsInChildren<VRC.SDK3.Components.VRCPickup>(true).Length == 0,
+            "the movable view's canvas has no pickup of its own", "it has one");
+        string handles = "";
+        foreach (Transform handle in new[] { holder.grip, holder.corner }) {
+            if (handle == null || handle.parent != placed.transform) {
+                handles += " a handle missing;";
+                continue;
+            }
+            VRC.SDK3.Components.VRCPickup pickup = handle.GetComponent<VRC.SDK3.Components.VRCPickup>();
+            Rigidbody body = handle.GetComponent<Rigidbody>();
+            BoxCollider collider = handle.GetComponent<BoxCollider>();
+            if (pickup == null || body == null || !body.isKinematic || body.useGravity || collider == null
+                || !collider.isTrigger || handle.gameObject.layer != LayerMask.NameToLayer("Pickup")) {
+                handles += " " + handle.name + "'s pickup;";
+            }
+            if (handle.GetComponent<UdonBehaviour>() != null) handles += " " + handle.name + " has a behaviour;";
+        }
+        Check(handles == "" && holder.gripPickup != null && holder.gripPickup.transform == holder.grip
+            && holder.cornerPickup != null && holder.cornerPickup.transform == holder.corner,
+            "the holder's grip and corner, each a kinematic trigger pickup on the Pickup layer with no behaviour",
+            handles);
+        Check(holder.gripModel != null && holder.gripModel.parent == holder.grip && holder.handleRenderers != null
+            && holder.handleRenderers.Length == 2 && holder.handleRenderers[0] != null
+            && holder.handleRenderers[1] != null, "the holder's bar and handle renderers", "missing");
+        Check(holder.grip != null && holder.grip.GetComponent<VRC.SDK3.Components.VRCObjectSync>() == null,
+            "the movable view isn't synced: its grip has no VRCObjectSync", "it has one");
+
+        // Synced ticked on the instance: the build callback's match gives its grip a VRCObjectSync as an added
+        // component (an override), the prefab's grip still without; unticked, it goes again (decided in 14.8: no
+        // variant per case).
+        if (holder.grip != null) {
+            view.synced = true;
+            ChessBuilderUtil.RecordInstance(view);
+            bool matched = ChessBoard2DViewBuilder.MatchObjectSync(holder);
+            VRC.SDK3.Components.VRCObjectSync sync = holder.grip.GetComponent<VRC.SDK3.Components.VRCObjectSync>();
+            bool added = false;
+            foreach (UnityEditor.SceneManagement.AddedComponent component in PrefabUtility.GetAddedComponents(placed)) {
+                if (component.instanceComponent == sync) added = true;
+            }
+            Check(matched && sync != null && added, "Synced ticked: the grip gets a VRCObjectSync as an added component",
+                matched + ", " + (sync != null) + ", " + added);
+            Check(prefabHolder != null && prefabHolder.grip != null
+                && prefabHolder.grip.GetComponent<VRC.SDK3.Components.VRCObjectSync>() == null,
+                "Synced ticked on the instance: the prefab's grip still has no VRCObjectSync", "it has one");
+            view.synced = false;
+            ChessBuilderUtil.RecordInstance(view);
+            matched = ChessBoard2DViewBuilder.MatchObjectSync(holder);
+            Check(matched && holder.grip.GetComponent<VRC.SDK3.Components.VRCObjectSync>() == null
+                && PrefabUtility.GetAddedComponents(placed).Count == 0,
+                "Synced unticked: the grip's VRCObjectSync goes, no component added", "it stays");
+        }
+
+        // A change to the fixed view's prefab (its board label moved down, then back) reaches the movable prefab's
+        // nested view and its placed instance.
+        const string Label = "Board Label";
+        Vector3 shift = new Vector3(0, -10, 0);
+        GameObject contents = PrefabUtility.LoadPrefabContents(View2DPrefabPath);
+        Transform prefabLabel = contents.transform.Find(Label);
+        Vector3 original = prefabLabel != null ? prefabLabel.localPosition : Vector3.zero;
+        bool changed = false;
+        try {
+            Check(prefabLabel != null, "the 2D Chess Board View prefab has its " + Label, "none");
+            if (prefabLabel == null) return;
+            prefabLabel.localPosition = original + shift;
+            PrefabUtility.SaveAsPrefabAsset(contents, View2DPrefabPath);
+            changed = true;
+            ChessBoard2DViewHolder reloaded = AssetDatabase.LoadAssetAtPath<GameObject>(Movable2DPrefabPath)
+                .GetComponent<ChessBoard2DViewHolder>();
+            Transform nestedLabel = reloaded != null && reloaded.view != null
+                ? reloaded.view.transform.Find(Label) : null;
+            Transform placedLabel = view.transform.Find(Label);
+            Check(nestedLabel != null && nestedLabel.localPosition == original + shift,
+                "a change to the 2D Chess Board View prefab reaches the movable prefab's view",
+                nestedLabel == null ? "no label" : nestedLabel.localPosition.ToString("F1"));
+            Check(placedLabel != null && placedLabel.localPosition == original + shift,
+                "a change to the 2D Chess Board View prefab reaches a placed movable view",
+                placedLabel == null ? "no label" : placedLabel.localPosition.ToString("F1"));
+        } finally {
+            if (changed) {
+                prefabLabel.localPosition = original;
+                PrefabUtility.SaveAsPrefabAsset(contents, View2DPrefabPath);
+            }
+            PrefabUtility.UnloadPrefabContents(contents);
+        }
+        Transform restored = viewPrefab.transform.Find(Label);
+        Check(restored != null && restored.localPosition == original, "the 2D Chess Board View prefab is put back",
+            restored == null ? "no label" : restored.localPosition.ToString("F1"));
+        Object.DestroyImmediate(placed);
+    }
+
+    // The open scene's 2D views (the test scene's) are instances: each in a holder a Movable 2D Chess Board View
+    // instance (its view the nested one), any other a 2D Chess Board View instance; each with its boards, its grip's
+    // VRCObjectSync matching its Synced; Board2DTest on one of them and its holder.
+    static void CheckScene2DViews(GameObject viewPrefab, GameObject movablePrefab) {
+        ChessBoard2DView[] views = Object.FindObjectsOfType<ChessBoard2DView>(true);
+        Check(views.Length > 0, "the open scene has 2D views", "none");
+        foreach (ChessBoard2DView view in views) {
+            string name = "the scene's " + view.gameObject.name;
+            ChessBoard2DViewHolder holder = ChessBoard2DViewBuilder.HolderOf(view);
+            if (holder != null) {
+                Check(PrefabUtility.IsAnyPrefabInstanceRoot(holder.gameObject)
+                    && PrefabUtility.GetCorrespondingObjectFromOriginalSource(holder.gameObject) == movablePrefab
+                    && PrefabUtility.GetCorrespondingObjectFromOriginalSource(view.gameObject) == viewPrefab,
+                    name + "'s holder is a Movable 2D Chess Board View instance", "it isn't");
+                bool hasSync = holder.grip != null
+                    && holder.grip.GetComponent<VRC.SDK3.Components.VRCObjectSync>() != null;
+                Check(hasSync == view.synced, name + "'s grip has a VRCObjectSync exactly when it's synced",
+                    "synced " + view.synced + ", VRCObjectSync " + hasSync);
+            } else {
+                Check(PrefabUtility.IsAnyPrefabInstanceRoot(view.gameObject)
+                    && PrefabUtility.GetCorrespondingObjectFromOriginalSource(view.gameObject) == viewPrefab,
+                    name + " is a 2D Chess Board View instance", "it isn't");
+            }
+            Check(view.lockedBoard != null || view.boards.Length > 0, name + " has its boards", "none");
+        }
+        Board2DTest[] tests = Object.FindObjectsOfType<Board2DTest>(true);
+        Check(tests.Length == 1 && tests[0].view != null && tests[0].holder != null
+            && tests[0].holder == ChessBoard2DViewBuilder.HolderOf(tests[0].view),
+            "Board2DTest is on a scene's movable 2D view and its holder", "it isn't");
     }
 
     // Every UdonBehaviour in a prefab (nested prefabs' too) has the sync method its script asks for, so a placed

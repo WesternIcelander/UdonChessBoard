@@ -74,9 +74,9 @@ Every player sees the same pieces in the same places, late joiners too: the orde
 
 ## Letting players move the 2D view (step 12.16)
 
-A 2D board view ([2D board view](board-2d.md)) stays where it's placed unless it's in a holder. **Tools > Chess Board > Create Movable 2D Board View** puts the selected view in one (or builds a new view in one): players then move it by the bar under it and resize it by the cube at its bottom right ([Moving and resizing](board-2d.md#moving-and-resizing-step-1216)).
+A 2D board view ([2D board view](board-2d.md)) stays where it's placed unless it's in a holder: place the **Movable 2D Chess Board View** prefab instead of the **2D Chess Board View** ([Prefabs](prefabs.md#movable-2d-chess-board-view), step 14.8). Players then move it by the bar under it and resize it by the cube at its bottom right ([Moving and resizing](board-2d.md#moving-and-resizing-step-1216)).
 
-- **Allowing it:** tick or untick **Movable** on the holder (`<view> Holder`, `ChessBoard2DViewHolder`); off, the bar and cube are hidden and nothing can be picked up. **Min Size** and **Max Size** limit resizing (shares of the size it has in the scene).
+- **Allowing it:** tick or untick **Movable** on the holder (the prefab's root, `ChessBoard2DViewHolder`); off, the bar and cube are hidden and nothing can be picked up. **Min Size** and **Max Size** limit resizing (shares of the size it has in the scene).
 - **Everyone or each player:** the view's own **Synced** decides both what it shows and where it is: on, a move or resize is seen by everyone, late joiners included; off, each player's stays their own. The grip's `VRCObjectSync` follows the tick by itself before every build.
 - **Laying it out:** move the holder to place it all; or move the **Grip** and **Corner** relative to the view in the editor (the view keeps the place it has from the grip, and the corner sizes it from where it is), without scaling them. Scale the view itself, not the holder, to change its starting size.
 - **Putting it back:** call the holder's `PutBack()` from a button of your own (as `SendCustomEvent("PutBack")`) to bring it back where you placed it, at its size there.
