@@ -83,11 +83,6 @@ namespace SiggiChessBoard {
         // under way on the same importer.
         [Tooltip("The ChessPgnImporter that runs this board's PGN imports. Give each board its own.")]
         public ChessPgnImporter importer;
-        // The PGN Event and Site tags of this board's games (docs/pgn.md, Export tags); empty is written "?".
-        [Tooltip("The PGN Event tag of games played on this board. Empty is written \"?\".")]
-        public string pgnEvent = "";
-        [Tooltip("The PGN Site tag of games played on this board. Empty is written \"?\".")]
-        public string pgnSite = "VRChat";
         // The behaviours told of every change (OnBoardChanged): set in the Inspector, or added with AddListener.
         [Tooltip("Behaviours told of every change to this board: its view, and anything else showing the game.")]
         public ChessBoardListener[] listeners = new ChessBoardListener[0];
@@ -1534,8 +1529,10 @@ namespace SiggiChessBoard {
             if (moveCount % 2 == 1) firstSide = ChessRules.OtherColor(firstSide);
             bool loaded = lifecycle == LifecycleLoaded;
             int pgnBase = loaded ? replaySourceBaseTime : baseTime;
-            return ChessPgn.WriteGame(pgnEvent, pgnSite, loaded ? replaySourceWhite : whitePlayer,
-                loaded ? replaySourceBlack : blackPlayer, pgnEnding, pgnWinner, mode, startFen,
+            bool hasArbiter = Utilities.IsValid(arbiter);
+            return ChessPgn.WriteGame(hasArbiter ? arbiter._PgnEvent() : "", hasArbiter ? arbiter._PgnSite() : "",
+                loaded ? replaySourceWhite : whitePlayer, loaded ? replaySourceBlack : blackPlayer, pgnEnding,
+                pgnWinner, mode, startFen,
                 _PgnBaseSeconds(pgnBase), loaded ? replaySourceIncrement : increment, gameId, continuedFrom, notation,
                 clockHistory, moveCount, startMoveNumber, firstSide);
         }

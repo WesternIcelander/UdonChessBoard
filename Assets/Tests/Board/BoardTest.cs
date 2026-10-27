@@ -4190,10 +4190,11 @@ public class BoardTest : ChessTest {
 
     void TestPgnLog() {
         NothingForced();
-        string savedEvent = board.pgnEvent;
-        string savedSite = board.pgnSite;
-        board.pgnEvent = "Test Event";
-        board.pgnSite = "Test Site";
+        ChessArbiter tagArbiter = board.arbiter;
+        string savedEvent = tagArbiter.pgnEvent;
+        string savedSite = tagArbiter.pgnSite;
+        tagArbiter.pgnEvent = "Test Event";
+        tagArbiter.pgnSite = "Test Site";
         int dead = ChessArbiter.SettingDeadPosition;
 
         CheckString(ChessGame._DateFromGameId("20261005143027-048213"), "2026.10.05", "PGN date: from a game ID");
@@ -4221,6 +4222,16 @@ public class BoardTest : ChessTest {
             + "2... Qh4# { [%clk 0:01:01.5] } 0-1\n";
         CheckString(board.lastLoggedPgn, expected, "log: fool's mate PGN");
         CheckString(board.GamePgn(), expected, "log: GamePgn gives it too");
+        // Empty tags on the arbiter, and no arbiter at all, are written "?" (step 13.11).
+        string questioned = "[Event \"?\"]\n[Site \"?\"]\n" + expected.Substring(expected.IndexOf("[Date "));
+        tagArbiter.pgnEvent = "";
+        tagArbiter.pgnSite = "";
+        CheckString(board.GamePgn(), questioned, "log: empty tags on the arbiter written ?");
+        tagArbiter.pgnEvent = "Test Event";
+        tagArbiter.pgnSite = "Test Site";
+        board.arbiter = null;
+        CheckString(board.GamePgn(), questioned, "log: no arbiter, both tags ?");
+        board.arbiter = tagArbiter;
         board._CheckFlagFallAt(1e6);
         board.ResignAs(ChessRules.White, "Ana");
         board.PieceDroppedAs("Ana", ChessRules.E1, ChessRules.F2);
@@ -4347,8 +4358,8 @@ public class BoardTest : ChessTest {
         Check(board.lastLoggedPgn.EndsWith("\n\n30... e5 31. e4 0-1\n"), "log: black first: numbered from 30...",
             "PGN:\n" + board.lastLoggedPgn);
 
-        board.pgnEvent = savedEvent;
-        board.pgnSite = savedSite;
+        tagArbiter.pgnEvent = savedEvent;
+        tagArbiter.pgnSite = savedSite;
         board._ClearState();
     }
 

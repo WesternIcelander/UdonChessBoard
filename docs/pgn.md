@@ -90,7 +90,7 @@ Details settled while writing the reader (5.2a):
 
 | Tag | Value |
 |---|---|
-| `Event`, `Site` | given by the caller; the board passes its Inspector fields `pgnEvent` (default empty) and `pgnSite` (default `VRChat`); `?` when empty |
+| `Event`, `Site` | given by the caller; the board and a history wall's export pass the arbiter's Inspector fields `pgnEvent` (default empty) and `pgnSite` (default `VRChat`, both under **PGN**, step 13.11: one per world, not per board), read with `ChessArbiter._PgnEvent()` and `_PgnSite()`; `?` when empty, and for both on a board with no arbiter |
 | `Date` | the game's start date, UTC, `yyyy.MM.dd`; `????.??.??` when unknown. The board takes it from the Game ID's first eight digits (`ChessGame._DateFromGameId`), so it's unknown only for an ID in another format |
 | `Round` | always `-` |
 | `White`, `Black` | the players' names, escaped; `?` when empty |

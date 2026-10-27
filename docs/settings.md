@@ -28,7 +28,11 @@ An arbiter is the official who enforces the rules at a chess event, which matche
 - **`archives`** (`GameArchive[]`, under **Archives** in the Inspector, set once per world: the Game Archive and the Personal Game Archive): where every board's logged games go ([Archive](archive.md#two-kinds-step-1310)), replacing each board's `archive` field. On `Start` the arbiter introduces itself to each (`_SetArbiter`), so the archives and their walls reach it with no field of their own. Empty in the prefab; set after placing.
 - **The pick:** `selectedArchive` and `selectedGameId`, two local fields (each player's pick is their own): the game picked on a history wall, which every board's UI offers to load. `_SelectGame(archive, gameId)` (picks it, or clears the pick when it's the one picked), `_ClearSelection()`, `HasSelection()`.
 - **Telling, not polling:** the boards (`_AddBoard`, on each board's `Start`) and settings menus (`_AddSettingsMenu`) register with the arbiter, and it tells them and every archive in its list of any change: `_OnArbiterChanged(change)`, `ChangeSettings` (every setter here, and every update received) or `ChangeSelection` (the pick). Each board passes it on to its listeners (`ChessBoardListener.OnArbiterChanged(board, change)`), each archive to its walls. `changes` still counts the settings' changes.
-- `_PgnEvent()` and `_PgnSite()`: the PGN Event and Site tags for a game exported from a history wall, the first registered board's until 13.11 moves them to the arbiter.
+
+## The PGN tags and the Inspector order (step 13.11)
+
+- **PGN tags:** `pgnEvent` and `pgnSite` (under **PGN** in the Inspector, empty and `VRChat`), the PGN Event and Site tags of every board's games and of a history wall's export ([PGN](pgn.md#export-tags)), read with `_PgnEvent()` and `_PgnSite()`. A world names its event and site once, so they moved here from each board (before the first release, so no migration). Not settings: nothing about them is synced.
+- **Inspector order:** **Boards** (`boardCount`) first, so a world creator sees it, then **PGN**, then the rules and the rest.
 
 ## Changing settings in-world
 

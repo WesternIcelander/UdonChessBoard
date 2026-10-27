@@ -53,6 +53,19 @@ namespace SiggiChessBoard {
         public const int ChangeSettings = 1;
         public const int ChangeSelection = 2;
 
+        // First in the Inspector (step 13.11), so a world creator sees it.
+        [Header("Boards")]
+        [Tooltip("How many boards can have their own overrides: board numbers 0 to this minus 1.")]
+        public int boardCount = 4;
+
+        // The PGN Event and Site tags of every board's games and of games exported from a history wall (docs/pgn.md,
+        // Export tags); empty is written "?". Read with _PgnEvent and _PgnSite.
+        [Header("PGN")]
+        [Tooltip("The PGN Event tag of games played in this world. Empty is written \"?\".")]
+        public string pgnEvent = "";
+        [Tooltip("The PGN Site tag of games played in this world. Empty is written \"?\".")]
+        public string pgnSite = "VRChat";
+
         // ---- Instance defaults, set in the editor ----
         // Read once on Start into the synced defaults below; changing them afterwards does nothing.
 
@@ -115,10 +128,6 @@ namespace SiggiChessBoard {
         // archives are the list above.
         [NonSerialized] public ChessBoard[] boards = new ChessBoard[0];
         [NonSerialized] public ChessSettingsMenu[] menus = new ChessSettingsMenu[0];
-
-        [Header("Boards")]
-        [Tooltip("How many boards can have their own overrides: board numbers 0 to this minus 1.")]
-        public int boardCount = 4;
 
         // ---- Synced settings ----
 
@@ -254,14 +263,13 @@ namespace SiggiChessBoard {
             return Utilities.IsValid(selectedArchive) && selectedGameId.Length > 0;
         }
 
-        // The PGN Event and Site tags for a game exported from a history wall: the first board's (registered with
-        // _AddBoard), "" with none. The boards hold them until step 13.11 moves them here.
+        // The PGN Event and Site tags (pgnEvent, pgnSite), for the boards' games and a history wall's export.
         public string _PgnEvent() {
-            return boards.Length > 0 && Utilities.IsValid(boards[0]) ? boards[0].pgnEvent : "";
+            return pgnEvent;
         }
 
         public string _PgnSite() {
-            return boards.Length > 0 && Utilities.IsValid(boards[0]) ? boards[0].pgnSite : "";
+            return pgnSite;
         }
 
         // ---- Piece sets (step 13.6, docs/customizing.md) ----

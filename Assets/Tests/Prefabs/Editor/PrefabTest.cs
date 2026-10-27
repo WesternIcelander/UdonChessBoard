@@ -146,6 +146,8 @@ public static class PrefabTest {
         Check(isNested, "the arbiter's Piece Sets hold only its nested Chess Pieces",
             arbiter.pieceSets == null ? "null" : arbiter.pieceSets.Length + " entries");
         Check(arbiter.boardCount == 4, "the arbiter's boardCount is the default", arbiter.boardCount.ToString());
+        Check(arbiter.pgnEvent == "" && arbiter.pgnSite == "VRChat", "the arbiter's PGN tags are the defaults (13.11)",
+            "Event \"" + arbiter.pgnEvent + "\", Site \"" + arbiter.pgnSite + "\"");
         CheckIntValue(arbiter.archives != null ? arbiter.archives.Length : -1, 0,
             "the arbiter's Archives are left to set (13.10)");
 
@@ -238,8 +240,10 @@ public static class PrefabTest {
         Check(board.arbiter == null, "the board's arbiter is left to set", "arbiter " + board.arbiter);
         CheckIntValue(board.boardNumber, 0, "the board's number is 0");
         CheckIntValue(board.listeners != null ? board.listeners.Length : -1, 0, "the board has no listeners");
-        Check(board.pgnSite == "VRChat" && board.pgnEvent == "", "the board's PGN tags are the defaults",
-            "Event \"" + board.pgnEvent + "\", Site \"" + board.pgnSite + "\"");
+        // The PGN tags moved to the arbiter (13.11): the saved prefab holds them no more.
+        string boardYaml = System.IO.File.ReadAllText(BoardPrefabPath);
+        Check(!boardYaml.Contains("pgnEvent:") && !boardYaml.Contains("pgnSite:"),
+            "the board prefab is saved without the PGN tags (13.11)", "still in " + BoardPrefabPath);
 
         // Two placed boards wired by hand with their own numbers, as a world creator would set them in the Inspector.
         ChessBoard other = second.GetComponent<ChessBoard>();

@@ -28,9 +28,9 @@ A world's set never changes when the package updates. The full guide is step 15.
 
 - a `FirstJoinerAuth` on the same object, which its **Simple Auth** field points to: the first player in the instance is the organizer ([organizers](organizers.md));
 - a nested instance of **Chess Pieces** as its child, listed alone in **Piece Sets**, so it's the default set;
-- `boardCount` (4) and the instance defaults (rules, inactivity, forced lobby settings) at their defaults.
+- **Board Count** (4), first in its Inspector, the **PGN** tags **PGN Event** and **PGN Site** (empty and `VRChat`, step 13.11: the Event and Site tags of every board's games, `?` when empty) and the instance defaults (rules, inactivity, forced lobby settings) at their defaults.
 
-Place one per world. After placing it, set **Archives** (step 13.10, empty in the prefab): the scene's **Game Archive** and **Personal Game Archive**, where every board's logged games go. Left empty, games are only logged. The boards and the settings menu point at it (steps 14.2 and 14.7).
+Place one per world. After placing it, set **Archives** (step 13.10, empty in the prefab): the scene's **Game Archive** and **Personal Game Archive**, where every board's logged games go. Left empty, games are only logged. Change **PGN Event** and **PGN Site** to name your world's event and site in its games' PGN, if you like. The boards and the settings menu point at it (steps 14.2 and 14.7).
 
 **Choosing the organizers:** to use another rule, add `InstanceMasterAuth` (whoever is instance master), `NoOneAuth` (nobody; the editor defaults apply unchanged) or your own `SimpleAuth` subclass to the arbiter's object, drag it into **Simple Auth**, and remove the `FirstJoinerAuth` if you like. Simple Auth must not be left empty: a build is cancelled while it is.
 
@@ -46,7 +46,7 @@ Place one per board. After placing it, set:
 - **Board Number**: 0 for the first board, 1 for the next, and so on, each board its own. It picks the board's per-board setting overrides on the arbiter ([settings](settings.md#per-board-overrides)), so two boards with the same number share them; numbers from the arbiter's **Board Count** (4) up have none and always use the instance defaults. Raise **Board Count** for more boards with overrides of their own.
 - **Listeners**: nothing for the package's own views. The view, the UI and the 2D view add themselves when they start (`AddListener`); list here only a behaviour of your own that doesn't.
 
-**PGN Event** and **PGN Site** (empty and `VRChat`) are the tags of the board's exported and logged games. Its games go to the arbiter's **Archives** (the board's own **Archive** field went in step 13.10). Step 14.11 will fill in the arbiter and board numbers by itself.
+The PGN Event and Site tags of its games are the arbiter's (the board's own fields went in step 13.11). Its games go to the arbiter's **Archives** (the board's own **Archive** field went in step 13.10). Step 14.11 will fill in the arbiter and board numbers by itself.
 
 ## Chess Board View
 
