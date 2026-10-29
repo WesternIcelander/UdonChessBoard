@@ -6118,6 +6118,43 @@ public class BoardTest : ChessTest {
         board.ResignAs(ChessRules.White, "Ana");
         Check(!board._TouchAsAt("Bob", false, board.lastActivity + 100), s + ": ended: a touch doesn't count", "sent");
 
+        // The times as server times, and the local player's touch.
+        board._ClearState();
+        Check(board.ResetAvailableTime() == ChessArbiter.Never && board.AutoResetTime() == ChessArbiter.Never,
+            s + ": a reset board has no times", "times");
+        IdleTestGame(120, 600);
+        t = board.lastActivity;
+        Check(board.ResetAvailableTime() == t + 120, s + ": reset available 120 s after the activity",
+            "at " + board.ResetAvailableTime());
+        Check(board.AutoResetTime() == t + 600, s + ": auto-reset 600 s after the activity",
+            "at " + board.AutoResetTime());
+        Check(board._IsIdleForResetAt(board.ResetAvailableTime()) && board._IsIdleForAutoResetAt(board.AutoResetTime()),
+            s + ": idle at the times", "not idle");
+        IdleTestGame(ChessArbiter.Never, ChessArbiter.Never);
+        Check(board.ResetAvailableTime() == ChessArbiter.Never && board.AutoResetTime() == ChessArbiter.Never,
+            s + ": never: no times", "times");
+        Check(!board.CanTouch(), s + ": the local player's touch doesn't count in Ana and Bob's game", "counts");
+        CheckInt(board.Touch(), ChessBoard.InputRejected, s + ": the local player's touch refused");
+        board._ClearState();
+        board.JoinAs(ChessRules.White, localName);
+        board.JoinAs(ChessRules.Black, "Bob");
+        CheckInt(board.StartGameAs(localName), ChessBoard.InputAccepted, s + ": the local player's game started");
+        board.gameNumbers[ChessArbiter.NumberResetAvailableTime] = 120;
+        Check(board.CanTouch(), s + ": the local player to move counts", "doesn't");
+        double old = board._ServerTime() - 10;
+        board.lastActivity = old;
+        CheckInt(board.Touch(), ChessBoard.InputAccepted, s + ": the local player's touch");
+        Check(board.lastActivity >= old + 9, s + ": the local player's touch stamps", "activity " + board.lastActivity);
+        Check(board.ResetAvailableTime() == board.lastActivity + 120, s + ": the touch moves the reset-available time",
+            "at " + board.ResetAvailableTime());
+        old = board._ServerTime() - ChessBoard.ActivityThrottle + 1;
+        board.lastActivity = old;
+        CheckInt(board.Touch(), ChessBoard.InputAccepted, s + ": the local player's touch within the throttle");
+        Check(board.lastActivity == old, s + ": a touch within the throttle does nothing", "activity " + board.lastActivity);
+        board.ResignAs(ChessRules.White, localName);
+        Check(!board.CanTouch(), s + ": ended: the local player's touch doesn't count", "counts");
+        CheckInt(board.Touch(), ChessBoard.InputRejected, s + ": ended: the local player's touch refused");
+
         board.RemoveListener(this);
         board._ClearState();
     }

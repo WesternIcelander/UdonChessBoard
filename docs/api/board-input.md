@@ -52,7 +52,7 @@ The board remembers nothing between a pickup and a drop: each call is judged on 
 | `CapturedPickedUp(color, type)` | In replay, a captured piece of `color` and `type` is picked up from its place. | Nothing changes and nobody is told. | Told as `ChangeRejected`. |
 | `PlaceCaptured(color, type, square)` | That captured piece is put down on `square`. | The free move is made (`ChangeFreeMove`). | Told as `ChangeRejected`: back to its place. |
 
-Each also counts as a touch, keeping the board from going idle ([inactivity](../inactivity.md)): a touch by the player who'd act next (the side to move's, or in replay whoever may work it) is sent to the other clients now and then as `ChangeActivity`, which they're told of and which changes nothing. The toucher's own listeners aren't told of it.
+Each also counts as a touch, keeping the board from going idle ([inactivity](../inactivity.md)): a touch by the player who'd act next (the side to move's, or in replay whoever may work it) is sent to the other clients now and then as `ChangeActivity`, which they're told of and which changes nothing. The toucher's own listeners aren't told of it. A world's own control that changes nothing on the board can touch it the same way with `Touch()` ([UI](ui.md#idle-times-and-touching-the-board)).
 
 ### In a game
 

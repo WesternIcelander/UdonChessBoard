@@ -91,6 +91,13 @@ Replay shows a position of the game on the board without changing the game, and 
 
 **`ResetBoard()`** clears the board and both seats (a game in progress is logged as unfinished, or on time if its flag has fallen). `CanReset()`: the board isn't reset already, and the local player is seated, an organizer, or anyone once the board has been idle for the snapshot's reset-available time ([inactivity](../inactivity.md)). On a board locked to its loader, the loader takes the seated players' place. Told as `ChangeReset`. The board's owner also resets an idle board by itself after the auto-reset time.
 
+### Idle times and touching the board
+
+A board left alone opens Reset to everyone after the snapshot's reset-available time and resets itself after its auto-reset time, both counted from its last activity ([inactivity](../inactivity.md)). For a countdown, or a "still here" button:
+
+- **`ResetAvailableTime()`** is the server time (`Networking.GetServerTimeInSeconds()`, in seconds, the same on every client) at which anyone may reset the board; **`AutoResetTime()`** is the server time at which it resets itself (on its owner's first frame from then). Each is `ChessArbiter.Never` (−1) when it won't happen: a reset board, or that time set to never. They aren't how long is left: subtract the server time now for that (a time already passed gives a negative difference). Every activity moves them on, and nothing is told when they pass, so a countdown works them out again on a timer.
+- **`Touch()`** counts as activity from the local player without changing anything else, as picking up a piece does ([board input](board-input.md)): it keeps the board from going idle. `CanTouch()`: the local player's touch counts, that is, in a game in progress outside replay they're the side to move's player, and in replay they may work the replay controls; it's false on a reset board, in the lobby and on an ended game outside replay. `Touch()` returns `InputAccepted` whenever `CanTouch()` holds, but only stamps and sends the new activity time when the last activity was `ChessBoard.ActivityThrottle` (5) seconds ago or more, and otherwise does nothing; `InputRejected` otherwise. A sent touch is told to the other clients as `ChangeActivity` (not to the local player's listeners: nothing they show has changed), and takes ownership of the board.
+
 ### Loading a game, and who holds a loaded board
 
 A game can only be loaded onto a reset board (`CanLoadGame()`), by anyone, two ways:

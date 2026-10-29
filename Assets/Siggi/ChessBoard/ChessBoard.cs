@@ -486,6 +486,41 @@ namespace SiggiChessBoard {
             _TouchAsAt(name, organizer, _ServerTime());
         }
 
+        // The server time (Networking.GetServerTimeInSeconds) at which the board has been idle for the reset-available
+        // time, so anyone may reset it (_IsIdleForResetAt), or ChessArbiter.Never when it won't be: a reset board, or
+        // the snapshot's time Never. Moves on with every activity; it can be in the past.
+        public double ResetAvailableTime() {
+            return IdleTime(ChessArbiter.NumberResetAvailableTime);
+        }
+
+        // The server time at which the board has been idle for the auto-reset time (_IsIdleForAutoResetAt), or
+        // ChessArbiter.Never as for ResetAvailableTime. The owner resets the board on its first frame from then.
+        public double AutoResetTime() {
+            return IdleTime(ChessArbiter.NumberAutoResetTime);
+        }
+
+        double IdleTime(int number) {
+            if (lifecycle == LifecycleReset) return ChessArbiter.Never;
+            int wait = GameNumber(number);
+            return wait == ChessArbiter.Never ? ChessArbiter.Never : lastActivity + wait;
+        }
+
+        // Whether a touch by the local player counts as activity (TouchCounts), for a world's own controls that change
+        // nothing on the board by themselves.
+        public bool CanTouch() {
+            return TouchCounts(ChessUtil._LocalName(""), LocalIsOrganizer());
+        }
+
+        // A touch by the local player (_TouchAsAt): accepted whenever CanTouch holds, but only sent, and lastActivity
+        // only stamped, when the last activity was ActivityThrottle seconds ago or more; otherwise it does nothing.
+        public int Touch() {
+            string name = ChessUtil._LocalName("");
+            bool organizer = LocalIsOrganizer();
+            if (!TouchCounts(name, organizer)) return InputRejected;
+            _TouchAsAt(name, organizer, _ServerTime());
+            return InputAccepted;
+        }
+
         bool TouchCounts(string name, bool organizer) {
             if (replayMode) return lifecycle != LifecycleReset && MayControlReplay(name, organizer);
             return lifecycle == LifecycleInGame && IsSeated(state[ChessPosition.StateSideToMove], name);
