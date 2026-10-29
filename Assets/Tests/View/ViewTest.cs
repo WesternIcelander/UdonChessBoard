@@ -3896,9 +3896,16 @@ public class ViewTest : ChessTest {
         CheckInt(ui._PressButton(action), ChessBoard.InputRejected, name + ": " + buttonNames[action] + " refused");
     }
 
+    static bool IsStepAction(int action) {
+        return action == ChessBoardUI.ButtonStepFirst || action == ChessBoardUI.ButtonStepBack
+            || action == ChessBoardUI.ButtonStepForward || action == ChessBoardUI.ButtonStepLast;
+    }
+
     // After a Refresh, the buttons shown are exactly the actions in expected (names from buttonNames, separated by
     // spaces), each shown one labelled as the view says; a name followed by "?" is shown as OptionalShown says, and
-    // Mode and Clock are hidden when the snapshot forces them. The view's _ButtonApplies agrees.
+    // Mode and Clock are hidden when the snapshot forces them. The view's _ButtonApplies agrees. The step buttons are
+    // the exception: all four are shown while the board's CanControlReplay holds, and those in expected are the ones
+    // enabled (_ButtonEnabled and their UI Button interactable), the rest greyed out.
     void CheckButtons(string expected, string name) {
         Redraw();
         string padded = " " + expected + " ";
@@ -3917,10 +3924,17 @@ public class ViewTest : ChessTest {
             if (action == ChessBoardUI.ButtonLoadPgn && !padded.Contains(" LoadPgn")) want = board.CanImport();
             if (action == ChessBoardUI.ButtonMode && board.IsModeForced()) want = false;
             if (action == ChessBoardUI.ButtonClock && board.IsClockForced()) want = false;
+            // The step buttons are shown together while the replay can be controlled; a named one is enabled, the
+            // others shown greyed out.
+            bool enabled = want;
+            if (IsStepAction(action)) want = board.CanControlReplay();
             if (button.activeSelf != want) {
                 errors += actionName + (want ? " hidden; " : " shown; ");
             } else if (ui._ButtonApplies(action) != want) {
                 errors += actionName + " applies " + ui._ButtonApplies(action) + "; ";
+            } else if (want && IsStepAction(action)
+                && (ui._ButtonEnabled(action) != enabled || ui._IsButtonInteractable(i) != enabled)) {
+                errors += actionName + (enabled ? " disabled; " : " enabled; ");
             } else if (want && i < ui.buttonLabels.Length && Utilities.IsValid(ui.buttonLabels[i])
                 && ui.buttonLabels[i].text != ui._ButtonText(action)) {
                 errors += actionName + " labelled " + ui.buttonLabels[i].text + "; ";

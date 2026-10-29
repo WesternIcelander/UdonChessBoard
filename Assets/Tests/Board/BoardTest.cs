@@ -1816,6 +1816,7 @@ public class BoardTest : ChessTest {
         Check(!board.CanEnterReplayAs("", false), "enter replay button: not an empty name", "allowed");
         Check(!board.CanLeaveReplayAs("Ana", false), "leave replay button: not out of replay", "allowed");
         Check(!board.CanStepToAs("Ana", false, 2), "step button: not out of replay", "allowed");
+        Check(!board.CanControlReplayAs("Ana", false), "replay controls: not out of replay", "allowed");
         FlagFallen();
         Check(board.CanEnterReplayAs("Ana", false), "enter replay button: after the flag", "refused");
         board.turnStart = board._ServerTime();
@@ -1831,6 +1832,9 @@ public class BoardTest : ChessTest {
         Check(board.CanStepToAs("Bob", false, 0), "step button: to the start", "refused");
         Check(board.CanStepToAs("Cleo", true, 1), "step button: an organizer", "refused");
         Check(!board.CanStepToAs("Cleo", false, 1), "step button: not a bystander", "allowed");
+        Check(board.CanControlReplayAs("Ana", false), "replay controls: white", "refused");
+        Check(board.CanControlReplayAs("Cleo", true), "replay controls: an organizer", "refused");
+        Check(!board.CanControlReplayAs("Cleo", false), "replay controls: not a bystander", "allowed");
         Check(!board.CanStepToAs("Ana", false, 4), "step button: not to the ply shown", "allowed");
         Check(!board.CanStepToAs("Ana", false, 5), "step button: not past the last move", "allowed");
         Check(!board.CanStepToAs("Ana", false, -1), "step button: not before the start", "allowed");
@@ -1840,6 +1844,7 @@ public class BoardTest : ChessTest {
         board.replayIndex = 0;
         Check(board.CanStepToAs("Ana", false, 4), "step button: forward to the last move", "refused");
         Check(!board.CanStepToAs("Ana", false, 0), "step button: not to the start shown", "allowed");
+        Check(board.CanControlReplayAs("Ana", false), "replay controls: whether or not every step applies", "refused");
 
         board.lifecycle = ChessBoard.LifecycleEnded;
         Check(board.CanLeaveReplayAs("Ana", false), "leave replay button: once ended", "refused");
@@ -1859,6 +1864,9 @@ public class BoardTest : ChessTest {
         Check(board.CanStepToAs("Cleo", false, 2), "step button: anyone on a loaded board with no players",
             "refused");
         Check(!board.CanStepToAs("", false, 2), "step button: not an empty name", "allowed");
+        Check(board.CanControlReplayAs("Cleo", false), "replay controls: anyone on a loaded board with no players",
+            "refused");
+        Check(!board.CanControlReplayAs("", false), "replay controls: not an empty name", "allowed");
         board.JoinAs(ChessRules.White, "Ana");
         Check(board.CanStepToAs("Ana", false, 2), "step button: the seated player on a loaded board", "refused");
         Check(!board.CanStepToAs("Cleo", false, 2), "step button: not a bystander once someone is seated",
@@ -2025,6 +2033,7 @@ public class BoardTest : ChessTest {
         board.replayIndex = 1;
         Check(board.CanLeaveReplay(), "local buttons: leave replay", "refused");
         Check(board.CanStepTo(0), "local buttons: step", "refused");
+        Check(board.CanControlReplay(), "local buttons: replay controls", "refused");
         board.replayIndex = 0;
         Check(!board.CanRequestTakeback(ChessRules.White), "local buttons: no takeback request in both seats",
             "allowed");

@@ -38,7 +38,7 @@ Each row is one of the Chess Board UI's buttons: the board method it calls, and 
 | Claim draw | `ClaimDraw()` | `CanClaimDraw()` |
 | Replay | `EnterReplay()` | `CanEnterReplay()` |
 | Back to game | `LeaveReplay()` | `CanLeaveReplay()` |
-| `<<` `<` `>` `>>` | `StepTo(0)`, `StepTo(replayIndex - 1)`, `StepTo(replayIndex + 1)`, `StepTo(moveCount)` | `CanStepTo(` the same ply `)` |
+| `<<` `<` `>` `>>` | `StepTo(0)`, `StepTo(replayIndex - 1)`, `StepTo(replayIndex + 1)`, `StepTo(moveCount)` | `CanControlReplay()`; each enabled by `CanStepTo(` the same ply `)`, greyed out otherwise |
 | Take back to here (each colour) | `RequestTakeback(color)` | `CanRequestTakeback(color)` |
 | Accept takeback (each colour) | `AcceptTakeback(color)` | `CanAcceptTakeback(color)` |
 | Decline takeback (each colour) | `DeclineTakeback(color)` | `CanDeclineTakeback(color)` |
@@ -46,7 +46,7 @@ Each row is one of the Chess Board UI's buttons: the board method it calls, and 
 | PGN | none: opens the UI's own box with `GamePgn()` | `moveCount > 0` |
 | Load PGN | none: opens the UI's own paste box; its Import button calls `StartImport(text)` | `CanImport()` |
 
-Showing a button only while its check holds is what the Chess Board UI does; a world's UI may instead show a button disabled, or always, since the method refuses anyway. The checks change without the board changing: the time a board has been idle opens Reset to everyone, an organizer can be added, and a clock can run out. The Chess Board UI checks its buttons again once a second as well as on every change.
+Showing a button only while its check holds is what the Chess Board UI does (the step buttons all show while the replay can be controlled, each enabled only where it steps somewhere); a world's UI may instead show a button disabled, or always, since the method refuses anyway. The checks change without the board changing: the time a board has been idle opens Reset to everyone, an organizer can be added, and a clock can run out. The Chess Board UI checks its buttons again once a second as well as on every change.
 
 ### Seats
 
@@ -76,7 +76,7 @@ The automatic draws (fivefold repetition, the seventy-five-move rule, a dead pos
 Replay shows a position of the game on the board without changing the game, and the clock keeps running ([replay](../replay.md)). Who may work the replay controls: an organizer, a seated player, or anyone on a board nobody has joined; on a board locked to its loader, the loader and organizers.
 
 - **`EnterReplay()`** (a game in progress or ended, not in replay) shows the current position; **`LeaveReplay()`** goes back to the game. A loaded board is always in replay and can't leave it. Told as `ChangeEnteredReplay` / `ChangeLeftReplay`.
-- **`StepTo(ply)`** shows the position before move `ply`: 0 the starting position, `moveCount` the current one. `CanStepTo(ply)` is false outside replay, for a ply outside 0 … `moveCount`, and for the position already shown, except after free moves (stepping to the same ply then shows the game's position again). Told as `ChangeReplayStep`.
+- **`StepTo(ply)`** shows the position before move `ply`: 0 the starting position, `moveCount` the current one. `CanControlReplay()` says whether the local player may step the replay at all: in replay, and they may work the replay controls. `CanStepTo(ply)` is false without it, for a ply outside 0 … `moveCount`, and for the position already shown, except after free moves (stepping to the same ply then shows the game's position again). Told as `ChangeReplayStep`.
 - **`RequestTakeback(color)`** asks to continue the game from the position replay shows. `CanRequestTakeback(color)`: the snapshot's `SettingTakebacks`, no request pending, the local player holds that seat and not both, and the position is one of the game's (no free moves since a step) with a move after it, in a game running or ended. The request is `takebackColor` and `takebackPly`; stepping or a free move cancels it. Told as `ChangeRequest`.
 - **`AcceptTakeback(color)`**, **`DeclineTakeback(color)`**: for the other side, while the replay still shows the requested ply. Accepting continues the game from there as a new game (a game in progress is logged as unfinished first), back in progress and out of replay, told as `ChangeTakeback`; declining clears the request (`ChangeRequest`).
 

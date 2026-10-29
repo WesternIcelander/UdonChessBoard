@@ -162,6 +162,8 @@ namespace SiggiChessBoard {
         // (for Reset) change without the board changing.
         float nextButtonCheck;
         const float ButtonCheckInterval = 1;
+        // The label's alpha on a step button shown but not pressable (the UI Button's own tint greys its image).
+        const float DisabledLabelAlpha = 0.5f;
         // Sound effects (step 12.12): every sound but the move sounds (ChessBoardView's), from audioSource (a spatial
         // source the prefab stands at the UI's origin, the board's centre). clickSound plays for a button pressed, on
         // the presser's client; the rest on every client, for a change as it happens: gameStartSound for Start or
@@ -846,8 +848,7 @@ namespace SiggiChessBoard {
             if (action == ButtonPgn) return board.moveCount > 0;
             if (action == ButtonLoadPgn) return board.CanImport();
             int color = _ButtonColor(action);
-            int step = StepTarget(action);
-            if (step >= 0) return board.CanStepTo(step);
+            if (IsStepButton(action)) return board.CanControlReplay();
             if (action == ButtonResignWhite || action == ButtonResignBlack) return board.CanResign(color);
             if (action == ButtonOfferDrawWhite || action == ButtonOfferDrawBlack) return board.CanOfferDraw(color);
             if (action == ButtonAcceptDrawWhite || action == ButtonAcceptDrawBlack) return board.CanAcceptDraw(color);
@@ -867,6 +868,15 @@ namespace SiggiChessBoard {
                 return board.CanDeclineTakeback(color);
             }
             return false;
+        }
+
+        // Whether the button for action, while shown, can be pressed: a step button only where it steps somewhere
+        // (CanStepTo its ply), every other button always (it's hidden otherwise).
+        public bool _ButtonEnabled(int action) {
+            if (!Utilities.IsValid(board)) return false;
+            if (!IsStepButton(action)) return true;
+            int step = StepTarget(action);
+            return step >= 0 && board.CanStepTo(step);
         }
 
         // The label of the button for action: Mode and Clock show the board's current choice, Claim draw the draw
@@ -930,8 +940,9 @@ namespace SiggiChessBoard {
                 "seconds", baseSeconds.ToString(), "increment", increment });
         }
 
-        // Shows each button whose action applies to the local player and hides the rest, with its label. Called on
-        // every Refresh, once a second and after every press.
+        // Shows each button whose action applies to the local player and hides the rest, with its label. A shown step
+        // button is pressable (its UI Button interactable, its label opaque) only where it steps somewhere
+        // (_ButtonEnabled), greyed out otherwise. Called on every Refresh, once a second and after every press.
         public void _UpdateButtons() {
             nextButtonCheck = Time.time + ButtonCheckInterval;
             for (int i = 0; i < buttons.Length; i++) {
@@ -940,10 +951,30 @@ namespace SiggiChessBoard {
                 int action = buttonActions[i];
                 bool shown = _ButtonApplies(action);
                 if (button.activeSelf != shown) button.SetActive(shown);
-                if (!shown || i >= buttonLabels.Length || !Utilities.IsValid(buttonLabels[i])) continue;
+                if (!shown) continue;
+                bool hasLabel = i < buttonLabels.Length && Utilities.IsValid(buttonLabels[i]);
+                if (IsStepButton(action)) {
+                    bool enabled = _ButtonEnabled(action);
+                    Button uiButton = button.GetComponent<Button>();
+                    if (Utilities.IsValid(uiButton) && uiButton.interactable != enabled) uiButton.interactable = enabled;
+                    float alpha = enabled ? 1 : DisabledLabelAlpha;
+                    if (hasLabel && buttonLabels[i].color.a != alpha) {
+                        Color color = buttonLabels[i].color;
+                        color.a = alpha;
+                        buttonLabels[i].color = color;
+                    }
+                }
+                if (!hasLabel) continue;
                 string text = _ButtonText(action);
                 if (buttonLabels[i].text != text) buttonLabels[i].text = text;
             }
+        }
+
+        // Whether the UI Button of buttons[i] is pressable. For tests.
+        public bool _IsButtonInteractable(int i) {
+            if (i < 0 || i >= buttons.Length || !Utilities.IsValid(buttons[i])) return false;
+            Button uiButton = buttons[i].GetComponent<Button>();
+            return Utilities.IsValid(uiButton) && uiButton.interactable;
         }
 
         // ---- PGN box (step 11.2a; docs/pgn.md, Input / output) ----

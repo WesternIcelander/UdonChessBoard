@@ -2064,15 +2064,25 @@ namespace SiggiChessBoard {
             return replayMode && MayControlReplay(name, organizer);
         }
 
+        public bool CanControlReplay() {
+            return CanControlReplayAs(ChessUtil._LocalName(""), LocalIsOrganizer());
+        }
+
+        // Whether name may step the replay at all: in replay, and name may work the replay controls. A UI shows its
+        // step buttons by it, and enables each by CanStepToAs.
+        public bool CanControlReplayAs(string name, bool organizer) {
+            return replayMode && MayControlReplay(name, organizer);
+        }
+
         public bool CanStepTo(int ply) {
             return CanStepToAs(ChessUtil._LocalName(""), LocalIsOrganizer(), ply);
         }
 
-        // Whether name may step the replay to ply (0 before the first move to moveCount after the last): in replay,
-        // name may work the replay controls, and ply is in the game and not the position already shown (from a custom
-        // position, stepping to its ply shows the game's position again).
+        // Whether name may step the replay to ply (0 before the first move to moveCount after the last): name may
+        // control the replay (CanControlReplayAs), and ply is in the game and not the position already shown (from a
+        // custom position, stepping to its ply shows the game's position again).
         public bool CanStepToAs(string name, bool organizer, int ply) {
-            if (!replayMode || !MayControlReplay(name, organizer)) return false;
+            if (!CanControlReplayAs(name, organizer)) return false;
             if (ply < 0 || ply > moveCount) return false;
             return ply != replayIndex || replayCustom;
         }
