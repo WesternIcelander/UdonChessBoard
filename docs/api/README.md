@@ -19,7 +19,7 @@ A world places the [prefabs](../prefabs.md); each behaviour below is the one a s
 
 | Object (prefab) | Behaviour | References (Inspector field) | Referenced by |
 |---|---|---|---|
-| **Chess Arbiter** | `ChessArbiter`: the instance's settings, organizers, piece sets and the pick of an archived game | its `SimpleAuth` (on the same object), `pieceSets` (the nested **Chess Pieces** first), `archives` | every board's and the settings menu's `arbiter` |
+| **Chess Arbiter** | `ChessArbiter`: the instance's settings, organizers, piece sets and the pick of an archived game | its `SimpleAuth` (on the same object), `pieceSets` (the nested **Low Poly Chess Pieces** first, then **Chess Pieces**), `archives` | every board's and the settings menu's `arbiter` |
 | **Chess Board** (in each **Chess Table**) | `ChessBoard`: one board's game, rules, seats and synced state | `arbiter`, `importer` (its child `ChessPgnImporter`), `listeners` | the view's and UI's `board`, the settings menu's and 2D views' `boards`, a 2D view's `lockedBoard` |
 | **Chess Board View** | `ChessBoardView`: the 3D board, pieces, highlights and sounds | `board`, `i18n` | (none) |
 | **Chess Board UI** | `ChessBoardUI`: the buttons, status panels and PGN box | `board`, `i18n` | (none) |

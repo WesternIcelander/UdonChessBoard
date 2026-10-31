@@ -425,7 +425,7 @@ namespace SiggiChessBoard {
                 if (!warnedNoSet[color]) {
                     string side = white ? "White" : "Black";
                     Debug.LogError("[ChessBoardView] " + gameObject.name + ": no chess piece set for " + side + ": add "
-                        + "one to the Chess Arbiter's Piece Sets (the Chess Arbiter prefab has one, Chess Pieces). "
+                        + "one to the Chess Arbiter's Piece Sets (the Chess Arbiter prefab has two). "
                         + side + "'s pieces keep the models they have.");
                     warnedNoSet[color] = true;
                 }

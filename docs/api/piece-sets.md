@@ -50,7 +50,7 @@ For each type on its own, Black's **Model** decides:
 
 | Black's **Model** | Black's piece |
 |---|---|
-| **Materials only:** no mesh (no `MeshFilter`, or its **Mesh** empty), a `MeshRenderer` with Black's materials | White's mesh and transform, turned half round to face White, in Black's materials. How **Chess Pieces** does it, for a set whose sides differ only in colour. Black's materials are one per slot of **White's** mesh. |
+| **Materials only:** no mesh (no `MeshFilter`, or its **Mesh** empty), a `MeshRenderer` with Black's materials | White's mesh and transform, turned half round to face White, in Black's materials. How the package's sets do it, for a set whose sides differ only in colour. Black's materials are one per slot of **White's** mesh. |
 | **Nothing:** no mesh and no materials (or no `MeshRenderer`, or the **Model** and its field gone) | White's mesh, transform and materials, turned to face White: the same look for both sides. |
 | **A model of its own:** its own mesh and materials | Used exactly as set up, not turned: set it up on its guide **facing White, −z**. For a design whose Black pieces differ in shape. |
 
@@ -60,7 +60,7 @@ The half turn is about the vertical through the square's centre, so a White temp
 
 When a player drops (or click-places) a pawn on the last rank, four see-through pieces float in a row above it, a knight, bishop, rook and queen, and clicking one promotes to it. They come from the promotion templates, set up exactly as the pieces are (mesh, materials, and the **Model**'s position, turn and size on its guide).
 
-- **White's four are required** (as White's pieces are). **Black's are optional** and fall back the same way as Black's pieces (step 4): **Chess Pieces** has none, so Black's ghosts are White's, turned to face White.
+- **White's four are required** (as White's pieces are). **Black's are optional** and fall back the same way as Black's pieces (step 4): The package's sets have none, so Black's ghosts are White's, turned to face White.
 - **A see-through material:** the package's **Promotion Ghost** (`Assets/Siggi/ChessBoard/Models/`, Standard, Fade, green), on every slot of the mesh, or the set's own. A solid material works but looks like a piece standing in the air.
 - **The row floats over the board:** the ghosts' bases 1.5 squares above the playing surface over the promotion square's rank, 1 square apart, the row's middle kept within 2 squares of the board's centre (`ChessBoardView.GhostHeight`, `GhostSpacing`, `GhostMaxOffset`); the template's offset is added to that. A set much taller than the package's (whose king is about 1.4 squares) may want its promotion templates smaller than its pieces, so the row clears the pieces under it, and a much wider one so neighbours don't overlap.
 
@@ -68,7 +68,7 @@ When a player drops (or click-places) a pawn on the last rank, four see-through 
 
 Select the **Chess Arbiter** and, under **Pieces**, add the set to **Piece Sets** (`pieceSets`).
 
-- **Its place in the list is its index**, the number the calls below and every board's sync use. **Index 0 is the default**: every board starts with it, and every reset puts both sides back to it. The arbiter prefab lists **Chess Pieces** alone; add the world's sets after it, or put one first to make it the default.
+- **Its place in the list is its index**, the number the calls below and every board's sync use. **Index 0 is the default**: every board starts with it, and every reset puts both sides back to it. The arbiter prefab lists **Low Poly Chess Pieces**, then **Chess Pieces**; add the world's sets after them, or put one first to make it the default.
 - **No empty entries.** A VRChat build or upload is cancelled while the list is empty or has an empty entry, with a dialog and an error naming the arbiter (the build check, `ChessArbiterBuildCheck`).
 - **Reordering changes what an index means.** A world's script naming index 2 means whatever is third in the list; a board's synced index is read against the list of the world as built. Change the scripts with the list.
 

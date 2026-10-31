@@ -13,8 +13,8 @@ using VRC.Udon;
 
 // Step 14's check of the prefabs (docs/prefabs.md), without Play Mode: run it from Tools > Chess Board > Test Prefabs.
 // It drops each prefab into a new scene of its own, opened beside the open one and closed unsaved afterwards, and
-// checks what it holds. 14.1: Chess Pieces on its own, and the Chess Arbiter with its nested Chess Pieces, the build
-// check on it, a change to the Chess Pieces prefab reaching the nested instance but not an unpacked copy. The change
+// checks what it holds. 14.1: Low Poly Chess Pieces and Chess Pieces on their own, and the Chess Arbiter with both
+// nested, the build check on it, a change to the Chess Pieces prefab reaching the nested instance but not an unpacked copy. The change
 // is undone and the prefab saved again before it ends. 14.2: the Chess Board with its importer, two placed with their
 // own board numbers, and the open scene's boards instances of it. 14.3: the Chess Board View with every object it uses
 // and no table, its pieces standing on their starting squares, pointed at a placed board, and the open scene's views
@@ -39,6 +39,7 @@ using VRC.Udon;
 // Logs "[PrefabTest] PASS: <check>" or "[PrefabTest] FAIL: <check>: <details>" per check, then a summary line.
 public static class PrefabTest {
     const string PieceSetPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Pieces.prefab";
+    const string LowPolyPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Low Poly Chess Pieces.prefab";
     const string ArbiterPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Arbiter.prefab";
     const string BoardPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Board.prefab";
     const string ViewPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Board View.prefab";
@@ -64,7 +65,9 @@ public static class PrefabTest {
         failed = 0;
         GameObject setPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PieceSetPrefabPath);
         GameObject arbiterPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(ArbiterPrefabPath);
+        GameObject lowPolyPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(LowPolyPrefabPath);
         Check(setPrefab != null, "the Chess Pieces prefab at " + PieceSetPrefabPath, "missing");
+        Check(lowPolyPrefab != null, "the Low Poly Chess Pieces prefab at " + LowPolyPrefabPath, "missing");
         Check(arbiterPrefab != null, "the Chess Arbiter prefab at " + ArbiterPrefabPath, "missing");
         GameObject boardPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(BoardPrefabPath);
         Check(boardPrefab != null, "the Chess Board prefab at " + BoardPrefabPath, "missing");
@@ -90,7 +93,8 @@ public static class PrefabTest {
         Check(tablePrefab != null, "the Chess Table prefab at " + TablePrefabPath, "missing");
         GameObject languagePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(LanguagePrefabPath);
         Check(languagePrefab != null, "the Chess Language prefab at " + LanguagePrefabPath, "missing");
-        if (setPrefab == null || arbiterPrefab == null || boardPrefab == null || viewPrefab == null
+        if (setPrefab == null || lowPolyPrefab == null || arbiterPrefab == null || boardPrefab == null
+            || viewPrefab == null
             || uiPrefab == null || archivePrefab == null || personalPrefab == null || wallPrefab == null
             || personalWallPrefab == null || menuPrefab == null || view2DPrefab == null || movable2DPrefab == null
             || tablePrefab == null || languagePrefab == null) {
@@ -100,7 +104,8 @@ public static class PrefabTest {
         Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
         try {
             CheckPieceSet(setPrefab, scene);
-            CheckArbiter(setPrefab, arbiterPrefab, scene);
+            CheckPieceSet(lowPolyPrefab, scene);
+            CheckArbiter(lowPolyPrefab, setPrefab, arbiterPrefab, scene);
             CheckBoard(boardPrefab, scene);
             CheckView(viewPrefab, boardPrefab, scene);
             CheckUI(uiPrefab, boardPrefab, scene);
@@ -127,7 +132,7 @@ public static class PrefabTest {
         CheckScene2DViews(view2DPrefab, movable2DPrefab);
         CheckSceneLanguage(languagePrefab);
         foreach (string path in new[] {
-            PieceSetPrefabPath, ArbiterPrefabPath, BoardPrefabPath, ViewPrefabPath, UIPrefabPath, ArchivePrefabPath,
+            PieceSetPrefabPath, LowPolyPrefabPath, ArbiterPrefabPath, BoardPrefabPath, ViewPrefabPath, UIPrefabPath, ArchivePrefabPath,
             PersonalPrefabPath, WallPrefabPath, PersonalWallPrefabPath, MenuPrefabPath,
             View2DPrefabPath, Movable2DPrefabPath, TablePrefabPath, LanguagePrefabPath,
         }) {
@@ -137,9 +142,10 @@ public static class PrefabTest {
         Summary();
     }
 
-    // ---- 14.1: Chess Pieces ----
+    // ---- 14.1: the package's piece sets ----
 
     static void CheckPieceSet(GameObject setPrefab, Scene scene) {
+        string name = setPrefab.name;
         List<string> logged = new List<string>();
         Application.LogCallback listener = (text, stack, type) => logged.Add(type + ": " + text);
         Application.logMessageReceived += listener;
@@ -149,11 +155,11 @@ public static class PrefabTest {
         } finally {
             Application.logMessageReceived -= listener;
         }
-        Check(logged.Count == 0, "Chess Pieces placed on its own logs nothing", string.Join("; ", logged));
+        Check(logged.Count == 0, name + " placed on its own logs nothing", string.Join("; ", logged));
         ChessPieceSet set = placed.GetComponent<ChessPieceSet>();
-        Check(set != null, "Chess Pieces has a ChessPieceSet", "none");
+        Check(set != null, name + " has a ChessPieceSet", "none");
         if (set == null) return;
-        Check(set.Problem() == "", "Chess Pieces has every White template", set.Problem());
+        Check(set.Problem() == "", name + " has every White template", set.Problem());
         string outside = "";
         int black = 0;
         foreach (Transform template in Templates(set)) {
@@ -161,7 +167,7 @@ public static class PrefabTest {
             if (!template.IsChildOf(set.transform) || template == set.transform) outside += " " + template.name;
             if (template.name != "Model") outside += " " + template.name + " (not a Model)";
         }
-        Check(outside == "", "Chess Pieces' templates are its own Models", outside);
+        Check(outside == "", name + "' templates are its own Models", outside);
         for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) {
             Transform template = set._Template(ChessRules.Black, type);
             if (template == null) continue;
@@ -171,7 +177,7 @@ public static class PrefabTest {
                 black++;
             }
         }
-        Check(black == 6, "Chess Pieces' Black templates are renderers with materials and no mesh",
+        Check(black == 6, name + "' Black templates are renderers with materials and no mesh",
             black + " of 6");
         Object.DestroyImmediate(placed);
     }
@@ -190,7 +196,14 @@ public static class PrefabTest {
 
     // ---- 14.1: Chess Arbiter ----
 
-    static void CheckArbiter(GameObject setPrefab, GameObject arbiterPrefab, Scene scene) {
+    // Whether set is an instance of setPrefab nested directly under arbiterObject.
+    static bool IsNestedSet(ChessPieceSet set, GameObject setPrefab, GameObject arbiterObject) {
+        return set != null && set.transform.parent == arbiterObject.transform
+            && PrefabUtility.IsAnyPrefabInstanceRoot(set.gameObject)
+            && PrefabUtility.GetCorrespondingObjectFromOriginalSource(set.gameObject) == setPrefab;
+    }
+
+    static void CheckArbiter(GameObject lowPolyPrefab, GameObject setPrefab, GameObject arbiterPrefab, Scene scene) {
         GameObject placed = (GameObject)PrefabUtility.InstantiatePrefab(arbiterPrefab, scene);
         ChessArbiter arbiter = placed.GetComponent<ChessArbiter>();
         Check(arbiter != null, "the Chess Arbiter has a ChessArbiter", "none");
@@ -199,11 +212,11 @@ public static class PrefabTest {
             && arbiter.simpleAuth is FirstJoinerAuth, "the arbiter's Simple Auth is its own FirstJoinerAuth",
             arbiter.simpleAuth == null ? "empty" : arbiter.simpleAuth.GetType().Name + " on "
                 + arbiter.simpleAuth.gameObject.name);
-        ChessPieceSet nested = arbiter.pieceSets != null && arbiter.pieceSets.Length == 1 ? arbiter.pieceSets[0] : null;
-        bool isNested = nested != null && nested.transform.parent == placed.transform
-            && PrefabUtility.IsAnyPrefabInstanceRoot(nested.gameObject)
-            && PrefabUtility.GetCorrespondingObjectFromOriginalSource(nested.gameObject) == setPrefab;
-        Check(isNested, "the arbiter's Piece Sets hold only its nested Chess Pieces",
+        bool two = arbiter.pieceSets != null && arbiter.pieceSets.Length == 2;
+        ChessPieceSet lowPoly = two ? arbiter.pieceSets[0] : null;
+        ChessPieceSet nested = two ? arbiter.pieceSets[1] : null;
+        bool isNested = IsNestedSet(lowPoly, lowPolyPrefab, placed) && IsNestedSet(nested, setPrefab, placed);
+        Check(isNested, "the arbiter's Piece Sets hold its nested Low Poly Chess Pieces, then Chess Pieces",
             arbiter.pieceSets == null ? "null" : arbiter.pieceSets.Length + " entries");
         Check(arbiter.boardCount == 4, "the arbiter's boardCount is the default", arbiter.boardCount.ToString());
         Check(arbiter.pgnEvent == "" && arbiter.pgnSite == "VRChat", "the arbiter's PGN tags are the defaults (13.11)",
@@ -228,13 +241,13 @@ public static class PrefabTest {
         arbiter.pieceSets = savedSets;
         if (!isNested) return;
 
-        // An unpacked copy, changed and listed at index 1.
+        // An unpacked copy, changed and listed at index 2.
         GameObject copyObject = (GameObject)PrefabUtility.InstantiatePrefab(setPrefab, scene);
         PrefabUtility.UnpackPrefabInstance(copyObject, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
         ChessPieceSet copy = copyObject.GetComponent<ChessPieceSet>();
         Vector3 copyScale = new Vector3(2, 2, 2);
         copy.whiteKnight.localScale = copyScale;
-        arbiter.pieceSets = new[] { nested, copy };
+        arbiter.pieceSets = new[] { lowPoly, nested, copy };
         // An override, as listing it in the inspector makes one; otherwise the prefab's save below puts it back.
         PrefabUtility.RecordPrefabInstancePropertyModifications(arbiter);
         Check(!PrefabUtility.IsPartOfAnyPrefab(copyObject), "the unpacked copy has no prefab link", "it has one");
@@ -262,8 +275,8 @@ public static class PrefabTest {
                 copySlot == null ? "no slot" : copySlot.localPosition.ToString("F3"));
             Check(copy.whiteKnight.localScale == copyScale, "the unpacked copy keeps its own change",
                 copy.whiteKnight.localScale.ToString("F3"));
-            Check(arbiter.pieceSets.Length == 2 && arbiter.pieceSets[1] == copy,
-                "the unpacked copy stays at index 1", arbiter.pieceSets.Length + " sets");
+            Check(arbiter.pieceSets.Length == 3 && arbiter.pieceSets[2] == copy,
+                "the unpacked copy stays at index 2", arbiter.pieceSets.Length + " sets");
         } finally {
             if (changed) {
                 prefabSlot.localPosition = original;
@@ -369,6 +382,8 @@ public static class PrefabTest {
 
         string pieces = "";
         float size = view.squareSize;
+        ChessPieceSet defaultSet = AssetDatabase.LoadAssetAtPath<GameObject>(LowPolyPrefabPath)
+            .GetComponent<ChessPieceSet>();
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
             Transform piece = view.pieces != null && obj < view.pieces.Length ? view.pieces[obj] : null;
             if (piece == null || !piece.IsChildOf(placed.transform)) {
@@ -382,13 +397,25 @@ public static class PrefabTest {
             int rank = white ? (backRank ? 0 : 1) : (backRank ? 7 : 6);
             int type = backRank ? BackRank[file] : ChessRules.Pawn;
             Vector3 square = new Vector3((file - 3.5f) * size, 0, (rank - 3.5f) * size);
-            if ((piece.localPosition - square).sqrMagnitude > 1e-8f) {
+            // Dressed in the default set as the view dresses it at run time: Black in White's model turned half round.
+            Transform template = defaultSet._Template(ChessRules.White, type);
+            Quaternion side = white ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
+            if ((piece.localPosition - square - side * template.localPosition).sqrMagnitude > 1e-8f) {
                 pieces += " " + piece.name + " at " + piece.localPosition.ToString("F3") + ";";
             }
+            if (Quaternion.Angle(piece.localRotation, side * template.localRotation) > 0.01f
+                || (piece.localScale - template.localScale).sqrMagnitude > 1e-8f) {
+                pieces += " " + piece.name + "'s turn or scale;";
+            }
             MeshFilter filter = view.pieceFilters[obj];
-            if (filter == null || filter.transform != piece || filter.sharedMesh == null
-                || filter.sharedMesh.name != new[] { "", "Pawn", "Knight", "Bishop", "Rook", "Queen", "King" }[type]) {
+            if (filter == null || filter.transform != piece
+                || filter.sharedMesh != template.GetComponent<MeshFilter>().sharedMesh) {
                 pieces += " " + piece.name + "'s mesh;";
+            }
+            Material wornMaterial = (white ? template : defaultSet._Template(ChessRules.Black, type))
+                .GetComponent<MeshRenderer>().sharedMaterial;
+            if (view.pieceRenderers[obj] != null && view.pieceRenderers[obj].sharedMaterial != wornMaterial) {
+                pieces += " " + piece.name + "'s material;";
             }
             if (view.pieceRenderers[obj] == null || view.pieceRenderers[obj].transform != piece
                 || view.piecePickups[obj] == null || view.piecePickups[obj].transform != piece
@@ -400,7 +427,8 @@ public static class PrefabTest {
                 pieces += " " + piece.name + "'s ChessPiece;";
             }
         }
-        Check(pieces == "", "the view's 32 pieces stand on their starting squares, each wired to the view", pieces);
+        Check(pieces == "", "the view's 32 pieces stand on their starting squares in the default set, each wired to "
+            + "the view", pieces);
 
         string targets = "";
         for (int square = 0; square < 64; square++) {

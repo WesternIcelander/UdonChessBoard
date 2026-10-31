@@ -374,7 +374,8 @@ public class ViewTest : ChessTest {
         CheckInt(view.promotionObject, promoting, "b7 dropped over a8: waits for a piece");
         CheckInt(board.moveCount, 8, "b7 dropped over a8: nothing played yet");
         Redraw();
-        Check((view.pieces[promoting].localPosition - view._SquarePosition(Sq("a8"))).sqrMagnitude < 1e-8f,
+        Check((view.pieces[promoting].localPosition - view._SquarePosition(Sq("a8"))
+            - view._PieceOffset(promoting)).sqrMagnitude < 1e-8f,
             "b7 dropped over a8: the pawn stands on a8 meanwhile",
             "at " + view.pieces[promoting].localPosition.ToString("F3"));
         // No cancel (step 12.11): a choice that isn't a promotion piece is refused, and the pawn goes on waiting.
@@ -547,7 +548,8 @@ public class ViewTest : ChessTest {
         CheckInt(view.selectedObject, knight, c + ": g1 clicked with e2 selected: g1 selected");
         Redraw();
         CheckLifted(knight, "g1", c + ": g1 selected");
-        Check((view.pieces[pawn].localPosition - view._SquarePosition(Sq("e2"))).sqrMagnitude < 1e-8f,
+        Check((view.pieces[pawn].localPosition - view._SquarePosition(Sq("e2"))
+            - view._PieceOffset(pawn)).sqrMagnitude < 1e-8f,
             c + ": g1 selected: e2 back down", "at " + view.pieces[pawn].localPosition.ToString("F3"));
         CheckClickables(WhitePieces, "g1 f3 h3", c + ": g1 selected");
         ClickSquare("f3");
@@ -667,7 +669,8 @@ public class ViewTest : ChessTest {
         CheckInt(view.selectedObject, ChessBoardView.NoObject, "click promotion: nothing selected");
         CheckInt(board.moveCount, 0, "click promotion: nothing played yet");
         Redraw();
-        Check((view.pieces[promoting].localPosition - view._SquarePosition(Sq("e8"))).sqrMagnitude < 1e-8f,
+        Check((view.pieces[promoting].localPosition - view._SquarePosition(Sq("e8"))
+            - view._PieceOffset(promoting)).sqrMagnitude < 1e-8f,
             "click promotion: the pawn stands on e8 meanwhile", "at " + view.pieces[promoting].localPosition.ToString("F3"));
         CheckInt(view._ChoosePromotion(ChessRules.Rook), ChessBoard.InputAccepted, "click promotion: e8=R chosen");
         CheckDropped(1, ChessBoard.ChangeMove, "click promotion: e8=R");
@@ -1474,8 +1477,8 @@ public class ViewTest : ChessTest {
         CheckInt(ViewDrop("d8", Over("d2")), ChessBoard.InputAccepted, a + ": d8 picked up");
         CheckInt(board.lastChange, ChessBoard.ChangeMove, a + ": Qxd2 dropped: played");
         Redraw();
-        Check(!view.animating[queen] && (view.pieces[queen].localPosition - view._SquarePosition(Sq("d2"))).sqrMagnitude
-            < 1e-10f, a + ": Qxd2 dropped: the queen in place at once",
+        Check(!view.animating[queen] && (view.pieces[queen].localPosition - view._SquarePosition(Sq("d2"))
+            - view._PieceOffset(queen)).sqrMagnitude < 1e-10f, a + ": Qxd2 dropped: the queen in place at once",
             "at " + view.pieces[queen].localPosition.ToString("F3"));
         CheckTravelOff(captured, false, a + ": Qxd2 dropped: the d2 pawn");
         CheckInt(TravellingFromBoard(), 1, a + ": Qxd2 dropped: one object travelling from the board");
@@ -1966,21 +1969,23 @@ public class ViewTest : ChessTest {
 
     // ---- 12.3, 12.10 and 13.6: chess piece sets ----
 
-    // The arbiter's list and overrides as the scene had them, put back at the end; the default set (index 0).
+    // The arbiter's list and overrides as the scene had them, put back at the end; the list's first set; and the set
+    // at index 0 for most of the frame, Chess Pieces, whose meshes the test set is made from.
     ChessPieceSet[] savedPieceSets;
     int savedOverrideWhite;
     int savedOverrideBlack;
+    ChessPieceSet firstSet;
     ChessPieceSet defaultSet;
     // Each object's world bounds under the default set on a cleared board: the centre from its square's centre, and
     // the size.
     Vector3[] boundsCentre = new Vector3[ChessBoardView.PieceCount];
     Vector3[] boundsSize = new Vector3[ChessBoardView.PieceCount];
 
-    // A fifteenth frame, with the arbiter's list made the scene's default set and the test set (index 1): the default
-    // set complete, its Black only materials, so Black wears White's meshes turned half round, facing White, with
-    // Black's material, each Black piece standing as White's of its type does turned half round; a missing White
-    // template named, a missing Black one not; the default set's promotion templates one see-through green material;
-    // the test set put on White alone by the board's index (ChangePieceSet, at once: meshes, both material slots,
+    // A fifteenth frame. The list as it is, then made Chess Pieces (the list's second, whose size the test set matches)
+    // and the test set (index 1): each of the list's two sets complete, its Black only materials, so Black wears White's
+    // meshes turned half round, facing White, with Black's material, each Black piece standing as White's of its type
+    // does turned half round, and its promotion templates one see-through green material; a missing White template
+    // named, a missing Black one not; the test set put on White alone by the board's index (ChangePieceSet, at once: meshes, both material slots,
     // turn, size, collider, the pieces standing exactly as the default's), then on Black (its own Black templates,
     // turned as set up); indexes out of range and other colours refused; a game played with it by drops and clicks
     // with captures and a promotion (its ghosts changing in place as either side's index changes while they show),
@@ -1992,9 +1997,9 @@ public class ViewTest : ChessTest {
         string s = "piece sets";
         ChessArbiter arbiter = board.arbiter;
         bool ready = Utilities.IsValid(testPieceSet) && Utilities.IsValid(arbiter)
-            && Utilities.IsValid(arbiter.PieceSet(0));
-        Check(ready, s + ": the test set and the arbiter's default set assigned", "list the arbiter's default set, "
-            + "Chess Pieces, first, then run Create View Test");
+            && Utilities.IsValid(arbiter.PieceSet(0)) && Utilities.IsValid(arbiter.PieceSet(1));
+        Check(ready, s + ": the test set and the arbiter's two sets assigned", "list the arbiter's Low Poly Chess "
+            + "Pieces and Chess Pieces, in that order, then run Create View Test");
         if (!ready) {
             LogSummary();
             return;
@@ -2004,11 +2009,15 @@ public class ViewTest : ChessTest {
         savedPieceSets = arbiter.pieceSets;
         savedOverrideWhite = arbiter.PieceSetOverride(white);
         savedOverrideBlack = arbiter.PieceSetOverride(black);
-        defaultSet = arbiter.PieceSet(0);
+        firstSet = arbiter.PieceSet(0);
+        defaultSet = arbiter.PieceSet(1);
         arbiter.SetPieceSetOverride(white, -1);
         arbiter.SetPieceSetOverride(black, -1);
-        arbiter.pieceSets = new ChessPieceSet[] { defaultSet, testPieceSet };
         view.animateMoves = false;
+        board._ClearState();
+        Redraw();
+        CheckPlainSet(firstSet, s + ": the first set");
+        arbiter.pieceSets = new ChessPieceSet[] { defaultSet, testPieceSet };
         board._ClearState();
         Redraw();
         Check(view._AppliedPieceSet(white) == view.CurrentPieceSet(white)
@@ -2037,49 +2046,7 @@ public class ViewTest : ChessTest {
         CheckString(testPieceSet.Problem(), "", s + ": a missing Black template not a problem");
         testPieceSet.blackRook = savedTemplate;
         CheckString(testPieceSet.Problem(), "", s + ": the templates back");
-        // The default set: White's promotion templates one see-through green material on the pieces' meshes, and
-        // Black only a material, no meshes, no promotion templates of its own.
-        Material ghostMaterial = MaterialOf(defaultSet.whitePromotionKnight.gameObject);
-        int ghostWrong = 0;
-        for (int type = ChessRules.Knight; type <= ChessRules.Queen; type++) {
-            Transform template = defaultSet._PromotionTemplate(white, type);
-            if (MaterialOf(template.gameObject) != ghostMaterial
-                || template.GetComponent<MeshFilter>().sharedMesh
-                    != defaultSet._Template(white, type).GetComponent<MeshFilter>().sharedMesh
-                || ChessPieceSet._HasMesh(defaultSet._PromotionTemplate(black, type))) {
-                ghostWrong++;
-            }
-        }
-        CheckInt(ghostWrong, 0, s + ": the default promotion templates: one material, the pieces' meshes, none of "
-            + "Black's own: wrong ones");
-        Color ghostColor = Utilities.IsValid(ghostMaterial) ? ghostMaterial.color : Color.black;
-        Check(ghostColor.a < 1 && ghostColor.g > ghostColor.r && ghostColor.g > ghostColor.b,
-            s + ": the default promotion material see-through green", "colour " + ghostColor);
-        Material whiteMaterial = MaterialOf(defaultSet.whitePawn.gameObject);
-        int blackWrong = 0;
-        for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) {
-            Transform template = defaultSet._Template(black, type);
-            Material material = Utilities.IsValid(template) ? MaterialOf(template.gameObject) : null;
-            if (ChessPieceSet._HasMesh(template) || !Utilities.IsValid(material) || material == whiteMaterial) {
-                blackWrong++;
-            }
-        }
-        CheckInt(blackWrong, 0, s + ": the default set's Black templates only a material of their own: wrong ones");
-
-        // The default set: Black's fallback faces White, wears Black's material and stands on its squares as White's
-        // pieces do, turned half round.
-        CheckPieceSets(defaultSet, defaultSet, s + ": the default set");
-        CheckView(s + ": the default set");
-        int blackKing = view.squareObject[Sq("e8")];
-        int whiteKing = view.squareObject[Sq("e1")];
-        Check(view.pieceFilters[blackKing].sharedMesh == defaultSet.whiteKing.GetComponent<MeshFilter>().sharedMesh
-            && view.pieceRenderers[blackKing].sharedMaterial == MaterialOf(defaultSet.blackKing.gameObject)
-            && Mathf.Abs(Quaternion.Angle(view.pieces[blackKing].localRotation,
-                view.pieces[whiteKing].localRotation) - 180) < 0.1f,
-            s + ": the default set: Black's king White's mesh in Black's material, turned to face White",
-            "mesh " + view.pieceFilters[blackKing].sharedMesh.name + ", turned "
-                + view.pieces[blackKing].localRotation.eulerAngles.ToString("F1"));
-        CheckMirroredBounds(s + ": the default set");
+        CheckPlainSet(defaultSet, s + ": the default set");
         for (int obj = 0; obj < ChessBoardView.PieceCount; obj++) {
             Bounds bounds = view.pieceRenderers[obj].bounds;
             boundsCentre[obj] = bounds.center - SquareWorld(view.objectSquare[obj]);
@@ -2234,10 +2201,61 @@ public class ViewTest : ChessTest {
         board._ClearState();
         Redraw();
         Check(view._AppliedPieceSet(white) == view.CurrentPieceSet(white)
-            && view._AppliedPieceSet(black) == view.CurrentPieceSet(black) && arbiter.PieceSet(0) == defaultSet,
+            && view._AppliedPieceSet(black) == view.CurrentPieceSet(black) && arbiter.PieceSet(0) == firstSet,
             s + ": put back", "they aren't");
         CheckView(s + ": cleared");
         SendCustomEventDelayedFrames(nameof(RunCapturedPlaceChecks), 1);
+    }
+
+    // A set of the package's, worn by both sides on a cleared board at index 0: complete, White's promotion templates
+    // one see-through green material on the pieces' meshes, and Black only a material, no meshes, no promotion
+    // templates of its own, so Black's fallback faces White, wears Black's material and stands on its squares as
+    // White's pieces do, turned half round.
+    void CheckPlainSet(ChessPieceSet set, string name) {
+        int white = ChessRules.White;
+        int black = ChessRules.Black;
+        CheckString(set.Problem(), "", name + ": complete");
+        Check(!set.whiteKing.gameObject.activeInHierarchy && !set.whitePromotionQueen.gameObject.activeInHierarchy,
+            name + ": its templates hidden in play", "shown");
+        Material ghostMaterial = MaterialOf(set.whitePromotionKnight.gameObject);
+        int ghostWrong = 0;
+        for (int type = ChessRules.Knight; type <= ChessRules.Queen; type++) {
+            Transform template = set._PromotionTemplate(white, type);
+            if (MaterialOf(template.gameObject) != ghostMaterial
+                || template.GetComponent<MeshFilter>().sharedMesh
+                    != set._Template(white, type).GetComponent<MeshFilter>().sharedMesh
+                || ChessPieceSet._HasMesh(set._PromotionTemplate(black, type))) {
+                ghostWrong++;
+            }
+        }
+        CheckInt(ghostWrong, 0, name + ": the promotion templates: one material, the pieces' meshes, none of Black's "
+            + "own: wrong ones");
+        Color ghostColor = Utilities.IsValid(ghostMaterial) ? ghostMaterial.color : Color.black;
+        Check(ghostColor.a < 1 && ghostColor.g > ghostColor.r && ghostColor.g > ghostColor.b,
+            name + ": the promotion material see-through green", "colour " + ghostColor);
+        Material whiteMaterial = MaterialOf(set.whitePawn.gameObject);
+        int blackWrong = 0;
+        for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) {
+            Transform template = set._Template(black, type);
+            Material material = Utilities.IsValid(template) ? MaterialOf(template.gameObject) : null;
+            if (ChessPieceSet._HasMesh(template) || !Utilities.IsValid(material) || material == whiteMaterial) {
+                blackWrong++;
+            }
+        }
+        CheckInt(blackWrong, 0, name + ": the Black templates only a material of their own: wrong ones");
+
+        CheckPieceSets(set, set, name);
+        CheckView(name);
+        int blackKing = view.squareObject[Sq("e8")];
+        int whiteKing = view.squareObject[Sq("e1")];
+        Check(view.pieceFilters[blackKing].sharedMesh == set.whiteKing.GetComponent<MeshFilter>().sharedMesh
+            && view.pieceRenderers[blackKing].sharedMaterial == MaterialOf(set.blackKing.gameObject)
+            && Mathf.Abs(Quaternion.Angle(view.pieces[blackKing].localRotation,
+                view.pieces[whiteKing].localRotation) - 180) < 0.1f,
+            name + ": Black's king White's mesh in Black's material, turned to face White",
+            "mesh " + view.pieceFilters[blackKing].sharedMesh.name + ", turned "
+                + view.pieces[blackKing].localRotation.eulerAngles.ToString("F1"));
+        CheckMirroredBounds(name);
     }
 
     // Sets a colour's piece set on the board to index as the local player (accepted, told as ChangePieceSet unless it
@@ -3601,7 +3619,8 @@ public class ViewTest : ChessTest {
     // Whether obj travels from where it stood (RecordPositions) to square, still standing there, starting now or
     // (waits) once the others have landed.
     void CheckTravel(int obj, string square, bool waits, string name) {
-        CheckTravelTo(obj, view._SquarePosition(Sq(square)), waits, name + ": travels to " + square);
+        CheckTravelTo(obj, view._SquarePosition(Sq(square)) + view._PieceOffset(obj), waits,
+            name + ": travels to " + square);
     }
 
     // The same for a captured piece, to its captured place (step 12.4): once the mover has landed (waits), or at once
