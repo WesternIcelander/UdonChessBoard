@@ -1970,7 +1970,7 @@ public class ViewTest : ChessTest {
     // ---- 12.3, 12.10 and 13.6: chess piece sets ----
 
     // The arbiter's list and overrides as the scene had them, put back at the end; the list's first set; and the set
-    // at index 0 for most of the frame, Chess Pieces, whose meshes the test set is made from.
+    // at index 0 for most of the frame, Claude Chess Pieces, whose meshes the test set is made from.
     ChessPieceSet[] savedPieceSets;
     int savedOverrideWhite;
     int savedOverrideBlack;
@@ -1981,7 +1981,7 @@ public class ViewTest : ChessTest {
     Vector3[] boundsCentre = new Vector3[ChessBoardView.PieceCount];
     Vector3[] boundsSize = new Vector3[ChessBoardView.PieceCount];
 
-    // A fifteenth frame. The list as it is, then made Chess Pieces (the list's second, whose size the test set matches)
+    // A fifteenth frame. The list as it is, then made Claude Chess Pieces (the list's second, whose size the test set matches)
     // and the test set (index 1): each of the list's two sets complete, its Black only materials, so Black wears White's
     // meshes turned half round, facing White, with Black's material, each Black piece standing as White's of its type
     // does turned half round, and its promotion templates one see-through green material; a missing White template
@@ -1999,7 +1999,7 @@ public class ViewTest : ChessTest {
         bool ready = Utilities.IsValid(testPieceSet) && Utilities.IsValid(arbiter)
             && Utilities.IsValid(arbiter.PieceSet(0)) && Utilities.IsValid(arbiter.PieceSet(1));
         Check(ready, s + ": the test set and the arbiter's two sets assigned", "list the arbiter's Low Poly Chess "
-            + "Pieces and Chess Pieces, in that order, then run Create View Test");
+            + "Pieces and Claude Chess Pieces, in that order, then run Create View Test");
         if (!ready) {
             LogSummary();
             return;

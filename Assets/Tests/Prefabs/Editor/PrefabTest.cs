@@ -13,8 +13,8 @@ using VRC.Udon;
 
 // Step 14's check of the prefabs (docs/prefabs.md), without Play Mode: run it from Tools > Chess Board > Test Prefabs.
 // It drops each prefab into a new scene of its own, opened beside the open one and closed unsaved afterwards, and
-// checks what it holds. 14.1: Low Poly Chess Pieces and Chess Pieces on their own, and the Chess Arbiter with both
-// nested, the build check on it, a change to the Chess Pieces prefab reaching the nested instance but not an unpacked copy. The change
+// checks what it holds. 14.1: Low Poly Chess Pieces and Claude Chess Pieces on their own, and the Chess Arbiter with both
+// nested, the build check on it, a change to the Claude Chess Pieces prefab reaching the nested instance but not an unpacked copy. The change
 // is undone and the prefab saved again before it ends. 14.2: the Chess Board with its importer, two placed with their
 // own board numbers, and the open scene's boards instances of it. 14.3: the Chess Board View with every object it uses
 // and no table, its pieces standing on their starting squares, pointed at a placed board, and the open scene's views
@@ -38,19 +38,19 @@ using VRC.Udon;
 // Every prefab: nothing it uses is under Assets/Tests/.
 // Logs "[PrefabTest] PASS: <check>" or "[PrefabTest] FAIL: <check>: <details>" per check, then a summary line.
 public static class PrefabTest {
-    const string PieceSetPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Pieces.prefab";
-    const string LowPolyPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Low Poly Chess Pieces.prefab";
+    const string PieceSetPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Pieces/Claude Chess Pieces.prefab";
+    const string LowPolyPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Pieces/Low Poly Chess Pieces.prefab";
     const string ArbiterPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Arbiter.prefab";
-    const string BoardPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Board.prefab";
-    const string ViewPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Board View.prefab";
-    const string UIPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Board UI.prefab";
-    const string ArchivePrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Game Archive.prefab";
-    const string PersonalPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Personal Game Archive.prefab";
-    const string WallPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Game History Wall.prefab";
-    const string PersonalWallPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Personal History Wall.prefab";
-    const string MenuPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Settings Menu.prefab";
-    const string View2DPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/2D Chess Board View.prefab";
-    const string Movable2DPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Movable 2D Chess Board View.prefab";
+    const string BoardPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Internals/Chess Board.prefab";
+    const string ViewPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Internals/Chess Board View.prefab";
+    const string UIPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/UI/Chess Board UI.prefab";
+    const string ArchivePrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Game History/Game Archive.prefab";
+    const string PersonalPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Game History/Personal Game Archive.prefab";
+    const string WallPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Game History/Game History Wall.prefab";
+    const string PersonalWallPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Game History/Personal History Wall.prefab";
+    const string MenuPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/UI/Chess Settings Menu.prefab";
+    const string View2DPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/2D View/2D Chess Board View.prefab";
+    const string Movable2DPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/2D View/Movable 2D Chess Board View.prefab";
     const string TablePrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Table.prefab";
     const string LanguagePrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Language.prefab";
     // The Game Archive prefab's synced holders (step 10.1a).
@@ -66,7 +66,7 @@ public static class PrefabTest {
         GameObject setPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PieceSetPrefabPath);
         GameObject arbiterPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(ArbiterPrefabPath);
         GameObject lowPolyPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(LowPolyPrefabPath);
-        Check(setPrefab != null, "the Chess Pieces prefab at " + PieceSetPrefabPath, "missing");
+        Check(setPrefab != null, "the Claude Chess Pieces prefab at " + PieceSetPrefabPath, "missing");
         Check(lowPolyPrefab != null, "the Low Poly Chess Pieces prefab at " + LowPolyPrefabPath, "missing");
         Check(arbiterPrefab != null, "the Chess Arbiter prefab at " + ArbiterPrefabPath, "missing");
         GameObject boardPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(BoardPrefabPath);
@@ -216,7 +216,7 @@ public static class PrefabTest {
         ChessPieceSet lowPoly = two ? arbiter.pieceSets[0] : null;
         ChessPieceSet nested = two ? arbiter.pieceSets[1] : null;
         bool isNested = IsNestedSet(lowPoly, lowPolyPrefab, placed) && IsNestedSet(nested, setPrefab, placed);
-        Check(isNested, "the arbiter's Piece Sets hold its nested Low Poly Chess Pieces, then Chess Pieces",
+        Check(isNested, "the arbiter's Piece Sets hold its nested Low Poly Chess Pieces, then Claude Chess Pieces",
             arbiter.pieceSets == null ? "null" : arbiter.pieceSets.Length + " entries");
         Check(arbiter.boardCount == 4, "the arbiter's boardCount is the default", arbiter.boardCount.ToString());
         Check(arbiter.pgnEvent == "" && arbiter.pgnSite == "VRChat", "the arbiter's PGN tags are the defaults (13.11)",
@@ -252,7 +252,7 @@ public static class PrefabTest {
         PrefabUtility.RecordPrefabInstancePropertyModifications(arbiter);
         Check(!PrefabUtility.IsPartOfAnyPrefab(copyObject), "the unpacked copy has no prefab link", "it has one");
 
-        // A change to the Chess Pieces prefab: its White Pawn slot raised, then put back.
+        // A change to the Claude Chess Pieces prefab: its White Pawn slot raised, then put back.
         const string Slot = "White Pawn";
         Vector3 rise = new Vector3(0, 0.25f, 0);
         GameObject contents = PrefabUtility.LoadPrefabContents(PieceSetPrefabPath);
@@ -260,7 +260,7 @@ public static class PrefabTest {
         Vector3 original = prefabSlot != null ? prefabSlot.localPosition : Vector3.zero;
         bool changed = false;
         try {
-            Check(prefabSlot != null, "the Chess Pieces prefab has a " + Slot + " slot", "none");
+            Check(prefabSlot != null, "the Claude Chess Pieces prefab has a " + Slot + " slot", "none");
             if (prefabSlot == null) return;
             prefabSlot.localPosition = original + rise;
             PrefabUtility.SaveAsPrefabAsset(contents, PieceSetPrefabPath);
@@ -268,7 +268,7 @@ public static class PrefabTest {
             Transform nestedSlot = nested.transform.Find(Slot);
             Transform copySlot = copy.transform.Find(Slot);
             Check(nestedSlot != null && nestedSlot.localPosition == original + rise,
-                "a change to the Chess Pieces prefab reaches the arbiter's nested instance",
+                "a change to the Claude Chess Pieces prefab reaches the arbiter's nested instance",
                 nestedSlot == null ? "no slot" : nestedSlot.localPosition.ToString("F3"));
             Check(copySlot != null && copySlot.localPosition == original,
                 "the unpacked copy is unaffected by the change",
@@ -285,7 +285,7 @@ public static class PrefabTest {
             PrefabUtility.UnloadPrefabContents(contents);
         }
         Transform restored = setPrefab.transform.Find(Slot);
-        Check(restored != null && restored.localPosition == original, "the Chess Pieces prefab is put back",
+        Check(restored != null && restored.localPosition == original, "the Claude Chess Pieces prefab is put back",
             restored == null ? "no slot" : restored.localPosition.ToString("F3"));
     }
 

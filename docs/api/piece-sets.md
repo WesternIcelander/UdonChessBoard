@@ -1,6 +1,6 @@
 # Piece sets
 
-A step-by-step guide to a chess piece set of the world's own: preparing the models, making the set from the package's **Chess Pieces**, setting up each piece, adding it to the world and checking it, then letting players choose it from the world's own scripts. Unlike the other API documents it's mostly editor work; only the last section is calls. Read the [API index](README.md) first for the numbers (colours, piece types) and how a board's change reaches every client. The design behind the sets is in [physical pieces](../physical-pieces.md#piece-sets-steps-123-1210-1211-and-136).
+A step-by-step guide to a chess piece set of the world's own: preparing the models, making the set from the package's **Claude Chess Pieces**, setting up each piece, adding it to the world and checking it, then letting players choose it from the world's own scripts. Unlike the other API documents it's mostly editor work; only the last section is calls. Read the [API index](README.md) first for the numbers (colours, piece types) and how a board's change reaches every client. The design behind the sets is in [physical pieces](../physical-pieces.md#piece-sets-steps-123-1210-1211-and-136).
 
 A **piece set** is a `ChessPieceSet` behaviour on an object holding one **template** per colour and piece type, plus the **promotion pieces** (the see-through pieces a player picks from when a pawn reaches the last rank). A template is an object with a `MeshFilter` and a `MeshRenderer`: the board view copies its mesh, its materials and its own local position, rotation and scale onto every piece of that colour and type. The arbiter lists the world's sets, and each board syncs which of them White and Black wear.
 
@@ -20,17 +20,17 @@ A **piece set** is a `ChessPieceSet` behaviour on an object holding one **templa
 
 ## 2. Making the set
 
-1. Drag the **Chess Pieces** prefab (`Assets/Siggi/ChessBoard/Prefabs/`) into the scene.
+1. Drag the **Claude Chess Pieces** prefab (`Assets/Siggi/ChessBoard/Prefabs/Chess Pieces/`) into the scene.
 2. Right-click it in the Hierarchy and choose **Prefab > Unpack Completely**.
 3. Rename it (the name is what the view's log names it by, below).
 
-**Unpack it, don't make a prefab variant.** A variant follows the package's **Chess Pieces** wherever it doesn't override it, so a package update could change the world's pieces (a Black slot left to the fallback would take a mesh the package later gives its own default). An unpacked copy is the world's alone, and no update touches it. To reuse the set in other scenes, drag the unpacked set into the world's own folder of assets, making a prefab of the world's own.
+**Unpack it, don't make a prefab variant.** A variant follows the package's **Claude Chess Pieces** wherever it doesn't override it, so a package update could change the world's pieces (a Black slot left to the fallback would take a mesh the package later gives its own default). An unpacked copy is the world's alone, and no update touches it. To reuse the set in other scenes, drag the unpacked set into the world's own folder of assets, making a prefab of the world's own.
 
 **Or start from nothing:** add a `ChessPieceSet` to an empty object and give it a child per template (any layout; the slots below are a help, not a requirement), each with a `MeshFilter` and `MeshRenderer`, set up as step 3 says and assigned to the set's fields.
 
 **Where it lives:** anywhere in the scene, under the **Chess Arbiter** or not; its position, rotation and scale in the world don't matter. **Keep the set's own object active**: on Start it hides its children (the slots, templates and guides), and the board views go on reading the hidden templates. Sets hidden this way cost nothing to render.
 
-**What's in it.** Each slot is an object named after its template (**White Pawn** … **White King**; behind them **White Promotion Knight** … **White Promotion Queen**; behind those **Black Pawn** … **Black King**), holding a **Guide** (a green square frame, the size of one square of the board) and a **Model**, the template. The set's 20 fields point at the templates: **White Pawn** … **White King**, **White Promotion Knight** … **White Promotion Queen**, **Black Pawn** … **Black King** and **Black Promotion Knight** … **Black Promotion Queen** (`whitePawn` … `blackPromotionQueen`). **Chess Pieces** has no Black promotion slots: those fields are empty, and Black's promotion pieces are White's (step 5). After unpacking, check that each field points at this set's own **Model**: select the set and click each field, which highlights its object in the Hierarchy. The same check after duplicating a set of the world's own.
+**What's in it.** Each slot is an object named after its template (**White Pawn** … **White King**; behind them **White Promotion Knight** … **White Promotion Queen**; behind those **Black Pawn** … **Black King**), holding a **Guide** (a green square frame, the size of one square of the board) and a **Model**, the template. The set's 20 fields point at the templates: **White Pawn** … **White King**, **White Promotion Knight** … **White Promotion Queen**, **Black Pawn** … **Black King** and **Black Promotion Knight** … **Black Promotion Queen** (`whitePawn` … `blackPromotionQueen`). **Claude Chess Pieces** has no Black promotion slots: those fields are empty, and Black's promotion pieces are White's (step 5). After unpacking, check that each field points at this set's own **Model**: select the set and click each field, which highlights its object in the Hierarchy. The same check after duplicating a set of the world's own.
 
 ## 3. Setting up each White template
 
@@ -68,7 +68,7 @@ When a player drops (or click-places) a pawn on the last rank, four see-through 
 
 Select the **Chess Arbiter** and, under **Pieces**, add the set to **Piece Sets** (`pieceSets`).
 
-- **Its place in the list is its index**, the number the calls below and every board's sync use. **Index 0 is the default**: every board starts with it, and every reset puts both sides back to it. The arbiter prefab lists **Low Poly Chess Pieces**, then **Chess Pieces**; add the world's sets after them, or put one first to make it the default.
+- **Its place in the list is its index**, the number the calls below and every board's sync use. **Index 0 is the default**: every board starts with it, and every reset puts both sides back to it. The arbiter prefab lists **Low Poly Chess Pieces**, then **Claude Chess Pieces**; add the world's sets after them, or put one first to make it the default.
 - **No empty entries.** A VRChat build or upload is cancelled while the list is empty or has an empty entry, with a dialog and an error naming the arbiter (the build check, `ChessArbiterBuildCheck`).
 - **Reordering changes what an index means.** A world's script naming index 2 means whatever is third in the list; a board's synced index is read against the list of the world as built. Change the scripts with the list.
 

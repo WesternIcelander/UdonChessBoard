@@ -218,7 +218,7 @@ public static class ViewTestBuilder {
         return material;
     }
 
-    // ---- Building a piece set (laid out as the Chess Pieces prefab is, step 14.1) ----
+    // ---- Building a piece set (laid out as the Claude Chess Pieces prefab is, step 14.1) ----
 
     const string PiecesFolder = "Assets/Siggi/ChessBoard/Models/Piece Sets/ClaudePieceSet";
     const string HelpersFolder = "Assets/Siggi/ChessBoard/Models/Helpers";
@@ -227,7 +227,7 @@ public static class ViewTestBuilder {
     const float SquareSize = 0.05f;
     const float SlotSpacing = 1.5f;
 
-    // The piece meshes of the package's Chess Pieces, by ChessRules type (entry 0 empty).
+    // The piece meshes of the package's Claude Chess Pieces, by ChessRules type (entry 0 empty).
     static Mesh[] PieceMeshes() {
         Mesh[] meshes = new Mesh[7];
         for (int type = ChessRules.Pawn; type <= ChessRules.King; type++) {

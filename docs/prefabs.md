@@ -1,6 +1,6 @@
 # Prefabs
 
-World creators add the chess objects by dragging prefabs from `Assets/Siggi/ChessBoard/Prefabs/` into their scene (step 14). Each prefab is self-contained: its meshes, materials and Udon programs are saved as assets, so it works in a fresh scene, and it holds nothing for tests or debugging. Placed instances get their network IDs from the VRChat SDK as other scene objects do.
+World creators add the chess objects by dragging prefabs from `Assets/Siggi/ChessBoard/Prefabs/` into their scene (step 14). **Chess Arbiter**, **Chess Language** and **Chess Table** are at the top of that folder; the rest are in `Chess Pieces/`, `Game History/`, `UI/`, `2D View/` and `Internals/`. Each prefab is self-contained: its meshes, materials and Udon programs are saved as assets, so it works in a fresh scene, and it holds nothing for tests or debugging. Placed instances get their network IDs from the VRChat SDK as other scene objects do.
 
 A prefab can't reference objects in the scene, so the links between the chess objects (a board to its arbiter and archive, a view to its board, …) are set after placing them. Most of them fill themselves in: the [wiring script](#wiring) (step 14.11) links each empty one to the one object of its kind in the scene when the scene is saved, when Play Mode starts and before every build, and numbers the boards. Each section below says what it sets and what is left to you.
 
@@ -14,15 +14,15 @@ Every chess prefab shares one `I18n`, the [Chess Language](#chess-language) pref
 
 ## Low Poly Chess Pieces
 
-`Prefabs/Low Poly Chess Pieces.prefab`: the default chess piece set, laid out as [Chess Pieces](#chess-pieces) below (a slot per template, each with a **Guide** and a **Model**), from `Models/Piece Sets/Low Poly/Low Poly Pieces.fbx` (CC0, source in the text file beside it) with that file's own `WhitePiece` and `BlackPieces` materials, and the see-through Promotion Ghost for the promotion pieces. Each **Model** is turned −90° about x (the file is z-up) and scaled so the file's squares, 6 units wide, are the view's 0.05; the pawn and knight stand a little higher, as their origins are above their bases. Black's **Model**s hold only the `BlackPieces` material, so Black wears White's models turned to face White. It's nested in the Chess Arbiter prefab, listed first.
+`Prefabs/Chess Pieces/Low Poly Chess Pieces.prefab`: the default chess piece set, laid out as [Claude Chess Pieces](#claude-chess-pieces) below (a slot per template, each with a **Guide** and a **Model**), from `Models/Piece Sets/Low Poly/Low Poly Pieces.fbx` (CC0, source in the text file beside it) with that file's own `WhitePiece` and `BlackPieces` materials, and the see-through Promotion Ghost for the promotion pieces. Each **Model** is turned −90° about x (the file is z-up) and scaled so the file's squares, 6 units wide, are the view's 0.05; the pawn and knight stand a little higher, as their origins are above their bases. Black's **Model**s hold only the `BlackPieces` material, so Black wears White's models turned to face White. It's nested in the Chess Arbiter prefab, listed first.
 
-## Chess Pieces
+## Claude Chess Pieces
 
-`Prefabs/Chess Pieces.prefab` (step 14.1): the second chess piece set, index 1 on the Chess Arbiter prefab (the default until Low Poly Chess Pieces), a `ChessPieceSet` with a slot per piece type for each colour ([customizing](customizing.md#chess-piece-sets-steps-123-1210-and-136)). The White row holds the meshes from `Models/Piece Sets/ClaudePieceSet/` with the White Pieces material; behind it are White's promotion pieces, with the see-through Promotion Ghost material; behind those is the Black row, whose **Model**s are renderers with the Black Pieces material and no mesh, so Black wears White's models turned to face White. Each slot holds a **Guide** and a **Model**, and the set's fields point at its own **Model**s.
+`Prefabs/Chess Pieces/Claude Chess Pieces.prefab` (step 14.1): the second chess piece set, index 1 on the Chess Arbiter prefab (the default until Low Poly Chess Pieces), a `ChessPieceSet` with a slot per piece type for each colour ([customizing](customizing.md#chess-piece-sets-steps-123-1210-and-136)). The White row holds the meshes from `Models/Piece Sets/ClaudePieceSet/` with the White Pieces material; behind it are White's promotion pieces, with the see-through Promotion Ghost material; behind those is the Black row, whose **Model**s are renderers with the Black Pieces material and no mesh, so Black wears White's models turned to face White. Each slot holds a **Guide** and a **Model**, and the set's fields point at its own **Model**s.
 
 It's nested in the Chess Arbiter prefab, so a world doesn't need to place it to use it. It's also where a world's own set starts:
 
-1. Drag **Chess Pieces** into the scene.
+1. Drag **Claude Chess Pieces** into the scene.
 2. Right-click it and choose **Prefab > Unpack Completely**. Don't make a prefab variant instead: whatever a variant doesn't override follows the package's set, so a package update could change your pieces (a Black slot you left to the fallback would take a mesh the package later gives its own default).
 3. Rename it, change its templates as the [piece set guide](api/piece-sets.md) says, and add it to the arbiter's **Piece Sets**.
 
@@ -33,7 +33,7 @@ A world's set never changes when the package updates. The full guide is [Piece s
 `Prefabs/Chess Arbiter.prefab` (`ChessArbiter.prefab` beside the scripts before step 14.1, moved with its GUID kept): the instance's `ChessArbiter` ([settings](settings.md)) with:
 
 - a `FirstJoinerAuth` on the same object, which its **Simple Auth** field points to: the first player in the instance is the organizer ([organizers](organizers.md));
-- nested instances of **Low Poly Chess Pieces** and **Chess Pieces** as its children, listed in that order in **Piece Sets**, so Low Poly Chess Pieces is the default set;
+- nested instances of **Low Poly Chess Pieces** and **Claude Chess Pieces** as its children, listed in that order in **Piece Sets**, so Low Poly Chess Pieces is the default set;
 - **Board Count** (4), first in its Inspector, the **PGN** tags **PGN Event** and **PGN Site** (empty and `VRChat`, step 13.11: the Event and Site tags of every board's games, `?` when empty) and the instance defaults (rules, inactivity, forced lobby settings) at their defaults.
 
 Place one per world. Its **Archives** (step 13.10, empty in the prefab) are the scene's **Game Archive** and **Personal Game Archive**, where every board's logged games go: the wiring fills an empty list with every archive in the scene, and warns about an archive in the scene that a list already set leaves out. With no archive, games are only logged. Its **Board Count** is set by the wiring to the highest board number on it plus one. Change **PGN Event** and **PGN Site** to name your world's event and site in its games' PGN, if you like. The boards and the settings menu point at it (steps 14.2 and 14.7).
@@ -44,7 +44,7 @@ Place one per world. Its **Archives** (step 13.10, empty in the prefab) are the 
 
 ## Chess Board
 
-`Prefabs/Chess Board.prefab` (step 14.2): the logical board, a `ChessBoard` ([architecture](architecture.md#logical-board-and-physical-board), [board lifecycle](board-lifecycle.md)) holding the game, its rules and its synced state, with a `ChessPgnImporter` of its own as its child **ChessPgnImporter**, already its **Importer** (PGN imports, [PGN](pgn.md#import-local-rare)). It has nothing to see: its view and UI (steps 14.3 and 14.4) show it.
+`Prefabs/Internals/Chess Board.prefab` (step 14.2): the logical board, a `ChessBoard` ([architecture](architecture.md#logical-board-and-physical-board), [board lifecycle](board-lifecycle.md)) holding the game, its rules and its synced state, with a `ChessPgnImporter` of its own as its child **ChessPgnImporter**, already its **Importer** (PGN imports, [PGN](pgn.md#import-local-rare)). It has nothing to see: its view and UI (steps 14.3 and 14.4) show it.
 
 Place one per board. After placing it, set:
 
@@ -56,7 +56,7 @@ The PGN Event and Site tags of its games are the arbiter's (the board's own fiel
 
 ## Chess Board View
 
-`Prefabs/Chess Board View.prefab` (step 14.3): the physical board, a `ChessBoardView` ([physical pieces](physical-pieces.md), [player input](player-input.md)) with everything it places: the placeholder **Board** and **Squares**, the **Player Blocker**, the 32 **Pieces** (each a `VRCPickup` with a `ChessPiece`), the 64 **Square Targets** for desktop clicks, the **Highlights** (last move, check lines, legal targets), the **Promotion Ghosts**, the **Captured Places** and its **Sounds**. Its board's meshes and materials are the generated ones in `Models/`. Its pieces are saved dressed in the default set, **Low Poly Chess Pieces**, so that's what shows in the editor; they wear the arbiter's piece sets once the game starts ([customizing](customizing.md#chess-piece-sets-steps-123-1210-and-136)), so a world listing another set first still sees that one in play. It has no buttons or status display: those are the board's UI (step 14.4).
+`Prefabs/Internals/Chess Board View.prefab` (step 14.3): the physical board, a `ChessBoardView` ([physical pieces](physical-pieces.md), [player input](player-input.md)) with everything it places: the placeholder **Board** and **Squares**, the **Player Blocker**, the 32 **Pieces** (each a `VRCPickup` with a `ChessPiece`), the 64 **Square Targets** for desktop clicks, the **Highlights** (last move, check lines, legal targets), the **Promotion Ghosts**, the **Captured Places** and its **Sounds**. Its board's meshes and materials are the generated ones in `Models/Boards/SimpleBoard/`. Its pieces are saved dressed in the default set, **Low Poly Chess Pieces**, so that's what shows in the editor; they wear the arbiter's piece sets once the game starts ([customizing](customizing.md#chess-piece-sets-steps-123-1210-and-136)), so a world listing another set first still sees that one in play. It has no buttons or status display: those are the board's UI (step 14.4).
 
 Its origin is the board's centre on the playing surface, with files along +x and White's end at −z. The placeholder board is 2 cm thick, so a view placed 2 cm above a table top has its board resting on it (the [Chess Table](#chess-table) does that for you). It has no table: the world's own furniture stands under it (since the change to 14.3; it had a placeholder **Table** before, 0.8 m tall). It's made for a table about 0.70 m across (along the files) and 0.99 m deep, 0.78 m tall: the UI's panels stand at its ends, the captured pieces' places beside the board, and the **Player Blocker**'s solid box fills that space under the board (resize its `BoxCollider` to fit another table, [customizing](customizing.md#the-board-model-and-scale-step-122)). The test scene has a placeholder cube of that size under each of its tables (**Table Placeholder (Chess Table 1)**, …), the scene's own objects beside them.
 
@@ -69,7 +69,7 @@ What a world may change on it (its model, its size, the captured places) is in [
 
 ## Chess Board UI
 
-`Prefabs/Chess Board UI.prefab` (step 14.4): the board's UI, a `ChessBoardUI` ([player input](player-input.md#the-boards-ui-step-121)) with the **Buttons (White)** and **Buttons (Black)** panels (each button calling the UI's `_Press…` event for its action), the **Status (White)** and **Status (Black)** panels ([physical pieces](physical-pieces.md)), the hidden **PGN Box** with its copy and paste parts ([PGN](pgn.md#input--output)), and its **Sounds** (every sound but the move sounds). Its labels and hints are empty in the prefab: the UI writes them from the language pack.
+`Prefabs/UI/Chess Board UI.prefab` (step 14.4): the board's UI, a `ChessBoardUI` ([player input](player-input.md#the-boards-ui-step-121)) with the **Buttons (White)** and **Buttons (Black)** panels (each button calling the UI's `_Press…` event for its action), the **Status (White)** and **Status (Black)** panels ([physical pieces](physical-pieces.md)), the hidden **PGN Box** with its copy and paste parts ([PGN](pgn.md#input--output)), and its **Sounds** (every sound but the move sounds). Its labels and hints are empty in the prefab: the UI writes them from the language pack.
 
 Its origin is the board's centre on the playing surface with the view's axes, as the view's is: its panels stand at the ends of the table under the view (one of the size the view is made for, above) and the PGN box over the board's far edge. Put it where the board's **Chess Board View** stands, with the same rotation and scale (beside the view, not inside it), so the panels sit on the table.
 
@@ -98,19 +98,19 @@ The table is a plain object holding the three, not a variant of the Chess Board 
 
 ## Game Archive
 
-`Prefabs/Game Archive.prefab` (step 14.5): the instance's archive of finished games, an `InstanceGameArchive` ([archive](archive.md); the script was `GameArchive` before step 13.10, renamed with its GUID kept, so the prefab didn't change) with its 10 synced `GameArchiveHolder`s (**Holder 0** to **Holder 9**, 5 games each, so the last 50 games) and the local-only **Recent (local only)** holder as its children, already in its **Holders** and **Recent** fields, each holder's **Archive** pointing back. Its holders and the archive itself are synced objects ([networking](networking.md)): only the archive's owner writes to them.
+`Prefabs/Game History/Game Archive.prefab` (step 14.5): the instance's archive of finished games, an `InstanceGameArchive` ([archive](archive.md); the script was `GameArchive` before step 13.10, renamed with its GUID kept, so the prefab didn't change) with its 10 synced `GameArchiveHolder`s (**Holder 0** to **Holder 9**, 5 games each, so the last 50 games) and the local-only **Recent (local only)** holder as its children, already in its **Holders** and **Recent** fields, each holder's **Archive** pointing back. Its holders and the archive itself are synced objects ([networking](networking.md)): only the archive's owner writes to them.
 
 Place one per world. It needs nothing set after placing it; the arbiter lists it (its **Archives**, [Chess Arbiter](#chess-arbiter)), and the history wall reads it (step 14.6). Don't change its holders: the archive logs an error on start when one is missing or the recent holder isn't local only, and reverting the fields and objects to the prefab's mends it.
 
 ## Personal Game Archive
 
-`Prefabs/Personal Game Archive.prefab` (step 14.6): the local player's own games, a `PersonalGameArchive` ([archive](archive.md#personal-archive-step-1310)) on its own, kept in their VRChat PlayerData across visits and instances; nothing synced. **Capacity** (20 games) and **Key Prefix** (`siggi.chess.personal.`) are at their defaults.
+`Prefabs/Game History/Personal Game Archive.prefab` (step 14.6): the local player's own games, a `PersonalGameArchive` ([archive](archive.md#personal-archive-step-1310)) on its own, kept in their VRChat PlayerData across visits and instances; nothing synced. **Capacity** (20 games) and **Key Prefix** (`siggi.chess.personal.`) are at their defaults.
 
 Place at most one per world. After placing it, list it in the arbiter's **Archives** beside the Game Archive, so every board's games reach it too. Change **Key Prefix** only when the world's own PlayerData keys could clash with it: games saved under the old prefix are no longer read.
 
 ## Game History Wall
 
-`Prefabs/Game History Wall.prefab` (step 14.6): a portrait world-space canvas (1.2 m by 1.6 m) with a `GameHistoryWall` ([archive](archive.md#history-wall-step-102a)): the **Title**, the hidden **Export PGN** button at its right end, the **Games** scroll view with 50 entries (one per game the Game Archive holds, each with its `GameHistoryRow`, which picks the entry's game), and the hidden **PGN Box** that Export PGN opens over the list's lower half. Its labels are written from the language pack at run time. It takes the pointer through a trigger collider and `VRCUiShape`, so players walk through it.
+`Prefabs/Game History/Game History Wall.prefab` (step 14.6): a portrait world-space canvas (1.2 m by 1.6 m) with a `GameHistoryWall` ([archive](archive.md#history-wall-step-102a)): the **Title**, the hidden **Export PGN** button at its right end, the **Games** scroll view with 50 entries (one per game the Game Archive holds, each with its `GameHistoryRow`, which picks the entry's game), and the hidden **PGN Box** that Export PGN opens over the list's lower half. Its labels are written from the language pack at run time. It takes the pointer through a trigger collider and `VRCUiShape`, so players walk through it.
 
 Place one per world, where players can read it; it faces +z, and its origin is its centre. After placing it, set:
 
@@ -121,13 +121,13 @@ A game picked on it is offered by every board's **Load it here** (the pick is on
 
 ## Personal History Wall
 
-`Prefabs/Personal History Wall.prefab` (step 14.6): the same wall for the **Personal Game Archive**, with 20 entries (its default capacity), each with a **Delete** button at its right end (pressed twice within 3 s), and its title from `wall_title_personal` (`My games`). The wall makes more entries at run time when its archive's **Capacity** is raised, so it needs no change for that. The wiring sets its **Archive** to the scene's **Personal Game Archive** (a wall with delete buttons gets the personal archive, one without the Game Archive).
+`Prefabs/Game History/Personal History Wall.prefab` (step 14.6): the same wall for the **Personal Game Archive**, with 20 entries (its default capacity), each with a **Delete** button at its right end (pressed twice within 3 s), and its title from `wall_title_personal` (`My games`). The wall makes more entries at run time when its archive's **Capacity** is raised, so it needs no change for that. The wiring sets its **Archive** to the scene's **Personal Game Archive** (a wall with delete buttons gets the personal archive, one without the Game Archive).
 
 It's a prefab of its own, not a variant of the Game History Wall: every entry differs (the delete button, a narrower label) and so does their number, so a variant would override nearly all of it, and a change to the instance wall's entries could leave the delete buttons out of place.
 
 ## Chess Settings Menu
 
-`Prefabs/Chess Settings Menu.prefab` (step 14.7): the organizers' settings menu, a landscape world-space canvas (1.5 m by 1.42 m) with a `ChessSettingsMenu` ([settings](settings.md#settings-menu-step-111a), [organizers](organizers.md)): the **Title**, the **Notice** everyone but organizers sees, and the **Controls** only organizers see: the scope row (All boards or one board, and All default), a row per setting with its label, its value and its three buttons, and **Apply now** with its outcome below it, then (step 14.13) the **PGN Event** and **PGN Site** rows (**PGN Rows**, shown for All boards only), each a label and a single-line text field whose `onSelect`, `onValueChanged` and `onEndEdit` call the menu. They fit in the canvas the menu always had: step 14.13 moved the 16 setting rows 52 px apart (60 before) to make room, since a placed menu keeps its canvas size (below, and [compatibility](compatibility.md)). Each button has a `ChessSettingsButton` of its own, which passes its row and action to the menu. Its labels are written from the language pack at run time. It takes the pointer through a trigger collider and `VRCUiShape`, so players walk through it.
+`Prefabs/UI/Chess Settings Menu.prefab` (step 14.7): the organizers' settings menu, a landscape world-space canvas (1.5 m by 1.42 m) with a `ChessSettingsMenu` ([settings](settings.md#settings-menu-step-111a), [organizers](organizers.md)): the **Title**, the **Notice** everyone but organizers sees, and the **Controls** only organizers see: the scope row (All boards or one board, and All default), a row per setting with its label, its value and its three buttons, and **Apply now** with its outcome below it, then (step 14.13) the **PGN Event** and **PGN Site** rows (**PGN Rows**, shown for All boards only), each a label and a single-line text field whose `onSelect`, `onValueChanged` and `onEndEdit` call the menu. They fit in the canvas the menu always had: step 14.13 moved the 16 setting rows 52 px apart (60 before) to make room, since a placed menu keeps its canvas size (below, and [compatibility](compatibility.md)). Each button has a `ChessSettingsButton` of its own, which passes its row and action to the menu. Its labels are written from the language pack at run time. It takes the pointer through a trigger collider and `VRCUiShape`, so players walk through it.
 
 Place at most one per world, where organizers can reach it; it stands at its centre, unrotated, read from its −z side. After placing it, set:
 
@@ -139,7 +139,7 @@ Without it, nobody can change the settings in-world: the arbiter's Inspector val
 
 ## 2D Chess Board View
 
-`Prefabs/2D Chess Board View.prefab` (step 14.8): a flat view of one board at a time for watching, a landscape world-space canvas (1.36 m by 1.41 m) with a `ChessBoard2DView` ([2D board view](board-2d.md)): the selector (`<`, **Board N**, `>`), the 8×8 board with a piece image on each square (the sprites in `Sprites2D/`), the players and status texts, the step buttons (`<<` `<` `>` `>>`) of its own replay, and the move list on the right, each cell with its `ChessMoveListCell`. It takes the pointer through a trigger collider and `VRCUiShape`, so players walk through it. It has no pickup: it stays where it's placed.
+`Prefabs/2D View/2D Chess Board View.prefab` (step 14.8): a flat view of one board at a time for watching, a landscape world-space canvas (1.36 m by 1.41 m) with a `ChessBoard2DView` ([2D board view](board-2d.md)): the selector (`<`, **Board N**, `>`), the 8×8 board with a piece image on each square (the sprites in `Sprites2D/`), the players and status texts, the step buttons (`<<` `<` `>` `>>`) of its own replay, and the move list on the right, each cell with its `ChessMoveListCell`. It takes the pointer through a trigger collider and `VRCUiShape`, so players walk through it. It has no pickup: it stays where it's placed.
 
 Place as many as you like; it faces +z (read looking along +z), and its origin is its centre. After placing it, set:
 
@@ -150,7 +150,7 @@ Place as many as you like; it faces +z (read looking along +z), and its origin i
 
 ## Movable 2D Chess Board View
 
-`Prefabs/Movable 2D Chess Board View.prefab` (step 14.8): the same view that players can move and resize ([Moving and resizing](board-2d.md#moving-and-resizing-step-1216)): a `ChessBoard2DViewHolder` at its root with a nested instance of the **2D Chess Board View** prefab as its child (so a change to that prefab reaches both), the **Grip** (a bar under the view, a `VRCPickup`) and the **Corner** (a cube at its bottom right, a second pickup, for resizing). Its origin is the view's centre, as the fixed one's is.
+`Prefabs/2D View/Movable 2D Chess Board View.prefab` (step 14.8): the same view that players can move and resize ([Moving and resizing](board-2d.md#moving-and-resizing-step-1216)): a `ChessBoard2DViewHolder` at its root with a nested instance of the **2D Chess Board View** prefab as its child (so a change to that prefab reaches both), the **Grip** (a bar under the view, a `VRCPickup`) and the **Corner** (a cube at its bottom right, a second pickup, for resizing). Its origin is the view's centre, as the fixed one's is.
 
 After placing it, set the nested view's **Boards** (or **Locked Board**) and **Synced** as for the fixed view; the holder needs nothing. **Movable** on the holder (on by default) turns moving off (the bar and corner hidden). **Min Size** and **Max Size** (0.25 and 3) are the sizes the corner allows; the bar is fitted to the smallest, so after lowering it check that the bar stays clear of the corner.
 

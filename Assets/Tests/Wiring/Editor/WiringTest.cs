@@ -65,13 +65,13 @@ public static class WiringTest {
         Placed placed = new Placed();
         placed.arbiter = Place("Chess Arbiter", scene, new Vector3(0, 0, -4)).GetComponent<ChessArbiter>();
         Place("Chess Language", scene, new Vector3(0, 0, -4));
-        placed.archive = Place("Game Archive", scene, new Vector3(1, 0, -4)).GetComponent<InstanceGameArchive>();
-        placed.personal = Place("Personal Game Archive", scene, new Vector3(2, 0, -4)).GetComponent<PersonalGameArchive>();
-        placed.wall = Place("Game History Wall", scene, new Vector3(-2, 1.5f, 6)).GetComponent<GameHistoryWall>();
-        placed.personalWall = Place("Personal History Wall", scene, new Vector3(0, 1.5f, 6)).GetComponent<GameHistoryWall>();
-        placed.menu = Place("Chess Settings Menu", scene, new Vector3(2, 1.5f, 6)).GetComponent<ChessSettingsMenu>();
-        placed.view = Place("2D Chess Board View", scene, new Vector3(4, 1.5f, 6)).GetComponent<ChessBoard2DView>();
-        placed.movableView = Place("Movable 2D Chess Board View", scene, new Vector3(6, 1.5f, 6))
+        placed.archive = Place("Game History/Game Archive", scene, new Vector3(1, 0, -4)).GetComponent<InstanceGameArchive>();
+        placed.personal = Place("Game History/Personal Game Archive", scene, new Vector3(2, 0, -4)).GetComponent<PersonalGameArchive>();
+        placed.wall = Place("Game History/Game History Wall", scene, new Vector3(-2, 1.5f, 6)).GetComponent<GameHistoryWall>();
+        placed.personalWall = Place("Game History/Personal History Wall", scene, new Vector3(0, 1.5f, 6)).GetComponent<GameHistoryWall>();
+        placed.menu = Place("UI/Chess Settings Menu", scene, new Vector3(2, 1.5f, 6)).GetComponent<ChessSettingsMenu>();
+        placed.view = Place("2D View/2D Chess Board View", scene, new Vector3(4, 1.5f, 6)).GetComponent<ChessBoard2DView>();
+        placed.movableView = Place("2D View/Movable 2D Chess Board View", scene, new Vector3(6, 1.5f, 6))
             .GetComponentInChildren<ChessBoard2DView>(true);
         PlaceTable(placed, scene, new Vector3(-1.5f, 0, 3));
         PlaceTable(placed, scene, new Vector3(1.5f, 0, 3));
