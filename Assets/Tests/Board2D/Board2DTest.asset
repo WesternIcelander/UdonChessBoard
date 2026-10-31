@@ -332,7 +332,7 @@ MonoBehaviour:
       Data: 18|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoard2DView, Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoard2DView, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -386,7 +386,7 @@ MonoBehaviour:
       Data: 21|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoard2DViewHolder, Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoard2DViewHolder, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -746,7 +746,7 @@ MonoBehaviour:
       Data: 39|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoard, Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoard, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 

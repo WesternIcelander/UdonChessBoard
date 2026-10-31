@@ -386,7 +386,7 @@ MonoBehaviour:
       Data: 21|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessPgnImporter, Assembly-CSharp
+      Data: SiggiChessBoard.ChessPgnImporter, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 

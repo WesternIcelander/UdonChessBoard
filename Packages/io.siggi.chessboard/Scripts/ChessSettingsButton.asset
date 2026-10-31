@@ -62,7 +62,7 @@ MonoBehaviour:
       Data: 3|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessSettingsMenu, Assembly-CSharp
+      Data: SiggiChessBoard.ChessSettingsMenu, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 

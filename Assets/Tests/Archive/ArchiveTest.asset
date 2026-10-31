@@ -332,7 +332,7 @@ MonoBehaviour:
       Data: 18|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.InstanceGameArchive, Assembly-CSharp
+      Data: SiggiChessBoard.InstanceGameArchive, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -386,7 +386,7 @@ MonoBehaviour:
       Data: 21|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoard, Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoard, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -548,7 +548,7 @@ MonoBehaviour:
       Data: 30|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.GameHistoryWall, Assembly-CSharp
+      Data: SiggiChessBoard.GameHistoryWall, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -602,7 +602,7 @@ MonoBehaviour:
       Data: 33|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoardUI, Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoardUI, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -656,7 +656,7 @@ MonoBehaviour:
       Data: 36|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.PersonalGameArchive, Assembly-CSharp
+      Data: SiggiChessBoard.PersonalGameArchive, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 

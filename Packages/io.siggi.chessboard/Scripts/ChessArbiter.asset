@@ -1175,7 +1175,7 @@ MonoBehaviour:
       Data: 65|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessPieceSet[], Assembly-CSharp
+      Data: SiggiChessBoard.ChessPieceSet[], SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -1417,7 +1417,7 @@ MonoBehaviour:
       Data: 80|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoardView[], Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoardView[], SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -1477,7 +1477,7 @@ MonoBehaviour:
       Data: 84|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.GameArchive[], Assembly-CSharp
+      Data: SiggiChessBoard.GameArchive[], SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -1551,7 +1551,7 @@ MonoBehaviour:
       Data: 89|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.GameArchive, Assembly-CSharp
+      Data: SiggiChessBoard.GameArchive, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -1665,7 +1665,7 @@ MonoBehaviour:
       Data: 96|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoard[], Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoard[], SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -1725,7 +1725,7 @@ MonoBehaviour:
       Data: 100|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessSettingsMenu[], Assembly-CSharp
+      Data: SiggiChessBoard.ChessSettingsMenu[], SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 

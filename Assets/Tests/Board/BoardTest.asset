@@ -332,7 +332,7 @@ MonoBehaviour:
       Data: 18|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoard, Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoard, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -440,7 +440,7 @@ MonoBehaviour:
       Data: 24|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessPgnImporter, Assembly-CSharp
+      Data: SiggiChessBoard.ChessPgnImporter, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 

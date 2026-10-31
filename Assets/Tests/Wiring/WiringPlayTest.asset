@@ -332,7 +332,7 @@ MonoBehaviour:
       Data: 18|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessArbiter, Assembly-CSharp
+      Data: SiggiChessBoard.ChessArbiter, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -386,7 +386,7 @@ MonoBehaviour:
       Data: 21|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoard[], Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoard[], SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -446,7 +446,7 @@ MonoBehaviour:
       Data: 25|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.InstanceGameArchive, Assembly-CSharp
+      Data: SiggiChessBoard.InstanceGameArchive, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -500,7 +500,7 @@ MonoBehaviour:
       Data: 28|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.PersonalGameArchive, Assembly-CSharp
+      Data: SiggiChessBoard.PersonalGameArchive, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -554,7 +554,7 @@ MonoBehaviour:
       Data: 31|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.GameHistoryWall, Assembly-CSharp
+      Data: SiggiChessBoard.GameHistoryWall, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -656,7 +656,7 @@ MonoBehaviour:
       Data: 36|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessSettingsMenu, Assembly-CSharp
+      Data: SiggiChessBoard.ChessSettingsMenu, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -710,7 +710,7 @@ MonoBehaviour:
       Data: 39|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoard2DView[], Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoard2DView[], SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 

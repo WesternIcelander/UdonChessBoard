@@ -332,7 +332,7 @@ MonoBehaviour:
       Data: 18|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoard, Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoard, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -386,7 +386,7 @@ MonoBehaviour:
       Data: 21|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoardView, Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoardView, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -440,7 +440,7 @@ MonoBehaviour:
       Data: 24|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoardUI, Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoardUI, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -548,7 +548,7 @@ MonoBehaviour:
       Data: 30|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessPgnImporter, Assembly-CSharp
+      Data: SiggiChessBoard.ChessPgnImporter, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -704,7 +704,7 @@ MonoBehaviour:
       Data: 38|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessPieceSet, Assembly-CSharp
+      Data: SiggiChessBoard.ChessPieceSet, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -854,7 +854,7 @@ MonoBehaviour:
       Data: 45|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoardUI[], Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoardUI[], SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -1460,7 +1460,7 @@ MonoBehaviour:
       Data: 74|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessPieceSet[], Assembly-CSharp
+      Data: SiggiChessBoard.ChessPieceSet[], SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 

@@ -127,7 +127,7 @@ MonoBehaviour:
       Data: 7|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoard2DView, Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoard2DView, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 

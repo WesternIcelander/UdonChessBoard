@@ -62,7 +62,7 @@ MonoBehaviour:
       Data: 3|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessArbiter, Assembly-CSharp
+      Data: SiggiChessBoard.ChessArbiter, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -195,7 +195,7 @@ MonoBehaviour:
       Data: 12|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessPgnImporter, Assembly-CSharp
+      Data: SiggiChessBoard.ChessPgnImporter, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -259,7 +259,7 @@ MonoBehaviour:
       Data: 16|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoardListener[], Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoardListener[], SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 

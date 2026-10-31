@@ -62,7 +62,7 @@ MonoBehaviour:
       Data: 3|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessArbiter, Assembly-CSharp
+      Data: SiggiChessBoard.ChessArbiter, SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
@@ -685,7 +685,7 @@ MonoBehaviour:
       Data: 34|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SiggiChessBoard.ChessBoard[], Assembly-CSharp
+      Data: SiggiChessBoard.ChessBoard[], SiggiChessBoard
     - Name: 
       Entry: 8
       Data: 
