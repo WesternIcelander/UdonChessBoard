@@ -187,7 +187,7 @@ public static class ChessDebugViewBuilder {
 
     // ---- The piece sprites (the 2D view's, 12.13) ----
 
-    const string SpritesFolder = "Assets/Siggi/ChessBoard/Sprites2D/";
+    const string SpritesFolder = "Packages/io.siggi.chessboard/Sprites2D/";
     static readonly string[] SpriteNames = { "Pawn", "Knight", "Bishop", "Rook", "Queen", "King" };
 
     // Each colour's piece sprites, pawn to king, from Sprites2D/ (null where one is missing, with a warning). A texture

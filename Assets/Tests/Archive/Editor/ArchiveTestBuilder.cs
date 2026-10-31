@@ -19,7 +19,7 @@ public static class ArchiveTestBuilder {
         if (archives.Length != 1) {
             EditorUtility.DisplayDialog("Create Archive Test", archives.Length == 0
                 ? "There's no GameArchive in the open scene. Place the Game Archive prefab "
-                    + "(Assets/Siggi/ChessBoard/Prefabs)."
+                    + "(Packages/io.siggi.chessboard/Prefabs)."
                 : "There are several GameArchives in the scene; the test needs exactly one.", "OK");
             return;
         }

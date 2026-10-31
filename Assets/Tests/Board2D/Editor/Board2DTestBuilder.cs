@@ -22,7 +22,7 @@ public static class Board2DTestBuilder {
         if (view == null) {
             EditorUtility.DisplayDialog("Create 2D View Test", views.Length == 0
                 ? "There's no 2D board view in the open scene. Place the 2D Chess Board View or Movable 2D Chess "
-                    + "Board View prefab (Assets/Siggi/ChessBoard/Prefabs)."
+                    + "Board View prefab (Packages/io.siggi.chessboard/Prefabs)."
                 : "There are several 2D board views in the scene. Select the one to test, then try again.", "OK");
             return;
         }

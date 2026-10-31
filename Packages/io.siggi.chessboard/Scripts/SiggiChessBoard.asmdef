@@ -1,0 +1,13 @@
+{
+	"name": "SiggiChessBoard",
+	"rootNamespace": "SiggiChessBoard",
+	"references": [
+		"SiggiUSTools",
+		"VRC.SDKBase",
+		"VRC.SDK3",
+		"VRC.Udon",
+		"UdonSharp.Runtime",
+		"Unity.TextMeshPro",
+		"UnityEngine.UI"
+	]
+}

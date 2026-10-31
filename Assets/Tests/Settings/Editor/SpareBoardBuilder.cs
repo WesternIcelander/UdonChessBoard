@@ -9,7 +9,7 @@ using UnityEngine;
 // included, so the test scene holds an inactive Chess Board numbered 2 beside the arbiter: Spare Board (SettingsTest).
 // Menu: Tools > Chess Board > Create Spare Board; an existing one is kept. Plain editor C#, not Udon.
 public static class SpareBoardBuilder {
-    const string BoardPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Internals/Chess Board.prefab";
+    const string BoardPrefabPath = "Packages/io.siggi.chessboard/Prefabs/Internals/Chess Board.prefab";
     const string SpareName = "Spare Board (SettingsTest)";
     const int SpareNumber = 2;
 

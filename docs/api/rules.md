@@ -2,7 +2,7 @@
 
 The rules without a board: static methods a world calls on arrays of its own, for a puzzle, a FEN on a sign, an opening trainer, or anything else that needs chess but not a **Chess Board**'s seats, clocks and sync. The board itself plays by exactly these methods. Read the [API index](README.md) first: it explains the numbers (colours, squares a1 = 0, pieces as type + 8 for Black, packed moves).
 
-Every class here (`ChessRules`, `ChessPosition`, `ChessFen`, `ChessMoves`, `ChessDraws`, `ChessNotation`, `ChessPgn`, `ChessGame`, in `Assets/Siggi/ChessBoard/Scripts/Rules/`) is abstract and never placed: call its methods on the class (`ChessFen.ParseFen(…)`). They hold no state: everything goes in through the parameters, and the arrays passed in are the only thing they change.
+Every class here (`ChessRules`, `ChessPosition`, `ChessFen`, `ChessMoves`, `ChessDraws`, `ChessNotation`, `ChessPgn`, `ChessGame`, in `Packages/io.siggi.chessboard/Scripts/Rules/`) is abstract and never placed: call its methods on the class (`ChessFen.ParseFen(…)`). They hold no state: everything goes in through the parameters, and the arrays passed in are the only thing they change.
 
 ## A position: the board and state arrays
 

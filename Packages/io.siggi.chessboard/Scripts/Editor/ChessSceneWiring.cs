@@ -95,7 +95,7 @@ namespace SiggiChessBoard {
             EditorUtility.DisplayDialog("Chess: build cancelled", "Some chess objects couldn't be linked up "
                 + "automatically:\n" + list + "\n\n"
                 + "Each needs exactly one object of the kind it points at in the scene. Add the one that's missing "
-                + "(the prefabs are in Assets/Siggi/ChessBoard/Prefabs), remove the extra ones, or drag the right one "
+                + "(the prefabs are in Packages/io.siggi.chessboard/Prefabs), remove the extra ones, or drag the right one "
                 + "into the empty field in the Inspector yourself. The first object is selected now. Then build again.",
                 "OK");
             return false;

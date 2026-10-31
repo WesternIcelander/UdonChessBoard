@@ -7,7 +7,7 @@ An arbiter is the official who enforces the rules at a chess event, which matche
 
 ## Instance defaults
 
-`ChessArbiter` in `Assets/Siggi/ChessBoard/Scripts/ChessArbiter.cs`.
+`ChessArbiter` in `Packages/io.siggi.chessboard/Scripts/ChessArbiter.cs`.
 
 - **Setting bits** (`Setting*` constants, `SettingCount` = 10, the lowest bits): `SettingTakebacks`, the six draw rules (`SettingDrawAgreement`, `SettingThreefoldRepetition`, `SettingFiftyMoveRule`, `SettingFivefoldRepetition`, `SettingSeventyFiveMoveRule`, `SettingDeadPosition`; together `SettingsDrawRules`), `SettingModeForced`, `SettingClockForced`, `SettingPlayOnAfterFlagFall` (step 12.9: a game whose flag falls plays on untimed, see [Clocks](clocks.md)).
 - **Numeric settings** are an `int[NumberCount]` (5) indexed by `NumberResetAvailableTime`, `NumberAutoResetTime` (seconds, `Never` = -1), `NumberForcedMode` (`ChessGame.Mode*`), `NumberForcedBaseTime` (seconds, `NoClock` = -1) and `NumberForcedIncrement` (seconds).
@@ -76,7 +76,7 @@ An arbiter is the official who enforces the rules at a chess event, which matche
 
 ## Settings menu (step 11.1a)
 
-`ChessSettingsMenu` (`Assets/Siggi/ChessBoard/Scripts/ChessSettingsMenu.cs`), a view of the arbiter: it holds no settings and no synced fields, and changes them only through the arbiter's `BeginChange`, setters and `EndChange`.
+`ChessSettingsMenu` (`Packages/io.siggi.chessboard/Scripts/ChessSettingsMenu.cs`), a view of the arbiter: it holds no settings and no synced fields, and changes them only through the arbiter's `BeginChange`, setters and `EndChange`.
 
 - **Who sees it:** the controls (`controls`, a child object) are shown only while the local player `IsOrganizer`, checked once a second (`_UpdateVisibility`), since `FirstJoinerAuth`'s name arrives by sync and the master can change. Everyone else sees the title and a notice ("Only organizers can change these settings."). A press refused by `BeginChange` (rights lost within the second) hides the controls at once.
 - **Scope:** the top row picks what the menu shows, local to the player (`scope`): **All boards** (the instance defaults) or **Board N** (board number N − 1, one for each board the arbiter has overrides for, `BoardCount()`), stepped with **<** and **>** (wrapping). For a board, **All default** clears every override it has (`ClearOverrides`).

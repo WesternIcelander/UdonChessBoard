@@ -1,0 +1,18 @@
+{
+  "name": "io.siggi.chessboard",
+  "version": "1.0.0-snapshot",
+  "displayName": "Siggi Chess Board",
+  "description": "A chess board system for VRChat worlds!",
+  "hideInEditor": false,
+  "unity": "2022.3",
+  "unityRelease": "22f1",
+  "license": "MIT",
+  "vpmDependencies": {
+    "com.vrchat.worlds": "^3.10.4",
+    "io.siggi.ustools": "^1.0.0"
+  },
+  "author": {
+    "name": "Sigurður Jón",
+    "email": "hey@siggi.io"
+  }
+}

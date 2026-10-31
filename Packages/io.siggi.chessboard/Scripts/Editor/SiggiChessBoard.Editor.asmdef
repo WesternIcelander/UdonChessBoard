@@ -1,0 +1,27 @@
+{
+	"name": "SiggiChessBoard.Editor",
+	"rootNamespace": "SiggiChessBoard",
+	"references": [
+		"SiggiChessBoard",
+		"SiggiUSTools",
+		"VRC.SDKBase",
+		"VRC.SDKBase.Editor.BuildPipeline",
+		"VRC.SDK3",
+		"VRC.Udon",
+		"UdonSharp.Runtime",
+		"UdonSharp.Editor",
+		"Unity.TextMeshPro",
+		"UnityEngine.UI"
+	],
+	"includePlatforms": [
+		"Editor"
+	],
+	"excludePlatforms": [],
+	"allowUnsafeCode": false,
+	"overrideReferences": false,
+	"precompiledReferences": [],
+	"autoReferenced": true,
+	"defineConstraints": [],
+	"versionDefines": [],
+	"noEngineReferences": false
+}

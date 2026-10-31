@@ -20,7 +20,7 @@ A **piece set** is a `ChessPieceSet` behaviour on an object holding one **templa
 
 ## 2. Making the set
 
-1. Drag the **Claude Chess Pieces** prefab (`Assets/Siggi/ChessBoard/Prefabs/Chess Pieces/`) into the scene.
+1. Drag the **Claude Chess Pieces** prefab (`Packages/io.siggi.chessboard/Prefabs/Chess Pieces/`) into the scene.
 2. Right-click it in the Hierarchy and choose **Prefab > Unpack Completely**.
 3. Rename it (the name is what the view's log names it by, below).
 
@@ -61,7 +61,7 @@ The half turn is about the vertical through the square's centre, so a White temp
 When a player drops (or click-places) a pawn on the last rank, four see-through pieces float in a row above it, a knight, bishop, rook and queen, and clicking one promotes to it. They come from the promotion templates, set up exactly as the pieces are (mesh, materials, and the **Model**'s position, turn and size on its guide).
 
 - **White's four are required** (as White's pieces are). **Black's are optional** and fall back the same way as Black's pieces (step 4): The package's sets have none, so Black's ghosts are White's, turned to face White.
-- **A see-through material:** the package's **Promotion Ghost** (`Assets/Siggi/ChessBoard/Models/`, Standard, Fade, green), on every slot of the mesh, or the set's own. A solid material works but looks like a piece standing in the air.
+- **A see-through material:** the package's **Promotion Ghost** (`Packages/io.siggi.chessboard/Models/`, Standard, Fade, green), on every slot of the mesh, or the set's own. A solid material works but looks like a piece standing in the air.
 - **The row floats over the board:** the ghosts' bases 1.5 squares above the playing surface over the promotion square's rank, 1 square apart, the row's middle kept within 2 squares of the board's centre (`ChessBoardView.GhostHeight`, `GhostSpacing`, `GhostMaxOffset`); the template's offset is added to that. A set much taller than the package's (whose king is about 1.4 squares) may want its promotion templates smaller than its pieces, so the row clears the pieces under it, and a much wider one so neighbours don't overlap.
 
 ## 6. Adding it to the world

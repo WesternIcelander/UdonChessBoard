@@ -220,8 +220,8 @@ public static class ViewTestBuilder {
 
     // ---- Building a piece set (laid out as the Claude Chess Pieces prefab is, step 14.1) ----
 
-    const string PiecesFolder = "Assets/Siggi/ChessBoard/Models/Piece Sets/ClaudePieceSet";
-    const string HelpersFolder = "Assets/Siggi/ChessBoard/Models/Helpers";
+    const string PiecesFolder = "Packages/io.siggi.chessboard/Models/Piece Sets/ClaudePieceSet";
+    const string HelpersFolder = "Packages/io.siggi.chessboard/Models/Helpers";
     static readonly string[] TypeNames = { "", "Pawn", "Knight", "Bishop", "Rook", "Queen", "King" };
     // The board view's square (m), and how far apart a set's slots are, in squares.
     const float SquareSize = 0.05f;

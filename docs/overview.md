@@ -6,8 +6,9 @@
 
 ```
 <Unity project>/
-  Assets/            UdonSharp scripts, prefabs, scenes
+  Assets/            the test scene and tests (not delivered)
   Packages/
+    io.siggi.chessboard/   the package world creators get: scripts, prefabs, models, sounds, ...
   ProjectSettings/
   JavaChessBoard/    copy of the Java library (reference implementation)
     pom.xml

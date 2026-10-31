@@ -20,7 +20,7 @@ using UnityEngine.SceneManagement;
 // scene that was open before.
 // Logs "[WiringTest] PASS: <check>" or "[WiringTest] FAIL: <check>: <details>" per check, then a summary line.
 public static class WiringTest {
-    const string Prefabs = "Assets/Siggi/ChessBoard/Prefabs/";
+    const string Prefabs = "Packages/io.siggi.chessboard/Prefabs/";
     const string SaveScenePath = "Assets/Tests/Wiring/WiringSaveTest.unity";
     const string PlayScenePath = "Assets/Tests/Wiring/WiringPlayTest.unity";
     const string PlayTestScriptPath = "Assets/Tests/Wiring/WiringPlayTest.cs";

@@ -38,21 +38,21 @@ using VRC.Udon;
 // Every prefab: nothing it uses is under Assets/Tests/.
 // Logs "[PrefabTest] PASS: <check>" or "[PrefabTest] FAIL: <check>: <details>" per check, then a summary line.
 public static class PrefabTest {
-    const string PieceSetPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Pieces/Claude Chess Pieces.prefab";
-    const string LowPolyPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Pieces/Low Poly Chess Pieces.prefab";
-    const string ArbiterPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Arbiter.prefab";
-    const string BoardPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Internals/Chess Board.prefab";
-    const string ViewPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Internals/Chess Board View.prefab";
-    const string UIPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/UI/Chess Board UI.prefab";
-    const string ArchivePrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Game History/Game Archive.prefab";
-    const string PersonalPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Game History/Personal Game Archive.prefab";
-    const string WallPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Game History/Game History Wall.prefab";
-    const string PersonalWallPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Game History/Personal History Wall.prefab";
-    const string MenuPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/UI/Chess Settings Menu.prefab";
-    const string View2DPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/2D View/2D Chess Board View.prefab";
-    const string Movable2DPrefabPath = "Assets/Siggi/ChessBoard/Prefabs/2D View/Movable 2D Chess Board View.prefab";
-    const string TablePrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Table.prefab";
-    const string LanguagePrefabPath = "Assets/Siggi/ChessBoard/Prefabs/Chess Language.prefab";
+    const string PieceSetPrefabPath = "Packages/io.siggi.chessboard/Prefabs/Chess Pieces/Claude Chess Pieces.prefab";
+    const string LowPolyPrefabPath = "Packages/io.siggi.chessboard/Prefabs/Chess Pieces/Low Poly Chess Pieces.prefab";
+    const string ArbiterPrefabPath = "Packages/io.siggi.chessboard/Prefabs/Chess Arbiter.prefab";
+    const string BoardPrefabPath = "Packages/io.siggi.chessboard/Prefabs/Internals/Chess Board.prefab";
+    const string ViewPrefabPath = "Packages/io.siggi.chessboard/Prefabs/Internals/Chess Board View.prefab";
+    const string UIPrefabPath = "Packages/io.siggi.chessboard/Prefabs/UI/Chess Board UI.prefab";
+    const string ArchivePrefabPath = "Packages/io.siggi.chessboard/Prefabs/Game History/Game Archive.prefab";
+    const string PersonalPrefabPath = "Packages/io.siggi.chessboard/Prefabs/Game History/Personal Game Archive.prefab";
+    const string WallPrefabPath = "Packages/io.siggi.chessboard/Prefabs/Game History/Game History Wall.prefab";
+    const string PersonalWallPrefabPath = "Packages/io.siggi.chessboard/Prefabs/Game History/Personal History Wall.prefab";
+    const string MenuPrefabPath = "Packages/io.siggi.chessboard/Prefabs/UI/Chess Settings Menu.prefab";
+    const string View2DPrefabPath = "Packages/io.siggi.chessboard/Prefabs/2D View/2D Chess Board View.prefab";
+    const string Movable2DPrefabPath = "Packages/io.siggi.chessboard/Prefabs/2D View/Movable 2D Chess Board View.prefab";
+    const string TablePrefabPath = "Packages/io.siggi.chessboard/Prefabs/Chess Table.prefab";
+    const string LanguagePrefabPath = "Packages/io.siggi.chessboard/Prefabs/Chess Language.prefab";
     // The Game Archive prefab's synced holders (step 10.1a).
     const int ArchiveHolderCount = 10;
 
@@ -1760,13 +1760,18 @@ public static class PrefabTest {
         Check(count > 0 && wrong == "", path + "'s " + count + " behaviours have their scripts' sync methods", wrong);
     }
 
-    // Nothing a prefab uses (scripts, programs, assets) is a test's (step 14: no Assets/Tests/ references).
+    // Nothing a prefab uses (scripts, programs, assets) is a test's (step 14: no Assets/Tests/ references), and it
+    // ships all of it: nothing under Assets/ but TMP's own resources and UdonSharp's generated programs.
     static void CheckNoTests(string path) {
         List<string> tests = new List<string>();
+        List<string> outside = new List<string>();
         foreach (string dependency in AssetDatabase.GetDependencies(path, true)) {
             if (dependency.StartsWith("Assets/Tests/")) tests.Add(dependency);
+            else if (dependency.StartsWith("Assets/") && !dependency.StartsWith("Assets/TextMesh Pro/")
+                && !dependency.StartsWith("Assets/SerializedUdonPrograms/")) outside.Add(dependency);
         }
         Check(tests.Count == 0, path + " uses nothing under Assets/Tests/", string.Join(", ", tests));
+        Check(outside.Count == 0, path + " uses nothing else outside the package", string.Join(", ", outside));
     }
 
     static void CheckString(string got, string expected, string name) {

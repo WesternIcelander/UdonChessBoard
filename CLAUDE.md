@@ -57,6 +57,7 @@ See [docs/architecture.md](docs/architecture.md).
 
 ## Environment and testing
 
+- What world creators get lives in the embedded package `Packages/io.siggi.chessboard/` (with its own assembly definitions, so classes used from outside it must be `public`); `Assets/` holds only the test scene and tests.
 - Unity only imports `Assets/` and `Packages/`; `JavaChessBoard/` sits alongside without being imported. Java sources are under `JavaChessBoard/src/main/java/io/siggi/chessboard/`.
 - Development uses Unity with the VRChat Worlds SDK (which includes UdonSharp). There is no standalone .NET SDK.
 - `SimpleAuth` and its built-ins (`FirstJoinerAuth`, `InstanceMasterAuth`, `NoOneAuth`, namespace `SiggiUSTools`) come from the `io.siggi.ustools` package in `Packages/`, fetched by VCC from the VPM listing `https://vpm.siggi.io/index.json`. Don't change anything in it from this project, and it isn't committed here (see [docs/organizers.md](docs/organizers.md)).

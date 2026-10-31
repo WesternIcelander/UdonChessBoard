@@ -64,7 +64,7 @@ public static class ChessBuilderUtil {
 
     // ---- Prefabs (step 14, docs/prefabs.md) ----
 
-    public const string PrefabsFolder = "Assets/Siggi/ChessBoard/Prefabs";
+    public const string PrefabsFolder = "Packages/io.siggi.chessboard/Prefabs";
 
     // The sync method an UdonBehaviour should have, from its UdonSharp script's UdonBehaviourSyncMode as UdonSharp sets
     // it on scene objects: NoVariableSync (or Any) is Manual beside a manually synced behaviour on the same object and
@@ -158,7 +158,7 @@ public static class ChessBuilderUtil {
 
     // The package's language packs (en.json the fallback), and the Chess Language prefab holding the chess system's
     // I18n (step 14.10, docs/prefabs.md).
-    public const string LanguagesFolder = "Assets/Siggi/ChessBoard/Languages";
+    public const string LanguagesFolder = "Packages/io.siggi.chessboard/Languages";
     public const string LanguagePackPath = LanguagesFolder + "/en.json";
     public const string LanguagePrefabPath = PrefabsFolder + "/Chess Language.prefab";
 
