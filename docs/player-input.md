@@ -26,7 +26,7 @@ This is purely a view concept: selecting is `PiecePickedUp`, placing is `PieceDr
 
 ## Implementation
 
-On `ChessBoard` (`Assets/Siggi/ChessBoard/ChessBoard.cs`). Each method has an `*As(name, ...)` form taking any display name, for tests and the debug view; the plain one is for the local player. They return `InputAccepted`, `InputRejected` or `InputPromotionNeeded`.
+On `ChessBoard` (`Assets/Siggi/ChessBoard/Scripts/ChessBoard.cs`). Each method has an `*As(name, ...)` form taking any display name, for tests and the debug view; the plain one is for the local player. They return `InputAccepted`, `InputRejected` or `InputPromotionNeeded`.
 
 - **Who may move:** a game in progress (`LifecycleInGame`), not in replay, the side to move's flag not fallen, and the name seated as the side to move (a player in both seats moves both sides). Anyone else is rejected, and the view puts the piece back from the board state.
 - `PiecePickedUp(square)`: accepted when the name may move and the piece is the side to move's.

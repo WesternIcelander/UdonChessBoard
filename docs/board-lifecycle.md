@@ -42,7 +42,7 @@ Replay mode is entered from a game (in progress or ended) or by loading/importin
 
 ## Implementation
 
-`ChessBoard` in `Assets/Siggi/ChessBoard/ChessBoard.cs` (namespace `SiggiChessBoard`).
+`ChessBoard` in `Assets/Siggi/ChessBoard/Scripts/ChessBoard.cs` (namespace `SiggiChessBoard`).
 
 - The lifecycle is the `lifecycle` field, one of `LifecycleReset`, `LifecycleLoaded`, `LifecycleLobby`, `LifecycleInGame`, `LifecycleEnded`.
 - The state fields are the ones under [Synced fields](networking.md#synced-fields-per-board), as plain public fields, packed into synced fields when sent (step 8.3, see [Networking](networking.md#implementation)). `_ClearState()` puts them all back to the reset state: the standard starting position (so a reset board shows pieces ready to play), no moves, empty seats, no game ID, no result, Standard mode, no clock, no snapshot. The board clears itself in its Unity `Start` (the Start button is `StartGame`), unless an update has already arrived.

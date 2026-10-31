@@ -36,7 +36,7 @@ A world places the [prefabs](../prefabs.md); each behaviour below is the one a s
 
 ## Numbers shared by every document
 
-The constants are on `ChessRules` (`Rules/ChessRules.cs`) unless named otherwise.
+The constants are on `ChessRules` (`Scripts/Rules/ChessRules.cs`) unless named otherwise.
 
 - **Colours:** `ChessRules.White` (0), `ChessRules.Black` (1), `ChessRules.NoColor` (−1) for none (no winner, no draw offer, no colour). `ChessRules.OtherColor(color)` gives the other.
 - **Squares:** 0 to 63, a1 first, along the rank and then up: square = rank × 8 + file, so a1 = 0, h1 = 7, a2 = 8, e4 = 28, h8 = 63. Files and ranks are 0 to 7 (`FileA` … `FileH`, `Rank1` … `Rank8`), every square has its constant (`ChessRules.E4`), and `ChessRules.NoSquare` (−1) is none. `SquareOf(file, rank)`, `FileOf(square)`, `RankOf(square)`, `SquareName(square)` (`"e4"`) and `ParseSquare("e4")` convert.

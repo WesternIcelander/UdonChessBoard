@@ -86,7 +86,7 @@ Already settled, so no early check is needed:
 
 **Read:** [udon-constraints](docs/udon-constraints.md), [architecture](docs/architecture.md), [move-encoding](docs/move-encoding.md), [legality-checking](docs/legality-checking.md), [modes](docs/modes.md) (`prohibitSelfCheck`, Chess960 castling), [java-bugs](docs/java-bugs.md), [testing](docs/testing.md)
 
-The rules live in `Assets/Siggi/ChessBoard/Rules/` (namespace `SiggiChessBoard`), as static methods and constants on abstract `UdonSharpBehaviour` classes, starting with `ChessRules`. The step 2 test behaviour is `Assets/Tests/Rules/RulesTest.cs`.
+The rules live in `Assets/Siggi/ChessBoard/Scripts/Rules/` (namespace `SiggiChessBoard`), as static methods and constants on abstract `UdonSharpBehaviour` classes, starting with `ChessRules`. The step 2 test behaviour is `Assets/Tests/Rules/RulesTest.cs`.
 
 - [x] **2.1** Constants and helpers: piece types and colours, square ↔ file/rank, piece encoding in the `byte[64]` board.
   - Verify: the step 2 test behaviour checks square → file/rank → square for all 64 squares, and piece encode → decode for every colour and type, plus empty.

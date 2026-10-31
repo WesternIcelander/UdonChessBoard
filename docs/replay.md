@@ -41,7 +41,7 @@ A loaded game is one imported from a PGN or loaded from the archive. The board i
 
 ## Implementation
 
-On `ChessBoard` (`Assets/Siggi/ChessBoard/ChessBoard.cs`), each method refusing when its `Can…` check doesn't hold ([Buttons](player-input.md#buttons)), with a local-player form and an `*As(name, organizer, …)` form:
+On `ChessBoard` (`Assets/Siggi/ChessBoard/Scripts/ChessBoard.cs`), each method refusing when its `Can…` check doesn't hold ([Buttons](player-input.md#buttons)), with a local-player form and an `*As(name, organizer, …)` form:
 
 - `EnterReplay`/`EnterReplayAs`: replay on, showing the current position (`replayIndex` = `moveCount`).
 - `StepTo(ply)`/`StepToAs`: shows the position before move `ply` (0 is the start, `moveCount` the current position). The replay board is rebuilt each time by copying the game position and undoing the moves after `ply` (`ChessPosition.UnmakeMove`), on a scratch state, since the synced replay board is only the 64 squares. Stepping clears the custom flag, and stepping to the shown ply is allowed only from a custom position, which brings the game's position back. There are no separate back and forward methods: the view's step buttons (step 9.4b) call `StepTo(0)`, `StepTo(replayIndex - 1)`, `StepTo(replayIndex + 1)` and `StepTo(moveCount)`.
