@@ -1907,7 +1907,7 @@ GameObject:
   - component: {fileID: 5725391610144178194}
   - component: {fileID: 3564235971111954054}
   m_Layer: 0
-  m_Name: Chess Pieces
+  m_Name: Claude Chess Pieces
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

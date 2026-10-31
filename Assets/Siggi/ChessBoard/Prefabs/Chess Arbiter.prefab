@@ -324,7 +324,7 @@ PrefabInstance:
     - target: {fileID: 5382872460995076225, guid: 5db96dedd0dfe9a4e8f9279d58a548fc,
         type: 3}
       propertyPath: m_Name
-      value: Chess Pieces
+      value: Claude Chess Pieces
       objectReference: {fileID: 0}
     - target: {fileID: 5725391610144178194, guid: 5db96dedd0dfe9a4e8f9279d58a548fc,
         type: 3}
