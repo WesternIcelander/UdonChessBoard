@@ -1014,7 +1014,9 @@ public class ViewTest : ChessTest {
         CheckButtons(OwnReplay + " First Back", "replay at ply 4");
         CheckPanels("Replay Reset", "replay at ply 4");
         Check(ui.replayStatusLabels.Length > 0 && Utilities.IsValid(ui.replayStatusLabels[0])
-            && ui.replayStatusLabels[0].text == ui._ReplayText(), "Replay: the Replay Controls' status text", "not it");
+            && ui.replayStatusLabels[0].text == "2... Nc6\n(4 of 4)", "Replay: the Replay Controls' status text",
+            ui.replayStatusLabels.Length > 0 && Utilities.IsValid(ui.replayStatusLabels[0])
+                ? ui.replayStatusLabels[0].text : "no label");
         CheckRefused(ChessBoardUI.ButtonStepForward, "replay at ply 4");
         CheckRefused(ChessBoardUI.ButtonStepLast, "replay at ply 4");
         CheckRefused(ChessBoardUI.ButtonEnterReplay, "in replay");
@@ -1835,8 +1837,11 @@ public class ViewTest : ChessTest {
             + ReplayLine("1.", "e4", 1, 3), s + ": takeback request");
         CheckInt(board.StepToAs("Ana", false, 0), ChessBoard.InputAccepted, s + ": stepped to the start");
         CheckStatus(null, offer + "\n" + ReplayStart(3), s + ": request cancelled by stepping");
+        Check(ui._ReplayPanelText() == "Start\n(0 of 3)", s + ": the Replay Controls at the start", ui._ReplayPanelText());
         CheckInt(board.PieceDroppedAs("Ana", Sq("a2"), Sq("a4")), ChessBoard.InputAccepted, s + ": a free move");
         CheckStatus(null, offer + "\n" + Text("replay_custom"), s + ": free move");
+        Check(ui._ReplayPanelText() == "Custom position", s + ": the Replay Controls after a free move",
+            ui._ReplayPanelText());
         CheckInt(board.LeaveReplayAs("Ana", false), ChessBoard.InputAccepted, s + ": back to the game");
         CheckInt(board.ResignAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob resigned");
         CheckStatus(null, Ending("ending_resignation_white", "1-0"), s + ": resigned");

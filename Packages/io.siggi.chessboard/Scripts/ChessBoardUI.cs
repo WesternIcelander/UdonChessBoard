@@ -445,7 +445,10 @@ namespace SiggiChessBoard {
         public const int TextReplayCustom = 28;
         public const int TextReplayStart = 29;
         public const int TextReplayMove = 30;
-        public const int TextEndings = 31;
+        public const int TextReplayPanelCustom = 31;
+        public const int TextReplayPanelStart = 32;
+        public const int TextReplayPanelMove = 33;
+        public const int TextEndings = 34;
         public const int GameTextCount = TextEndings + ChessGame.EndingCount * 3;
 
         // The language pack's keys of the game texts before TextEndings, by index.
@@ -456,7 +459,8 @@ namespace SiggiChessBoard {
                 "player_flag_fallen", "status_reset", "status_lobby", "status_loaded", "status_loaded_chess960",
                 "status_time_up", "status_to_move", "status_to_move_in_check", "status_playing_on", "status_draw_offer",
                 "status_takeback_to_here", "status_takeback", "status_ending", "status_unfinished_game",
-                "status_draw_time_forfeit", "replay_custom", "replay_start", "replay_move",
+                "status_draw_time_forfeit", "replay_custom", "replay_start", "replay_move", "replay_panel_custom",
+                "replay_panel_start", "replay_panel_move",
             };
         }
 
@@ -1305,7 +1309,7 @@ namespace SiggiChessBoard {
             SetLabels(blackClockLabels, _PlayerClockAt(ChessRules.Black, now));
             SetLabels(blackNameLabels, _PlayerName(ChessRules.Black));
             SetLabels(statusLabels, _StatusTextAt(now));
-            SetLabels(replayStatusLabels, valid && board.replayMode ? _ReplayText() : "");
+            SetLabels(replayStatusLabels, valid && board.replayMode ? _ReplayPanelText() : "");
         }
 
         static void SetLabels(TextMeshProUGUI[] labels, string text) {
@@ -1344,6 +1348,10 @@ namespace SiggiChessBoard {
 
         public string _ReplayText() {
             return _ReplayTextFor(board, _GameTexts());
+        }
+
+        public string _ReplayPanelText() {
+            return _ReplayPanelTextFor(board, _GameTexts());
         }
 
         public static string _PlayersTextFor(ChessBoard board, double now, string[] texts) {
@@ -1477,17 +1485,28 @@ namespace SiggiChessBoard {
         // The game's position before move ply as the replay line names it: "Replay: 2. Nf3 (3 of 4)", "Replay: start
         // (0 of 4)". For the board's replay (_ReplayTextFor) and the 2D view's own (step 12.14).
         public static string _PlyTextFor(ChessBoard board, int ply, string[] texts) {
+            return PlyText(board, ply, texts, TextReplayStart, TextReplayMove);
+        }
+
+        // The replay position on the Replay Controls, which say it's a replay themselves, with the ply on a line of its
+        // own: "2. Nf3\n(3 of 4)", "Start\n(0 of 4)", or "Custom position" after free moves.
+        public static string _ReplayPanelTextFor(ChessBoard board, string[] texts) {
+            if (board.replayCustom) return texts[TextReplayPanelCustom];
+            return PlyText(board, board.replayIndex, texts, TextReplayPanelStart, TextReplayPanelMove);
+        }
+
+        static string PlyText(ChessBoard board, int ply, string[] texts, int startText, int moveText) {
             string plyText = ply.ToString();
             string count = board.moveCount.ToString();
             if (ply <= 0 || ply > board.moveCount) {
-                return I18n.Format(texts[TextReplayStart], new string[] { "ply", plyText, "count", count });
+                return I18n.Format(texts[startText], new string[] { "ply", plyText, "count", count });
             }
             // The side that made the first move: the side to move now, or the other after an odd number of moves.
             int firstSide = board.SideToMove();
             if (board.moveCount % 2 == 1) firstSide = ChessRules.OtherColor(firstSide);
             string san = board.notation[ply - 1];
             if (san == null || san.Length == 0) san = texts[TextUnknownName];
-            return I18n.Format(texts[TextReplayMove], new string[] {
+            return I18n.Format(texts[moveText], new string[] {
                 "move", ChessPgn._MoveLabel(board.startMoveNumber, firstSide, ply - 1), "san", san, "ply", plyText,
                 "count", count });
         }

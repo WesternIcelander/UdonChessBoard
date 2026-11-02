@@ -194,6 +194,9 @@ The UI's status panel and the 2D view's players and status write these the same 
 | `replay_custom` | Replay: custom position | | the board's replay after free moves (**UI** only) |
 | `replay_start` | Replay: start (${ply} of ${count}) | `ply`, `count` | the replay at the start (UI); the 2D view's own replay at the start |
 | `replay_move` | Replay: ${move} ${san} (${ply} of ${count}) | `move` (`2.` or `2...`), `san` (the move, or `unknown_name`), `ply`, `count` | the replay after a move (UI); the 2D view's own replay, not on the latest position |
+| `replay_panel_custom` | Custom position | | the Replay Controls after free moves |
+| `replay_panel_start` | Start\n(${ply} of ${count}) | `ply`, `count` | the Replay Controls at the start, two lines |
+| `replay_panel_move` | ${move} ${san}\n(${ply} of ${count}) | `move` (`2.` or `2...`), `san` (the move, or `unknown_name`), `ply`, `count` | the Replay Controls after a move, two lines |
 
 ### Endings (built in code)
 

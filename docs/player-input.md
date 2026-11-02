@@ -122,7 +122,7 @@ Ended games use the In-game panel, whose Resign and Draw then hide, since Replay
 | **Back** (each colour) | `DeclineTakeback(color)` labelled `Decline takeback` where `CanDeclineTakeback(color)`; otherwise `LeaveReplay()` labelled `Back to game`; on a loaded board, which has no game to go back to, `Join(color)` or `LeaveSeat(color)` labelled Join or Leave | any of those checks |
 | **I'm here!** | `ConfirmPresence()` ([Inactivity](inactivity.md)) | while the reset warning shows |
 
-- **Replay Controls' status text** (`replayStatusLabels`) is `_ReplayText()`, as the status panel's replay line.
+- **Replay Controls' status text** (`replayStatusLabels`) is `_ReplayPanelText()`: the status panel's replay line without its `Replay: ` (the panel says that itself) and with the ply on a line of its own: `2. Nf3`, then `(3 of 4)`.
 - **Pressed:** a press the board refuses changes nothing. A first press of Reset or Resign returns `InputRejected`, the board not having been asked. `armedUntil[action]` holds until when a press holds, for both `Sure?` and `No!`.
 - **Who can reach what:** a player in both seats has each end's colour buttons at that end, and Takeback continues from the replay position in place of a request (step 13.3). Resign, Draw and Decline Draw are on the In-game panel, so a player in replay goes back to the game first; the board still allows them in replay ([above](#buttons)).
 - A loaded board's seats are on the Back button because Pre-game doesn't show in replay, and without them nobody could join to continue it.

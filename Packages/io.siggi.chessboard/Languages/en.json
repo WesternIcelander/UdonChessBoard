@@ -83,6 +83,9 @@
   "replay_custom": "Replay: custom position",
   "replay_start": "Replay: start (${ply} of ${count})",
   "replay_move": "Replay: ${move} ${san} (${ply} of ${count})",
+  "replay_panel_custom": "Custom position",
+  "replay_panel_start": "Start\n(${ply} of ${count})",
+  "replay_panel_move": "${move} ${san}\n(${ply} of ${count})",
 
   "ending_unfinished": "Unfinished",
   "ending_white_wins": "White wins",
