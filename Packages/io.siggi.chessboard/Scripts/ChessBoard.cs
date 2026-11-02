@@ -175,9 +175,13 @@ namespace SiggiChessBoard {
         // A ChessGame.Mode* value.
         [NonSerialized] public int mode = ChessGame.ModeStandard;
 
+        // The time control a reset board starts with, in seconds: 10+0.
+        public const int DefaultBaseTime = 600;
+        public const int DefaultIncrement = 0;
+
         // Time control in seconds, base ChessArbiter.NoClock for no clock (docs/clocks.md).
-        [NonSerialized] public int baseTime = ChessArbiter.NoClock;
-        [NonSerialized] public int increment;
+        [NonSerialized] public int baseTime = DefaultBaseTime;
+        [NonSerialized] public int increment = DefaultIncrement;
         // Each side's remaining time in milliseconds, and the server time the current turn began.
         [NonSerialized] public int whiteTime;
         [NonSerialized] public int blackTime;
@@ -859,8 +863,8 @@ namespace SiggiChessBoard {
             lifecycle = LifecycleReset;
             mode = ChessGame.ModeStandard;
 
-            baseTime = ChessArbiter.NoClock;
-            increment = 0;
+            baseTime = DefaultBaseTime;
+            increment = DefaultIncrement;
             whiteTime = 0;
             blackTime = 0;
             turnStart = 0;
@@ -1181,6 +1185,24 @@ namespace SiggiChessBoard {
             if (baseSeconds == ChessArbiter.NoClock) return incrementSeconds == 0;
             return baseSeconds >= 1 && baseSeconds <= MaxBaseTime && incrementSeconds >= 0
                 && incrementSeconds <= MaxIncrement;
+        }
+
+        // The time control a game here would start with, for showing before it starts: baseTime and increment, or on
+        // a reset board, which has no snapshot yet, the clock the arbiter would force when someone joins.
+        public int _StartingBaseTime() {
+            if (!ArbiterForcesClockOnReset()) return baseTime;
+            return arbiter.EffectiveNumber(boardNumber, ChessArbiter.NumberForcedBaseTime);
+        }
+
+        public int _StartingIncrement() {
+            if (!ArbiterForcesClockOnReset()) return increment;
+            if (_StartingBaseTime() == ChessArbiter.NoClock) return 0;
+            return arbiter.EffectiveNumber(boardNumber, ChessArbiter.NumberForcedIncrement);
+        }
+
+        bool ArbiterForcesClockOnReset() {
+            return lifecycle == LifecycleReset && Utilities.IsValid(arbiter)
+                && arbiter.IsEffectiveOn(boardNumber, ChessArbiter.SettingClockForced);
         }
 
         public int StartGame() {

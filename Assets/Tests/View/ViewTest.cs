@@ -754,13 +754,13 @@ public class ViewTest : ChessTest {
             CheckLabel(ChessBoardUI.ButtonMode, ModeLabel("mode_standard"), "Mode pressed again");
         }
         if (!board.IsClockForced()) {
-            CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(Text("clock_none")), "lobby, no clock");
+            CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(Clock(10, 0)), "lobby, the default clock");
             CheckInt(ui._PressButton(ChessBoardUI.ButtonClock), ChessBoard.InputAccepted, "Clock pressed");
-            CheckInt(board.baseTime * 1000 + board.increment, 60000, "Clock pressed: 1+0");
-            CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(Clock(1, 0)), "Clock pressed");
+            CheckInt(board.baseTime * 1000 + board.increment, 900010, "Clock pressed: 15+10");
+            CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(Clock(15, 10)), "Clock pressed");
             ui._PressClock();
-            CheckInt(board.baseTime * 1000 + board.increment, 180002, "Clock pressed again: 3+2");
-            CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(Clock(3, 2)), "Clock pressed again");
+            CheckInt(board.baseTime * 1000 + board.increment, 1800000, "Clock pressed again: 30+0");
+            CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(Clock(30, 0)), "Clock pressed again");
         }
         ui._PressJoinBlack();
         CheckString(board.blackPlayer, localName, "Join Black: seated as Black too");
@@ -1576,8 +1576,20 @@ public class ViewTest : ChessTest {
 
         // Two others' lobby and game, with a clock.
         board._ClearState();
-        CheckStatus(Players(null, null), Text("status_reset"), s + ": reset board");
-        CheckSeats(Text("player_open"), "", Text("player_open"), "", board._ServerTime(), s + ": reset board");
+        string open = Text("player_open");
+        string resetClock = ChessBoardUI._ClockSettingDisplay(board._StartingBaseTime(), board._StartingIncrement());
+        if (!Utilities.IsValid(board.arbiter)
+            || !board.arbiter.IsEffectiveOn(board.boardNumber, ChessArbiter.SettingClockForced)) {
+            CheckString(resetClock, "10:00", s + ": a reset board shows the default clock");
+        }
+        CheckStatus(PlayersWithClocks(open, resetClock, open, resetClock), Text("status_reset"), s + ": reset board");
+        CheckSeats(open, resetClock, open, resetClock, board._ServerTime(), s + ": reset board");
+        CheckString(ChessBoardUI._ClockSettingDisplay(300, 3), "5:00+3", s + ": setting with an increment");
+        CheckString(ChessBoardUI._ClockSettingDisplay(600, 0), "10:00", s + ": setting without an increment");
+        CheckString(ChessBoardUI._ClockSettingDisplay(5, 0), "0:05", s + ": setting under 10 s has no tenths");
+        CheckString(ChessBoardUI._ClockSettingDisplay(3600, 0), "1:00:00", s + ": setting of an hour");
+        CheckString(ChessBoardUI._ClockSettingDisplay(5400, 10), "1:30:00+10", s + ": setting over an hour");
+        CheckString(ChessBoardUI._ClockSettingDisplay(ChessArbiter.NoClock, 0), "", s + ": no clock, no setting");
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana joined White");
         Unforce();
         CheckStatus(Players("Ana", null), Lobby("mode_standard", Text("clock_none")), s + ": lobby");
@@ -1585,7 +1597,9 @@ public class ViewTest : ChessTest {
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob joined Black");
         CheckInt(board.SetClockAs("Ana", 300, 3), ChessBoard.InputAccepted, s + ": 5+3 chosen");
         CheckInt(board.SetModeAs("Bob", ChessGame.ModeChess960), ChessBoard.InputAccepted, s + ": Chess960 chosen");
-        CheckStatus(Players("Ana", "Bob"), Lobby("mode_chess960", Clock(5, 3)), s + ": lobby, both seats");
+        CheckStatus(PlayersWithClocks("Ana", "5:00+3", "Bob", "5:00+3"), Lobby("mode_chess960", Clock(5, 3)),
+            s + ": lobby, both seats");
+        CheckSeats("Ana", "5:00+3", "Bob", "5:00+3", board._ServerTime(), s + ": lobby, the setting on both clocks");
         CheckInt(board.SetModeAs("Bob", ChessGame.ModeStandard), ChessBoard.InputAccepted, s + ": Standard chosen");
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, s + ": started");
         string toMove = ColorLine("status_to_move", ChessRules.White);
@@ -1704,7 +1718,7 @@ public class ViewTest : ChessTest {
         }
 
         board._ClearState();
-        CheckStatus(Players(null, null), Text("status_reset"), s + ": cleared");
+        CheckStatus(PlayersWithClocks(open, resetClock, open, resetClock), Text("status_reset"), s + ": cleared");
         Redraw();
         CheckView("cleared after the status checks");
         SendCustomEventDelayedFrames(nameof(RunPgnBoxChecks), 1);

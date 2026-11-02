@@ -435,7 +435,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.SetClockAs("Ana", 300, 0), ChessBoard.InputRejected, "clock: in game rejects");
         board.lifecycle = ChessBoard.LifecycleEnded;
         CheckInt(board.SetClockAs("Ana", 300, 0), ChessBoard.InputRejected, "clock: ended rejects");
-        CheckInt(board.baseTime, ChessArbiter.NoClock, "clock: unchanged after the lobby");
+        CheckInt(board.baseTime, ChessBoard.DefaultBaseTime, "clock: unchanged after the lobby");
     }
 
     void TestForcedSettings() {
@@ -551,8 +551,9 @@ public class BoardTest : ChessTest {
         board.JoinBlack();
         CheckInt(board.StartGame(), ChessBoard.InputAccepted, "start: local player in both seats starts");
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "start: local start in game");
-        CheckInt(board.baseTime, ChessArbiter.NoClock, "start: no clock by default");
-        CheckInt(board.whiteTime + board.blackTime, 0, "start: no time on the clocks without a clock");
+        CheckInt(board.baseTime * 1000 + board.increment, 600000, "start: 10+0 by default");
+        CheckInt(board.whiteTime, 600000, "start: White has the default time");
+        CheckInt(board.blackTime, 600000, "start: Black has the default time");
     }
 
     // ---- Chess960 positions ----
@@ -843,7 +844,7 @@ public class BoardTest : ChessTest {
             "wrong answer");
         CheckInt(board.GameNumber(ChessArbiter.NumberAutoResetTime), 300, "snapshot: GameNumber");
         CheckInt(board.mode, ChessGame.ModeStandard, "snapshot: forced mode value unused while not forced");
-        CheckInt(board.baseTime, ChessArbiter.NoClock, "snapshot: forced clock value unused while not forced");
+        CheckInt(board.baseTime, ChessBoard.DefaultBaseTime, "snapshot: forced clock value unused while not forced");
 
         // Changing the arbiter afterwards doesn't affect the board: not on the second join, not on Start.
         OverrideAll(s2, 60, 900, ChessGame.ModeChess960, 300, 0);
@@ -893,7 +894,13 @@ public class BoardTest : ChessTest {
         OverrideAll(ChessArbiter.SettingModeForced | ChessArbiter.SettingClockForced, 30, 300, ChessGame.ModeChess960,
             300, 5);
         board._ClearState();
+        // A reset board has no snapshot, but what it would start with reads the arbiter's forced clock.
+        CheckInt(board.baseTime * 1000 + board.increment, 600000, "snapshot: reset board keeps the default clock");
+        CheckInt(board._StartingBaseTime() * 1000 + board._StartingIncrement(), 300005,
+            "snapshot: reset board would start with the forced clock");
         board.JoinAs(ChessRules.Black, "Bob");
+        CheckInt(board._StartingBaseTime() * 1000 + board._StartingIncrement(), 300005,
+            "snapshot: lobby starts with the forced clock");
         CheckInt(board.mode, ChessGame.ModeChess960, "snapshot: forced mode shown in the lobby");
         CheckInt(board.baseTime * 1000 + board.increment, 300005, "snapshot: forced clock shown in the lobby");
         Check(board.IsModeForced() && board.IsClockForced(), "snapshot: forced bits from the arbiter",
@@ -1126,9 +1133,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.whiteTime, int.MaxValue, "clock: huge time plus the increment stops at int.MaxValue");
 
         // No clock: never running, no flag fall, -1 in the history. Also SAN with the mate suffix.
-        LobbyWithTwoPlayers();
-        board.StartGameAs("Ana");
-        board.turnStart = 0;
+        StartedGame(ChessArbiter.NoClock, 0, 0);
         Check(!board.HasClock() && !board.IsClockRunning(), "no clock: not running", "running");
         Play(ChessRules.F2, ChessRules.F3, 1e6, "no clock: 1. f3");
         Play(ChessRules.E7, ChessRules.E5, 2e6, "no clock: 1... e5");
@@ -4421,7 +4426,8 @@ public class BoardTest : ChessTest {
             "replay fields set");
         CheckInt(board.takebackColor * 10 + board.drawOfferColor, ChessRules.NoColor * 11, name + ": nothing pending");
         CheckInt(board.mode, ChessGame.ModeStandard, name + ": Standard mode");
-        CheckInt(board.baseTime * 1000 + board.increment, ChessArbiter.NoClock * 1000, name + ": no clock");
+        CheckInt(board.baseTime * 1000 + board.increment, ChessBoard.DefaultBaseTime * 1000 + ChessBoard.DefaultIncrement,
+            name + ": the default clock");
         CheckInt(board.gameSettings, 0, name + ": no snapshot");
         CheckInt(board.whitePieceSet * 10 + board.blackPieceSet, 0, name + ": both piece sets 0");
         Check(board.CanLoadGame(), name + ": a game can be loaded", "refused");
@@ -5037,7 +5043,7 @@ public class BoardTest : ChessTest {
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob joins");
         CheckScenarioSnapshot(settings, ChessGame.ModeChess960, 180, 2, s + ": snapshot");
         CheckInt(board.mode, ChessGame.ModeStandard, s + ": the forced mode unused while not forced");
-        CheckInt(board.baseTime, ChessArbiter.NoClock, s + ": the forced clock unused while not forced");
+        CheckInt(board.baseTime, ChessBoard.DefaultBaseTime, s + ": the forced clock unused while not forced");
         CheckInt(board.SetModeAs("Bob", ChessGame.ModeChess960), ChessBoard.InputAccepted, s + ": Bob picks Chess960");
         CheckInt(board.SetModeAs("Ana", ChessGame.ModeStandard), ChessBoard.InputAccepted, s + ": Ana picks Standard");
         CheckInt(board.SetClockAs("Bob", 60, 1), ChessBoard.InputAccepted, s + ": Bob picks 1+1");
@@ -5113,6 +5119,7 @@ public class BoardTest : ChessTest {
         int both = ChessArbiter.SettingDrawAgreement | ChessArbiter.SettingTakebacks;
         ScenarioSettings(both, ChessGame.ModeStandard, ChessArbiter.NoClock, 0);
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob joins");
+        CheckInt(board.SetClockAs("Bob", ChessArbiter.NoClock, 0), ChessBoard.InputAccepted, s + ": Bob picks no clock");
         CheckInt(board.StartGameAs("Bob"), ChessBoard.InputAccepted, s + ": started");
         CheckString(ChessArbiter._SettingsToString(board.gameSettings),
             ChessArbiter._SettingsToString(ChessArbiter.SettingDrawAgreement), s + ": the first join's snapshot");
@@ -5375,7 +5382,7 @@ public class BoardTest : ChessTest {
         board._ClearState();
         board.JoinAs(ChessRules.White, "Ana");
         board.JoinAs(ChessRules.Black, "Bob");
-        if (baseSeconds != ChessArbiter.NoClock) board.SetClockAs("Ana", baseSeconds, 0);
+        board.SetClockAs("Ana", baseSeconds, 0);
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, name + ": started");
         Drop("Ana", ChessRules.E2, ChessRules.E4, name);
         Drop("Bob", ChessRules.E7, ChessRules.E5, name);

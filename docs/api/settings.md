@@ -65,7 +65,7 @@ These are what a board would take if it took a snapshot now. What a board **play
 | `GameNumber(number)` | A numeric setting from the snapshot (corrected). |
 | `IsModeForced()`, `IsClockForced()` | `IsGameSettingOn(SettingModeForced)` / `(SettingClockForced)`. |
 
-A reset board's snapshot is empty: every bit off and every number 0. To show what a reset board will play by, read `arbiter.EffectiveSettings(board.boardNumber)` and `EffectiveNumber`. A board whose `arbiter` field is empty plays with every bit off, both inactivity times `Never`, Standard and no clock.
+A reset board's snapshot is empty: every bit off and every number 0. To show what a reset board will play by, read `arbiter.EffectiveSettings(board.boardNumber)` and `EffectiveNumber`. A board whose `arbiter` field is empty plays with every bit off, both inactivity times `Never`, Standard, and nothing forced (the clock starts at the default 10+0).
 
 The board's `mode`, `baseTime` and `increment` (readable state, [UI](ui.md#readable-state)) are the mode and time control the lobby shows or the game has, which forcing writes into: read those for what's chosen, the snapshot for whether it's forced.
 

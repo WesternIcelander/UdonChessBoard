@@ -1176,13 +1176,14 @@ namespace SiggiChessBoard {
             return name == null || name.Length == 0 ? texts[TextPlayerOpen] : name;
         }
 
-        // A seat's remaining time at server time now during and after a game with a clock, "" otherwise. In a game
-        // played on untimed after a flag fall (step 12.9) the times are the timed game's, and the side out of time shows
-        // GG instead of 0:00.
+        // A seat's clock at server time now: during and after a game with a clock, the remaining time; before one
+        // (reset, lobby, loaded), the time control it would start with (_ClockSettingDisplay); "" with no clock. In a
+        // game played on untimed after a flag fall (step 12.9) the times are the timed game's, and the side out of time
+        // shows GG instead of 0:00.
         public static string _PlayerClockFor(ChessBoard board, int color, double now, string[] texts) {
             if (!Utilities.IsValid(board)) return "";
             bool played = board.lifecycle == ChessBoard.LifecycleInGame || board.lifecycle == ChessBoard.LifecycleEnded;
-            if (!played) return "";
+            if (!played) return _ClockSettingDisplay(board._StartingBaseTime(), board._StartingIncrement());
             int left = board._RemainingTimeAt(color, now);
             if (board.ClocksFromPreviousGame()) return left == 0 ? texts[TextPlayerFlagFallen] : _ClockDisplay(left);
             return board.HasClock() ? _ClockDisplay(left) : "";
@@ -1302,15 +1303,27 @@ namespace SiggiChessBoard {
         // A clock as players read it: "4:58", "1:02:05" from an hour, tenths under ten seconds ("0:09.8").
         public static string _ClockDisplay(int milliseconds) {
             if (milliseconds < 0) milliseconds = 0;
-            int seconds = milliseconds / 1000;
+            string text = WholeSecondsDisplay(milliseconds / 1000);
+            if (milliseconds < 10000) text += "." + (milliseconds / 100 % 10);
+            return text;
+        }
+
+        // A time control on a seat's clock before the game: "10:00", "1:30:00", with "+3" when it has an increment;
+        // "" with no clock.
+        public static string _ClockSettingDisplay(int baseSeconds, int incrementSeconds) {
+            if (baseSeconds < 1) return "";
+            string text = WholeSecondsDisplay(baseSeconds);
+            return incrementSeconds != 0 ? text + "+" + incrementSeconds : text;
+        }
+
+        // m:ss, or h:mm:ss from an hour up.
+        static string WholeSecondsDisplay(int seconds) {
             int minutes = seconds / 60;
             if (minutes >= 60) {
                 return (minutes / 60) + ":" + ChessUtil._TwoDigits(minutes % 60) + ":"
                     + ChessUtil._TwoDigits(seconds % 60);
             }
-            string text = minutes + ":" + ChessUtil._TwoDigits(seconds % 60);
-            if (milliseconds < 10000) text += "." + (milliseconds / 100 % 10);
-            return text;
+            return minutes + ":" + ChessUtil._TwoDigits(seconds % 60);
         }
     }
 }
