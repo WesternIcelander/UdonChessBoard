@@ -3260,6 +3260,17 @@ public class ViewTest : ChessTest {
         CheckString(ui.pgnImportText.text + "|" + ui.pgnCloseText.text, "Bring in (test)|Close",
             s + ": test pack: the PGN box's buttons");
         CheckString(OtherStartTexts(), "Begin (test)", s + ": test pack: Start on every other board");
+
+        // Every language the package ships loads and can be chosen, and its text reaches the UI and the pieces.
+        string[] shipped = { "de", "es", "fr", "id", "is", "it", "ja", "ko", "pl", "pt-BR", "ru", "th", "tok", "uk", "zh-CN", "zh-HK" };
+        for (int i = 0; i < shipped.Length; i++) {
+            Check(i18n.SetLanguage(shipped[i]), s + ": " + shipped[i] + " chosen", "no such pack");
+            CheckString(i18n.GetCurrentLanguage(), shipped[i], s + ": " + shipped[i] + " in use");
+            string join = ui._ButtonText(ChessBoardUI.ButtonJoinStartWhite);
+            Check(join != "Join" && join != "button_join", s + ": " + shipped[i] + ": Join translated", join);
+            string pickups = PickupTexts();
+            Check(pickups != "Move" && pickups != "hover_move", s + ": " + shipped[i] + ": the pieces' pickups translated", pickups);
+        }
         i18n.SetLanguage("en");
         CheckString(i18n.GetCurrentLanguage(), "en", s + ": English again");
         CheckString(ui._ButtonText(ChessBoardUI.ButtonJoinStartWhite), "Join", s + ": English again: Join");

@@ -1,6 +1,6 @@
 # Text
 
-Every text a player reads on the chess objects comes from a language pack, through **Chess Language** (an `I18n` of `io.siggi.ustools`). This page lists every key of the package's pack, `Packages/io.siggi.chessboard/Languages/en.json`: where it shows and the placeholders it has; then how a world's own UI shows the same texts, and how a translation pack uses the list. Read the [API index](README.md) first.
+Every text a player reads on the chess objects comes from a language pack, through **Chess Language** (an `I18n` of `io.siggi.ustools`). This page lists every key of the package's English pack, `Packages/io.siggi.chessboard/Languages/en.json` (the package's other packs, beside it, have the same keys): where it shows and the placeholders it has; then how a world's own UI shows the same texts, and how a translation pack uses the list. Read the [API index](README.md) first.
 
 What goes into a PGN export (tags, results, SAN, `[%clk]` comments), log lines, tooltips and signs that read the same in every language (`<<` `<` `>` `>>`, clocks like `4:58`, move numbers) aren't in the pack: they stay as they are in every language ([architecture](../architecture.md#player-text-step-135)).
 

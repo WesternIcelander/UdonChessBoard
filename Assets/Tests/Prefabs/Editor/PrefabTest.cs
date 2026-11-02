@@ -8,6 +8,7 @@ using UnityEngine;
 using UdonSharp;
 using UdonSharpEditor;
 using UnityEngine.SceneManagement;
+using VRC.SDK3.Data;
 using VRC.SDKBase.Editor.BuildPipeline;
 using VRC.Udon;
 
@@ -1647,6 +1648,51 @@ public static class PrefabTest {
         return new SerializedObject(i18n).FindProperty("mainI18n").boolValue;
     }
 
+    // Every pack the package ships against en.json: named after its code, with a name, exactly en.json's keys, and in
+    // each text the same placeholders, line breaks and leading indent (docs/api/text.md). A new key in en.json fails here
+    // until every pack has it: the package's own packs stay complete, though a world's may leave keys out.
+    static void CheckPackContents(TextAsset[] packs) {
+        DataDictionary english = ReadPack(packs[0]);
+        if (english == null) return;
+        DataList englishKeys = english.GetKeys();
+        for (int p = 1; p < packs.Length; p++) {
+            DataDictionary pack = ReadPack(packs[p]);
+            if (pack == null) continue;
+            string name = packs[p].name;
+            CheckString(pack["languageCode"].String, name, name + ": languageCode is the file's name");
+            CheckIntValue(pack.GetKeys().Count, englishKeys.Count, name + ": as many keys as en.json");
+            string wrong = "";
+            for (int i = 0; i < englishKeys.Count; i++) {
+                string key = englishKeys[i].String;
+                if (!pack.TryGetValue(key, out DataToken text)) {
+                    wrong += " " + key + " (missing);";
+                } else if (key != "languageCode" && key != "languageName"
+                        && TextShape(text.String) != TextShape(english[key].String)) {
+                    wrong += " " + key + ";";
+                }
+            }
+            CheckString(wrong, "", name + ": every key of en.json, with its placeholders, line breaks and indent");
+        }
+    }
+
+    static DataDictionary ReadPack(TextAsset pack) {
+        bool read = VRCJson.TryDeserializeFromJson(pack.text, out DataToken token)
+            && token.TokenType == TokenType.DataDictionary;
+        Check(read, pack.name + ": is a JSON object", "it isn't");
+        return read ? token.DataDictionary : null;
+    }
+
+    // What a translation keeps of a text: its placeholders in any order, its line breaks, its indent.
+    static string TextShape(string text) {
+        List<string> placeholders = new List<string>();
+        foreach (System.Text.RegularExpressions.Match match in
+                System.Text.RegularExpressions.Regex.Matches(text, @"\$\{\w+\}")) {
+            placeholders.Add(match.Value);
+        }
+        placeholders.Sort(System.StringComparer.Ordinal);
+        return string.Join(",", placeholders) + "|" + text.Split('\n').Length + "|" + text.StartsWith("  ");
+    }
+
     // The Chess Language placed: an I18n alone, not main, with the package's packs (en first); beside a table, a wall, a
     // settings menu and a 2D view, the sanity check wires every one of their I18n fields to it. Grouped under a parent
     // with them, beside a world's own main I18n (with a pack of another language) and a world object at the scene's
@@ -1679,6 +1725,7 @@ public static class PrefabTest {
         CheckString(PackNames(language), expected, "the Chess Language holds the package's packs, en first");
         Check(Equals(CallSanityCheck("ValidateLanguagePacks", new I18n[] { language }, "test"), true),
             "the sanity check passes the Chess Language's packs", "it doesn't");
+        CheckPackContents(packs);
 
         // Beside a table, a wall, a settings menu and a 2D view, as dropped into a scene.
         GameObject[] chess = {
