@@ -112,7 +112,7 @@ Where it shows: **UI** (the **Chess Board UI**: its buttons, status panel and PG
 
 | Key | English | Placeholders | Shows |
 |---|---|---|---|
-| `clock_none` | No clock | | `${clock}` in `button_clock` and `status_lobby` (UI, 2D view) for no clock; the menu's Forced base time value for no clock |
+| `clock_none` | No clock | | `${clock}` on Mode Setup and in `status_lobby` (UI, 2D view) for no clock; the menu's Forced base time value for no clock |
 | `clock_minutes` | ${minutes}+${increment} | `minutes`, `increment` (seconds) | `${clock}` as above, for a base time in whole minutes (`5+3`) |
 | `clock_seconds` | ${seconds}s+${increment} | `seconds`, `increment` | `${clock}` as above, otherwise (`45s+0`) |
 
@@ -122,31 +122,32 @@ All on the **UI**.
 
 | Key | English | Placeholders | Shows |
 |---|---|---|---|
-| `button_join_white` | Join White | | Join White |
-| `button_join_black` | Join Black | | Join Black |
-| `button_leave` | Leave | | each seat's Leave |
-| `button_mode` | Mode: ${mode} | `mode` (`mode_standard`, `mode_chess960`) | the lobby's Mode button |
-| `button_clock_none` | Clock | | the Clock button with no board |
-| `button_clock` | Clock: ${clock} | `clock` (`clock_none`, `clock_minutes`, `clock_seconds`) | the lobby's Clock button |
-| `button_start` | Start | | Start |
-| `button_continue` | Continue from here | | Continue, in the replay of a loaded game (or of a game one player plays both sides of) |
+| `button_join` | Join | | Join/Start while the seat can be joined, and Back on a loaded board |
+| `button_leave` | Leave | | each seat's Leave, and Back on a loaded board |
+| `button_mode` | Mode: ${mode} | `mode` (`mode_standard`, `mode_chess960`) | the Mode button |
+| `clock_caption` | Clock: | | beside the time control on Mode Setup |
+| `button_start` | Start | | Join/Start for a seated player |
+| `button_continue` | Continue from here | | Takeback, in the replay of a loaded game (or of a game one player plays both sides of) |
 | `button_reset` | Reset | | Reset |
 | `button_resign` | Resign | | each player's Resign |
-| `button_offer_draw` | Offer draw | | Offer draw |
-| `button_accept_draw` | Accept draw | | Accept draw |
+| `button_sure` | Sure? | | Reset and Resign after their first press |
+| `button_draw` | Draw | | each player's Draw |
+| `button_draw_no` | No! | | Draw, for a second, when no draw can be claimed or offered |
 | `button_decline_draw` | Decline draw | | Decline draw |
-| `button_claim_draw` | Claim draw | | Claim draw, for a claim not named below |
-| `button_claim_draw_threefold` | Claim draw (threefold) | | Claim draw, by threefold repetition |
-| `button_claim_draw_fifty_moves` | Claim draw (50 moves) | | Claim draw, by the fifty-move rule |
 | `button_replay` | Replay | | Replay |
-| `button_back_to_game` | Back to game | | leaving the replay |
-| `button_take_back_to_here` | Take back to here | | a player's takeback request, in the replay |
-| `button_accept_takeback` | Accept takeback | | Accept takeback |
-| `button_decline_takeback` | Decline takeback | | Decline takeback |
+| `button_back_to_game` | Back to game | | Back, leaving the replay |
+| `button_take_back_to_here` | Take back to here | | Takeback, a player's request, in the replay |
+| `button_accept_takeback` | Accept takeback | | Takeback, answering a request |
+| `button_decline_takeback` | Decline takeback | | Back, answering a request |
 | `button_load_here` | Load replay here | | loading the picked archived game onto the board |
 | `button_pgn` | Export PGN | | showing the PGN box with the game's PGN |
-| `button_load_pgn` | Load PGN | | showing the PGN box for pasting one |
+| `button_load_pgn` | Import PGN | | showing the PGN box for pasting one |
 | `button_hide_pgn` | Hide PGN | | either of those two while its box is shown |
+| `button_im_here` | I'm here! | | the reset warning's button |
+| `reset_warning_title` | Are you still there? | | the reset warning's title |
+| `reset_warning_auto` | The board has not been touched in a while and will automatically reset itself soon. | | the reset warning, when only the automatic reset is coming |
+| `reset_warning_others_auto` | The board has not been touched in a while. The board may be reset by others and will automatically reset itself soon. | | the reset warning, when anyone can reset the board before it resets itself |
+| `reset_warning_others` | The board has not been touched in a while. The board may be reset by others. | | the reset warning, when anyone can reset the board and it never resets itself |
 
 ### The PGN box and imports
 

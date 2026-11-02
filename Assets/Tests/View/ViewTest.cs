@@ -700,11 +700,10 @@ public class ViewTest : ChessTest {
 
     // The Button* actions' names, as CheckButtons lists them.
     string[] buttonNames = {
-        "JoinWhite", "JoinBlack", "Mode", "Clock", "Start", "Continue", "Reset", "ResignWhite", "ResignBlack",
-        "OfferDrawWhite", "OfferDrawBlack", "AcceptDrawWhite", "AcceptDrawBlack", "DeclineDrawWhite", "DeclineDrawBlack",
-        "ClaimDraw", "Replay", "Leave", "First", "Back", "Forward", "Last", "TakebackWhite", "TakebackBlack",
-        "AcceptTakebackWhite", "AcceptTakebackBlack", "DeclineTakebackWhite", "DeclineTakebackBlack", "LoadHere",
-        "Pgn", "LoadPgn", "LeaveWhite", "LeaveBlack",
+        "JoinStartWhite", "JoinStartBlack", "LeaveWhite", "LeaveBlack", "LoadPgn", "LoadHere", "Mode", "ClockMore",
+        "ClockLess", "IncrementMore", "IncrementLess", "Reset", "ResignWhite", "ResignBlack", "DrawWhite", "DrawBlack",
+        "DeclineDrawWhite", "DeclineDrawBlack", "Replay", "Pgn", "First", "Back", "Forward", "Last", "TakebackWhite",
+        "TakebackBlack", "BackWhite", "BackBlack", "ImHere",
     };
 
     // The eighth frame: every action has its buttons, each with a label; in each state (a reset board, the local
@@ -734,16 +733,23 @@ public class ViewTest : ChessTest {
             "clock text: 45 s");
 
         board._ClearState();
-        CheckButtons("JoinWhite JoinBlack", "reset board");
-        CheckInt(ui._PressButton(ChessBoardUI.ButtonStart), ChessBoard.InputRejected, "reset board: Start refused");
+        CheckButtons("JoinStartWhite JoinStartBlack", "reset board");
+        CheckPanels("PreGame", "reset board");
+        CheckLabel(ChessBoardUI.ButtonJoinStartWhite, Text("button_join"), "reset board");
+        CheckLabel(ChessBoardUI.ButtonJoinStartBlack, Text("button_join"), "reset board");
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonLeaveWhite), ChessBoard.InputRejected, "reset board: Leave refused");
         CheckInt(ui._PressButton(ChessBoardUI.ButtonReset), ChessBoard.InputRejected, "reset board: Reset refused");
 
-        // The local player's lobby, White first.
-        ui._PressJoinWhite();
+        // The local player's lobby, White first: their own seat's button says Start, grey until Black is filled.
+        ui._PressJoinStartWhite();
         CheckInt(board.lifecycle, ChessBoard.LifecycleLobby, "Join White: in the lobby");
         CheckString(board.whitePlayer, localName, "Join White: seated as White");
-        CheckButtons("JoinBlack LeaveWhite Mode Clock Reset", "lobby, White joined");
-        CheckInt(ui._PressButton(ChessBoardUI.ButtonStart), ChessBoard.InputRejected,
+        CheckButtons("JoinStartWhite JoinStartBlack LeaveWhite Mode Clock Reset", "lobby, White joined");
+        CheckPanels("PreGame ModeSetup Reset", "lobby, White joined");
+        CheckLabel(ChessBoardUI.ButtonJoinStartWhite, Text("button_start"), "lobby, White joined");
+        CheckLabel(ChessBoardUI.ButtonJoinStartBlack, Text("button_join"), "lobby, White joined");
+        Check(!ui._ButtonEnabled(ChessBoardUI.ButtonJoinStartWhite), "lobby, White joined: Start greyed out", "enabled");
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonJoinStartWhite), ChessBoard.InputRejected,
             "lobby, White joined: Start refused");
         if (!board.IsModeForced()) {
             CheckInt(ui._PressButton(ChessBoardUI.ButtonMode), ChessBoard.InputAccepted, "Mode pressed");
@@ -753,52 +759,56 @@ public class ViewTest : ChessTest {
             CheckInt(board.mode, ChessGame.ModeStandard, "Mode pressed again: Standard");
             CheckLabel(ChessBoardUI.ButtonMode, ModeLabel("mode_standard"), "Mode pressed again");
         }
-        if (!board.IsClockForced()) {
-            CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(Clock(10, 0)), "lobby, the default clock");
-            CheckInt(ui._PressButton(ChessBoardUI.ButtonClock), ChessBoard.InputAccepted, "Clock pressed");
-            CheckInt(board.baseTime * 1000 + board.increment, 900010, "Clock pressed: 15+10");
-            CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(Clock(15, 10)), "Clock pressed");
-            ui._PressClock();
-            CheckInt(board.baseTime * 1000 + board.increment, 1800000, "Clock pressed again: 30+0");
-            CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(Clock(30, 0)), "Clock pressed again");
-        }
-        ui._PressJoinBlack();
+        if (!board.IsClockForced()) CheckClockButtons();
+        ui._PressJoinStartBlack();
         CheckString(board.blackPlayer, localName, "Join Black: seated as Black too");
-        CheckButtons("LeaveWhite LeaveBlack Mode Clock Start Reset", "lobby, both seats");
+        CheckButtons("JoinStartWhite JoinStartBlack LeaveWhite LeaveBlack Mode Clock Reset", "lobby, both seats");
+        CheckLabel(ChessBoardUI.ButtonJoinStartBlack, Text("button_start"), "lobby, both seats");
+        Check(ui._ButtonEnabled(ChessBoardUI.ButtonJoinStartWhite), "lobby, both seats: Start enabled", "greyed out");
         CheckLeaveEnds();
         CheckInt(ui._PressButton(ChessBoardUI.ButtonLeaveBlack), ChessBoard.InputAccepted, "Leave Black pressed");
         CheckString(board.whitePlayer + "|" + board.blackPlayer, localName + "|", "Leave Black: White kept");
-        CheckButtons("JoinBlack LeaveWhite Mode Clock Reset", "lobby, Black left");
-        ui._PressJoinBlack();
+        CheckButtons("JoinStartWhite JoinStartBlack LeaveWhite Mode Clock Reset", "lobby, Black left");
+        ui._PressJoinStartBlack();
         CheckString(board.blackPlayer, localName, "Join Black again after leaving");
         int baseTime = board.baseTime;
-        ui._PressStart();
+        ui._PressJoinStartWhite();
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Start: in game");
         CheckInt(board.baseTime, baseTime, "Start: with the clock chosen");
         CheckButtons(OwnGame, "own game");
-        CheckInt(ui._PressButton(ChessBoardUI.ButtonJoinWhite), ChessBoard.InputRejected,
-            "own game: Join White refused");
+        CheckPanels("InGame Reset", "own game");
+        CheckRefused(ChessBoardUI.ButtonJoinStartWhite, "own game");
         CheckRefused(ChessBoardUI.ButtonLeaveWhite, "own game");
         CheckInt(board.ResignAs(ChessRules.White, localName), ChessBoard.InputAccepted, "own game: resigned");
         CheckButtons("Replay Reset", "own game ended");
-        ui._PressReset();
+        CheckPanels("InGame Reset", "own game ended");
+
+        // Reset asks first: a press only arms it, one after it has stopped holding only arms it again, and one while it
+        // holds resets.
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonReset), ChessBoard.InputRejected, "Reset: the first press asks");
+        CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "Reset: not reset by the first press");
+        CheckLabel(ChessBoardUI.ButtonReset, Text("button_sure"), "Reset: the first press");
+        ui.armedUntil[ChessBoardUI.ButtonReset] = 0;
+        CheckLabel(ChessBoardUI.ButtonReset, Text("button_reset"), "Reset: after the first press stopped holding");
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonReset), ChessBoard.InputRejected, "Reset: asks again after that");
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonReset), ChessBoard.InputAccepted, "Reset: the second press");
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, "Reset: the board is reset");
-        CheckButtons("JoinWhite JoinBlack", "after Reset");
+        CheckButtons("JoinStartWhite JoinStartBlack", "after Reset");
 
         // Someone else's lobby and game: only Reset, for an organizer or once the board is idle.
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "others: Ana joined White");
-        CheckButtons("JoinBlack Reset?", "others' lobby, Black open");
+        CheckButtons("JoinStartBlack Reset?", "others' lobby, Black open");
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, "others: Bob joined Black");
         CheckButtons("Reset?", "others' lobby");
         CheckInt(ui._PressButton(ChessBoardUI.ButtonMode), ChessBoard.InputRejected, "others' lobby: Mode refused");
-        CheckInt(ui._PressButton(ChessBoardUI.ButtonClock), ChessBoard.InputRejected,
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonClockMore), ChessBoard.InputRejected,
             "others' lobby: Clock refused");
-        CheckInt(ui._PressButton(ChessBoardUI.ButtonStart), ChessBoard.InputRejected,
-            "others' lobby: Start refused");
+        CheckRefused(ChessBoardUI.ButtonJoinStartWhite, "others' lobby");
         CheckInt(board.StartGameAs("Ana"), ChessBoard.InputAccepted, "others: Ana started");
         CheckButtons("Replay? Reset?", "others' game");
 
-        // A loaded game: both seats joined, the clock chosen, continued from ply 3.
+        // A loaded game: always in replay, so the Back button joins and leaves; both seats joined, the clock chosen,
+        // continued from ply 3.
         board._ClearState();
         Check(Utilities.IsValid(importer) && chess960Pgn != null, "buttons: importer and PGN assigned",
             "assign ViewTest's Importer and PGNs in the Inspector");
@@ -806,96 +816,177 @@ public class ViewTest : ChessTest {
             importer._StartImport(chess960Pgn.text, 600, ChessPgnImporter.DefaultBudgetMs, null, "");
             CheckInt(importer._ImportFor(float.MaxValue), ChessPgn.ImportDone, "loaded game: imported");
             CheckInt(board._LoadImport(importer), ChessBoard.InputAccepted, "loaded game: loaded");
-            CheckButtons("JoinWhite JoinBlack First Back Reset?", "loaded game");
-            ui._PressJoinWhite();
-            CheckButtons("JoinBlack LeaveWhite Clock First Back Reset", "loaded game, White joined");
-            CheckInt(ui._PressButton(ChessBoardUI.ButtonContinue), ChessBoard.InputRejected,
-                "loaded game, White joined: Continue refused");
-            ui._PressJoinBlack();
+            CheckButtons("BackWhite BackBlack First Back Reset?", "loaded game");
+            CheckLabel(ChessBoardUI.ButtonBackWhite, Text("button_join"), "loaded game");
+            ui._PressBackWhite();
+            CheckString(board.whitePlayer, localName, "loaded game: Join White pressed");
+            CheckButtons("BackWhite BackBlack Clock First Back Reset", "loaded game, White joined");
+            CheckPanels("Replay ModeSetup Reset", "loaded game, White joined");
+            CheckLabel(ChessBoardUI.ButtonBackWhite, Text("button_leave"), "loaded game, White joined");
+            CheckLabel(ChessBoardUI.ButtonBackBlack, Text("button_join"), "loaded game, White joined");
+            CheckRefused(ChessBoardUI.ButtonTakebackWhite, "loaded game, White joined");
+            ui._PressBackBlack();
             CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "loaded game, both seats: still loaded");
-            CheckButtons("LeaveWhite LeaveBlack Clock Continue First Back Reset", "loaded game, both seats");
-            CheckInt(ui._PressButton(ChessBoardUI.ButtonLeaveWhite), ChessBoard.InputAccepted,
+            CheckButtons("BackWhite BackBlack TakebackWhite TakebackBlack Clock First Back Reset",
+                "loaded game, both seats");
+            CheckInt(ui._PressButton(ChessBoardUI.ButtonBackWhite), ChessBoard.InputAccepted,
                 "loaded game: Leave White pressed");
             CheckString(board.whitePlayer + "|" + board.blackPlayer, "|" + localName, "loaded game: White left");
             CheckInt(board.lifecycle, ChessBoard.LifecycleLoaded, "loaded game, White left: still loaded");
-            CheckButtons("JoinWhite LeaveBlack Clock First Back Reset", "loaded game, White left");
-            ui._PressJoinWhite();
+            CheckButtons("BackWhite BackBlack Clock First Back Reset", "loaded game, White left");
+            ui._PressBackWhite();
             CheckInt(ui._PressButton(ChessBoardUI.ButtonMode), ChessBoard.InputRejected,
                 "loaded game: Mode refused");
             if (!board.IsClockForced()) {
-                CheckInt(ui._PressButton(ChessBoardUI.ButtonClock), ChessBoard.InputAccepted,
+                CheckInt(ui._PressButton(ChessBoardUI.ButtonClockMore), ChessBoard.InputAccepted,
                     "loaded game: Clock pressed");
-                CheckLabel(ChessBoardUI.ButtonClock, ClockLabel(ui._ClockText(board.baseTime, board.increment)),
-                    "loaded game: Clock pressed");
+                CheckClockValue(ui._ClockText(board.baseTime, board.increment), "loaded game: Clock pressed");
             }
             CheckInt(board.StepToAs(localName, true, 3), ChessBoard.InputAccepted, "loaded game: stepped to ply 3");
-            CheckButtons("LeaveWhite LeaveBlack Clock Continue First Back Forward Last Reset",
+            CheckButtons("BackWhite BackBlack TakebackWhite TakebackBlack Clock First Back Forward Last Reset",
                 "loaded game at ply 3");
-            ui._PressContinue();
+            CheckLabel(ChessBoardUI.ButtonTakebackWhite, Text("button_continue"), "loaded game at ply 3");
+            ui._PressTakebackWhite();
             CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Continue: in game");
             CheckInt(board.moveCount, 3, "Continue: from ply 3");
             CheckButtons(OwnGame, "continued game");
         }
 
         board._ClearState();
-        CheckButtons("JoinWhite JoinBlack", "cleared after the button checks");
+        CheckButtons("JoinStartWhite JoinStartBlack", "cleared after the button checks");
         CheckView("cleared after the button checks");
         SendCustomEventDelayedFrames(nameof(RunGameButtonChecks), 1);
+    }
+
+    // The clock's four buttons in the lobby: each steps from where the board is, a time between two steps goes to the
+    // next one that way, below the shortest base is no clock, which has no increment, and a button with nowhere to go
+    // is greyed out. Leaves the default clock.
+    void CheckClockButtons() {
+        CheckClockValue(Clock(10, 0), "lobby, the default clock");
+        Check(!ui._ButtonEnabled(ChessBoardUI.ButtonIncrementLess), "clock: no increment to take off", "enabled");
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonClockMore), ChessBoard.InputAccepted, "clock: + pressed");
+        CheckClockValue(Clock(15, 0), "clock: + pressed");
+        ui._PressClockLess();
+        ui._PressClockLess();
+        CheckClockValue(Clock(5, 0), "clock: - pressed twice");
+        ui._PressIncrementMore();
+        CheckClockValue(Clock(5, 1), "clock: ++ pressed");
+        ui._PressIncrementMore();
+        ui._PressClockMore();
+        CheckClockValue(Clock(10, 2), "clock: ++, then +, keeps the increment");
+        ui._PressIncrementLess();
+        CheckClockValue(Clock(10, 1), "clock: -- pressed");
+        CheckInt(board.SetClock(420, 0), ChessBoard.InputAccepted, "clock: 7+0 set");
+        ui._PressClockMore();
+        CheckClockValue(Clock(10, 0), "clock: + from 7 minutes");
+        CheckInt(board.SetClock(420, 0), ChessBoard.InputAccepted, "clock: 7+0 set again");
+        ui._PressClockLess();
+        CheckClockValue(Clock(5, 0), "clock: - from 7 minutes");
+        CheckInt(board.SetClock(60, 5), ChessBoard.InputAccepted, "clock: 1+5 set");
+        ui._PressClockLess();
+        CheckClockValue(Text("clock_none"), "clock: - from the shortest");
+        CheckInt(board.increment, 0, "clock: no clock has no increment");
+        Check(!ui._ButtonEnabled(ChessBoardUI.ButtonClockLess) && !ui._ButtonEnabled(ChessBoardUI.ButtonIncrementMore)
+            && !ui._ButtonEnabled(ChessBoardUI.ButtonIncrementLess),
+            "clock: nothing below no clock, no increment on it", "enabled");
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonIncrementMore), ChessBoard.InputRejected, "clock: ++ refused");
+        ui._PressClockMore();
+        CheckClockValue(Clock(1, 0), "clock: + from no clock");
+        CheckInt(board.SetClock(7200, 60), ChessBoard.InputAccepted, "clock: the longest set");
+        Check(!ui._ButtonEnabled(ChessBoardUI.ButtonClockMore) && !ui._ButtonEnabled(ChessBoardUI.ButtonIncrementMore),
+            "clock: nothing above the longest", "enabled");
+        CheckInt(board.SetClock(600, 0), ChessBoard.InputAccepted, "clock: the default again");
+    }
+
+    // After a Refresh, the clock's value on Mode Setup.
+    void CheckClockValue(string clock, string name) {
+        Redraw();
+        Check(ui.clockValueLabels.Length > 0 && Utilities.IsValid(ui.clockValueLabels[0])
+            && ui.clockValueLabels[0].text == clock, name + ": the clock shows " + clock,
+            ui.clockValueLabels.Length > 0 && Utilities.IsValid(ui.clockValueLabels[0])
+                ? ui.clockValueLabels[0].text : "no label");
+    }
+
+    // After a Refresh, the panels shown are exactly those named (PreGame, InGame, Replay, ModeSetup, Reset; Reset
+    // followed by "?" as the board's CanReset says).
+    void CheckPanels(string expected, string name) {
+        Redraw();
+        string padded = " " + expected + " ";
+        string errors = PanelErrors(ui.preGamePanels, padded.Contains(" PreGame "), "PreGame")
+            + PanelErrors(ui.inGamePanels, padded.Contains(" InGame "), "InGame")
+            + PanelErrors(ui.replayPanels, padded.Contains(" Replay "), "Replay")
+            + PanelErrors(ui.modeSetupPanels, padded.Contains(" ModeSetup "), "ModeSetup")
+            + PanelErrors(ui.resetPanels, padded.Contains(" Reset? ") ? board.CanReset() : padded.Contains(" Reset "),
+                "Reset");
+        Check(errors.Length == 0, name + ": panels shown " + expected, errors);
+    }
+
+    static string PanelErrors(GameObject[] panels, bool want, string name) {
+        if (panels.Length == 0) return name + " has no panels; ";
+        for (int i = 0; i < panels.Length; i++) {
+            if (!Utilities.IsValid(panels[i])) return name + " " + i + " missing; ";
+            if (panels[i].activeSelf != want) return name + (want ? " hidden; " : " shown; ");
+        }
+        return "";
     }
 
     // ---- 9.4b: game and replay buttons ----
 
     // The buttons a seated player in both seats sees during their game, outside replay with nothing pending.
-    const string OwnGame = "ResignWhite ResignBlack OfferDrawWhite? OfferDrawBlack? Replay Reset";
+    const string OwnGame = "ResignWhite ResignBlack DrawWhite? DrawBlack? Replay Reset";
     // The same in replay, before the step buttons and Continue from here that apply.
-    const string OwnReplay = "ResignWhite ResignBlack OfferDrawWhite? OfferDrawBlack? Leave Reset";
+    const string OwnReplay = "ResignWhite ResignBlack DrawWhite? DrawBlack? BackWhite BackBlack Reset";
 
     // The ninth frame: on games of the local player against themselves, with takebacks, draws by agreement and
-    // threefold claims on in the snapshot (SetRequestRules), resigning, draw offers (offered, declined, accepted), a
-    // threefold claim, replay with each step button and Continue from here (13.3), and, against Bob, takeback requests
-    // (requested, declined, accepted), each button shown exactly when it applies and pressing it doing what the board's
-    // method does, a hidden one refused; then the same offers, requests and claim with those rules off, hidden and
-    // refused; then someone else's game.
+    // threefold claims on in the snapshot (SetRequestRules), resigning (asking first), the Draw button (offering,
+    // accepting, claiming, saying No!), Decline draw, replay with each step button and Continue from here (13.3), and,
+    // against Bob, takeback requests (requested, declined, accepted), each button shown exactly when it applies and
+    // pressing it doing what the board's method does, a hidden one refused; then the same with those rules off, hidden
+    // and refused; then someone else's game; then the reset warning.
     public void RunGameButtonChecks() {
         // Resigning.
         board._ClearState();
         StartGame(ChessGame.ModeStandard, "resign button");
         SetRequestRules(true);
         CheckButtons(OwnGame, "resign button: own game");
-        CheckRefused(ChessBoardUI.ButtonAcceptDrawBlack, "no offer");
         CheckRefused(ChessBoardUI.ButtonDeclineDrawWhite, "no offer");
-        CheckRefused(ChessBoardUI.ButtonClaimDraw, "nothing to claim");
-        CheckRefused(ChessBoardUI.ButtonLeaveReplay, "not in replay");
+        CheckRefused(ChessBoardUI.ButtonBackWhite, "not in replay");
         CheckRefused(ChessBoardUI.ButtonStepBack, "not in replay");
-        CheckRefused(ChessBoardUI.ButtonRequestTakebackWhite, "not in replay");
-        CheckRefused(ChessBoardUI.ButtonAcceptTakebackBlack, "no request");
+        CheckRefused(ChessBoardUI.ButtonTakebackWhite, "not in replay");
+        ui._PressResignBlack();
+        CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Resign (Black): the first press only asks");
+        CheckLabel(ChessBoardUI.ButtonResignBlack, Text("button_sure"), "Resign (Black): the first press");
+        CheckLabel(ChessBoardUI.ButtonResignWhite, Text("button_resign"), "Resign (Black): the first press");
         ui._PressResignBlack();
         CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "Resign (Black): the game ended");
         CheckInt(board.ending, ChessGame.EndingResignation, "Resign (Black): by resignation");
         CheckInt(board.winner, ChessRules.White, "Resign (Black): White won");
         CheckButtons("Replay Reset", "resigned");
         CheckRefused(ChessBoardUI.ButtonResignWhite, "resigned");
-        CheckRefused(ChessBoardUI.ButtonOfferDrawWhite, "resigned");
+        CheckRefused(ChessBoardUI.ButtonDrawWhite, "resigned");
 
         // Draw offers.
         board._ClearState();
         StartGame(ChessGame.ModeStandard, "draw buttons");
         SetRequestRules(true);
-        ui._PressOfferDrawWhite();
-        CheckInt(board.drawOfferColor, ChessRules.White, "Offer draw (White): offered");
-        CheckButtons("ResignWhite ResignBlack AcceptDrawBlack DeclineDrawBlack Replay Reset", "White's offer");
-        CheckRefused(ChessBoardUI.ButtonOfferDrawBlack, "White's offer");
-        CheckRefused(ChessBoardUI.ButtonAcceptDrawWhite, "White's offer");
+        CheckLabel(ChessBoardUI.ButtonDrawWhite, Text("button_draw"), "draw buttons");
+        ui._PressDrawWhite();
+        CheckInt(board.drawOfferColor, ChessRules.White, "Draw (White): offered");
+        CheckButtons("ResignWhite ResignBlack DrawWhite DrawBlack DeclineDrawBlack Replay Reset", "White's offer");
+        CheckRefused(ChessBoardUI.ButtonDeclineDrawWhite, "White's offer");
+        CheckRefused(ChessBoardUI.ButtonDrawWhite, "White's offer pending");
+        CheckLabel(ChessBoardUI.ButtonDrawWhite, Text("button_draw_no"), "Draw (White) again");
+        ui.armedUntil[ChessBoardUI.ButtonDrawWhite] = 0;
+        CheckLabel(ChessBoardUI.ButtonDrawWhite, Text("button_draw"), "Draw (White), No! over");
         ui._PressDeclineDrawBlack();
         CheckInt(board.drawOfferColor, ChessRules.NoColor, "Decline draw (Black): no offer");
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Decline draw (Black): still in game");
         CheckButtons(OwnGame, "offer declined");
-        ui._PressOfferDrawBlack();
-        CheckButtons("ResignWhite ResignBlack AcceptDrawWhite DeclineDrawWhite Replay Reset", "Black's offer");
-        CheckLabel(ChessBoardUI.ButtonAcceptDrawWhite, Text("button_accept_draw"), "Black's offer");
-        ui._PressAcceptDrawWhite();
-        CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "Accept draw (White): the game ended");
-        CheckInt(board.ending, ChessGame.EndingDrawAgreement, "Accept draw (White): drawn by agreement");
+        ui._PressDrawBlack();
+        CheckButtons("ResignWhite ResignBlack DrawWhite DrawBlack DeclineDrawWhite Replay Reset", "Black's offer");
+        ui._PressDrawWhite();
+        CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "Draw (White) on Black's offer: the game ended");
+        CheckInt(board.ending, ChessGame.EndingDrawAgreement, "Draw (White) on Black's offer: drawn by agreement");
         CheckButtons("Replay Reset", "draw accepted");
 
         // Replay and its steps, on 1. e4 e5 2. Nf3 Nc6.
@@ -907,21 +998,23 @@ public class ViewTest : ChessTest {
         Check(board.replayMode, "Replay: in replay", "not in replay");
         CheckInt(board.replayIndex, 4, "Replay: at the current position");
         CheckButtons(OwnReplay + " First Back", "replay at ply 4");
+        CheckPanels("Replay Reset", "replay at ply 4");
+        Check(ui.replayStatusLabels.Length > 0 && Utilities.IsValid(ui.replayStatusLabels[0])
+            && ui.replayStatusLabels[0].text == ui._ReplayText(), "Replay: the Replay Controls' status text", "not it");
         CheckRefused(ChessBoardUI.ButtonStepForward, "replay at ply 4");
         CheckRefused(ChessBoardUI.ButtonStepLast, "replay at ply 4");
         CheckRefused(ChessBoardUI.ButtonEnterReplay, "in replay");
+        CheckRefused(ChessBoardUI.ButtonTakebackWhite, "replay at ply 4");
         ui._PressStepBack();
         CheckInt(board.replayIndex, 3, "< : ply 3");
         Redraw();
         CheckView("< : ply 3");
-        CheckButtons(OwnReplay + " First Back Forward Last Continue", "replay at ply 3");
-        CheckRefused(ChessBoardUI.ButtonRequestTakebackWhite, "both seats");
-        CheckRefused(ChessBoardUI.ButtonRequestTakebackBlack, "both seats");
+        CheckButtons(OwnReplay + " First Back Forward Last TakebackWhite TakebackBlack", "replay at ply 3");
         ui._PressStepFirst();
         CheckInt(board.replayIndex, 0, "<< : ply 0");
         Redraw();
         CheckView("<< : ply 0");
-        CheckButtons(OwnReplay + " Forward Last Continue", "replay at ply 0");
+        CheckButtons(OwnReplay + " Forward Last TakebackWhite TakebackBlack", "replay at ply 0");
         CheckRefused(ChessBoardUI.ButtonStepBack, "replay at ply 0");
         ui._PressStepForward();
         CheckInt(board.replayIndex, 1, "> : ply 1");
@@ -934,8 +1027,9 @@ public class ViewTest : ChessTest {
         CheckInt(board.replayIndex, 2, "< twice: ply 2");
 
         // Continue from here (13.3), from ply 2: the player in both seats needs no request.
-        CheckLabel(ChessBoardUI.ButtonContinue, Text("button_continue"), "replay at ply 2");
-        ui._PressContinue();
+        CheckLabel(ChessBoardUI.ButtonTakebackWhite, Text("button_continue"), "replay at ply 2");
+        CheckLabel(ChessBoardUI.ButtonBackWhite, Text("button_back_to_game"), "replay at ply 2");
+        ui._PressTakebackWhite();
         CheckInt(board.moveCount, 2, "Continue (both seats): back to ply 2");
         Check(!board.replayMode, "Continue (both seats): out of replay", "in replay");
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Continue (both seats): in game");
@@ -944,7 +1038,7 @@ public class ViewTest : ChessTest {
         CheckButtons(OwnGame, "continued from ply 2");
         ui._PressEnterReplay();
         ui._PressStepFirst();
-        ui._PressLeaveReplay();
+        ui._PressBackBlack();
         Check(!board.replayMode, "Back to game: out of replay", "in replay");
         CheckInt(board.moveCount, 2, "Back to game: the game unchanged");
         Redraw();
@@ -964,69 +1058,80 @@ public class ViewTest : ChessTest {
             CheckInt(board.PieceDroppedAs(i % 2 == 0 ? localName : "Bob", Sq(move.Substring(0, 2)),
                 Sq(move.Substring(2, 2))), ChessBoard.InputAccepted, "takeback buttons: " + move + " played");
         }
-        string twoReplay = "ResignWhite OfferDrawWhite? Leave First Back Forward Last Reset";
+        string twoReplay = "ResignWhite DrawWhite? BackWhite BackBlack First Back Forward Last Reset";
         ui._PressEnterReplay();
         ui._PressStepBack();
         ui._PressStepBack();
         CheckInt(board.replayIndex, 2, "takeback buttons: ply 2");
         CheckButtons(twoReplay + " TakebackWhite", "two players at ply 2");
-        CheckRefused(ChessBoardUI.ButtonContinue, "two players");
-        CheckLabel(ChessBoardUI.ButtonRequestTakebackWhite, Text("button_take_back_to_here"),
-            "two players at ply 2");
-        ui._PressRequestTakebackWhite();
+        CheckLabel(ChessBoardUI.ButtonTakebackWhite, Text("button_take_back_to_here"), "two players at ply 2");
+        ui._PressTakebackWhite();
         CheckInt(board.takebackColor, ChessRules.White, "Take back (White): requested");
         CheckInt(board.takebackPly, 2, "Take back (White): for ply 2");
         CheckButtons(twoReplay, "White's request");
-        CheckRefused(ChessBoardUI.ButtonAcceptTakebackWhite, "White's request");
-        CheckRefused(ChessBoardUI.ButtonAcceptTakebackBlack, "White's request, Bob's seat");
+        CheckRefused(ChessBoardUI.ButtonTakebackWhite, "White's request");
+        CheckRefused(ChessBoardUI.ButtonTakebackBlack, "White's request, Bob's seat");
         CheckInt(board.DeclineTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted,
             "Decline takeback (Bob): declined");
         CheckButtons(twoReplay + " TakebackWhite", "White's request declined");
         CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted,
             "Take back (Bob): requested");
-        CheckButtons(twoReplay + " AcceptTakebackWhite DeclineTakebackWhite", "Bob's request");
-        ui._PressDeclineTakebackWhite();
+        CheckButtons(twoReplay + " TakebackWhite", "Bob's request");
+        CheckLabel(ChessBoardUI.ButtonTakebackWhite, Text("button_accept_takeback"), "Bob's request");
+        CheckLabel(ChessBoardUI.ButtonBackWhite, Text("button_decline_takeback"), "Bob's request");
+        CheckLabel(ChessBoardUI.ButtonBackBlack, Text("button_back_to_game"), "Bob's request, Bob's seat");
+        ui._PressBackWhite();
         CheckInt(board.takebackColor, ChessRules.NoColor, "Decline takeback (White): no request");
         CheckInt(board.moveCount, 4, "Decline takeback (White): the game unchanged");
+        Check(board.replayMode, "Decline takeback (White): still in replay", "out of replay");
         CheckInt(board.RequestTakebackAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted,
             "Take back (Bob): requested again");
-        ui._PressAcceptTakebackWhite();
+        ui._PressTakebackWhite();
         CheckInt(board.moveCount, 2, "Accept takeback (White): back to ply 2");
         Check(!board.replayMode, "Accept takeback (White): out of replay", "in replay");
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "Accept takeback (White): in game");
         Redraw();
         CheckView("takeback accepted");
-        CheckButtons("ResignWhite OfferDrawWhite? Replay Reset", "takeback accepted");
+        CheckButtons("ResignWhite DrawWhite? Replay Reset", "takeback accepted");
 
-        // A threefold repetition claim: the knights out and back twice.
+        // A threefold repetition claim: the knights out and back twice. The same button claims rather than offers.
         board._ClearState();
         StartGame(ChessGame.ModeStandard, "claim button");
         SetRequestRules(true);
         PlayMoves("g1f3 g8f6 f3g1 f6g8 g1f3 g8f6 f3g1", "claim button");
         CheckButtons(OwnGame, "claim button: twice repeated");
         PlayMoves("f6g8", "claim button");
-        CheckButtons("ResignWhite ResignBlack OfferDrawWhite OfferDrawBlack ClaimDraw Replay Reset",
-            "claim button: three times");
-        CheckLabel(ChessBoardUI.ButtonClaimDraw, Text("button_claim_draw_threefold"), "claim button: three times");
-        ui._PressClaimDraw();
+        CheckButtons(OwnGame, "claim button: three times");
+        CheckLabel(ChessBoardUI.ButtonDrawWhite, Text("button_draw"), "claim button: three times");
+        ui._PressDrawWhite();
         CheckInt(board.lifecycle, ChessBoard.LifecycleEnded, "Claim draw: the game ended");
         CheckInt(board.ending, ChessGame.EndingThreefoldRepetition, "Claim draw: by threefold repetition");
         CheckButtons("Replay Reset", "draw claimed");
+
+        // Claims allowed but offers not: the button shows, and with nothing to claim says No! and does nothing.
+        board._ClearState();
+        StartGame(ChessGame.ModeStandard, "claims only");
+        SetRequestRules(false);
+        board.gameSettings |= ChessArbiter.SettingThreefoldRepetition;
+        CheckButtons("ResignWhite ResignBlack DrawWhite DrawBlack Replay Reset", "claims only");
+        CheckRefused(ChessBoardUI.ButtonDrawWhite, "claims only, nothing to claim");
+        CheckInt(board.drawOfferColor, ChessRules.NoColor, "claims only: nothing offered");
+        CheckLabel(ChessBoardUI.ButtonDrawWhite, Text("button_draw_no"), "claims only, nothing to claim");
+        ui.armedUntil[ChessBoardUI.ButtonDrawWhite] = 0;
 
         // The same with takebacks, draws by agreement and threefold claims off.
         board._ClearState();
         StartGame(ChessGame.ModeStandard, "rules off");
         SetRequestRules(false);
         CheckButtons("ResignWhite ResignBlack Replay Reset", "rules off: own game");
-        CheckRefused(ChessBoardUI.ButtonOfferDrawWhite, "rules off");
+        CheckRefused(ChessBoardUI.ButtonDrawWhite, "rules off");
         PlayMoves("g1f3 g8f6 f3g1 f6g8 g1f3 g8f6 f3g1 f6g8", "rules off");
         CheckButtons("ResignWhite ResignBlack Replay Reset", "rules off: three times");
-        CheckRefused(ChessBoardUI.ButtonClaimDraw, "rules off");
         ui._PressEnterReplay();
         ui._PressStepBack();
-        CheckButtons("ResignWhite ResignBlack Leave First Back Forward Last Reset", "rules off: replay at ply 7");
-        CheckRefused(ChessBoardUI.ButtonRequestTakebackWhite, "rules off");
-        CheckRefused(ChessBoardUI.ButtonContinue, "rules off");
+        CheckButtons("ResignWhite ResignBlack BackWhite BackBlack First Back Forward Last Reset",
+            "rules off: replay at ply 7");
+        CheckRefused(ChessBoardUI.ButtonTakebackWhite, "rules off");
         CheckInt(board.lifecycle, ChessBoard.LifecycleInGame, "rules off: still in game");
 
         // Someone else's game: none of the players' buttons.
@@ -1037,15 +1142,86 @@ public class ViewTest : ChessTest {
         SetRequestRules(true);
         CheckButtons("Replay? Reset?", "others' game");
         CheckRefused(ChessBoardUI.ButtonResignWhite, "others' game");
-        CheckRefused(ChessBoardUI.ButtonOfferDrawBlack, "others' game");
+        CheckRefused(ChessBoardUI.ButtonDrawBlack, "others' game");
         CheckInt(board.OfferDrawAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, "others: Ana offered");
         CheckButtons("Replay? Reset?", "others' game, Ana's offer");
-        CheckRefused(ChessBoardUI.ButtonAcceptDrawBlack, "others' game, Ana's offer");
+        CheckRefused(ChessBoardUI.ButtonDeclineDrawBlack, "others' game, Ana's offer");
 
+        CheckResetWarning();
         board._ClearState();
-        CheckButtons("JoinWhite JoinBlack", "cleared after the game button checks");
+        CheckButtons("JoinStartWhite JoinStartBlack", "cleared after the game button checks");
         CheckView("cleared after the game button checks");
         SendCustomEventDelayedFrames(nameof(RunHighlightChecks), 1);
+    }
+
+    // The reset warning: what it says and when, by the snapshot's two times; only for seated players; which end it
+    // faces; and I'm here!, which works on either side's turn.
+    void CheckResetWarning() {
+        string s = "reset warning";
+        const int Available = ChessArbiter.NumberResetAvailableTime;
+        const int Auto = ChessArbiter.NumberAutoResetTime;
+        board._ClearState();
+        CheckInt(ui._ResetWarningKindAt(board._ServerTime()), ChessBoardUI.ResetWarningNone, s + ": a reset board");
+        CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana joined");
+        board.gameNumbers[Available] = 120;
+        board.gameNumbers[Auto] = 600;
+        double start = board.lastActivity;
+        CheckInt(ui._ResetWarningKindAt(start + 120), ChessBoardUI.ResetWarningNone, s + ": not for a bystander");
+        CheckInt(board.LeaveSeatAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana left");
+
+        // White and Black here, Bob to move in a game.
+        CheckInt(board.JoinAs(ChessRules.White, "Bob"), ChessBoard.InputAccepted, s + ": Bob joined White");
+        CheckInt(board.JoinAs(ChessRules.Black, localName), ChessBoard.InputAccepted, s + ": joined Black");
+        CheckInt(board.StartGameAs(localName), ChessBoard.InputAccepted, s + ": started");
+        board.gameNumbers[Available] = 120;
+        board.gameNumbers[Auto] = 600;
+        start = board.lastActivity;
+        CheckInt(ui._ResetWarningKindAt(start + 104), ChessBoardUI.ResetWarningNone, s + ": 16 s before others can");
+        CheckInt(ui._ResetWarningKindAt(start + 105), ChessBoardUI.ResetWarningOthersAuto, s + ": 15 s before others can");
+        CheckInt(ui._ResetWarningKindAt(start + 300), ChessBoardUI.ResetWarningOthersAuto, s + ": others can");
+        board.gameNumbers[Available] = 590;
+        CheckInt(ui._ResetWarningKindAt(start + 570), ChessBoardUI.ResetWarningOthersAuto,
+            s + ": 30 s before the reset, sooner than 15 s before others can");
+        board.gameNumbers[Available] = ChessArbiter.Never;
+        CheckInt(ui._ResetWarningKindAt(start + 569), ChessBoardUI.ResetWarningNone, s + ": 31 s before the reset");
+        CheckInt(ui._ResetWarningKindAt(start + 570), ChessBoardUI.ResetWarningAuto, s + ": 30 s before the reset");
+        board.gameNumbers[Available] = 600;
+        CheckInt(ui._ResetWarningKindAt(start + 570), ChessBoardUI.ResetWarningAuto, s + ": both at once: the reset's");
+        board.gameNumbers[Available] = 120;
+        board.gameNumbers[Auto] = ChessArbiter.Never;
+        CheckInt(ui._ResetWarningKindAt(start + 104), ChessBoardUI.ResetWarningNone, s + ": never resets, too soon");
+        CheckInt(ui._ResetWarningKindAt(start + 105), ChessBoardUI.ResetWarningOthers, s + ": never resets itself");
+        board.gameNumbers[Available] = ChessArbiter.Never;
+        CheckInt(ui._ResetWarningKindAt(start + 100000), ChessBoardUI.ResetWarningNone, s + ": both never");
+
+        // Shown to the player only in the black seat, facing them; I'm here! while Bob is to move.
+        board.gameNumbers[Available] = 120;
+        board.gameNumbers[Auto] = 600;
+        Check(!board.CanTouch(), s + ": a touch wouldn't count on Bob's turn", "it would");
+        board.lastActivity = board._ServerTime() - 110;
+        CheckLabel(ChessBoardUI.ButtonImHere, Text("button_im_here"), s + ": shown");
+        Check(Utilities.IsValid(ui.resetWarning) && ui.resetWarning.activeSelf, s + ": the warning shown", "hidden");
+        CheckString(ui.resetWarningText.text, Text("reset_warning_others_auto"), s + ": its text");
+        CheckString(ui.resetWarningTitle.text, Text("reset_warning_title"), s + ": its title");
+        CheckInt(ui._ResetWarningEnd(), ChessRules.Black, s + ": faces the player only in the black seat");
+        Check(ui.resetWarning.transform.forward.z < 0 == ui.transform.forward.z > 0,
+            s + ": turned to face Black's end", "forward " + ui.resetWarning.transform.forward.ToString("F2"));
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonImHere), ChessBoard.InputAccepted, s + ": I'm here! pressed");
+        Check(board._ServerTime() - board.lastActivity < 5, s + ": I'm here! restarted the timers",
+            (board._ServerTime() - board.lastActivity) + " s idle");
+        CheckInt(board.moveCount, 0, s + ": I'm here! changed nothing else");
+        Redraw();
+        Check(!ui.resetWarning.activeSelf, s + ": hidden after I'm here!", "shown");
+
+        // Faces White for a player in both seats.
+        board._ClearState();
+        StartGame(ChessGame.ModeStandard, s);
+        CheckInt(ui._ResetWarningEnd(), ChessRules.White, s + ": White's end for a player in both seats");
+        ui._PlaceResetWarning(ChessRules.White);
+        Check(ui.resetWarning.transform.forward.z > 0 == ui.transform.forward.z > 0, s + ": turned back to White's end",
+            "forward " + ui.resetWarning.transform.forward.ToString("F2"));
+        board._ClearState();
+        CheckInt(ui._PressButton(ChessBoardUI.ButtonImHere), ChessBoard.InputRejected, s + ": I'm here! refused, reset");
     }
 
     // ---- 9.5a: highlights, and the promotion ghosts (12.11, in place of 9.5a's picker) ----
@@ -1803,6 +1979,7 @@ public class ViewTest : ChessTest {
         ui._PressPgn();
         CheckPgnBox(true, s + ": opened again");
         ui._PressReset();
+        ui._PressReset();
         CheckInt(board.lifecycle, ChessBoard.LifecycleReset, s + ": reset");
         Redraw();
         CheckPgnBox(false, s + ": reset");
@@ -1866,7 +2043,7 @@ public class ViewTest : ChessTest {
 
         board._ClearState();
         Redraw();
-        CheckButtons("JoinWhite JoinBlack LoadPgn", s + ": reset board");
+        CheckButtons("JoinStartWhite JoinStartBlack LoadPgn", s + ": reset board");
         CheckLabel(ChessBoardUI.ButtonLoadPgn, Text("button_load_pgn"), s + ": closed");
         ui._PressLoadPgn();
         CheckPasteBox(true, true, "", s + ": opened");
@@ -1928,7 +2105,7 @@ public class ViewTest : ChessTest {
         Redraw();
         CheckPasteBox(false, false, "", n + ": loaded: the box closed");
         CheckString(ui.pgnPasteField.text, "", n + ": loaded: the paste emptied");
-        CheckButtons("JoinWhite JoinBlack First Back Reset?", n + ": loaded");
+        CheckButtons("BackWhite BackBlack First Back Reset?", n + ": loaded");
         ui._PressPgn();
         CheckPgnBox(true, n + ": PGN opens the copy part");
         Check(ui.pgnCopyPart.activeSelf && !ui.pgnPastePart.activeSelf, n + ": PGN: the copy part shown",
@@ -1972,7 +2149,7 @@ public class ViewTest : ChessTest {
         CheckInt(board.importStatus, ChessBoard.ImportAbandoned, a);
         Redraw();
         CheckPasteBox(true, false, Text("import_abandoned"), a);
-        CheckButtons("JoinBlack Reset?", a + ": Ana's lobby");
+        CheckButtons("JoinStartBlack Reset?", a + ": Ana's lobby");
         ui._PressPgnClose();
         CheckPasteBox(false, false, "", a + ": closed");
         CheckInt(ui._PressButton(ChessBoardUI.ButtonLoadPgn), ChessBoard.InputRejected, a + ": Load PGN refused");
@@ -3041,7 +3218,7 @@ public class ViewTest : ChessTest {
             s + ": the promotion ghosts");
 
         Check(i18n.SetLanguage("x-chess-test"), s + ": the test pack chosen", "no pack x-chess-test");
-        CheckString(ui._ButtonText(ChessBoardUI.ButtonStart), "Begin (test)", s + ": test pack: Start overridden");
+        CheckString(ui._ButtonText(ChessBoardUI.ButtonJoinStartWhite), "Begin (test)", s + ": test pack: Start overridden");
         CheckString(ui._ButtonText(ChessBoardUI.ButtonReset), "Reset", s + ": test pack: Reset left English");
         CheckString(I18n.Format(ui._GameTexts()[ChessBoardUI.TextPlayerLine], new string[] {
             "color", ChessBoardUI._ColorText(ui._GameTexts(), ChessRules.White), "name", "Ana" }), "Light: Ana",
@@ -3052,10 +3229,10 @@ public class ViewTest : ChessTest {
         CheckString(OtherStartTexts(), "Begin (test)", s + ": test pack: Start on every other board");
         i18n.SetLanguage("en");
         CheckString(i18n.GetCurrentLanguage(), "en", s + ": English again");
-        CheckString(ui._ButtonText(ChessBoardUI.ButtonStart), "Start", s + ": English again: Start");
+        CheckString(ui._ButtonText(ChessBoardUI.ButtonJoinStartWhite), "Join", s + ": English again: Join");
         CheckString(PickupTexts(), "Move", s + ": English again: the pieces' pickups");
         CheckString(ui.pgnImportText.text, "Import", s + ": English again: the PGN box's Import");
-        CheckString(OtherStartTexts(), "Start", s + ": English again: Start on every other board");
+        CheckString(OtherStartTexts(), "Join", s + ": English again: Join on every other board");
         TestWorldLanguage(i18n);
     }
 
@@ -3072,14 +3249,14 @@ public class ViewTest : ChessTest {
             + "world's I18n", "it returned false");
         CheckString(worldI18n._("world_greeting"), "Hello (world test)", s + ": the world's own text");
         CheckString(i18n.GetCurrentLanguage(), "x-chess-test", s + ": the Chess Language switched");
-        CheckString(ui._ButtonText(ChessBoardUI.ButtonStart), "Begin (test)", s + ": Start");
+        CheckString(ui._ButtonText(ChessBoardUI.ButtonJoinStartWhite), "Begin (test)", s + ": Start");
         CheckString(PickupTexts(), "Shift (test)", s + ": the pieces' pickups");
         CheckString(OtherStartTexts(), "Begin (test)", s + ": Start on every other board");
         Check(!worldI18n.SetLanguageGlobally("en"), s + ": SetLanguageGlobally(en) false (the world has no en)",
             "it returned true");
         CheckString(i18n.GetCurrentLanguage(), "en", s + ": the Chess Language English again");
-        CheckString(ui._ButtonText(ChessBoardUI.ButtonStart), "Start", s + ": English again: Start");
-        CheckString(OtherStartTexts(), "Start", s + ": English again: Start on every other board");
+        CheckString(ui._ButtonText(ChessBoardUI.ButtonJoinStartWhite), "Join", s + ": English again: Join");
+        CheckString(OtherStartTexts(), "Join", s + ": English again: Join on every other board");
     }
 
     // The Start button's text on every board's UI but this one's, when they're all the same; otherwise each,
@@ -3090,7 +3267,7 @@ public class ViewTest : ChessTest {
         string all = "";
         bool same = true;
         for (int i = 0; i < otherUIs.Length; i++) {
-            string text = Utilities.IsValid(otherUIs[i]) ? otherUIs[i]._ButtonText(ChessBoardUI.ButtonStart) : "(none)";
+            string text = Utilities.IsValid(otherUIs[i]) ? otherUIs[i]._ButtonText(ChessBoardUI.ButtonJoinStartWhite) : "(none)";
             if (first == null) first = text;
             else if (text != first) same = false;
             all += (i > 0 ? "|" : "") + text;
@@ -3560,13 +3737,9 @@ public class ViewTest : ChessTest {
         return TextWith("status_lobby", new string[] { "mode", Text(modeKey), "clock", clock });
     }
 
-    // The Mode button's label for the mode's key, and the Clock button's for a time control.
+    // The Mode button's label for the mode's key.
     string ModeLabel(string modeKey) {
         return TextWith("button_mode", new string[] { "mode", Text(modeKey) });
-    }
-
-    string ClockLabel(string clock) {
-        return TextWith("button_clock", new string[] { "clock", clock });
     }
 
     // An ended game's line: the ending's text and the result, "White wins by checkmate (1-0)".
@@ -3931,20 +4104,15 @@ public class ViewTest : ChessTest {
     }
 
     // Whether a button listed with "?" (CheckButtons) should be shown: Reset and Replay when the board lets the local
-    // player reset or enter replay (an organizer, or an idle board for Reset), the draw offers, takeback requests and
-    // the claim when the snapshot allows them.
+    // player reset or enter replay (an organizer, or an idle board for Reset), the Draw buttons when the snapshot
+    // allows any draw.
     bool OptionalShown(int action) {
         if (action == ChessBoardUI.ButtonReset) return board.CanReset();
         if (action == ChessBoardUI.ButtonEnterReplay) return board.CanEnterReplay();
-        if (action == ChessBoardUI.ButtonOfferDrawWhite || action == ChessBoardUI.ButtonOfferDrawBlack) {
-            return board.IsGameSettingOn(ChessArbiter.SettingDrawAgreement);
-        }
-        if (action == ChessBoardUI.ButtonRequestTakebackWhite
-            || action == ChessBoardUI.ButtonRequestTakebackBlack) {
-            return board.IsGameSettingOn(ChessArbiter.SettingTakebacks);
-        }
-        if (action == ChessBoardUI.ButtonClaimDraw) {
-            return board.IsGameSettingOn(ChessArbiter.SettingThreefoldRepetition);
+        if (action == ChessBoardUI.ButtonDrawWhite || action == ChessBoardUI.ButtonDrawBlack) {
+            return board.IsGameSettingOn(ChessArbiter.SettingDrawAgreement)
+                || board.IsGameSettingOn(ChessArbiter.SettingThreefoldRepetition)
+                || board.IsGameSettingOn(ChessArbiter.SettingFiftyMoveRule);
         }
         return false;
     }
@@ -3961,7 +4129,8 @@ public class ViewTest : ChessTest {
 
     // After a Refresh, the buttons shown are exactly the actions in expected (names from buttonNames, separated by
     // spaces), each shown one labelled as the view says; a name followed by "?" is shown as OptionalShown says, and
-    // Mode and Clock are hidden when the snapshot forces them. The view's _ButtonApplies agrees. The step buttons are
+    // Mode and Clock (the clock's four buttons) are hidden when the snapshot forces them. _ButtonApplies agrees. The
+    // step buttons are
     // the exception: all four are shown while the board's CanControlReplay holds, and those in expected are the ones
     // enabled (_ButtonEnabled and their UI Button interactable), the rest greyed out.
     void CheckButtons(string expected, string name) {
@@ -3981,7 +4150,12 @@ public class ViewTest : ChessTest {
             // Load PGN (11.2b), unless named, likewise: shown exactly when the board can take an import.
             if (action == ChessBoardUI.ButtonLoadPgn && !padded.Contains(" LoadPgn")) want = board.CanImport();
             if (action == ChessBoardUI.ButtonMode && board.IsModeForced()) want = false;
-            if (action == ChessBoardUI.ButtonClock && board.IsClockForced()) want = false;
+            // "Clock" names the clock's four buttons, shown together.
+            if (action >= ChessBoardUI.ButtonClockMore && action <= ChessBoardUI.ButtonIncrementLess) {
+                want = padded.Contains(" Clock ") && !board.IsClockForced();
+            }
+            // I'm here! goes by the idle times; CheckResetWarning checks it.
+            if (action == ChessBoardUI.ButtonImHere) want = ui._ButtonApplies(action);
             // The step buttons are shown together while the replay can be controlled; a named one is enabled, the
             // others shown greyed out.
             bool enabled = want;

@@ -27,22 +27,18 @@ namespace SiggiChessBoard {
         // The strings the UI shows, from i18n (LoadTexts), read on first use and again on a language change: the game
         // texts the status lines are written with (_LoadGameTexts), and the UI's own.
         string[] gameTexts;
-        string textJoinWhite = "";
-        string textJoinBlack = "";
+        string textJoin = "";
         string textLeave = "";
         string textMode = "";
-        string textClockNone = "";
-        string textClock = "";
+        string textClockCaption = "";
         string textStart = "";
         string textContinue = "";
         string textReset = "";
         string textResign = "";
-        string textOfferDraw = "";
-        string textAcceptDraw = "";
+        string textSure = "";
+        string textDraw = "";
+        string textDrawNo = "";
         string textDeclineDraw = "";
-        string textClaimDraw = "";
-        string textClaimDrawThreefold = "";
-        string textClaimDrawFiftyMoves = "";
         string textReplay = "";
         string textBackToGame = "";
         string textTakeBackToHere = "";
@@ -52,6 +48,11 @@ namespace SiggiChessBoard {
         string textPgn = "";
         string textLoadPgn = "";
         string textHidePgn = "";
+        string textImHere = "";
+        string textResetWarningTitle = "";
+        string textResetWarningAuto = "";
+        string textResetWarningOthersAuto = "";
+        string textResetWarningOthers = "";
         string textPgnCopyHint = "";
         string textPgnPasteHint = "";
         string textPgnImport = "";
@@ -66,57 +67,87 @@ namespace SiggiChessBoard {
         string textImportErrorAmbiguousMove = "";
         string textImportErrorFen = "";
         string textImportErrorTooLong = "";
-        // The board's buttons (docs/player-input.md, Buttons; steps 9.4a and 9.4b), by what they do. Each is shown only
-        // while the board's Can... check for it holds for the local player.
-        public const int ButtonJoinWhite = 0;
-        public const int ButtonJoinBlack = 1;
-        public const int ButtonMode = 2;
-        public const int ButtonClock = 3;
-        public const int ButtonStart = 4;
-        public const int ButtonContinue = 5;
-        public const int ButtonReset = 6;
-        // Step 9.4b. The actions taken for one colour come in pairs, as Join does: a panel at each end of the table
-        // acts for its own colour (_ButtonColor).
-        public const int ButtonResignWhite = 7;
-        public const int ButtonResignBlack = 8;
-        public const int ButtonOfferDrawWhite = 9;
-        public const int ButtonOfferDrawBlack = 10;
-        public const int ButtonAcceptDrawWhite = 11;
-        public const int ButtonAcceptDrawBlack = 12;
-        public const int ButtonDeclineDrawWhite = 13;
-        public const int ButtonDeclineDrawBlack = 14;
-        public const int ButtonClaimDraw = 15;
-        public const int ButtonEnterReplay = 16;
-        public const int ButtonLeaveReplay = 17;
-        public const int ButtonStepFirst = 18;
-        public const int ButtonStepBack = 19;
-        public const int ButtonStepForward = 20;
-        public const int ButtonStepLast = 21;
-        public const int ButtonRequestTakebackWhite = 22;
-        public const int ButtonRequestTakebackBlack = 23;
-        public const int ButtonAcceptTakebackWhite = 24;
-        public const int ButtonAcceptTakebackBlack = 25;
-        public const int ButtonDeclineTakebackWhite = 26;
-        public const int ButtonDeclineTakebackBlack = 27;
-        // Step 10.2b: loads the game picked on a history wall (the arbiter's pick) onto this (reset) board.
-        public const int ButtonLoadHere = 28;
-        // Step 11.2a: opens or closes the PGN box for the local player.
-        public const int ButtonPgn = 29;
-        // Step 11.2b: opens the PGN box to paste a PGN into and import it, on a reset board.
-        public const int ButtonLoadPgn = 30;
-        // Step 13.1: leaves the seat of its colour before a game has started.
-        public const int ButtonLeaveWhite = 31;
-        public const int ButtonLeaveBlack = 32;
-        public const int ButtonCount = 33;
-        // The button objects in the world (any number: the prefab has a panel at each end of the table), with the
-        // Button* action of each and its label at the same index. A button's UI Button calls the UI's Press...
-        // event for its action.
+        // The board's buttons (docs/player-input.md, Buttons), by what they do. The prefab's panels at each end of the
+        // table act for their own colour (_ButtonColor). Several of them merge what the board has as separate actions:
+        // Join/Start, Draw (claim, accept or offer), Takeback (continue, accept or request) and Back (decline a
+        // takeback or leave replay, and on a loaded board, which has no game to go back to, join or leave the seat).
+        public const int ButtonJoinStartWhite = 0;
+        public const int ButtonJoinStartBlack = 1;
+        public const int ButtonLeaveWhite = 2;
+        public const int ButtonLeaveBlack = 3;
+        public const int ButtonLoadPgn = 4;
+        public const int ButtonLoadHere = 5;
+        public const int ButtonMode = 6;
+        public const int ButtonClockMore = 7;
+        public const int ButtonClockLess = 8;
+        public const int ButtonIncrementMore = 9;
+        public const int ButtonIncrementLess = 10;
+        public const int ButtonReset = 11;
+        public const int ButtonResignWhite = 12;
+        public const int ButtonResignBlack = 13;
+        public const int ButtonDrawWhite = 14;
+        public const int ButtonDrawBlack = 15;
+        public const int ButtonDeclineDrawWhite = 16;
+        public const int ButtonDeclineDrawBlack = 17;
+        public const int ButtonEnterReplay = 18;
+        public const int ButtonPgn = 19;
+        public const int ButtonStepFirst = 20;
+        public const int ButtonStepBack = 21;
+        public const int ButtonStepForward = 22;
+        public const int ButtonStepLast = 23;
+        public const int ButtonTakebackWhite = 24;
+        public const int ButtonTakebackBlack = 25;
+        public const int ButtonBackWhite = 26;
+        public const int ButtonBackBlack = 27;
+        public const int ButtonImHere = 28;
+        public const int ButtonCount = 29;
+        // The button objects in the world, with the Button* action of each and its label at the same index. A button's
+        // UI Button calls the UI's _Press... event for its action.
         public GameObject[] buttons = new GameObject[0];
         public int[] buttonActions = new int[0];
         public TextMeshProUGUI[] buttonLabels = new TextMeshProUGUI[0];
-        // The time controls the Clock button steps through, in seconds (base ChessArbiter.NoClock for none).
-        public int[] clockBases = { ChessArbiter.NoClock, 60, 180, 300, 600, 900, 1800 };
-        public int[] clockIncrements = { 0, 0, 2, 3, 0, 10, 0 };
+        // The panels holding them, shown by the board's state (_ModeSetupShown and the like); any number of each.
+        public GameObject[] modeSetupPanels = new GameObject[0];
+        public GameObject[] resetPanels = new GameObject[0];
+        public GameObject[] preGamePanels = new GameObject[0];
+        public GameObject[] inGamePanels = new GameObject[0];
+        public GameObject[] replayPanels = new GameObject[0];
+        // Mode Setup's clock part beside its buttons: what's hidden while only the mode can be chosen, the caption, and
+        // the time control chosen.
+        public GameObject[] clockSetupParts = new GameObject[0];
+        public TextMeshProUGUI[] clockCaptionLabels = new TextMeshProUGUI[0];
+        public TextMeshProUGUI[] clockValueLabels = new TextMeshProUGUI[0];
+        // The replay position on the Replay Controls.
+        public TextMeshProUGUI[] replayStatusLabels = new TextMeshProUGUI[0];
+        [Tooltip("The base times the clock's + and - buttons step through, in seconds, shortest first. Below the "
+            + "shortest is no clock.")]
+        public int[] clockBaseSteps = { 60, 120, 180, 300, 600, 900, 1200, 1800, 2700, 3600, 5400, 7200 };
+        [Tooltip("The increments the clock's ++ and -- buttons step through, in seconds, smallest first.")]
+        public int[] clockIncrementSteps = { 0, 1, 2, 3, 5, 10, 15, 20, 30, 45, 60 };
+        // The warning the seated players get before their idle board can be reset (docs/inactivity.md), with its I'm
+        // here! button among the buttons above. It faces White's end as the prefab places it, and is turned about the
+        // UI's origin to face Black's end for a player only in the black seat.
+        public GameObject resetWarning;
+        public TextMeshProUGUI resetWarningTitle;
+        public TextMeshProUGUI resetWarningText;
+        [Tooltip("Seconds before the board resets itself to warn, when nobody can reset it before then.")]
+        public int resetWarningAutoSeconds = 30;
+        [Tooltip("Seconds before anyone can reset the board to warn.")]
+        public int resetWarningOthersSeconds = 15;
+        // What the warning says (_ResetWarningKindAt): nothing, the board will reset itself, others may reset it and it
+        // will reset itself, others may reset it (it never resets itself).
+        public const int ResetWarningNone = 0;
+        public const int ResetWarningAuto = 1;
+        public const int ResetWarningOthersAuto = 2;
+        public const int ResetWarningOthers = 3;
+        bool resetWarningPlaced;
+        Vector3 resetWarningPosition;
+        Quaternion resetWarningRotation;
+        // Until when (Time.time) a button's first press holds: Resign and Reset ask "Sure?" and act on a second press
+        // within ConfirmSeconds, and Draw says "No!" for DrawNoSeconds where nothing can be done.
+        [NonSerialized] public float[] armedUntil = new float[ButtonCount];
+        public const float ConfirmSeconds = 3;
+        public const float DrawNoSeconds = 1;
         // The status display (step 9.5c): any number of panels (the prefab has one, beside the board), each with a name
         // and a clock text per seat (the clock during and after a game) and a status text (whose turn, check, the
         // result, pending offers and requests, a loaded game's names, the replay position). Brought up to date on every
@@ -325,22 +356,18 @@ namespace SiggiChessBoard {
         void LoadTexts() {
             ChessUtil._CheckI18n(i18n, "[ChessBoardUI] " + gameObject.name);
             gameTexts = _LoadGameTexts(i18n);
-            textJoinWhite = ChessUtil.Text(i18n, "button_join_white");
-            textJoinBlack = ChessUtil.Text(i18n, "button_join_black");
+            textJoin = ChessUtil.Text(i18n, "button_join");
             textLeave = ChessUtil.Text(i18n, "button_leave");
             textMode = ChessUtil.Text(i18n, "button_mode");
-            textClockNone = ChessUtil.Text(i18n, "button_clock_none");
-            textClock = ChessUtil.Text(i18n, "button_clock");
+            textClockCaption = ChessUtil.Text(i18n, "clock_caption");
             textStart = ChessUtil.Text(i18n, "button_start");
             textContinue = ChessUtil.Text(i18n, "button_continue");
             textReset = ChessUtil.Text(i18n, "button_reset");
             textResign = ChessUtil.Text(i18n, "button_resign");
-            textOfferDraw = ChessUtil.Text(i18n, "button_offer_draw");
-            textAcceptDraw = ChessUtil.Text(i18n, "button_accept_draw");
+            textSure = ChessUtil.Text(i18n, "button_sure");
+            textDraw = ChessUtil.Text(i18n, "button_draw");
+            textDrawNo = ChessUtil.Text(i18n, "button_draw_no");
             textDeclineDraw = ChessUtil.Text(i18n, "button_decline_draw");
-            textClaimDraw = ChessUtil.Text(i18n, "button_claim_draw");
-            textClaimDrawThreefold = ChessUtil.Text(i18n, "button_claim_draw_threefold");
-            textClaimDrawFiftyMoves = ChessUtil.Text(i18n, "button_claim_draw_fifty_moves");
             textReplay = ChessUtil.Text(i18n, "button_replay");
             textBackToGame = ChessUtil.Text(i18n, "button_back_to_game");
             textTakeBackToHere = ChessUtil.Text(i18n, "button_take_back_to_here");
@@ -350,6 +377,11 @@ namespace SiggiChessBoard {
             textPgn = ChessUtil.Text(i18n, "button_pgn");
             textLoadPgn = ChessUtil.Text(i18n, "button_load_pgn");
             textHidePgn = ChessUtil.Text(i18n, "button_hide_pgn");
+            textImHere = ChessUtil.Text(i18n, "button_im_here");
+            textResetWarningTitle = ChessUtil.Text(i18n, "reset_warning_title");
+            textResetWarningAuto = ChessUtil.Text(i18n, "reset_warning_auto");
+            textResetWarningOthersAuto = ChessUtil.Text(i18n, "reset_warning_others_auto");
+            textResetWarningOthers = ChessUtil.Text(i18n, "reset_warning_others");
             textPgnCopyHint = ChessUtil.Text(i18n, "pgn_copy_hint");
             textPgnPasteHint = ChessUtil.Text(i18n, "pgn_paste_hint");
             textPgnImport = ChessUtil.Text(i18n, "pgn_import");
@@ -373,6 +405,8 @@ namespace SiggiChessBoard {
             ChessUtil._SetText(pgnPasteHint, textPgnPasteHint);
             ChessUtil._SetText(pgnImportText, textPgnImport);
             ChessUtil._SetText(pgnCloseText, textPgnClose);
+            ChessUtil._SetText(resetWarningTitle, textResetWarningTitle);
+            SetLabels(clockCaptionLabels, textClockCaption);
         }
 
         // ---- Game texts ----
@@ -567,28 +601,48 @@ namespace SiggiChessBoard {
         // pressing it calls the board's method, which refuses whenever the check doesn't hold.
 
         // The UI Buttons' events, one per action.
-        public void _PressJoinWhite() {
-            _PressButton(ButtonJoinWhite);
+        public void _PressJoinStartWhite() {
+            _PressButton(ButtonJoinStartWhite);
         }
 
-        public void _PressJoinBlack() {
-            _PressButton(ButtonJoinBlack);
+        public void _PressJoinStartBlack() {
+            _PressButton(ButtonJoinStartBlack);
+        }
+
+        public void _PressLeaveWhite() {
+            _PressButton(ButtonLeaveWhite);
+        }
+
+        public void _PressLeaveBlack() {
+            _PressButton(ButtonLeaveBlack);
+        }
+
+        public void _PressLoadPgn() {
+            _PressButton(ButtonLoadPgn);
+        }
+
+        public void _PressLoadHere() {
+            _PressButton(ButtonLoadHere);
         }
 
         public void _PressMode() {
             _PressButton(ButtonMode);
         }
 
-        public void _PressClock() {
-            _PressButton(ButtonClock);
+        public void _PressClockMore() {
+            _PressButton(ButtonClockMore);
         }
 
-        public void _PressStart() {
-            _PressButton(ButtonStart);
+        public void _PressClockLess() {
+            _PressButton(ButtonClockLess);
         }
 
-        public void _PressContinue() {
-            _PressButton(ButtonContinue);
+        public void _PressIncrementMore() {
+            _PressButton(ButtonIncrementMore);
+        }
+
+        public void _PressIncrementLess() {
+            _PressButton(ButtonIncrementLess);
         }
 
         public void _PressReset() {
@@ -603,20 +657,12 @@ namespace SiggiChessBoard {
             _PressButton(ButtonResignBlack);
         }
 
-        public void _PressOfferDrawWhite() {
-            _PressButton(ButtonOfferDrawWhite);
+        public void _PressDrawWhite() {
+            _PressButton(ButtonDrawWhite);
         }
 
-        public void _PressOfferDrawBlack() {
-            _PressButton(ButtonOfferDrawBlack);
-        }
-
-        public void _PressAcceptDrawWhite() {
-            _PressButton(ButtonAcceptDrawWhite);
-        }
-
-        public void _PressAcceptDrawBlack() {
-            _PressButton(ButtonAcceptDrawBlack);
+        public void _PressDrawBlack() {
+            _PressButton(ButtonDrawBlack);
         }
 
         public void _PressDeclineDrawWhite() {
@@ -627,16 +673,12 @@ namespace SiggiChessBoard {
             _PressButton(ButtonDeclineDrawBlack);
         }
 
-        public void _PressClaimDraw() {
-            _PressButton(ButtonClaimDraw);
-        }
-
         public void _PressEnterReplay() {
             _PressButton(ButtonEnterReplay);
         }
 
-        public void _PressLeaveReplay() {
-            _PressButton(ButtonLeaveReplay);
+        public void _PressPgn() {
+            _PressButton(ButtonPgn);
         }
 
         public void _PressStepFirst() {
@@ -655,48 +697,24 @@ namespace SiggiChessBoard {
             _PressButton(ButtonStepLast);
         }
 
-        public void _PressRequestTakebackWhite() {
-            _PressButton(ButtonRequestTakebackWhite);
+        public void _PressTakebackWhite() {
+            _PressButton(ButtonTakebackWhite);
         }
 
-        public void _PressRequestTakebackBlack() {
-            _PressButton(ButtonRequestTakebackBlack);
+        public void _PressTakebackBlack() {
+            _PressButton(ButtonTakebackBlack);
         }
 
-        public void _PressAcceptTakebackWhite() {
-            _PressButton(ButtonAcceptTakebackWhite);
+        public void _PressBackWhite() {
+            _PressButton(ButtonBackWhite);
         }
 
-        public void _PressAcceptTakebackBlack() {
-            _PressButton(ButtonAcceptTakebackBlack);
+        public void _PressBackBlack() {
+            _PressButton(ButtonBackBlack);
         }
 
-        public void _PressDeclineTakebackWhite() {
-            _PressButton(ButtonDeclineTakebackWhite);
-        }
-
-        public void _PressDeclineTakebackBlack() {
-            _PressButton(ButtonDeclineTakebackBlack);
-        }
-
-        public void _PressLoadHere() {
-            _PressButton(ButtonLoadHere);
-        }
-
-        public void _PressPgn() {
-            _PressButton(ButtonPgn);
-        }
-
-        public void _PressLoadPgn() {
-            _PressButton(ButtonLoadPgn);
-        }
-
-        public void _PressLeaveWhite() {
-            _PressButton(ButtonLeaveWhite);
-        }
-
-        public void _PressLeaveBlack() {
-            _PressButton(ButtonLeaveBlack);
+        public void _PressImHere() {
+            _PressButton(ButtonImHere);
         }
 
         // The PGN box's own buttons (step 11.2b).
@@ -712,30 +730,28 @@ namespace SiggiChessBoard {
         }
 
         // The colour the button for action acts for (ChessRules.White or Black), or ChessRules.NoColor for one that
-        // acts for no colour (Claim draw is the side to move's).
+        // acts for no colour.
         public static int _ButtonColor(int action) {
-            if (action == ButtonJoinWhite || action == ButtonLeaveWhite || action == ButtonResignWhite
-                || action == ButtonOfferDrawWhite || action == ButtonAcceptDrawWhite || action == ButtonDeclineDrawWhite
-                || action == ButtonRequestTakebackWhite || action == ButtonAcceptTakebackWhite
-                || action == ButtonDeclineTakebackWhite) {
+            if (action == ButtonJoinStartWhite || action == ButtonLeaveWhite || action == ButtonResignWhite
+                || action == ButtonDrawWhite || action == ButtonDeclineDrawWhite || action == ButtonTakebackWhite
+                || action == ButtonBackWhite) {
                 return ChessRules.White;
             }
-            if (action == ButtonJoinBlack || action == ButtonLeaveBlack || action == ButtonResignBlack
-                || action == ButtonOfferDrawBlack || action == ButtonAcceptDrawBlack || action == ButtonDeclineDrawBlack
-                || action == ButtonRequestTakebackBlack || action == ButtonAcceptTakebackBlack
-                || action == ButtonDeclineTakebackBlack) {
+            if (action == ButtonJoinStartBlack || action == ButtonLeaveBlack || action == ButtonResignBlack
+                || action == ButtonDrawBlack || action == ButtonDeclineDrawBlack || action == ButtonTakebackBlack
+                || action == ButtonBackBlack) {
                 return ChessRules.Black;
             }
             return ChessRules.NoColor;
         }
 
-        // The ply a step button for action steps the replay to: the start, one back, one on, or the game's current
-        // position. -1 for any other action (and for one back from the start).
         static bool IsStepButton(int action) {
             return action == ButtonStepFirst || action == ButtonStepBack || action == ButtonStepForward
                 || action == ButtonStepLast;
         }
 
+        // The ply a step button for action steps the replay to: the start, one back, one on, or the game's current
+        // position. -1 for any other action (and for one back from the start).
         int StepTarget(int action) {
             if (action == ButtonStepFirst) return 0;
             if (action == ButtonStepBack) return board.replayIndex - 1;
@@ -744,58 +760,73 @@ namespace SiggiChessBoard {
             return -1;
         }
 
-        // Does what the button for action does, for the local player: the board's answer (InputRejected for an
-        // unknown action). Mode switches between Standard and Chess960; Clock picks the next of clockBases and
-        // clockIncrements after the board's time control (the first when it isn't one of them); the step buttons
-        // step the replay to _StepTarget; the others call the board's method for their colour. Plays the click sound
-        // here (step 12.12), and the change's own sound follows on the next Refresh; not for the step buttons, whose
-        // step plays the shown position's move sound instead.
+        // Whether action's first press only asks "Sure?".
+        static bool NeedsConfirm(int action) {
+            return action == ButtonReset || action == ButtonResignWhite || action == ButtonResignBlack;
+        }
+
+        // Whether a press of action is holding (armedUntil): for Resign and Reset that the next press acts, for Draw
+        // that it's saying "No!".
+        bool IsArmed(int action) {
+            return armedUntil[action] > Time.time;
+        }
+
+        // Does what the button for action does, for the local player: the board's answer (InputRejected for an unknown
+        // action, and for a first press of Resign or Reset, which only asks "Sure?"). Plays the click sound here (step
+        // 12.12), and the change's own sound follows on the next Refresh; not for the step buttons, whose step plays
+        // the shown position's move sound instead.
         public int _PressButton(int action) {
             if (!IsStepButton(action)) PlaySound(clickSound);
             if (!Utilities.IsValid(board)) return ChessBoard.InputRejected;
+            if (NeedsConfirm(action) && _ButtonApplies(action) && !IsArmed(action)) {
+                armedUntil[action] = Time.time + ConfirmSeconds;
+                _UpdateButtons();
+                return ChessBoard.InputRejected;
+            }
+            if (action >= 0 && action < ButtonCount) armedUntil[action] = 0;
             int result = ChessBoard.InputRejected;
             int color = _ButtonColor(action);
             int step = StepTarget(action);
             if (step >= 0) {
                 result = board.StepTo(step);
-            } else if (action == ButtonResignWhite || action == ButtonResignBlack) {
-                result = board.Resign(color);
-            } else if (action == ButtonOfferDrawWhite || action == ButtonOfferDrawBlack) {
-                result = board.OfferDraw(color);
-            } else if (action == ButtonAcceptDrawWhite || action == ButtonAcceptDrawBlack) {
-                result = board.AcceptDraw(color);
-            } else if (action == ButtonDeclineDrawWhite || action == ButtonDeclineDrawBlack) {
-                result = board.DeclineDraw(color);
-            } else if (action == ButtonClaimDraw) {
-                result = board.ClaimDraw();
-            } else if (action == ButtonEnterReplay) {
-                result = board.EnterReplay();
-            } else if (action == ButtonLeaveReplay) {
-                result = board.LeaveReplay();
-            } else if (action == ButtonRequestTakebackWhite || action == ButtonRequestTakebackBlack) {
-                result = board.RequestTakeback(color);
-            } else if (action == ButtonAcceptTakebackWhite || action == ButtonAcceptTakebackBlack) {
-                result = board.AcceptTakeback(color);
-            } else if (action == ButtonDeclineTakebackWhite || action == ButtonDeclineTakebackBlack) {
-                result = board.DeclineTakeback(color);
-            } else if (action == ButtonJoinWhite) {
-                result = board.JoinWhite();
-            } else if (action == ButtonJoinBlack) {
-                result = board.JoinBlack();
+            } else if (action == ButtonJoinStartWhite || action == ButtonJoinStartBlack) {
+                // Hidden on a loaded board, which joins with the Back button and continues instead of starting.
+                if (_ButtonApplies(action)) result = board.CanJoin(color) ? board.Join(color) : board.StartGame();
             } else if (action == ButtonLeaveWhite || action == ButtonLeaveBlack) {
-                result = board.LeaveSeat(color);
+                if (_ButtonApplies(action)) result = board.LeaveSeat(color);
             } else if (action == ButtonMode) {
                 result = board.SetMode(board.mode == ChessGame.ModeChess960
                     ? ChessGame.ModeStandard : ChessGame.ModeChess960);
-            } else if (action == ButtonClock) {
-                int next = NextClockChoice();
-                if (next >= 0) result = board.SetClock(clockBases[next], clockIncrements[next]);
-            } else if (action == ButtonStart) {
-                result = board.StartGame();
-            } else if (action == ButtonContinue) {
-                result = board.ContinueGame();
+            } else if (action == ButtonClockMore || action == ButtonClockLess) {
+                int nextBase = NextBase(action == ButtonClockMore);
+                if (nextBase != NoStep) {
+                    result = board.SetClock(nextBase, nextBase == ChessArbiter.NoClock
+                        || board.baseTime == ChessArbiter.NoClock ? 0 : board.increment);
+                }
+            } else if (action == ButtonIncrementMore || action == ButtonIncrementLess) {
+                int nextIncrement = NextIncrement(action == ButtonIncrementMore);
+                if (nextIncrement != NoStep) result = board.SetClock(board.baseTime, nextIncrement);
             } else if (action == ButtonReset) {
                 result = board.ResetBoard();
+            } else if (action == ButtonResignWhite || action == ButtonResignBlack) {
+                result = board.Resign(color);
+            } else if (action == ButtonDrawWhite || action == ButtonDrawBlack) {
+                result = PressDraw(action, color);
+            } else if (action == ButtonDeclineDrawWhite || action == ButtonDeclineDrawBlack) {
+                result = board.DeclineDraw(color);
+            } else if (action == ButtonEnterReplay) {
+                result = board.EnterReplay();
+            } else if (action == ButtonTakebackWhite || action == ButtonTakebackBlack) {
+                if (board.CanContinue()) result = board.ContinueGame();
+                else if (board.CanAcceptTakeback(color)) result = board.AcceptTakeback(color);
+                else result = board.RequestTakeback(color);
+            } else if (action == ButtonBackWhite || action == ButtonBackBlack) {
+                if (board.CanDeclineTakeback(color)) result = board.DeclineTakeback(color);
+                else if (board.CanLeaveReplay()) result = board.LeaveReplay();
+                else if (board.lifecycle == ChessBoard.LifecycleLoaded && board.CanJoin(color)) result = board.Join(color);
+                else if (board.lifecycle == ChessBoard.LifecycleLoaded) result = board.LeaveSeat(color);
+            } else if (action == ButtonImHere) {
+                if (_ButtonApplies(action)) result = board.ConfirmPresence();
             } else if (action == ButtonLoadHere) {
                 // The board clears the pick once loaded. A game it has to import (a personal game from an earlier
                 // session) shows its progress and failure as a pasted one's: set first, since the board tells its
@@ -821,107 +852,162 @@ namespace SiggiChessBoard {
             return result;
         }
 
-        // The index in clockBases of the choice after the board's time control; -1 with no choices.
-        int NextClockChoice() {
-            int count = Mathf.Min(clockBases.Length, clockIncrements.Length);
-            if (count == 0) return -1;
-            for (int i = 0; i < count; i++) {
-                if (clockBases[i] == board.baseTime && clockIncrements[i] == board.increment) return (i + 1) % count;
-            }
-            return 0;
+        // The Draw button: claims when a claim is there; otherwise accepts the other side's offer, or offers; and says
+        // "No!" for a moment where it can do none of them.
+        int PressDraw(int action, int color) {
+            if (board.CanClaimDraw()) return board.ClaimDraw();
+            if (board.CanAcceptDraw(color)) return board.AcceptDraw(color);
+            if (board.CanOfferDraw(color)) return board.OfferDraw(color);
+            if (_ButtonApplies(action)) armedUntil[action] = Time.time + DrawNoSeconds;
+            return ChessBoard.InputRejected;
         }
 
-        // Whether the button for action applies to the local player now: its Can... check on the board.
+        // No step to take on a clock button (ChessArbiter.NoClock, -1, is a value a step can land on).
+        const int NoStep = -2;
+
+        // The base time after the board's in clockBaseSteps, up or down: below the shortest is no clock, above no clock
+        // the shortest. A time between two steps (a loaded game's) goes to the nearer one that way. NoStep at either
+        // end.
+        int NextBase(bool more) {
+            int current = board.baseTime;
+            if (more) {
+                for (int i = 0; i < clockBaseSteps.Length; i++) {
+                    if (current == ChessArbiter.NoClock || clockBaseSteps[i] > current) return clockBaseSteps[i];
+                }
+                return NoStep;
+            }
+            if (current == ChessArbiter.NoClock) return NoStep;
+            for (int i = clockBaseSteps.Length - 1; i >= 0; i--) {
+                if (clockBaseSteps[i] < current) return clockBaseSteps[i];
+            }
+            return ChessArbiter.NoClock;
+        }
+
+        // The increment after the board's in clockIncrementSteps, up or down; NoStep at either end and with no clock,
+        // which has no increment.
+        int NextIncrement(bool more) {
+            if (board.baseTime == ChessArbiter.NoClock) return NoStep;
+            int current = board.increment;
+            if (more) {
+                for (int i = 0; i < clockIncrementSteps.Length; i++) {
+                    if (clockIncrementSteps[i] > current) return clockIncrementSteps[i];
+                }
+                return NoStep;
+            }
+            for (int i = clockIncrementSteps.Length - 1; i >= 0; i--) {
+                if (clockIncrementSteps[i] < current) return clockIncrementSteps[i];
+            }
+            return NoStep;
+        }
+
+        // Whether the button for action applies to the local player now, so it's shown.
         public bool _ButtonApplies(int action) {
             if (!Utilities.IsValid(board)) return false;
-            if (action == ButtonJoinWhite) return board.CanJoin(ChessRules.White);
-            if (action == ButtonJoinBlack) return board.CanJoin(ChessRules.Black);
+            int color = _ButtonColor(action);
+            int lifecycle = board.lifecycle;
+            if (action == ButtonJoinStartWhite || action == ButtonJoinStartBlack) {
+                if (lifecycle == ChessBoard.LifecycleLoaded) return false;
+                return board.CanJoin(color)
+                    || (lifecycle == ChessBoard.LifecycleLobby && board.IsPlayer(ChessUtil._LocalName("")));
+            }
             if (action == ButtonLeaveWhite || action == ButtonLeaveBlack) {
-                return board.CanLeaveSeat(_ButtonColor(action));
+                return lifecycle == ChessBoard.LifecycleLobby && board.CanLeaveSeat(color);
             }
             if (action == ButtonMode) return board.CanSetMode();
-            if (action == ButtonClock) return board.CanSetClock();
-            if (action == ButtonStart) return board.CanStartGame();
-            if (action == ButtonContinue) return board.CanContinue();
+            if (action == ButtonClockMore || action == ButtonClockLess || action == ButtonIncrementMore
+                || action == ButtonIncrementLess) {
+                return board.CanSetClock();
+            }
             if (action == ButtonReset) return board.CanReset();
             if (action == ButtonLoadHere) {
                 return board.CanLoadGame() && Utilities.IsValid(board.arbiter) && board.arbiter.HasSelection();
             }
             if (action == ButtonPgn) return board.moveCount > 0;
             if (action == ButtonLoadPgn) return board.CanImport();
-            int color = _ButtonColor(action);
             if (IsStepButton(action)) return board.CanControlReplay();
             if (action == ButtonResignWhite || action == ButtonResignBlack) return board.CanResign(color);
-            if (action == ButtonOfferDrawWhite || action == ButtonOfferDrawBlack) return board.CanOfferDraw(color);
-            if (action == ButtonAcceptDrawWhite || action == ButtonAcceptDrawBlack) return board.CanAcceptDraw(color);
+            if (action == ButtonDrawWhite || action == ButtonDrawBlack) {
+                // CanResign: the game is running and the local player has this seat.
+                return board.CanResign(color) && (board.IsGameSettingOn(ChessArbiter.SettingDrawAgreement)
+                    || board.IsGameSettingOn(ChessArbiter.SettingThreefoldRepetition)
+                    || board.IsGameSettingOn(ChessArbiter.SettingFiftyMoveRule));
+            }
             if (action == ButtonDeclineDrawWhite || action == ButtonDeclineDrawBlack) {
                 return board.CanDeclineDraw(color);
             }
-            if (action == ButtonClaimDraw) return board.CanClaimDraw();
             if (action == ButtonEnterReplay) return board.CanEnterReplay();
-            if (action == ButtonLeaveReplay) return board.CanLeaveReplay();
-            if (action == ButtonRequestTakebackWhite || action == ButtonRequestTakebackBlack) {
-                return board.CanRequestTakeback(color);
+            if (action == ButtonTakebackWhite || action == ButtonTakebackBlack) {
+                return board.CanContinue() || board.CanAcceptTakeback(color) || board.CanRequestTakeback(color);
             }
-            if (action == ButtonAcceptTakebackWhite || action == ButtonAcceptTakebackBlack) {
-                return board.CanAcceptTakeback(color);
+            if (action == ButtonBackWhite || action == ButtonBackBlack) {
+                return board.CanDeclineTakeback(color) || board.CanLeaveReplay()
+                    || (lifecycle == ChessBoard.LifecycleLoaded && (board.CanJoin(color) || board.CanLeaveSeat(color)));
             }
-            if (action == ButtonDeclineTakebackWhite || action == ButtonDeclineTakebackBlack) {
-                return board.CanDeclineTakeback(color);
-            }
+            if (action == ButtonImHere) return _ResetWarningKindAt(board._ServerTime()) != ResetWarningNone;
             return false;
         }
 
-        // Whether the button for action, while shown, can be pressed: a step button only where it steps somewhere
-        // (CanStepTo its ply), every other button always (it's hidden otherwise).
+        // Whether the button for action, while shown, can be pressed: a step button only where it steps somewhere, a
+        // clock button only where there's a step left, Join/Start's Start only with both seats filled, every other
+        // button always (it's hidden otherwise).
         public bool _ButtonEnabled(int action) {
             if (!Utilities.IsValid(board)) return false;
-            if (!IsStepButton(action)) return true;
-            int step = StepTarget(action);
-            return step >= 0 && board.CanStepTo(step);
+            if (IsStepButton(action)) {
+                int step = StepTarget(action);
+                return step >= 0 && board.CanStepTo(step);
+            }
+            if (action == ButtonClockMore) return NextBase(true) != NoStep;
+            if (action == ButtonClockLess) return NextBase(false) != NoStep;
+            if (action == ButtonIncrementMore) return NextIncrement(true) != NoStep;
+            if (action == ButtonIncrementLess) return NextIncrement(false) != NoStep;
+            if (action == ButtonJoinStartWhite || action == ButtonJoinStartBlack) {
+                return board.CanJoin(_ButtonColor(action)) || board.CanStartGame();
+            }
+            return true;
         }
 
-        // The label of the button for action: Mode and Clock show the board's current choice, Claim draw the draw
-        // claimed. The step buttons' arrows are signs, the same in every language.
+        // The label of the button for action. The arrows and the clock's signs are the same in every language.
         public string _ButtonText(int action) {
             string[] texts = _GameTexts();
-            if (action == ButtonJoinWhite) return textJoinWhite;
-            if (action == ButtonJoinBlack) return textJoinBlack;
+            bool valid = Utilities.IsValid(board);
+            int color = _ButtonColor(action);
+            if (action == ButtonJoinStartWhite || action == ButtonJoinStartBlack) {
+                return valid && !board.CanJoin(color) ? textStart : textJoin;
+            }
             if (action == ButtonLeaveWhite || action == ButtonLeaveBlack) return textLeave;
             if (action == ButtonMode) {
-                int mode = Utilities.IsValid(board) ? board.mode : ChessGame.ModeStandard;
+                int mode = valid ? board.mode : ChessGame.ModeStandard;
                 return I18n.Format(textMode, new string[] { "mode", _ModeText(texts, mode) });
             }
-            if (action == ButtonClock) {
-                if (!Utilities.IsValid(board)) return textClockNone;
-                return I18n.Format(textClock, new string[] {
-                    "clock", _ClockTextFor(texts, board.baseTime, board.increment) });
+            if (action == ButtonClockMore) return "+";
+            if (action == ButtonClockLess) return "-";
+            if (action == ButtonIncrementMore) return "++";
+            if (action == ButtonIncrementLess) return "--";
+            if (action == ButtonReset) return IsArmed(action) ? textSure : textReset;
+            if (action == ButtonResignWhite || action == ButtonResignBlack) {
+                return IsArmed(action) ? textSure : textResign;
             }
-            if (action == ButtonStart) return textStart;
-            if (action == ButtonContinue) return textContinue;
-            if (action == ButtonReset) return textReset;
-            if (action == ButtonResignWhite || action == ButtonResignBlack) return textResign;
-            if (action == ButtonOfferDrawWhite || action == ButtonOfferDrawBlack) return textOfferDraw;
-            if (action == ButtonAcceptDrawWhite || action == ButtonAcceptDrawBlack) return textAcceptDraw;
+            if (action == ButtonDrawWhite || action == ButtonDrawBlack) return IsArmed(action) ? textDrawNo : textDraw;
             if (action == ButtonDeclineDrawWhite || action == ButtonDeclineDrawBlack) return textDeclineDraw;
-            if (action == ButtonClaimDraw) {
-                int claim = Utilities.IsValid(board) ? board.ClaimableDraw() : ChessGame.EndingNone;
-                if (claim == ChessGame.EndingThreefoldRepetition) return textClaimDrawThreefold;
-                if (claim == ChessGame.EndingFiftyMoveRule) return textClaimDrawFiftyMoves;
-                return textClaimDraw;
-            }
             if (action == ButtonEnterReplay) return textReplay;
-            if (action == ButtonLeaveReplay) return textBackToGame;
             if (action == ButtonStepFirst) return "<<";
             if (action == ButtonStepBack) return "<";
             if (action == ButtonStepForward) return ">";
             if (action == ButtonStepLast) return ">>";
-            if (action == ButtonRequestTakebackWhite || action == ButtonRequestTakebackBlack) return textTakeBackToHere;
-            if (action == ButtonAcceptTakebackWhite || action == ButtonAcceptTakebackBlack) return textAcceptTakeback;
-            if (action == ButtonDeclineTakebackWhite || action == ButtonDeclineTakebackBlack) return textDeclineTakeback;
+            if (action == ButtonTakebackWhite || action == ButtonTakebackBlack) {
+                if (!valid || board.CanContinue()) return textContinue;
+                return board.CanAcceptTakeback(color) ? textAcceptTakeback : textTakeBackToHere;
+            }
+            if (action == ButtonBackWhite || action == ButtonBackBlack) {
+                if (!valid) return textBackToGame;
+                if (board.CanDeclineTakeback(color)) return textDeclineTakeback;
+                if (board.CanLeaveReplay()) return textBackToGame;
+                return board.CanJoin(color) ? textJoin : textLeave;
+            }
             if (action == ButtonLoadHere) return textLoadHere;
             if (action == ButtonPgn) return pgnShown && !pgnPasting ? textHidePgn : textPgn;
             if (action == ButtonLoadPgn) return pgnShown && pgnPasting ? textHidePgn : textLoadPgn;
+            if (action == ButtonImHere) return textImHere;
             return "";
         }
 
@@ -942,11 +1028,118 @@ namespace SiggiChessBoard {
                 "seconds", baseSeconds.ToString(), "increment", increment });
         }
 
-        // Shows each button whose action applies to the local player and hides the rest, with its label. A shown step
-        // button is pressable (its UI Button interactable, its label opaque) only where it steps somewhere
-        // (_ButtonEnabled), greyed out otherwise. Called on every Refresh, once a second and after every press.
+        // ---- Panels ----
+
+        // Mode Setup: while the mode or the clock can be chosen.
+        public bool _ModeSetupShown() {
+            return Utilities.IsValid(board) && (board.CanSetMode() || board.CanSetClock());
+        }
+
+        // The Reset button's panel: while the board isn't reset and the local player may reset it.
+        public bool _ResetPanelShown() {
+            return Utilities.IsValid(board) && board.CanReset();
+        }
+
+        // Pre-game: before a game, outside replay (a loaded board is always in replay).
+        public bool _PreGameShown() {
+            if (!Utilities.IsValid(board) || board.replayMode) return false;
+            return board.lifecycle == ChessBoard.LifecycleReset || board.lifecycle == ChessBoard.LifecycleLobby;
+        }
+
+        // In-game: a game in progress, or ended (Resign and Draw hidden; Replay and Export PGN are still needed),
+        // outside replay.
+        public bool _InGameShown() {
+            if (!Utilities.IsValid(board) || board.replayMode) return false;
+            return board.lifecycle == ChessBoard.LifecycleInGame || board.lifecycle == ChessBoard.LifecycleEnded;
+        }
+
+        // The Replay Controls: in replay.
+        public bool _ReplayShown() {
+            return Utilities.IsValid(board) && board.replayMode;
+        }
+
+        static void SetShown(GameObject[] objects, bool shown) {
+            for (int i = 0; i < objects.Length; i++) {
+                GameObject shownObject = objects[i];
+                if (Utilities.IsValid(shownObject) && shownObject.activeSelf != shown) shownObject.SetActive(shown);
+            }
+        }
+
+        // ---- Reset warning (docs/inactivity.md) ----
+
+        // What the warning should say to the local player at server time now: nothing unless they're seated at a board
+        // that isn't reset. When anyone can reset the board before it resets itself, from resetWarningOthersSeconds
+        // before that (or resetWarningAutoSeconds before the reset, if that's sooner); otherwise from
+        // resetWarningAutoSeconds before the reset. It stays until the board is touched or reset.
+        public int _ResetWarningKindAt(double now) {
+            if (!Utilities.IsValid(board) || board.lifecycle == ChessBoard.LifecycleReset
+                || !board.IsPlayer(ChessUtil._LocalName(""))) {
+                return ResetWarningNone;
+            }
+            double available = board.ResetAvailableTime();
+            double auto = board.AutoResetTime();
+            bool hasAuto = auto != ChessArbiter.Never;
+            if (available == ChessArbiter.Never || (hasAuto && available >= auto)) {
+                return hasAuto && now >= auto - resetWarningAutoSeconds ? ResetWarningAuto : ResetWarningNone;
+            }
+            if (!hasAuto) return now >= available - resetWarningOthersSeconds ? ResetWarningOthers : ResetWarningNone;
+            bool shown = now >= available - resetWarningOthersSeconds || now >= auto - resetWarningAutoSeconds;
+            return shown ? ResetWarningOthersAuto : ResetWarningNone;
+        }
+
+        // Shows the warning for the local player at server time now, with its text, facing their end of the table:
+        // Black's for a player only in the black seat, White's otherwise.
+        void UpdateResetWarning(double now) {
+            if (!Utilities.IsValid(resetWarning)) return;
+            int kind = _ResetWarningKindAt(now);
+            bool shown = kind != ResetWarningNone;
+            if (resetWarning.activeSelf != shown) resetWarning.SetActive(shown);
+            if (!shown) return;
+            ChessUtil._SetText(resetWarningText, kind == ResetWarningAuto ? textResetWarningAuto
+                : kind == ResetWarningOthersAuto ? textResetWarningOthersAuto : textResetWarningOthers);
+            _PlaceResetWarning(_ResetWarningEnd());
+        }
+
+        // The end the warning faces for the local player.
+        public int _ResetWarningEnd() {
+            string name = ChessUtil._LocalName("");
+            return board.IsSeated(ChessRules.Black, name) && !board.IsSeated(ChessRules.White, name)
+                ? ChessRules.Black : ChessRules.White;
+        }
+
+        // Stands the warning as the prefab places it for White's end, or turned half way about the UI's origin for
+        // Black's.
+        public void _PlaceResetWarning(int color) {
+            if (!Utilities.IsValid(resetWarning)) return;
+            Transform warning = resetWarning.transform;
+            if (!resetWarningPlaced) {
+                resetWarningPlaced = true;
+                resetWarningPosition = warning.localPosition;
+                resetWarningRotation = warning.localRotation;
+            }
+            Quaternion turn = color == ChessRules.Black ? Quaternion.Euler(0, 180, 0) : Quaternion.identity;
+            warning.localPosition = turn * resetWarningPosition;
+            warning.localRotation = turn * resetWarningRotation;
+        }
+
+        // Shows the panels, and in them each button whose action applies to the local player, with its label. A shown
+        // button is pressable (its UI Button interactable, its label opaque) only where _ButtonEnabled says, greyed out
+        // otherwise. Called on every Refresh, after every press, once a second and when a press stops holding.
         public void _UpdateButtons() {
             nextButtonCheck = Time.time + ButtonCheckInterval;
+            for (int i = 0; i < armedUntil.Length; i++) {
+                if (armedUntil[i] > Time.time && armedUntil[i] < nextButtonCheck) nextButtonCheck = armedUntil[i];
+            }
+            if (Utilities.IsValid(board)) {
+                SetShown(modeSetupPanels, _ModeSetupShown());
+                SetShown(resetPanels, _ResetPanelShown());
+                SetShown(preGamePanels, _PreGameShown());
+                SetShown(inGamePanels, _InGameShown());
+                SetShown(replayPanels, _ReplayShown());
+                SetShown(clockSetupParts, board.CanSetClock());
+                SetLabels(clockValueLabels, _ClockText(board.baseTime, board.increment));
+                UpdateResetWarning(board._ServerTime());
+            }
             for (int i = 0; i < buttons.Length; i++) {
                 GameObject button = buttons[i];
                 if (!Utilities.IsValid(button) || i >= buttonActions.Length) continue;
@@ -955,18 +1148,16 @@ namespace SiggiChessBoard {
                 if (button.activeSelf != shown) button.SetActive(shown);
                 if (!shown) continue;
                 bool hasLabel = i < buttonLabels.Length && Utilities.IsValid(buttonLabels[i]);
-                if (IsStepButton(action)) {
-                    bool enabled = _ButtonEnabled(action);
-                    Button uiButton = button.GetComponent<Button>();
-                    if (Utilities.IsValid(uiButton) && uiButton.interactable != enabled) uiButton.interactable = enabled;
-                    float alpha = enabled ? 1 : DisabledLabelAlpha;
-                    if (hasLabel && buttonLabels[i].color.a != alpha) {
-                        Color color = buttonLabels[i].color;
-                        color.a = alpha;
-                        buttonLabels[i].color = color;
-                    }
-                }
+                bool enabled = _ButtonEnabled(action);
+                Button uiButton = button.GetComponent<Button>();
+                if (Utilities.IsValid(uiButton) && uiButton.interactable != enabled) uiButton.interactable = enabled;
                 if (!hasLabel) continue;
+                float alpha = enabled ? 1 : DisabledLabelAlpha;
+                if (buttonLabels[i].color.a != alpha) {
+                    Color color = buttonLabels[i].color;
+                    color.a = alpha;
+                    buttonLabels[i].color = color;
+                }
                 string text = _ButtonText(action);
                 if (buttonLabels[i].text != text) buttonLabels[i].text = text;
             }
@@ -1114,6 +1305,7 @@ namespace SiggiChessBoard {
             SetLabels(blackClockLabels, _PlayerClockAt(ChessRules.Black, now));
             SetLabels(blackNameLabels, _PlayerName(ChessRules.Black));
             SetLabels(statusLabels, _StatusTextAt(now));
+            SetLabels(replayStatusLabels, valid && board.replayMode ? _ReplayText() : "");
         }
 
         static void SetLabels(TextMeshProUGUI[] labels, string text) {

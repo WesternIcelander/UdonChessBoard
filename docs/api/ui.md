@@ -20,33 +20,30 @@ The settings the board plays by (whether draws by agreement, takebacks and each 
 
 ## The buttons
 
-Each row is one of the Chess Board UI's buttons: the board method it calls, and the check it's shown by (the UI's `_ButtonApplies`). A button acting for one colour comes in a pair, one per colour; the Chess Board UI has a panel at each end of the table, each with its own colour's. A player who holds both seats sees both.
+Each row is one of the Chess Board UI's buttons: the board methods it calls, and the check it's shown by (the UI's `_ButtonApplies`). A button acting for one colour comes in a pair, one per colour; the Chess Board UI has panels at each end of the table, each with its own colour's. A player who holds both seats sees both. Several buttons merge separate board methods, which a world's own UI can keep apart.
 
 | Button | Call | Shown while |
 |---|---|---|
-| Join White / Join Black | `JoinWhite()` / `JoinBlack()` (or `Join(color)`) | `CanJoin(color)` |
-| Leave (each seat) | `LeaveSeat(color)` | `CanLeaveSeat(color)` |
+| Join/Start (each colour) | `Join(color)` (or `JoinWhite()` / `JoinBlack()`) where `CanJoin(color)`, otherwise `StartGame()`, greyed out until `CanStartGame()` | `CanJoin(color)`, or a seated player in the lobby |
+| Leave (each seat) | `LeaveSeat(color)` | `CanLeaveSeat(color)` in the lobby |
 | Mode | `SetMode(mode)`: the UI switches `ChessGame.ModeStandard` ↔ `ModeChess960` | `CanSetMode()` |
-| Clock | `SetClock(baseSeconds, incrementSeconds)`: the UI steps to the next of its list | `CanSetClock()` |
-| Start | `StartGame()` | `CanStartGame()` |
-| Continue from here | `ContinueGame()` | `CanContinue()` |
-| Reset | `ResetBoard()` | `CanReset()` |
-| Resign (each colour) | `Resign(color)` | `CanResign(color)` |
-| Offer draw (each colour) | `OfferDraw(color)` | `CanOfferDraw(color)` |
-| Accept draw (each colour) | `AcceptDraw(color)` | `CanAcceptDraw(color)` |
+| `+` `-` (clock), `++` `--` (increment) | `SetClock(baseSeconds, incrementSeconds)`: the UI steps through its `clockBaseSteps` and `clockIncrementSteps`, each greyed out with no step left | `CanSetClock()` |
+| Reset | `ResetBoard()`, on a second press within 3 s | `CanReset()` |
+| Resign (each colour) | `Resign(color)`, on a second press within 3 s | `CanResign(color)` |
+| Draw (each colour) | `ClaimDraw()` where `CanClaimDraw()`, otherwise `AcceptDraw(color)` where `CanAcceptDraw(color)`, otherwise `OfferDraw(color)` where `CanOfferDraw(color)`, otherwise it says No! for a second | `CanResign(color)` and `IsGameSettingOn` for `SettingDrawAgreement`, `SettingThreefoldRepetition` or `SettingFiftyMoveRule` |
 | Decline draw (each colour) | `DeclineDraw(color)` | `CanDeclineDraw(color)` |
-| Claim draw | `ClaimDraw()` | `CanClaimDraw()` |
 | Replay | `EnterReplay()` | `CanEnterReplay()` |
-| Back to game | `LeaveReplay()` | `CanLeaveReplay()` |
 | `<<` `<` `>` `>>` | `StepTo(0)`, `StepTo(replayIndex - 1)`, `StepTo(replayIndex + 1)`, `StepTo(moveCount)` | `CanControlReplay()`; each enabled by `CanStepTo(` the same ply `)`, greyed out otherwise |
-| Take back to here (each colour) | `RequestTakeback(color)` | `CanRequestTakeback(color)` |
-| Accept takeback (each colour) | `AcceptTakeback(color)` | `CanAcceptTakeback(color)` |
-| Decline takeback (each colour) | `DeclineTakeback(color)` | `CanDeclineTakeback(color)` |
+| Takeback (each colour) | `ContinueGame()` where `CanContinue()`, otherwise `AcceptTakeback(color)` where `CanAcceptTakeback(color)`, otherwise `RequestTakeback(color)` | any of those checks |
+| Back (each colour) | `DeclineTakeback(color)` where `CanDeclineTakeback(color)`, otherwise `LeaveReplay()` where `CanLeaveReplay()`; on a loaded board `Join(color)` or `LeaveSeat(color)` | any of those checks |
 | Load it here | `LoadSelectedGame()` | `CanLoadGame() && board.arbiter.HasSelection()` |
-| PGN | none: opens the UI's own box with `GamePgn()` | `moveCount > 0` |
-| Load PGN | none: opens the UI's own paste box; its Import button calls `StartImport(text)` | `CanImport()` |
+| Export PGN | none: opens the UI's own box with `GamePgn()` | `moveCount > 0` |
+| Import PGN | none: opens the UI's own paste box; its Import button calls `StartImport(text)` | `CanImport()` |
+| I'm here! | `ConfirmPresence()` | the UI's reset warning shows, by `ResetAvailableTime()` and `AutoResetTime()` |
 
-Showing a button only while its check holds is what the Chess Board UI does (the step buttons all show while the replay can be controlled, each enabled only where it steps somewhere); a world's UI may instead show a button disabled, or always, since the method refuses anyway. The checks change without the board changing: the time a board has been idle opens Reset to everyone, an organizer can be added, and a clock can run out. The Chess Board UI checks its buttons again once a second as well as on every change.
+The buttons are grouped on panels, each shown by the board's state ([Player input](../player-input.md#board-buttons)).
+
+Showing a button only while its check holds is what the Chess Board UI does (the step buttons, Start and the clock's buttons show greyed out where they can't act); a world's UI may instead show a button disabled, or always, since the method refuses anyway. The checks change without the board changing: the time a board has been idle opens Reset to everyone, an organizer can be added, and a clock can run out. The Chess Board UI checks its buttons again once a second as well as on every change.
 
 ### Seats
 
@@ -57,7 +54,7 @@ Showing a button only while its check holds is what the Chess Board UI does (the
 ### The lobby: mode, clock and Start
 
 - **`SetMode(mode)`** chooses `ChessGame.ModeStandard` (0) or `ModeChess960` (1). `CanSetMode()`: a seated player in the lobby, with the mode not forced (`IsModeForced()`). A loaded game keeps its own mode.
-- **`SetClock(baseSeconds, incrementSeconds)`** chooses the time control: `ChessArbiter.NoClock` (−1) with increment 0 for none, or a base of 1 s to `ChessBoard.MaxBaseTime` (86400) with an increment of 0 to `MaxIncrement` (3600); anything else is rejected (`ChessBoard.IsValidTimeControl(base, increment)` checks it). `CanSetClock()`: a seated player in the lobby or on a loaded board, with the clock not forced (`IsClockForced()`), and not refused by the loader's lock. The Chess Board UI's Clock button steps through its own `clockBases` / `clockIncrements` lists (Inspector fields); a world's UI offers whatever choices it likes. Both told as `ChangeSettings`.
+- **`SetClock(baseSeconds, incrementSeconds)`** chooses the time control: `ChessArbiter.NoClock` (−1) with increment 0 for none, or a base of 1 s to `ChessBoard.MaxBaseTime` (86400) with an increment of 0 to `MaxIncrement` (3600); anything else is rejected (`ChessBoard.IsValidTimeControl(base, increment)` checks it). `CanSetClock()`: a seated player in the lobby or on a loaded board, with the clock not forced (`IsClockForced()`), and not refused by the loader's lock. The Chess Board UI's clock buttons step through its `clockBaseSteps` and `clockIncrementSteps`.
 - **`StartGame()`** starts the game. `CanStartGame()`: the lobby, both seats filled, and the local player seated. A forced mode and clock are applied first; Chess960 gets a random starting position. Told as `ChangeStarted`.
 
 ### Resigning and draws
@@ -97,6 +94,7 @@ A board left alone opens Reset to everyone after the snapshot's reset-available 
 
 - **`ResetAvailableTime()`** is the server time (`Networking.GetServerTimeInSeconds()`, in seconds, the same on every client) at which anyone may reset the board; **`AutoResetTime()`** is the server time at which it resets itself (on its owner's first frame from then). Each is `ChessArbiter.Never` (−1) when it won't happen: a reset board, or that time set to never. They aren't how long is left: subtract the server time now for that (a time already passed gives a negative difference). Every activity moves them on, and nothing is told when they pass, so a countdown works them out again on a timer.
 - **`Touch()`** counts as activity from the local player without changing anything else, as picking up a piece does ([board input](board-input.md)): it keeps the board from going idle. `CanTouch()`: the local player's touch counts, that is, in a game in progress outside replay they're the side to move's player, and in replay they may work the replay controls; it's false on a reset board, in the lobby and on an ended game outside replay. `Touch()` returns `InputAccepted` whenever `CanTouch()` holds, but only stamps and sends the new activity time when the last activity was `ChessBoard.ActivityThrottle` (5) seconds ago or more, and otherwise does nothing; `InputRejected` otherwise. A sent touch is told to the other clients as `ChangeActivity` (not to the local player's listeners: nothing they show has changed), and takes ownership of the board.
+- **`ConfirmPresence()`** restarts the idle timers for a seated player (`CanConfirmPresence()`: a board that isn't reset), whoever's turn it is and in the lobby or on an ended game too, where a touch doesn't count. It sends no state and takes no ownership, only a network event every client stamps `lastActivity` from, so it can't race a move. The Chess Board UI's reset warning calls it ([Inactivity](../inactivity.md#reset-warning)).
 
 ### Loading a game, and who holds a loaded board
 
@@ -192,7 +190,7 @@ A UI usually redraws everything on any change and uses `lastChange` only for eff
 
 ## Text
 
-The package's UI keeps no text in code: every string comes from the **Chess Language** object (`SiggiUSTools.I18n`) by key, from the language packs under `Packages/io.siggi.chessboard/Languages/` (`en.json` the English one). A world's own UI shows the same texts by giving its behaviour an `I18n i18n` field set to the Chess Language object, reading each string with `ChessUtil.Text(i18n, key)` (the key itself if the field is empty), filling placeholders with `I18n.Format(text, new string[] { "name", value, … })`, and reading them again when the player changes language: register with `i18n.AddLanguageChangeListener(this)` and give the behaviour a `public void OnLanguageChange()`. The Chess Board UI's button labels are `button_…` keys (`button_join_white`, `button_resign`, …), its status lines `status_…`, `player_…` and `replay_…`, its PGN box's `pgn_…` and `import_…`, and how a game ended is `ChessGame.EndingKey(ending, winner)`. [Text](text.md) lists every key with its placeholders.
+The package's UI keeps no text in code: every string comes from the **Chess Language** object (`SiggiUSTools.I18n`) by key, from the language packs under `Packages/io.siggi.chessboard/Languages/` (`en.json` the English one). A world's own UI shows the same texts by giving its behaviour an `I18n i18n` field set to the Chess Language object, reading each string with `ChessUtil.Text(i18n, key)` (the key itself if the field is empty), filling placeholders with `I18n.Format(text, new string[] { "name", value, … })`, and reading them again when the player changes language: register with `i18n.AddLanguageChangeListener(this)` and give the behaviour a `public void OnLanguageChange()`. The Chess Board UI's button labels are `button_…` keys (`button_join`, `button_resign`, …), its status lines `status_…`, `player_…` and `replay_…`, its PGN box's `pgn_…` and `import_…`, and how a game ended is `ChessGame.EndingKey(ending, winner)`. [Text](text.md) lists every key with its placeholders.
 
 ```csharp
 using SiggiChessBoard;

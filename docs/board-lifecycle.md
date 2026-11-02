@@ -17,7 +17,7 @@ Replay mode is entered from a game (in progress or ended) or by loading/importin
 
 ## Seats
 
-- Two buttons on each board: **Join White** and **Join Black**. Pressing one records the player's display name in that seat (synced).
+- Each end of the table has a **Join** button for its colour (**Start** for a seated player). Pressing Join records the player's display name in that seat (synced).
 - Seats can be joined on a reset board (which enters the lobby) and on a loaded board (which stays loaded, in replay). They can't be joined once a game has started. On a loaded board, the player who loaded it joins first: until they hold a seat, nobody else may join (step 13.2, [Ownership](ownership.md)).
 - **The same player may join both seats**, e.g. to practise or analyse alone. Everything that's limited to "the player of that colour" then works for both colours. Takebacks are the exception: instead of asking themselves and accepting, they continue from an earlier position at once with "Continue from here" (step 13.3, see [Replay](replay.md#continuing-from-an-earlier-position-takeback)).
 - The ownership rule ("while both players are active...") refers to the seated players. With only one seat filled, the rule is about that player alone.

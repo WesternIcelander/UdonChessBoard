@@ -2,6 +2,7 @@ using System;
 using UdonSharp;
 using UnityEngine;
 using VRC.SDKBase;
+using VRC.Udon.Common.Interfaces;
 
 namespace SiggiChessBoard {
     // The logical board (docs/architecture.md): one board's game state, its lifecycle (docs/board-lifecycle.md) and
@@ -523,6 +524,37 @@ namespace SiggiChessBoard {
             if (!TouchCounts(name, organizer)) return InputRejected;
             _TouchAsAt(name, organizer, _ServerTime());
             return InputAccepted;
+        }
+
+        public bool CanConfirmPresence() {
+            return CanConfirmPresenceAs(ChessUtil._LocalName(""));
+        }
+
+        // Whether name may say they're still there: seated at a board that isn't reset, whoever's turn it is.
+        public bool CanConfirmPresenceAs(string name) {
+            return lifecycle != LifecycleReset && IsPlayer(name);
+        }
+
+        // The reset warning's I'm here!: a seated player restarts the idle timers, in any state of the board and on
+        // either side's turn. Unlike a touch this sends no state and takes no ownership, so the player waiting for a
+        // move can't send the position from before it: every client hears a network event and stamps lastActivity
+        // itself, and the owner's next update carries it to later joiners.
+        public int ConfirmPresence() {
+            if (!CanConfirmPresence()) return InputRejected;
+            _StampActivityAt(_ServerTime());
+            SendCustomNetworkEvent(NetworkEventTarget.All, nameof(NetworkConfirmPresence));
+            return InputAccepted;
+        }
+
+        // ConfirmPresence's network event. Without the underscore of an internal method, since VRChat refuses a network
+        // event to one that has it; not API.
+        public void NetworkConfirmPresence() {
+            _StampActivityAt(_ServerTime());
+        }
+
+        // Moves lastActivity on to server time now, never back. Public for tests.
+        public void _StampActivityAt(double now) {
+            if (now > lastActivity) lastActivity = now;
         }
 
         bool TouchCounts(string name, bool organizer) {

@@ -1,7 +1,7 @@
 {
   "languageCode": "x-chess-test",
   "languageName": "Chess test",
-  "button_start": "Begin (test)",
+  "button_join": "Begin (test)",
   "color_white": "Light",
   "hover_move": "Shift (test)",
   "pgn_import": "Bring in (test)"

@@ -69,7 +69,7 @@ What a world may change on it (its model, its size, the captured places) is in [
 
 ## Chess Board UI
 
-`Prefabs/UI/Chess Board UI.prefab` (step 14.4): the board's UI, a `ChessBoardUI` ([player input](player-input.md#the-boards-ui-step-121)) with the **Buttons (White)** and **Buttons (Black)** panels (each button calling the UI's `_Press…` event for its action), the **Status** panel beside the board ([physical pieces](physical-pieces.md)), the hidden **PGN Box** with its copy and paste parts ([PGN](pgn.md#input--output)), and its **Sounds** (every sound but the move sounds). Its button labels and hints are empty in the prefab (the status texts hold sample text for editing it): the UI writes them all from the language pack and the board.
+`Prefabs/UI/Chess Board UI.prefab` (step 14.4): the board's UI, a `ChessBoardUI` ([player input](player-input.md#the-boards-ui-step-121)) with its button panels ([which shows when](player-input.md#board-buttons)): nested instances of **Pre Game UI**, **In Game UI** and **Replay Controls** (`Prefabs/UI/PreGameUI.prefab`, `InGameUI.prefab`, `ReplayControls.prefab`), one of each at each end of the table, and **ModeSetup** and **Reset Button UI** beside the board; the **Reset Warning** over the board ([inactivity](inactivity.md#reset-warning)); the **Status** panel beside the board ([physical pieces](physical-pieces.md)); the hidden **PGN Box** with its copy and paste parts ([PGN](pgn.md#input--output)); and its **Sounds** (every sound but the move sounds). Each button calls the UI's `_Press…` event for its action (the nested panels' calls are overrides here, since the one panel prefab serves both colours). Each panel is a world-space canvas with `VRCUiShape` and a trigger `BoxCollider` of its size, so players walk through it (`VRCUiShape` adds a solid one to a canvas without). The texts in the prefab are for editing it: the UI writes them all from the language pack and the board.
 
 Its origin is the board's centre on the playing surface with the view's axes, as the view's is: its panels stand at the ends of the table under the view (one of the size the view is made for, above) and the PGN box over the board's far edge. Put it where the board's **Chess Board View** stands, with the same rotation and scale (beside the view, not inside it), so the panels sit on the table.
 
@@ -78,7 +78,7 @@ Place one per board. After placing it, set:
 - **Board**: the board it shows and acts on, the same **Chess Board** as the view's. The UI adds itself to the board's listeners when it starts; left empty, it logs an error and shows nothing.
 - **I18n**: nothing. The `I18n` sanity check fills it from the Chess Language on build and before Play Mode.
 
-**Clock Bases** and **Clock Increments** are the time controls the Clock button steps through. A world that wants its own UI can leave this prefab out and write a `ChessBoardListener` of its own; the view works without it.
+**Clock Base Steps** and **Clock Increment Steps** are what the clock's `+` `-` and `++` `--` buttons step through. **Reset Warning Auto Seconds** and **Reset Warning Others Seconds** say how soon the reset warning shows. A world that wants its own UI can leave this prefab out and write a `ChessBoardListener` of its own; the view works without it.
 
 ## Chess Table
 

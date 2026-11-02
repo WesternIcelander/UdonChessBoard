@@ -521,7 +521,17 @@ public static class PrefabTest {
         Check(ui.board == null, "the UI's board is left to set", "board " + ui.board);
         Check(ui.i18n == null, "the UI's I18n is left for the sanity check", "on " + ui.i18n);
 
-        // Each panel has every action but the other colour's: the colourless ones twice, each colour's once.
+        // Each action on its panels: a colour's once, on that colour's panel; the Pre-game, In-game and Replay panels'
+        // colourless ones once per end; Mode Setup's, Reset and I'm here! once, on their single panels.
+        string[] pressEvents = {
+            "_PressJoinStartWhite", "_PressJoinStartBlack", "_PressLeaveWhite", "_PressLeaveBlack", "_PressLoadPgn",
+            "_PressLoadHere", "_PressMode", "_PressClockMore", "_PressClockLess", "_PressIncrementMore",
+            "_PressIncrementLess", "_PressReset", "_PressResignWhite", "_PressResignBlack", "_PressDrawWhite",
+            "_PressDrawBlack", "_PressDeclineDrawWhite", "_PressDeclineDrawBlack", "_PressEnterReplay", "_PressPgn",
+            "_PressStepFirst", "_PressStepBack", "_PressStepForward", "_PressStepLast", "_PressTakebackWhite",
+            "_PressTakebackBlack", "_PressBackWhite", "_PressBackBlack", "_PressImHere",
+        };
+        CheckIntValue(pressEvents.Length, ChessBoardUI.ButtonCount, "PrefabTest knows every button's event");
         UdonBehaviour udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(ui);
         int[] seen = new int[ChessBoardUI.ButtonCount];
         string buttons = "";
@@ -544,16 +554,31 @@ public static class PrefabTest {
                 buttons += " " + button.name + "'s label;";
             }
             string pressed = PressEvent(button.GetComponent<UnityEngine.UI.Button>(), udon);
-            if (pressed != "_Press" + button.name) buttons += " " + button.name + " calls " + pressed + ";";
+            if (pressed != pressEvents[action]) buttons += " " + button.name + " calls " + pressed + ";";
+            int color = ChessBoardUI._ButtonColor(action);
+            if (color != ChessRules.NoColor
+                && !button.transform.parent.name.EndsWith(color == ChessRules.White ? " White" : " Black")) {
+                buttons += " " + button.name + " on " + button.transform.parent.name + ";";
+            }
         }
         for (int action = 0; action < ChessBoardUI.ButtonCount; action++) {
-            int expected = ChessBoardUI._ButtonColor(action) == ChessRules.NoColor ? 2 : 1;
-            if (seen[action] != expected) buttons += " action " + action + " " + seen[action] + " times;";
+            bool single = action == ChessBoardUI.ButtonMode || action == ChessBoardUI.ButtonClockMore
+                || action == ChessBoardUI.ButtonClockLess || action == ChessBoardUI.ButtonIncrementMore
+                || action == ChessBoardUI.ButtonIncrementLess || action == ChessBoardUI.ButtonReset
+                || action == ChessBoardUI.ButtonImHere || ChessBoardUI._ButtonColor(action) != ChessRules.NoColor;
+            if (seen[action] != (single ? 1 : 2)) buttons += " action " + action + " " + seen[action] + " times;";
         }
         Check(count > 0 && buttons == "", "the UI's " + count + " buttons, each action on its panels, each calling the "
             + "UI's own event", buttons);
         Check(OneLabel(ui.whiteClockLabels) && OneLabel(ui.whiteNameLabels) && OneLabel(ui.blackClockLabels)
             && OneLabel(ui.blackNameLabels) && OneLabel(ui.statusLabels), "the UI's status panel", "missing");
+        Check(placed.transform.Find("Buttons (White)") == null && placed.transform.Find("Buttons (Black)") == null,
+            "the old button panels are gone", "still there");
+        Check(ui.modeSetupPanels.Length == 1 && ui.resetPanels.Length == 1 && ui.preGamePanels.Length == 2
+            && ui.inGamePanels.Length == 2 && ui.replayPanels.Length == 2 && ui.replayStatusLabels.Length == 2
+            && ui.resetWarning != null && ui.resetWarningTitle != null && ui.resetWarningText != null
+            && OneLabel(ui.clockCaptionLabels) && OneLabel(ui.clockValueLabels) && ui.clockSetupParts.Length == 2,
+            "the UI's panels, clock parts and reset warning", "missing");
 
         bool box = ui.pgnBox != null && ui.pgnBox.transform.IsChildOf(placed.transform) && !ui.pgnBox.activeSelf
             && ui.pgnField != null && ui.pgnField.readOnly && ui.pgnPasteField != null && !ui.pgnPasteField.readOnly
