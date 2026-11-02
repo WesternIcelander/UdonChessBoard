@@ -530,12 +530,13 @@ namespace SiggiChessBoard {
             return CanConfirmPresenceAs(ChessUtil._LocalName(""));
         }
 
-        // Whether name may say they're still there: seated at a board that isn't reset, whoever's turn it is.
+        // Whether name may say they're still there: seated, or the player who loaded the game, at a board that isn't
+        // reset, whoever's turn it is.
         public bool CanConfirmPresenceAs(string name) {
-            return lifecycle != LifecycleReset && IsPlayer(name);
+            return lifecycle != LifecycleReset && (IsPlayer(name) || IsLoader(name));
         }
 
-        // The reset warning's I'm here!: a seated player restarts the idle timers, in any state of the board and on
+        // The reset warning's I'm here!: a seated player or the loader restarts the idle timers, in any state of the board and on
         // either side's turn. Unlike a touch this sends no state and takes no ownership, so the player waiting for a
         // move can't send the position from before it: every client hears a network event and stamps lastActivity
         // itself, and the owner's next update carries it to later joiners.

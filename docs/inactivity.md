@@ -16,7 +16,7 @@
 
 ## Reset warning
 
-The **Chess Board UI** warns the players seated at a board before others can reset it or it resets itself (`ChessBoardUI.resetWarning`, `_ResetWarningKindAt(now)`, checked once a second). It shows only to a seated player, and faces White's end as the prefab places it, or is turned about the UI's origin to face Black's end for a player only in the black seat. It stays until the board is touched or reset.
+The **Chess Board UI** warns the players seated at a board, and the player who loaded its game (`loadedBy`), before others can reset it or it resets itself (`ChessBoardUI.resetWarning`, `_ResetWarningKindAt(now)`, checked once a second). It shows only to them, and faces White's end as the prefab places it, or is turned about the UI's origin to face Black's end for a player only in the black seat. It stays until the board is touched or reset.
 
 | Times | Shows from | Text |
 |---|---|---|
@@ -25,7 +25,7 @@ The **Chess Board UI** warns the players seated at a board before others can res
 | Only the automatic reset (reset-available time never, or no sooner than it) | `resetWarningAutoSeconds` before the automatic reset | `reset_warning_auto` |
 | Neither (both never) | never | |
 
-**I'm here!** restarts the timers (`ChessBoard.ConfirmPresence()`, for a seated player on a board that isn't reset, `CanConfirmPresence()`). It has to work for the player waiting for a move and in the lobby or on an ended game, where a touch doesn't count, so it isn't a touch: it sends no state and takes no ownership, which can't race a move (see [Implementation](#implementation)). It stamps `lastActivity` locally and sends the `NetworkConfirmPresence` network event to every client, which stamps its own, never moving it back. The owner's next update carries the new time to later joiners, so one joining between the two judges idleness by the older time until then; what they try is still refused by the owner.
+**I'm here!** restarts the timers (`ChessBoard.ConfirmPresence()`, for a seated player or the loader on a board that isn't reset, `CanConfirmPresence()`). It has to work for the player waiting for a move and in the lobby or on an ended game, where a touch doesn't count, so it isn't a touch: it sends no state and takes no ownership, which can't race a move (see [Implementation](#implementation)). It stamps `lastActivity` locally and sends the `NetworkConfirmPresence` network event to every client, which stamps its own, never moving it back. The owner's next update carries the new time to later joiners, so one joining between the two judges idleness by the older time until then; what they try is still refused by the owner.
 
 ## Implementation
 

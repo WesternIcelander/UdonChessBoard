@@ -818,6 +818,20 @@ public class ViewTest : ChessTest {
             CheckInt(board._LoadImport(importer), ChessBoard.InputAccepted, "loaded game: loaded");
             CheckButtons("BackWhite BackBlack First Back Reset?", "loaded game");
             CheckLabel(ChessBoardUI.ButtonBackWhite, Text("button_join"), "loaded game");
+            CheckString(board.loadedBy, localName, "loaded game: the local player is its loader");
+            Check(Utilities.IsValid(view.blocker) && !view.blocker.enabled, "loaded game: the loader walks through the table",
+                "blocker enabled");
+            int savedAvailable = board.gameNumbers[ChessArbiter.NumberResetAvailableTime];
+            int savedAuto = board.gameNumbers[ChessArbiter.NumberAutoResetTime];
+            board.gameNumbers[ChessArbiter.NumberResetAvailableTime] = 120;
+            board.gameNumbers[ChessArbiter.NumberAutoResetTime] = 600;
+            CheckInt(ui._ResetWarningKindAt(board.lastActivity + 105), ChessBoardUI.ResetWarningOthersAuto,
+                "loaded game: the warning for the loader, not seated");
+            CheckInt(ui._ResetWarningEnd(), ChessRules.White, "loaded game: faces White's end for the loader");
+            board.lastActivity = board._ServerTime() - 110;
+            CheckInt(ui._PressButton(ChessBoardUI.ButtonImHere), ChessBoard.InputAccepted, "loaded game: the loader's I'm here!");
+            board.gameNumbers[ChessArbiter.NumberResetAvailableTime] = savedAvailable;
+            board.gameNumbers[ChessArbiter.NumberAutoResetTime] = savedAuto;
             ui._PressBackWhite();
             CheckString(board.whitePlayer, localName, "loaded game: Join White pressed");
             CheckButtons("BackWhite BackBlack Clock First Back Reset", "loaded game, White joined");
@@ -1581,6 +1595,15 @@ public class ViewTest : ChessTest {
         board._ClearState();
         Redraw();
         Check(blocker.enabled, "blocker: enabled again once cleared", "disabled");
+        board.loadedBy = "Ana";
+        Redraw();
+        Check(blocker.enabled, "blocker: enabled with someone else as the loader", "disabled");
+        board.loadedBy = localName;
+        Redraw();
+        Check(!blocker.enabled, "blocker: disabled for the loader", "enabled");
+        board._ClearState();
+        Redraw();
+        Check(blocker.enabled, "blocker: enabled again once the loader is cleared", "disabled");
         CheckView("cleared after the blocker checks");
     }
 

@@ -95,8 +95,9 @@ namespace SiggiChessBoard {
         public const int MarkCapture = 3;
         // The table, the board and the buttons have no solid colliders, so the players can walk up to and into the
         // board. The blocker, a solid box filling the table up to its top, keeps everyone else out: enabled on each
-        // client unless the local player has a seat (_UpdateBlocker). Players collide only on their own client, so
-        // each client's blocker stops only its own player. Below the surface, so it doesn't catch pointing or clicks.
+        // client unless the local player has a seat or loaded the game (_UpdateBlocker). Players collide only on their
+        // own client, so each client's blocker stops only its own player. Below the surface, so it doesn't catch pointing
+        // or clicks.
         public Collider blocker;
         // Captured-piece places (step 12.4, docs/customizing.md): where each colour's captured pieces stand, in the
         // order they were captured, placed by the world creator anywhere (read through their world position, so they
@@ -680,13 +681,14 @@ namespace SiggiChessBoard {
             return count;
         }
 
-        // Enables the blocker unless the local player has a seat (either colour), so only the seated players can walk
-        // into the table. Called on every Refresh: seats change only with the board.
+        // Enables the blocker unless the local player has a seat (either colour) or loaded the game (loadedBy), so only
+        // they can walk into the table. Called on every Refresh: seats and loadedBy change only with the board.
         public void _UpdateBlocker() {
             if (!Utilities.IsValid(blocker)) return;
             VRCPlayerApi local = Networking.LocalPlayer;
-            bool seated = Utilities.IsValid(board) && Utilities.IsValid(local) && board.IsPlayer(local.displayName);
-            if (blocker.enabled == seated) blocker.enabled = !seated;
+            bool free = Utilities.IsValid(board) && Utilities.IsValid(local)
+                && (board.IsPlayer(local.displayName) || board.IsLoader(local.displayName));
+            if (blocker.enabled == free) blocker.enabled = !free;
         }
 
         // ---- Input (docs/player-input.md) ----

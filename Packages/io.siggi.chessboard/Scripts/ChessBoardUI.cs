@@ -124,7 +124,7 @@ namespace SiggiChessBoard {
         public int[] clockBaseSteps = { 60, 120, 180, 300, 600, 900, 1200, 1800, 2700, 3600, 5400, 7200 };
         [Tooltip("The increments the clock's ++ and -- buttons step through, in seconds, smallest first.")]
         public int[] clockIncrementSteps = { 0, 1, 2, 3, 5, 10, 15, 20, 30, 45, 60 };
-        // The warning the seated players get before their idle board can be reset (docs/inactivity.md), with its I'm
+        // The warning the seated players and the loader get before their idle board can be reset (docs/inactivity.md), with its I'm
         // here! button among the buttons above. It faces White's end as the prefab places it, and is turned about the
         // UI's origin to face Black's end for a player only in the black seat.
         public GameObject resetWarning;
@@ -1067,13 +1067,13 @@ namespace SiggiChessBoard {
 
         // ---- Reset warning (docs/inactivity.md) ----
 
-        // What the warning should say to the local player at server time now: nothing unless they're seated at a board
-        // that isn't reset. When anyone can reset the board before it resets itself, from resetWarningOthersSeconds
+        // What the warning should say to the local player at server time now: nothing unless they're seated, or loaded
+        // the game, at a board that isn't reset. When anyone can reset the board before it resets itself, from
+        // resetWarningOthersSeconds
         // before that (or resetWarningAutoSeconds before the reset, if that's sooner); otherwise from
         // resetWarningAutoSeconds before the reset. It stays until the board is touched or reset.
         public int _ResetWarningKindAt(double now) {
-            if (!Utilities.IsValid(board) || board.lifecycle == ChessBoard.LifecycleReset
-                || !board.IsPlayer(ChessUtil._LocalName(""))) {
+            if (!Utilities.IsValid(board) || !board.CanConfirmPresence()) {
                 return ResetWarningNone;
             }
             double available = board.ResetAvailableTime();
