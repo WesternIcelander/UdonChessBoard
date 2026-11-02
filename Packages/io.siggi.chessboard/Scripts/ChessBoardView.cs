@@ -97,7 +97,8 @@ namespace SiggiChessBoard {
         // board. The blocker, a solid box filling the table up to its top, keeps everyone else out: enabled on each
         // client unless the local player has a seat or loaded the game (_UpdateBlocker). Players collide only on their
         // own client, so each client's blocker stops only its own player. Below the surface, so it doesn't catch pointing
-        // or clicks.
+        // or clicks. It belongs to the table (the Chess Table prefab holds one, beside the view); a view without one
+        // leaves this empty.
         public Collider blocker;
         // Captured-piece places (step 12.4, docs/customizing.md): where each colour's captured pieces stand, in the
         // order they were captured, placed by the world creator anywhere (read through their world position, so they

@@ -9,7 +9,6 @@ A view (`ChessBoardView (<board>)`) holds these children:
 | Child | What it is | May it go? |
 |---|---|---|
 | **Board**, **Squares** | the placeholder board: its frame, and the 64 squares as one mesh | yes |
-| **Player Blocker** | the solid box keeping players without a seat out of the table under the view ([Physical pieces](physical-pieces.md#walking-through-the-board-step-95a2)) | keep it; resize its `BoxCollider` to your table |
 | **Pieces**, **Square Targets**, **Highlights**, **Promotion Ghosts** | the pieces, desktop mode's click targets, the highlights and the promotion ghosts ([Promotion pieces](#chess-piece-sets-steps-123-1210-and-136)) | no: the view uses them |
 | **Captured Places** | where captured pieces stand ([below](#captured-piece-places-step-124)) | move them freely; delete some for fewer places |
 
@@ -25,7 +24,7 @@ The view reads nothing from **Board** or **Squares** (nor did it from the **Tabl
 **Scaling:** scale the view's transform, uniformly (the same on x, y and z). Everything the view places (pieces, highlights, click targets, animations, captured pieces) is in its local space, so it all scales with it, and drops are read through the view's transform. `squareSize` isn't for resizing: the square targets and highlights are built for it.
 
 - Give the board's UI (`ChessBoardUI (<board>)`, beside the view) the same scale and place, so its panels stay around the table. The view works without it matching, but the panels then stand where the unscaled table's ends would be.
-- The **Player Blocker** and the board's 2 cm thickness scale too: a view at 2 sits 4 cm above the table top and its blocker reaches 1.56 m down, so resize the blocker's `BoxCollider` to your table.
+- On a **Chess Table**, the **Player Blocker** is the table's, beside the view: it keeps out players without a seat ([Physical pieces](physical-pieces.md#walking-through-the-board-step-95a2)), and it doesn't scale with the view. Scale it with the table root, or resize its `BoxCollider` to your table. Keep it, or clear the view's **Blocker** field and delete it to let everyone walk through. A view placed on its own has none; assign a solid collider of your own to its **Blocker** field if you want one.
 - The pickups' grab range is VRChat's, in metres: a much smaller view packs the pieces closer than a hand can tell apart in VR.
 - Leave the view's groups (**Pieces**, **Square Targets**, **Highlights**) unmoved, unturned and unscaled: the view places their children in its own space. On Start it logs a warning naming the first object whose group isn't (`ChessBoardView.LocalSpaceProblem`).
 

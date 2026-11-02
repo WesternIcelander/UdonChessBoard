@@ -459,8 +459,7 @@ public static class PrefabTest {
             && view.blackCapturedPlaces.Length == ChessBoardView.PiecesPerColor
             && System.Array.IndexOf(view.blackCapturedPlaces, null) < 0, "the view's 16 captured places per colour",
             "missing");
-        Check(view.blocker != null && view.blocker.transform.IsChildOf(placed.transform), "the view's player blocker",
-            "missing");
+        Check(view.blocker == null, "the view prefab has no player blocker of its own (the table's has)", "it has");
         Check(view.audioSource != null && view.moveSound != null && view.captureSound != null
             && view.promoteSound != null && view.checkSound != null, "the view's sound source and move sounds",
             "missing");
@@ -720,41 +719,54 @@ public static class PrefabTest {
         Check(prefabBoard != null && prefabBoard.arbiter == null && prefabBoard.boardNumber == 0,
             "two placed tables: the prefab's board is unchanged", "it changed");
 
-        // A change to the Chess Board View prefab (its player blocker moved up, then back) reaches the table prefab's
-        // view and a placed table's.
+        // The table holds the player blocker, beside the view: from the table top down to the floor, not under the view.
         const string Blocker = "Player Blocker";
+        Transform tableBlocker = first.transform.Find(Blocker);
+        BoxCollider tableBox = tableBlocker != null ? tableBlocker.GetComponent<BoxCollider>() : null;
+        Check(tableBox != null && !tableBox.isTrigger && tableBlocker.localPosition == Vector3.zero
+            && tableBox.center == new Vector3(0, -tableBox.size.y / 2, 0),
+            "the table's " + Blocker + " is a solid box under the table top", tableBox == null ? "none" : "misplaced");
+        Check(tableBox != null && view.blocker == tableBox, "the table's view uses the table's " + Blocker,
+            "on " + view.blocker);
+        Check(tableBox != null && PrefabUtility.IsPartOfPrefabInstance(tableBox)
+            && !PrefabUtility.IsAddedGameObjectOverride(tableBlocker.gameObject),
+            "the " + Blocker + " is part of the table prefab, not an override of a placed table", "it isn't");
+
+        // A change to the Chess Board View prefab (its Board moved up, then back) reaches the table prefab's view and a
+        // placed table's.
+        const string Part = "Board";
         Vector3 shift = new Vector3(0, 0.1f, 0);
         GameObject contents = PrefabUtility.LoadPrefabContents(ViewPrefabPath);
-        Transform prefabBlocker = contents.transform.Find(Blocker);
-        Vector3 original = prefabBlocker != null ? prefabBlocker.localPosition : Vector3.zero;
+        Transform prefabPart = contents.transform.Find(Part);
+        Vector3 original = prefabPart != null ? prefabPart.localPosition : Vector3.zero;
         bool changed = false;
         try {
-            Check(prefabBlocker != null, "the Chess Board View prefab has its " + Blocker, "none");
-            if (prefabBlocker != null) {
-                prefabBlocker.localPosition = original + shift;
+            Check(prefabPart != null, "the Chess Board View prefab has its " + Part, "none");
+            if (prefabPart != null) {
+                prefabPart.localPosition = original + shift;
                 PrefabUtility.SaveAsPrefabAsset(contents, ViewPrefabPath);
                 changed = true;
                 ChessBoardView reloaded = AssetDatabase.LoadAssetAtPath<GameObject>(TablePrefabPath)
                     .GetComponentInChildren<ChessBoardView>(true);
-                Transform nestedBlocker = reloaded != null ? reloaded.transform.Find(Blocker) : null;
-                Transform placedBlocker = view.transform.Find(Blocker);
-                Check(nestedBlocker != null && nestedBlocker.localPosition == original + shift,
+                Transform nestedPart = reloaded != null ? reloaded.transform.Find(Part) : null;
+                Transform placedPart = view.transform.Find(Part);
+                Check(nestedPart != null && nestedPart.localPosition == original + shift,
                     "a change to the Chess Board View prefab reaches the table prefab's view",
-                    nestedBlocker == null ? "no blocker" : nestedBlocker.localPosition.ToString("F2"));
-                Check(placedBlocker != null && placedBlocker.localPosition == original + shift,
+                    nestedPart == null ? "no " + Part : nestedPart.localPosition.ToString("F2"));
+                Check(placedPart != null && placedPart.localPosition == original + shift,
                     "a change to the Chess Board View prefab reaches a placed table's view",
-                    placedBlocker == null ? "no blocker" : placedBlocker.localPosition.ToString("F2"));
+                    placedPart == null ? "no " + Part : placedPart.localPosition.ToString("F2"));
             }
         } finally {
             if (changed) {
-                prefabBlocker.localPosition = original;
+                prefabPart.localPosition = original;
                 PrefabUtility.SaveAsPrefabAsset(contents, ViewPrefabPath);
             }
             PrefabUtility.UnloadPrefabContents(contents);
         }
-        Transform restored = viewPrefab.transform.Find(Blocker);
+        Transform restored = viewPrefab.transform.Find(Part);
         Check(restored != null && restored.localPosition == original, "the Chess Board View prefab is put back",
-            restored == null ? "no blocker" : restored.localPosition.ToString("F2"));
+            restored == null ? "no " + Part : restored.localPosition.ToString("F2"));
         Object.DestroyImmediate(first);
         Object.DestroyImmediate(second);
         Object.DestroyImmediate(arbiter.gameObject);

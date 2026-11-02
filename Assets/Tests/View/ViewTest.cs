@@ -1604,6 +1604,11 @@ public class ViewTest : ChessTest {
         board._ClearState();
         Redraw();
         Check(blocker.enabled, "blocker: enabled again once the loader is cleared", "disabled");
+        // A view may have none (the prefab on its own; a table holds one): a redraw without it changes nothing.
+        view.blocker = null;
+        Redraw();
+        view.blocker = blocker;
+        Check(blocker.enabled, "blocker: a view without one redraws", "disabled");
         CheckView("cleared after the blocker checks");
     }
 

@@ -13,7 +13,7 @@ Pooled `UdonSharpBehaviour` move objects were considered and rejected: each fiel
 Each board is split into behaviours that never reach into each other's domain.
 
 - **`ChessBoard` (logical):** game state, rules, synced fields, ownership, logging. It never touches the world: no transforms, no pickups, no GameObjects.
-- **`ChessBoardView` (physical):** the board, the pieces, highlights, animations, the promotion ghosts (the promotion picker before step 12.11) and the player blocker, and the events from them (pickups, drops, clicks). It holds no game state and no synced fields of its own.
+- **`ChessBoardView` (physical):** the board, the pieces, highlights, animations, the promotion ghosts (the promotion picker before step 12.11), switching the player blocker (a collider it references, the Chess Table's), and the events from them (pickups, drops, clicks). It holds no game state and no synced fields of its own.
 - **`ChessBoardUI`** (step 12.1): the button panels, the status display, the PGN box (copying out and Load PGN) and Load it here for the history walls' pick (kept on the arbiter since 13.10), and their button presses. Like the view, a listener holding no game state and no synced fields. The view and the UI don't know each other: each listens to the board and acts through it, so either can be replaced or left out.
 - **`ChessBoard2DView`** (step 12.13, [2D board view](board-2d.md)): a flat board showing one of several boards at a time. It listens only to the board it shows, moving its listener (`RemoveListener`, `AddListener`) as its selector steps, and acts on no board. Its holder, `ChessBoard2DViewHolder` (step 12.16), moves and resizes it from two pickups; the view knows nothing of it.
 
