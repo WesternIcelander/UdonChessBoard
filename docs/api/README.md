@@ -22,7 +22,7 @@ A world places the [prefabs](../prefabs.md); each behaviour below is the one a s
 | **Chess Arbiter** | `ChessArbiter`: the instance's settings, organizers, piece sets and the pick of an archived game | its `SimpleAuth` (on the same object), `pieceSets` (the nested **Low Poly Chess Pieces** first, then **Claude Chess Pieces**), `archives` | every board's and the settings menu's `arbiter` |
 | **Chess Board** (in each **Chess Table**) | `ChessBoard`: one board's game, rules, seats and synced state | `arbiter`, `importer` (its child `ChessPgnImporter`), `listeners` | the view's and UI's `board`, the settings menu's and 2D views' `boards`, a 2D view's `lockedBoard` |
 | **Chess Board View** | `ChessBoardView`: the 3D board, pieces, highlights and sounds | `board`, `i18n` | (none) |
-| **Chess Board UI** | `ChessBoardUI`: the buttons, status panels and PGN box | `board`, `i18n` | (none) |
+| **Chess Board UI** | `ChessBoardUI`: the buttons, status panel and PGN box | `board`, `i18n` | (none) |
 | **Game Archive**, **Personal Game Archive** | `InstanceGameArchive` (synced, the instance's last 50 games), `PersonalGameArchive` (local, the player's own games across visits), both a `GameArchive` | (its holders) | the arbiter's `archives`, a history wall's `archive` |
 | **Game History Wall**, **Personal History Wall** | `GameHistoryWall`: an archive's list of games, export and pick | `archive`, `i18n` | (none) |
 | **Chess Settings Menu** | `ChessSettingsMenu`: the organizers' in-world settings | `arbiter`, `boards`, `i18n` | (none) |

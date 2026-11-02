@@ -69,7 +69,7 @@ What a world may change on it (its model, its size, the captured places) is in [
 
 ## Chess Board UI
 
-`Prefabs/UI/Chess Board UI.prefab` (step 14.4): the board's UI, a `ChessBoardUI` ([player input](player-input.md#the-boards-ui-step-121)) with the **Buttons (White)** and **Buttons (Black)** panels (each button calling the UI's `_Press…` event for its action), the **Status (White)** and **Status (Black)** panels ([physical pieces](physical-pieces.md)), the hidden **PGN Box** with its copy and paste parts ([PGN](pgn.md#input--output)), and its **Sounds** (every sound but the move sounds). Its labels and hints are empty in the prefab: the UI writes them from the language pack.
+`Prefabs/UI/Chess Board UI.prefab` (step 14.4): the board's UI, a `ChessBoardUI` ([player input](player-input.md#the-boards-ui-step-121)) with the **Buttons (White)** and **Buttons (Black)** panels (each button calling the UI's `_Press…` event for its action), the **Status** panel beside the board ([physical pieces](physical-pieces.md)), the hidden **PGN Box** with its copy and paste parts ([PGN](pgn.md#input--output)), and its **Sounds** (every sound but the move sounds). Its button labels and hints are empty in the prefab (the status texts hold sample text for editing it): the UI writes them all from the language pack and the board.
 
 Its origin is the board's centre on the playing surface with the view's axes, as the view's is: its panels stand at the ends of the table under the view (one of the size the view is made for, above) and the PGN box over the board's far edge. Put it where the board's **Chess Board View** stands, with the same rotation and scale (beside the view, not inside it), so the panels sit on the table.
 

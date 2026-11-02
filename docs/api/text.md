@@ -93,7 +93,7 @@ From the first release (16.1) on, the keys are public API, kept by [compatibilit
 
 ## Every key
 
-Where it shows: **UI** (the **Chess Board UI**: its buttons, player panels, status panel and PGN box), **2D view** (the **2D Chess Board View**: its board label, players and status), **wall** (the **Game History Wall** and **Personal History Wall**), **menu** (the **Chess Settings Menu**), **view** (the **Chess Board View**'s hover texts on pieces, squares and promotion pieces), **holder** (the **Movable 2D Chess Board View**'s hover texts). A key whose text fills another's placeholder shows where that one does.
+Where it shows: **UI** (the **Chess Board UI**: its buttons, status panel and PGN box), **2D view** (the **2D Chess Board View**: its board label, players and status), **wall** (the **Game History Wall** and **Personal History Wall**), **menu** (the **Chess Settings Menu**), **view** (the **Chess Board View**'s hover texts on pieces, squares and promotion pieces), **holder** (the **Movable 2D Chess Board View**'s hover texts). A key whose text fills another's placeholder shows where that one does.
 
 ### Shared words
 
@@ -169,13 +169,13 @@ All on the **UI**.
 
 ### Players and status lines
 
-The UI's player panels and status panel, and the 2D view's players and status, write these the same way, except where said.
+The UI's status panel and the 2D view's players and status write these the same way, except where said.
 
 | Key | English | Placeholders | Shows |
 |---|---|---|---|
-| `player_line` | ${color}: ${name} | `color`, `name` (the player's display name, or `player_open`) | each seat's line (the side's time follows it, during and after a game with a clock) |
-| `player_open` | (open) | | `${name}` in `player_line` for an empty seat |
-| `player_flag_fallen` | GG | | in place of `0:00` after a seat's line, for the side out of time in a game played on untimed |
+| `player_line` | ${color}: ${name} | `color`, `name` (the player's display name, or `player_open`) | the 2D view's line per seat (the side's time follows it, during and after a game with a clock); the UI's panel shows the name and time on their own, without this line |
+| `player_open` | (open) | | the name of an empty seat (`${name}` in `player_line` on the 2D view) |
+| `player_flag_fallen` | GG | | in place of `0:00` as a seat's time, for the side out of time in a game played on untimed |
 | `status_reset` | Join White or Black to play | | a reset board |
 | `status_lobby` | Lobby: ${mode}, ${clock} | `mode`, `clock` | a board in the lobby |
 | `status_loaded` | Loaded game: ${white} vs ${black} | `white`, `black` (names, `unknown_name` for none) | a loaded game |

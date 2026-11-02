@@ -1550,7 +1550,7 @@ public class ViewTest : ChessTest {
         + "b8c8 f7g6 c8e6";
     const string FoolsMate = "f2f3 e7e5 g2g4 d8h4";
 
-    // The twelfth frame: the status panels wired; _ClockDisplay; the players' and status texts (and the panels showing
+    // The twelfth frame: the status panel wired; _ClockDisplay; the players' and status texts (and the panel showing
     // them) on a reset board, in a lobby, in a game of two others with a clock (at the turn start, a minute on, the
     // flag fallen), in check, with a draw offer, in replay with a takeback request and after a free move, resigned;
     // every ending's text; a stalemate and a checkmate played, the mate in replay; a loaded game at its last ply, its
@@ -1558,13 +1558,12 @@ public class ViewTest : ChessTest {
     public void RunStatusChecks() {
         string s = "status";
         int panels = ui.statusLabels.Length;
-        Check(panels > 0 && ui.statusPlayerLabels.Length == panels, s + ": panels assigned",
-            panels + " status texts, " + ui.statusPlayerLabels.Length + " players texts");
-        int missing = 0;
-        for (int i = 0; i < panels; i++) {
-            if (!Utilities.IsValid(ui.statusLabels[i])) missing++;
-            if (i < ui.statusPlayerLabels.Length && !Utilities.IsValid(ui.statusPlayerLabels[i])) missing++;
-        }
+        Check(panels > 0 && ui.whiteClockLabels.Length == panels && ui.whiteNameLabels.Length == panels
+            && ui.blackClockLabels.Length == panels && ui.blackNameLabels.Length == panels, s + ": panels assigned",
+            panels + " status texts, " + ui.whiteClockLabels.Length + "/" + ui.whiteNameLabels.Length + " White's, "
+            + ui.blackClockLabels.Length + "/" + ui.blackNameLabels.Length + " Black's");
+        int missing = MissingLabels(ui.statusLabels) + MissingLabels(ui.whiteClockLabels)
+            + MissingLabels(ui.whiteNameLabels) + MissingLabels(ui.blackClockLabels) + MissingLabels(ui.blackNameLabels);
         CheckInt(missing, 0, s + ": every panel's texts assigned: missing");
         CheckString(ChessBoardUI._ClockDisplay(300000), "5:00", s + ": clock 5:00");
         CheckString(ChessBoardUI._ClockDisplay(299999), "4:59", s + ": clock 4:59.999");
@@ -1578,9 +1577,11 @@ public class ViewTest : ChessTest {
         // Two others' lobby and game, with a clock.
         board._ClearState();
         CheckStatus(Players(null, null), Text("status_reset"), s + ": reset board");
+        CheckSeats(Text("player_open"), "", Text("player_open"), "", board._ServerTime(), s + ": reset board");
         CheckInt(board.JoinAs(ChessRules.White, "Ana"), ChessBoard.InputAccepted, s + ": Ana joined White");
         Unforce();
         CheckStatus(Players("Ana", null), Lobby("mode_standard", Text("clock_none")), s + ": lobby");
+        CheckSeats("Ana", "", Text("player_open"), "", board._ServerTime(), s + ": lobby");
         CheckInt(board.JoinAs(ChessRules.Black, "Bob"), ChessBoard.InputAccepted, s + ": Bob joined Black");
         CheckInt(board.SetClockAs("Ana", 300, 3), ChessBoard.InputAccepted, s + ": 5+3 chosen");
         CheckInt(board.SetModeAs("Bob", ChessGame.ModeChess960), ChessBoard.InputAccepted, s + ": Chess960 chosen");
@@ -1592,6 +1593,7 @@ public class ViewTest : ChessTest {
         double start = board.turnStart;
         CheckString(ui._PlayersTextAt(start + 61.5), PlayersWithClocks("Ana", "3:58", "Bob", "5:00"),
             s + ": a minute on");
+        CheckSeats("Ana", "3:58", "Bob", "5:00", start + 61.5, s + ": a minute on");
         CheckString(ui._StatusTextAt(start + 295.1), toMove, s + ": 4.9 s left");
         CheckString(ui._PlayersTextAt(start + 295.1), PlayersWithClocks("Ana", "0:04.9", "Bob", "5:00"),
             s + ": 4.9 s left");
@@ -1662,6 +1664,8 @@ public class ViewTest : ChessTest {
             ui._PlayerTextAt(ChessRules.White, later));
         Check(ui._PlayerTextAt(ChessRules.Black, later).EndsWith("  " + flagFallen), s + ": play-on: GG for Black",
             ui._PlayerTextAt(ChessRules.Black, later));
+        CheckString(ui._PlayerClockAt(ChessRules.White, later), "0:59", s + ": play-on: White's clock kept");
+        CheckString(ui._PlayerClockAt(ChessRules.Black, later), flagFallen, s + ": play-on: Black's clock shows GG");
         Check(ui._StatusTextAt(later).Contains(ColorLine("status_playing_on", ChessRules.Black)),
             s + ": play-on: the status says so", ui._StatusTextAt(later));
         board.untimedAfterFlagFall = false;
@@ -3457,23 +3461,44 @@ public class ViewTest : ChessTest {
         double now = board.turnStart;
         if (players != null) CheckString(ui._PlayersTextAt(now), players, name + ": players");
         CheckString(ui._StatusTextAt(now), status, name + ": status");
-        string playersBefore = ui._PlayersTextAt(before);
-        string playersAfter = ui._PlayersTextAt(after);
-        string statusBefore = ui._StatusTextAt(before);
-        string statusAfter = ui._StatusTextAt(after);
+        string errors = LabelErrors(ui.statusLabels, ui._StatusTextAt(before), ui._StatusTextAt(after), "status")
+            + LabelErrors(ui.whiteClockLabels, ui._PlayerClockAt(ChessRules.White, before),
+                ui._PlayerClockAt(ChessRules.White, after), "White's clock")
+            + LabelErrors(ui.whiteNameLabels, ui._PlayerName(ChessRules.White), ui._PlayerName(ChessRules.White),
+                "White's name")
+            + LabelErrors(ui.blackClockLabels, ui._PlayerClockAt(ChessRules.Black, before),
+                ui._PlayerClockAt(ChessRules.Black, after), "Black's clock")
+            + LabelErrors(ui.blackNameLabels, ui._PlayerName(ChessRules.Black), ui._PlayerName(ChessRules.Black),
+                "Black's name");
+        Check(errors.Length == 0, name + ": the panels show it", errors);
+    }
+
+    // Each label showing neither text, for CheckStatus.
+    string LabelErrors(TextMeshProUGUI[] labels, string before, string after, string what) {
         string errors = "";
-        for (int i = 0; i < ui.statusLabels.Length; i++) {
-            TextMeshProUGUI label = ui.statusLabels[i];
-            if (Utilities.IsValid(label) && label.text != statusBefore && label.text != statusAfter) {
-                errors += "status " + i + ": " + label.text + "; ";
-            }
-            if (i >= ui.statusPlayerLabels.Length) continue;
-            label = ui.statusPlayerLabels[i];
-            if (Utilities.IsValid(label) && label.text != playersBefore && label.text != playersAfter) {
-                errors += "players " + i + ": " + label.text + "; ";
+        for (int i = 0; i < labels.Length; i++) {
+            TextMeshProUGUI label = labels[i];
+            if (Utilities.IsValid(label) && label.text != before && label.text != after) {
+                errors += what + " " + i + ": " + label.text + "; ";
             }
         }
-        Check(errors.Length == 0, name + ": the panels show it", errors);
+        return errors;
+    }
+
+    int MissingLabels(TextMeshProUGUI[] labels) {
+        int missing = 0;
+        for (int i = 0; i < labels.Length; i++) {
+            if (!Utilities.IsValid(labels[i])) missing++;
+        }
+        return missing;
+    }
+
+    // Each seat's name and clock, as the panel's own texts get them, at server time now.
+    void CheckSeats(string white, string whiteClock, string black, string blackClock, double now, string name) {
+        CheckString(ui._PlayerName(ChessRules.White), white, name + ": White's name");
+        CheckString(ui._PlayerClockAt(ChessRules.White, now), whiteClock, name + ": White's clock");
+        CheckString(ui._PlayerName(ChessRules.Black), black, name + ": Black's name");
+        CheckString(ui._PlayerClockAt(ChessRules.Black, now), blackClock, name + ": Black's clock");
     }
 
     // The ended game's text with ending and winner set on it.

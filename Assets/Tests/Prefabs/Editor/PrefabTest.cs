@@ -18,7 +18,7 @@ using VRC.Udon;
 // is undone and the prefab saved again before it ends. 14.2: the Chess Board with its importer, two placed with their
 // own board numbers, and the open scene's boards instances of it. 14.3: the Chess Board View with every object it uses
 // and no table, its pieces standing on their starting squares, pointed at a placed board, and the open scene's views
-// instances of it. 14.4: the Chess Board UI with its buttons (each calling its own UI), status panels, PGN box and sounds, pointed
+// instances of it. 14.4: the Chess Board UI with its buttons (each calling its own UI), status panel, PGN box and sounds, pointed
 // at a placed board, and the open scene's UIs instances of it. 14.5: the Game Archive with its own holders, a board
 // pointed at it, and the open scene's archive an instance of it, every board on it. 14.6: the Personal Game Archive
 // at its defaults, the Game History Wall and Personal History Wall with their entries (the personal one's with delete
@@ -552,10 +552,8 @@ public static class PrefabTest {
         }
         Check(count > 0 && buttons == "", "the UI's " + count + " buttons, each action on its panels, each calling the "
             + "UI's own event", buttons);
-        Check(ui.statusPlayerLabels != null && ui.statusPlayerLabels.Length == 2
-            && System.Array.IndexOf(ui.statusPlayerLabels, null) < 0 && ui.statusLabels != null
-            && ui.statusLabels.Length == 2 && System.Array.IndexOf(ui.statusLabels, null) < 0,
-            "the UI's two status panels", "missing");
+        Check(OneLabel(ui.whiteClockLabels) && OneLabel(ui.whiteNameLabels) && OneLabel(ui.blackClockLabels)
+            && OneLabel(ui.blackNameLabels) && OneLabel(ui.statusLabels), "the UI's status panel", "missing");
 
         bool box = ui.pgnBox != null && ui.pgnBox.transform.IsChildOf(placed.transform) && !ui.pgnBox.activeSelf
             && ui.pgnField != null && ui.pgnField.readOnly && ui.pgnPasteField != null && !ui.pgnPasteField.readOnly
@@ -585,6 +583,10 @@ public static class PrefabTest {
             "the UI pointed at a board: the prefab still points at none", "it doesn't");
         Object.DestroyImmediate(placed);
         Object.DestroyImmediate(boardObject);
+    }
+
+    static bool OneLabel(TextMeshProUGUI[] labels) {
+        return labels != null && labels.Length == 1 && labels[0] != null;
     }
 
     // The event a UI button sends: its one click listener's SendCustomEvent argument, when it calls udon; otherwise

@@ -117,12 +117,14 @@ namespace SiggiChessBoard {
         // The time controls the Clock button steps through, in seconds (base ChessArbiter.NoClock for none).
         public int[] clockBases = { ChessArbiter.NoClock, 60, 180, 300, 600, 900, 1800 };
         public int[] clockIncrements = { 0, 0, 2, 3, 0, 10, 0 };
-        // The status display (step 9.5c): any number of panels (the prefab has one at each end of the table), each
-        // with a players text (both seats, with their clocks during and after a game) and a status text (whose turn,
-        // check, the result, pending offers and requests, a loaded game's names, the replay position), at the same
-        // index. Brought up to date on every Refresh, every StatusInterval while a clock runs and once a second
-        // otherwise.
-        public TextMeshProUGUI[] statusPlayerLabels = new TextMeshProUGUI[0];
+        // The status display (step 9.5c): any number of panels (the prefab has one, beside the board), each with a name
+        // and a clock text per seat (the clock during and after a game) and a status text (whose turn, check, the
+        // result, pending offers and requests, a loaded game's names, the replay position). Brought up to date on every
+        // Refresh, every StatusInterval while a clock runs and once a second otherwise.
+        public TextMeshProUGUI[] whiteClockLabels = new TextMeshProUGUI[0];
+        public TextMeshProUGUI[] whiteNameLabels = new TextMeshProUGUI[0];
+        public TextMeshProUGUI[] blackClockLabels = new TextMeshProUGUI[0];
+        public TextMeshProUGUI[] blackNameLabels = new TextMeshProUGUI[0];
         public TextMeshProUGUI[] statusLabels = new TextMeshProUGUI[0];
         public const float StatusInterval = 0.1f;
         float nextStatusUpdate;
@@ -1107,21 +1109,31 @@ namespace SiggiChessBoard {
             nextStatusUpdate = Time.time + (valid && board.IsClockRunning() ? StatusInterval : 1);
             double now = valid ? board._ServerTime() : 0;
             _CheckTimeWarningAt(now);
-            string players = _PlayersTextAt(now);
-            string status = _StatusTextAt(now);
-            for (int i = 0; i < statusPlayerLabels.Length; i++) {
-                TextMeshProUGUI label = statusPlayerLabels[i];
-                if (Utilities.IsValid(label) && label.text != players) label.text = players;
-            }
-            for (int i = 0; i < statusLabels.Length; i++) {
-                TextMeshProUGUI label = statusLabels[i];
-                if (Utilities.IsValid(label) && label.text != status) label.text = status;
+            SetLabels(whiteClockLabels, _PlayerClockAt(ChessRules.White, now));
+            SetLabels(whiteNameLabels, _PlayerName(ChessRules.White));
+            SetLabels(blackClockLabels, _PlayerClockAt(ChessRules.Black, now));
+            SetLabels(blackNameLabels, _PlayerName(ChessRules.Black));
+            SetLabels(statusLabels, _StatusTextAt(now));
+        }
+
+        static void SetLabels(TextMeshProUGUI[] labels, string text) {
+            for (int i = 0; i < labels.Length; i++) {
+                TextMeshProUGUI label = labels[i];
+                if (Utilities.IsValid(label) && label.text != text) label.text = text;
             }
         }
 
-        // Both seats at server time now, White's line first (_PlayerTextAt). The status texts are static, taking the
-        // board and the game texts to write them with (_GameTexts), so the 2D view (step 12.13) writes the same lines
-        // with its own copy; the instance forms read this UI's board and texts.
+        public string _PlayerName(int color) {
+            return _PlayerNameFor(board, color, _GameTexts());
+        }
+
+        public string _PlayerClockAt(int color, double now) {
+            return _PlayerClockFor(board, color, now, _GameTexts());
+        }
+
+        // Both seats at server time now, White's line first (_PlayerTextAt), as the 2D view shows them. The status texts
+        // are static, taking the board and the game texts to write them with (_GameTexts), so the 2D view (step 12.13)
+        // writes the same lines with its own copy; the instance forms read this UI's board and texts.
         public string _PlayersTextAt(double now) {
             return _PlayersTextFor(board, now, _GameTexts());
         }
@@ -1147,24 +1159,33 @@ namespace SiggiChessBoard {
                 + _PlayerTextFor(board, ChessRules.Black, now, texts);
         }
 
-        // A seat's line: "White: Ana", "(open)" for an empty seat, with the side's remaining time at server time now
-        // during and after a game with a clock ("White: Ana  4:58"). In a game played on untimed after a flag fall
-        // (step 12.9) the times are the timed game's, and the side out of time shows GG instead of 0:00.
+        // A seat's line: "White: Ana", "White: (open)" for an empty seat, with its clock (_PlayerClockFor) when it has
+        // one ("White: Ana  4:58").
         public static string _PlayerTextFor(ChessBoard board, int color, double now, string[] texts) {
             if (!Utilities.IsValid(board)) return "";
-            string name = color == ChessRules.White ? board.whitePlayer : board.blackPlayer;
-            if (name == null || name.Length == 0) name = texts[TextPlayerOpen];
             string text = I18n.Format(texts[TextPlayerLine], new string[] {
-                "color", _ColorText(texts, color), "name", name });
+                "color", _ColorText(texts, color), "name", _PlayerNameFor(board, color, texts) });
+            string clock = _PlayerClockFor(board, color, now, texts);
+            return clock.Length > 0 ? text + "  " + clock : text;
+        }
+
+        // A seat's player: their name, "(open)" for an empty seat.
+        public static string _PlayerNameFor(ChessBoard board, int color, string[] texts) {
+            if (!Utilities.IsValid(board)) return "";
+            string name = color == ChessRules.White ? board.whitePlayer : board.blackPlayer;
+            return name == null || name.Length == 0 ? texts[TextPlayerOpen] : name;
+        }
+
+        // A seat's remaining time at server time now during and after a game with a clock, "" otherwise. In a game
+        // played on untimed after a flag fall (step 12.9) the times are the timed game's, and the side out of time shows
+        // GG instead of 0:00.
+        public static string _PlayerClockFor(ChessBoard board, int color, double now, string[] texts) {
+            if (!Utilities.IsValid(board)) return "";
             bool played = board.lifecycle == ChessBoard.LifecycleInGame || board.lifecycle == ChessBoard.LifecycleEnded;
-            if (!played) return text;
+            if (!played) return "";
             int left = board._RemainingTimeAt(color, now);
-            if (board.ClocksFromPreviousGame()) {
-                text += "  " + (left == 0 ? texts[TextPlayerFlagFallen] : _ClockDisplay(left));
-            } else if (board.HasClock()) {
-                text += "  " + _ClockDisplay(left);
-            }
-            return text;
+            if (board.ClocksFromPreviousGame()) return left == 0 ? texts[TextPlayerFlagFallen] : _ClockDisplay(left);
+            return board.HasClock() ? _ClockDisplay(left) : "";
         }
 
         // Which side's time ran out before the game played on untimed (step 12.9): the one with no time left, NoColor
