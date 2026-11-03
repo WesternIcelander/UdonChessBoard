@@ -86,7 +86,7 @@ Place one per board. After placing it, set:
 
 - **Chess Board** at the root's origin;
 - **Chess Board View** and **Chess Board UI** 2 cm above it, their origin on the playing surface (so the board rests on a table top where the root is), both with **Board** set to the table's own Chess Board.
-- **Player Blocker** at the root's origin, the solid box under the table top keeping players without a seat out (0.704 × 0.78 × 0.99 m, reaching 0.78 m down from the root; resize its `BoxCollider` to fit another table, [customizing](customizing.md#the-board-model-and-scale-step-122)), assigned to the view's **Blocker** field as an override on the table.
+- **Player Blocker** at the root's origin, the solid box around the table top keeping players without a seat out, under the table and from walking on it (0.704 × 1.56 × 0.6 m, reaching 0.78 m down from the root and as far up, on the `MirrorReflection` layer, which collides with players but lets the interaction pointer through; resize its `BoxCollider` to fit another table, [customizing](customizing.md#the-board-model-and-scale-step-122)), assigned to the view's **Blocker** field as an override on the table.
 
 Since they're nested instances, a later change to the board, view or UI prefab reaches every table. Despite its name it has no table of its own (the [Chess Board View](#chess-board-view) says what size it's made for): drop it onto a table in your world, as many as you need (one per board). (Before the change to 14.3 and 14.9 the view had a placeholder table and the root stood on the floor, the view and UI 0.8 m up.) After placing it, set on its **Chess Board** child:
 

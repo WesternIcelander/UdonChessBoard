@@ -720,13 +720,17 @@ public static class PrefabTest {
         Check(prefabBoard != null && prefabBoard.arbiter == null && prefabBoard.boardNumber == 0,
             "two placed tables: the prefab's board is unchanged", "it changed");
 
-        // The table holds the player blocker, beside the view: from the table top down to the floor, not under the view.
+        // The table holds the player blocker, beside the view: from the floor to as far above the table top, not under the
+        // view, on a layer that stops players without stopping the interaction pointer.
         const string Blocker = "Player Blocker";
         Transform tableBlocker = first.transform.Find(Blocker);
         BoxCollider tableBox = tableBlocker != null ? tableBlocker.GetComponent<BoxCollider>() : null;
         Check(tableBox != null && !tableBox.isTrigger && tableBlocker.localPosition == Vector3.zero
-            && tableBox.center == new Vector3(0, -tableBox.size.y / 2, 0),
-            "the table's " + Blocker + " is a solid box under the table top", tableBox == null ? "none" : "misplaced");
+            && tableBox.center == Vector3.zero,
+            "the table's " + Blocker + " is a solid box around the table top", tableBox == null ? "none" : "misplaced");
+        Check(tableBlocker != null && tableBlocker.gameObject.layer == LayerMask.NameToLayer("MirrorReflection"),
+            "the table's " + Blocker + " lets the interaction pointer through",
+            tableBlocker == null ? "none" : "layer " + tableBlocker.gameObject.layer);
         Check(tableBox != null && view.blocker == tableBox, "the table's view uses the table's " + Blocker,
             "on " + view.blocker);
         Check(tableBox != null && PrefabUtility.IsPartOfPrefabInstance(tableBox)
